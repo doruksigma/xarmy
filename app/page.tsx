@@ -16,12 +16,20 @@ export default function HomePage() {
           Skorunu yükselt, sıralamaya gir, lider ol.
         </p>
 
-        <div className="flex justify-center gap-4">
+        {/* CTA BUTTONS */}
+        <div className="flex justify-center flex-wrap gap-4">
+          <Link
+            href="/play"
+            className="px-7 py-3 rounded-xl bg-indigo-500 text-white font-semibold hover:bg-indigo-600 transition"
+          >
+            🚀 3D Arena’ya Gir
+          </Link>
+
           <Link
             href="/games"
-            className="px-6 py-3 rounded-xl bg-indigo-500 text-white font-semibold hover:bg-indigo-600 transition"
+            className="px-6 py-3 rounded-xl bg-slate-800 text-slate-100 hover:bg-slate-700 transition"
           >
-            🎮 Oyunlara Başla
+            🎮 Oyunlar
           </Link>
 
           <Link
