@@ -20,15 +20,14 @@ type WeaponStats = {
   damage: number;
   cooldown: number; // seconds
   maxRange: number;
-  accuracyNear: number;
-  accuracyFar: number;
-  ammoMax: number;
+  accuracyNear: number; // hit chance near
+  accuracyFar: number; // hit chance far
 };
 
 const WEAPONS: Record<WeaponType, WeaponStats> = {
-  PISTOL: { name: "Pistol", damage: 8, cooldown: 0.26, maxRange: 28, accuracyNear: 0.55, accuracyFar: 0.18, ammoMax: 18 },
-  RIFLE: { name: "Rifle", damage: 6, cooldown: 0.12, maxRange: 42, accuracyNear: 0.62, accuracyFar: 0.22, ammoMax: 30 },
-  SHOTGUN: { name: "Shotgun", damage: 14, cooldown: 0.65, maxRange: 18, accuracyNear: 0.65, accuracyFar: 0.12, ammoMax: 8 },
+  PISTOL: { name: "Pistol", damage: 2, cooldown: 0.28, maxRange: 22, accuracyNear: 0.30, accuracyFar: 0.10 },
+  RIFLE: { name: "Rifle", damage: 2, cooldown: 0.14, maxRange: 28, accuracyNear: 0.38, accuracyFar: 0.14 },
+  SHOTGUN: { name: "Shotgun", damage: 4, cooldown: 0.55, maxRange: 14, accuracyNear: 0.50, accuracyFar: 0.12 },
 };
 
 type Bot = {
@@ -37,11 +36,27 @@ type Bot = {
   hp: number;
   shootCd: number;
   weapon: WeaponType | null;
-  weaponMesh?: THREE.Group | null;
 };
 
 type Medkit = { mesh: THREE.Group; taken: boolean };
 type WeaponLoot = { mesh: THREE.Group; taken: boolean; type: WeaponType };
+
+function lerpAngle(a: number, b: number, t: number) {
+  const TWO_PI = Math.PI * 2;
+  let diff = (b - a) % TWO_PI;
+  diff = ((2 * diff) % TWO_PI) - diff;
+  return a + diff * t;
+}
+
+function pick<T>(arr: T[]) {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+function rand(min: number, max: number) {
+  return min + Math.random() * (max - min);
+}
+function clamp(v: number, a: number, b: number) {
+  return Math.max(a, Math.min(b, v));
+}
 
 const BOT_NAMES = [
   "Polat Alemdar",
@@ -55,72 +70,12 @@ const BOT_NAMES = [
   "Şaşkın Bot",
   "Serseri Bot",
   "Cevat",
-  "Kurtlar Vadisi NPC",
-  "Kılıç Usta",
-  "Bıyıklı Bot",
 ];
-
-function pick<T>(arr: T[]) {
-  return arr[Math.floor(Math.random() * arr.length)];
-}
-function rand(min: number, max: number) {
-  return min + Math.random() * (max - min);
-}
-function clamp(v: number, a: number, b: number) {
-  return Math.max(a, Math.min(b, v));
-}
-function lerpAngle(a: number, b: number, t: number) {
-  const TWO_PI = Math.PI * 2;
-  let diff = (b - a) % TWO_PI;
-  diff = ((2 * diff) % TWO_PI) - diff;
-  return a + diff * t;
-}
-
-function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.arcTo(x + w, y, x + w, y + h, r);
-  ctx.arcTo(x + w, y + h, x, y + h, r);
-  ctx.arcTo(x, y + h, x, y, r);
-  ctx.arcTo(x, y, x + w, y, r);
-  ctx.closePath();
-}
-
-function makeNameSprite(name: string) {
-  const c = document.createElement("canvas");
-  c.width = 512;
-  c.height = 128;
-  const ctx = c.getContext("2d")!;
-  ctx.clearRect(0, 0, c.width, c.height);
-
-  ctx.fillStyle = "rgba(2,6,23,0.72)";
-  roundRect(ctx, 16, 18, 480, 92, 28);
-  ctx.fill();
-
-  ctx.strokeStyle = "rgba(99,102,241,0.35)";
-  ctx.lineWidth = 4;
-  roundRect(ctx, 16, 18, 480, 92, 28);
-  ctx.stroke();
-
-  ctx.font = "bold 44px system-ui, -apple-system, Segoe UI, Roboto";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillStyle = "rgba(224,231,255,0.97)";
-  ctx.fillText(name, c.width / 2, c.height / 2 + 6);
-
-  const tex = new THREE.CanvasTexture(c);
-  tex.anisotropy = 4;
-  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
-  const spr = new THREE.Sprite(mat);
-  spr.scale.set(2.7, 0.65, 1);
-  return spr;
-}
 
 export default function PlayClient() {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const rafRef = useRef<number | null>(null);
   const minimapRef = useRef<HTMLCanvasElement | null>(null);
-  const overlayRef = useRef<HTMLCanvasElement | null>(null);
 
   const [locked, setLocked] = useState(false);
   const [hud, setHud] = useState({
@@ -134,11 +89,6 @@ export default function PlayClient() {
     parachute: false,
   });
 
-  const hudRef = useRef(hud);
-  useEffect(() => {
-    hudRef.current = hud;
-  }, [hud]);
-
   useEffect(() => {
     if (!mountRef.current) return;
 
@@ -148,30 +98,35 @@ export default function PlayClient() {
     const MAP_SIZE = 500;
     const HALF = MAP_SIZE / 2;
 
+    // Bot Vision (çok uzaktan görmesin)
+    const BOT_VISION_RANGE = 26; // player bu mesafeden uzaktaysa "görmez"
+    const BOT_FOV = THREE.MathUtils.degToRad(95); // görüş açısı (koni)
+
     // ---------- Renderer ----------
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight);
-    renderer.setClearColor(0x061018, 1);
+    renderer.setClearColor(0x050712, 1);
     mountRef.current.appendChild(renderer.domElement);
 
     // ---------- Scene ----------
     const scene = new THREE.Scene();
-    scene.fog = new THREE.Fog(0x061018, 60, 600);
+    scene.fog = new THREE.Fog(0x050712, 60, 420);
 
-    // ---------- Camera (FPS) ----------
+    // ---------- Camera ----------
     const camera = new THREE.PerspectiveCamera(
-      80,
+      78,
       mountRef.current.clientWidth / mountRef.current.clientHeight,
-      0.08,
+      0.1,
       2500
     );
+    camera.up.set(0, 1, 0); // ✅ ufuk düz (roll yok)
 
     // ---------- Lights ----------
-    const hemi = new THREE.HemisphereLight(0xbfd7ff, 0x102035, 0.85);
+    const hemi = new THREE.HemisphereLight(0xbfd7ff, 0x1b1330, 0.9);
     scene.add(hemi);
     const dir = new THREE.DirectionalLight(0xffffff, 1.05);
-    dir.position.set(60, 120, 60);
+    dir.position.set(30, 60, 30);
     scene.add(dir);
 
     // =============================
@@ -180,7 +135,7 @@ export default function PlayClient() {
     const grass = new THREE.Mesh(
       new THREE.PlaneGeometry(MAP_SIZE, MAP_SIZE, 1, 1),
       new THREE.MeshStandardMaterial({
-        color: 0x36c96a, // daha açık yeşil
+        color: 0x2fbf4a, // ✅ daha açık yeşil
         roughness: 0.98,
         metalness: 0.02,
       })
@@ -188,58 +143,55 @@ export default function PlayClient() {
     grass.rotation.x = -Math.PI / 2;
     scene.add(grass);
 
-    const SEA_W = 220;
-    const SEA_H = 170;
-
-    const sand = new THREE.Mesh(
-      new THREE.PlaneGeometry(SEA_W + 70, SEA_H + 70, 1, 1),
-      new THREE.MeshStandardMaterial({
-        color: 0xfacc15, // kum sarı
-        roughness: 0.95,
-        metalness: 0.02,
-        emissive: 0x4b3a00,
-        emissiveIntensity: 0.12,
-      })
-    );
-    sand.rotation.x = -Math.PI / 2;
+    const SEA_W = 210;
+    const SEA_H = 160;
 
     const sea = new THREE.Mesh(
       new THREE.PlaneGeometry(SEA_W, SEA_H, 1, 1),
       new THREE.MeshStandardMaterial({
-        color: 0x1d4ed8, // deniz mavi
-        roughness: 0.28,
-        metalness: 0.06,
+        color: 0x1d4ed8, // mavi deniz
+        roughness: 0.35,
+        metalness: 0.05,
         emissive: 0x0b2a6a,
-        emissiveIntensity: 0.30,
+        emissiveIntensity: 0.35,
       })
     );
     sea.rotation.x = -Math.PI / 2;
-
-    // deniz bölgesi: sağ-üst köşe
-    const seaCenterX = HALF - SEA_W / 2 - 12;
-    const seaCenterZ = -HALF + SEA_H / 2 + 12;
-
-    sand.position.set(seaCenterX, 0.01, seaCenterZ);
-    sea.position.set(seaCenterX, 0.02, seaCenterZ);
-    scene.add(sand);
+    sea.position.set(HALF - SEA_W / 2 - 10, 0.02, -HALF + SEA_H / 2 + 10);
     scene.add(sea);
 
-    // Grid (çok hafif)
-    const grid = new THREE.GridHelper(MAP_SIZE, 100, 0x7cf0a6, 0x0a2020);
+    const sand = new THREE.Mesh(
+      new THREE.PlaneGeometry(SEA_W + 60, SEA_H + 60, 1, 1),
+      new THREE.MeshStandardMaterial({
+        color: 0xfacc15, // sarı kum
+        roughness: 0.95,
+        metalness: 0.02,
+        emissive: 0x4b3a00,
+        emissiveIntensity: 0.15,
+      })
+    );
+    sand.rotation.x = -Math.PI / 2;
+    sand.position.copy(sea.position);
+    sand.position.y = 0.01;
+    scene.add(sand);
+
+    sea.renderOrder = 2;
+    sand.renderOrder = 1;
+
+    // Grid (hafif)
+    const grid = new THREE.GridHelper(MAP_SIZE, 100, 0x22c55e, 0x0b1a12);
     (grid.material as THREE.Material).transparent = true;
-    (grid.material as THREE.Material).opacity = 0.08;
+    (grid.material as THREE.Material).opacity = 0.10;
     scene.add(grid);
 
-    // =============================
-    // OBSTACLES + WALLS
-    // =============================
+    // ---------- Obstacles ----------
     const obstacles: THREE.Mesh[] = [];
     const obstacleMat = new THREE.MeshStandardMaterial({
       color: 0x1b2a2a,
       roughness: 0.7,
       metalness: 0.1,
-      emissive: 0x081818,
-      emissiveIntensity: 0.30,
+      emissive: 0x0a1a1a,
+      emissiveIntensity: 0.35,
     });
 
     function addBox(x: number, z: number, sx: number, sy: number, sz: number) {
@@ -250,12 +202,12 @@ export default function PlayClient() {
       return m;
     }
 
-    // Grass wall boundaries (map dışına çıkma yok)
+    // ---------- Grass Wall boundaries ----------
     const wallMat = new THREE.MeshStandardMaterial({
-      color: 0x1fb65a,
+      color: 0x16a34a,
       roughness: 0.95,
       metalness: 0,
-      emissive: 0x06401b,
+      emissive: 0x052e12,
       emissiveIntensity: 0.35,
     });
 
@@ -266,23 +218,20 @@ export default function PlayClient() {
       obstacles.push(m);
     }
 
-    const thickness = 8;
-    const wallH = 10;
-    addWall(0, -HALF, MAP_SIZE + thickness, wallH, thickness);
-    addWall(0, HALF, MAP_SIZE + thickness, wallH, thickness);
-    addWall(-HALF, 0, thickness, wallH, MAP_SIZE + thickness);
-    addWall(HALF, 0, thickness, wallH, MAP_SIZE + thickness);
+    const thickness = 6;
+    addWall(0, -HALF, MAP_SIZE + thickness, 10, thickness);
+    addWall(0, HALF, MAP_SIZE + thickness, 10, thickness);
+    addWall(-HALF, 0, thickness, 10, MAP_SIZE + thickness);
+    addWall(HALF, 0, thickness, 10, MAP_SIZE + thickness);
 
     // Houses
-    for (let i = 0; i < 16; i++) {
-      const x = rand(-HALF + 70, HALF - 70);
-      const z = rand(-HALF + 70, HALF - 70);
-
+    for (let i = 0; i < 14; i++) {
+      const x = rand(-HALF + 60, HALF - 60);
+      const z = rand(-HALF + 60, HALF - 60);
       const inBeach =
-        Math.abs(x - seaCenterX) < (SEA_W + 80) / 2 && Math.abs(z - seaCenterZ) < (SEA_H + 80) / 2;
+        Math.abs(x - sea.position.x) < (SEA_W + 70) / 2 && Math.abs(z - sea.position.z) < (SEA_H + 70) / 2;
       if (inBeach) continue;
-
-      addBox(x, z, rand(10, 22), rand(6, 12), rand(10, 22));
+      addBox(x, z, rand(10, 20), rand(6, 11), rand(10, 20));
     }
 
     // Trees (visual)
@@ -291,40 +240,96 @@ export default function PlayClient() {
       color: 0x22c55e,
       roughness: 0.9,
       emissive: 0x052e12,
-      emissiveIntensity: 0.20,
+      emissiveIntensity: 0.25,
     });
 
-    for (let i = 0; i < 220; i++) {
-      const x = rand(-HALF + 25, HALF - 25);
-      const z = rand(-HALF + 25, HALF - 25);
-
-      const inSea = Math.abs(x - seaCenterX) < SEA_W / 2 && Math.abs(z - seaCenterZ) < SEA_H / 2;
+    for (let i = 0; i < 160; i++) {
+      const x = rand(-HALF + 20, HALF - 20);
+      const z = rand(-HALF + 20, HALF - 20);
+      const inSea = Math.abs(x - sea.position.x) < SEA_W / 2 && Math.abs(z - sea.position.z) < SEA_H / 2;
       if (inSea) continue;
 
       const g = new THREE.Group();
-      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.85, 5, 10), trunkMat);
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.8, 5, 10), trunkMat);
       trunk.position.y = 2.5;
-      const leaf = new THREE.Mesh(new THREE.ConeGeometry(3.4, 7.2, 12), leafMat);
-      leaf.position.y = 7.3;
+      const leaf = new THREE.Mesh(new THREE.ConeGeometry(3.2, 7, 12), leafMat);
+      leaf.position.y = 7.2;
       g.add(trunk, leaf);
       g.position.set(x, 0, z);
       scene.add(g);
     }
 
-    // =============================
-    // PLAYER (logic only) + FPS viewmodel weapon
-    // =============================
-    const player = new THREE.Object3D();
-    player.position.set(0, 0, 0);
+    // ---------- Name sprite ----------
+    function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.arcTo(x + w, y, x + w, y + h, r);
+      ctx.arcTo(x + w, y + h, x, y + h, r);
+      ctx.arcTo(x, y + h, x, y, r);
+      ctx.arcTo(x, y, x + w, y, r);
+      ctx.closePath();
+    }
+
+    function makeNameSprite(name: string) {
+      const c = document.createElement("canvas");
+      c.width = 512;
+      c.height = 128;
+      const ctx = c.getContext("2d")!;
+      ctx.clearRect(0, 0, c.width, c.height);
+
+      ctx.fillStyle = "rgba(2,6,23,0.72)";
+      roundRect(ctx, 16, 18, 480, 92, 28);
+      ctx.fill();
+
+      ctx.strokeStyle = "rgba(99,102,241,0.40)";
+      ctx.lineWidth = 4;
+      roundRect(ctx, 16, 18, 480, 92, 28);
+      ctx.stroke();
+
+      ctx.font = "bold 46px system-ui, -apple-system, Segoe UI, Roboto";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = "rgba(224,231,255,0.97)";
+      ctx.fillText(name, c.width / 2, c.height / 2 + 6);
+
+      const tex = new THREE.CanvasTexture(c);
+      const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+      const spr = new THREE.Sprite(mat);
+      spr.scale.set(2.7, 0.65, 1);
+      return spr;
+    }
+
+    // ---------- Player ----------
+    const player = new THREE.Group();
+    const bodyMat = new THREE.MeshStandardMaterial({
+      color: 0x0f1733,
+      roughness: 0.35,
+      metalness: 0.2,
+      emissive: 0x111a44,
+      emissiveIntensity: 0.6,
+    });
+
+    const cyl = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.38, 1.1, 14), bodyMat);
+    cyl.position.y = 0.95;
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.42, 16, 16), bodyMat);
+    head.position.y = 1.6;
+    const hip = new THREE.Mesh(new THREE.SphereGeometry(0.4, 16, 16), bodyMat);
+    hip.position.y = 0.4;
+    player.add(cyl, head, hip);
+
+    const playerName = makeNameSprite("DORUKSIGMA");
+    playerName.position.set(0, 2.6, 0);
+    player.add(playerName);
+
     scene.add(player);
 
-    const PLAYER_HEIGHT = 1.8;
-    const GROUND_Y = 0;
+    // Hand anchor + weapon mesh (visible in hand)
+    const hand = new THREE.Object3D();
+    hand.position.set(0.45, 1.05, -0.35);
+    player.add(hand);
 
     let playerWeapon: WeaponType | null = null;
     let playerWeaponMesh: THREE.Group | null = null;
-    let playerCanShootAt = 0; // time cooldown
-    let parachuting = false;
 
     function makeWeaponMesh(type: WeaponType) {
       const g = new THREE.Group();
@@ -334,7 +339,7 @@ export default function PlayClient() {
         roughness: 0.35,
         metalness: 0.25,
         emissive: 0x050a14,
-        emissiveIntensity: 0.15,
+        emissiveIntensity: 0.2,
       });
 
       const accentMat = new THREE.MeshStandardMaterial({
@@ -342,7 +347,7 @@ export default function PlayClient() {
         roughness: 0.35,
         metalness: 0.3,
         emissive: 0x1d1b6a,
-        emissiveIntensity: 0.55,
+        emissiveIntensity: 0.6,
       });
 
       if (type === "PISTOL") {
@@ -379,68 +384,59 @@ export default function PlayClient() {
     }
 
     function equipPlayerWeapon(type: WeaponType) {
-      // camera viewmodel: silah kameraya takılı (FPS)
-      if (playerWeaponMesh) camera.remove(playerWeaponMesh);
+      if (playerWeaponMesh) hand.remove(playerWeaponMesh);
       playerWeapon = type;
-      const w = makeWeaponMesh(type);
-      w.rotation.y = Math.PI;
-      w.rotation.x = 0.05;
-      w.position.set(0.38, -0.32, -0.85); // sağ-alt, FPS hissi
-      w.scale.setScalar(1.05);
-      camera.add(w);
-      playerWeaponMesh = w;
+      playerWeaponMesh = makeWeaponMesh(type);
+      playerWeaponMesh.rotation.y = Math.PI;
+      playerWeaponMesh.rotation.x = 0.05;
+      hand.add(playerWeaponMesh);
 
-      const st = WEAPONS[type];
+      const stats = WEAPONS[type];
       setHud((h) => ({
         ...h,
-        weapon: st.name,
-        ammo: st.ammoMax,
-        msg: `✅ ${st.name} aldın`,
+        weapon: stats.name,
+        ammo: type === "SHOTGUN" ? 10 : 30,
+        msg: `✅ ${stats.name} aldın`,
       }));
-      setTimeout(() => setHud((h) => ({ ...h, msg: "" })), 900);
+      setTimeout(() => setHud((h) => ({ ...h, msg: "" })), 800);
     }
 
-    // =============================
-    // BUS (drop) — ışınlanma yok, paraşütle süzülme
-    // =============================
+    // ---------- Bus ----------
     const bus = new THREE.Group();
     const busMat = new THREE.MeshStandardMaterial({
       color: 0xfacc15,
       roughness: 0.6,
       metalness: 0.2,
       emissive: 0x4b3a00,
-      emissiveIntensity: 0.22,
+      emissiveIntensity: 0.25,
     });
     const busBody = new THREE.Mesh(new THREE.BoxGeometry(10, 3, 4), busMat);
     busBody.position.y = 18;
     bus.add(busBody);
-    bus.position.set(-HALF + 40, 0, -HALF + 40);
+    bus.position.set(-HALF + 30, 0, -HALF + 40);
     scene.add(bus);
 
     let busT = 0;
     let dropped = false;
 
-    // =============================
-    // BOTS (20) + names
-    // =============================
+    // ---------- Bots ----------
     const bots: Bot[] = [];
     const botMat = new THREE.MeshStandardMaterial({
       color: 0x3b0a0a,
-      roughness: 0.65,
-      metalness: 0.08,
+      roughness: 0.6,
+      metalness: 0.1,
       emissive: 0x220606,
-      emissiveIntensity: 0.45,
+      emissiveIntensity: 0.55,
     });
 
     function spawnBot() {
       const g = new THREE.Group();
-
-      const bc = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.36, 1.08, 14), botMat);
+      const bc = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 1.1, 14), botMat);
       bc.position.y = 0.95;
-      const bh = new THREE.Mesh(new THREE.SphereGeometry(0.40, 16, 16), botMat);
+      const bh = new THREE.Mesh(new THREE.SphereGeometry(0.38, 16, 16), botMat);
       bh.position.y = 1.55;
-      const bp = new THREE.Mesh(new THREE.SphereGeometry(0.38, 16, 16), botMat);
-      bp.position.y = 0.42;
+      const bp = new THREE.Mesh(new THREE.SphereGeometry(0.36, 16, 16), botMat);
+      bp.position.y = 0.4;
       g.add(bc, bh, bp);
 
       const name = pick(BOT_NAMES);
@@ -450,10 +446,10 @@ export default function PlayClient() {
 
       let x = 0,
         z = 0;
-      for (let tries = 0; tries < 40; tries++) {
-        x = rand(-HALF + 55, HALF - 55);
-        z = rand(-HALF + 55, HALF - 55);
-        const inSea = Math.abs(x - seaCenterX) < SEA_W / 2 && Math.abs(z - seaCenterZ) < SEA_H / 2;
+      for (let tries = 0; tries < 30; tries++) {
+        x = rand(-HALF + 40, HALF - 40);
+        z = rand(-HALF + 40, HALF - 40);
+        const inSea = Math.abs(x - sea.position.x) < SEA_W / 2 && Math.abs(z - sea.position.z) < SEA_H / 2;
         if (!inSea) break;
       }
 
@@ -463,32 +459,29 @@ export default function PlayClient() {
       bots.push({
         mesh: g,
         name,
-        hp: 70,
+        hp: 60,
         shootCd: rand(0.2, 1.2),
         weapon: null,
-        weaponMesh: null,
       });
     }
 
     for (let i = 0; i < 20; i++) spawnBot();
 
-    // =============================
-    // MEDKITS (bol) + WEAPON LOOT (bol)
-    // =============================
+    // ---------- Medkits ----------
     const medkits: Medkit[] = [];
     const kitBaseMat = new THREE.MeshStandardMaterial({
       color: 0x0f172a,
       roughness: 0.55,
       metalness: 0.15,
       emissive: 0x0b1020,
-      emissiveIntensity: 0.30,
+      emissiveIntensity: 0.35,
     });
     const kitCrossMat = new THREE.MeshStandardMaterial({
       color: 0xef4444,
       roughness: 0.35,
       metalness: 0.2,
       emissive: 0x7f1d1d,
-      emissiveIntensity: 0.55,
+      emissiveIntensity: 0.6,
     });
 
     function spawnMedkit() {
@@ -508,20 +501,20 @@ export default function PlayClient() {
 
       let x = 0,
         z = 0;
-      for (let tries = 0; tries < 40; tries++) {
-        x = rand(-HALF + 55, HALF - 55);
-        z = rand(-HALF + 55, HALF - 55);
-        const inSea = Math.abs(x - seaCenterX) < SEA_W / 2 && Math.abs(z - seaCenterZ) < SEA_H / 2;
+      for (let tries = 0; tries < 30; tries++) {
+        x = rand(-HALF + 45, HALF - 45);
+        z = rand(-HALF + 45, HALF - 45);
+        const inSea = Math.abs(x - sea.position.x) < SEA_W / 2 && Math.abs(z - sea.position.z) < SEA_H / 2;
         if (!inSea) break;
       }
       g.position.set(x, 0, z);
       scene.add(g);
-
       medkits.push({ mesh: g, taken: false });
     }
 
-    for (let i = 0; i < 22; i++) spawnMedkit();
+    for (let i = 0; i < 18; i++) spawnMedkit();
 
+    // ---------- Weapon loot ----------
     const weaponLoots: WeaponLoot[] = [];
 
     function spawnWeaponLoot(type?: WeaponType) {
@@ -533,15 +526,14 @@ export default function PlayClient() {
         roughness: 0.5,
         metalness: 0.12,
         emissive: 0x050a14,
-        emissiveIntensity: 0.18,
+        emissiveIntensity: 0.2,
       });
-      const base = new THREE.Mesh(new THREE.CylinderGeometry(0.58, 0.58, 0.12, 16), standMat);
+      const base = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, 0.12, 16), standMat);
       base.position.y = 0.06;
 
       const w = makeWeaponMesh(t);
       w.position.y = 0.35;
       w.rotation.y = rand(0, Math.PI * 2);
-      w.scale.setScalar(0.9);
 
       const label = makeNameSprite(WEAPONS[t].name.toUpperCase());
       label.position.set(0, 1.75, 0);
@@ -551,10 +543,10 @@ export default function PlayClient() {
 
       let x = 0,
         z = 0;
-      for (let tries = 0; tries < 50; tries++) {
-        x = rand(-HALF + 55, HALF - 55);
-        z = rand(-HALF + 55, HALF - 55);
-        const inSea = Math.abs(x - seaCenterX) < SEA_W / 2 && Math.abs(z - seaCenterZ) < SEA_H / 2;
+      for (let tries = 0; tries < 40; tries++) {
+        x = rand(-HALF + 45, HALF - 45);
+        z = rand(-HALF + 45, HALF - 45);
+        const inSea = Math.abs(x - sea.position.x) < SEA_W / 2 && Math.abs(z - sea.position.z) < SEA_H / 2;
         if (!inSea) break;
       }
       g.position.set(x, 0, z);
@@ -563,11 +555,133 @@ export default function PlayClient() {
       weaponLoots.push({ mesh: g, taken: false, type: t });
     }
 
-    for (let i = 0; i < 34; i++) spawnWeaponLoot();
+    for (let i = 0; i < 28; i++) spawnWeaponLoot();
 
-    // =============================
-    // COLLISION (push-out)
-    // =============================
+    // ---------- Shooting ----------
+    const raycaster = new THREE.Raycaster();
+    const losRay = new THREE.Raycaster(); // bot line-of-sight
+    const muzzleFlash = new THREE.PointLight(0x9aa5ff, 0, 8);
+    scene.add(muzzleFlash);
+
+    // Damage popups (simple DOM overlay)
+    const dmgRef: { items: Array<{ id: string; x: number; y: number; text: string; t: number }> } = { items: [] };
+
+    function worldToScreen(pos: THREE.Vector3) {
+      const p = pos.clone().project(camera);
+      const x = (p.x * 0.5 + 0.5) * (mountRef.current?.clientWidth || 1);
+      const y = (-p.y * 0.5 + 0.5) * (mountRef.current?.clientHeight || 1);
+      return { x, y };
+    }
+
+    function addDamageText(worldPos: THREE.Vector3, dmg: number) {
+      const s = worldToScreen(worldPos);
+      dmgRef.items.push({ id: Math.random().toString(36).slice(2), x: s.x, y: s.y, text: `-${dmg}`, t: 0 });
+    }
+
+    function applyDamageToPlayer(dmg: number) {
+      setHud((h) => {
+        if (h.dead) return h;
+        const hp = Math.max(0, h.hp - dmg);
+        return { ...h, hp, dead: hp <= 0, msg: hp <= 0 ? "💀 GAME OVER" : h.msg };
+      });
+    }
+
+    function healPlayer(amount: number) {
+      setHud((h) => {
+        if (h.dead) return h;
+        return { ...h, hp: Math.min(100, h.hp + amount), msg: `+${amount} HP` };
+      });
+      setTimeout(() => setHud((h) => ({ ...h, msg: "" })), 900);
+    }
+
+    // Yellow bullet tracer (very cheap)
+    const tracerMat = new THREE.LineBasicMaterial({ color: 0xfacc15 });
+    const tracers: Array<{ line: THREE.Line; life: number }> = [];
+
+    function spawnTracer(from: THREE.Vector3, to: THREE.Vector3) {
+      const geo = new THREE.BufferGeometry().setFromPoints([from, to]);
+      const line = new THREE.Line(geo, tracerMat);
+      scene.add(line);
+      tracers.push({ line, life: 0.08 });
+    }
+
+    function shootPlayer() {
+      if (!playerWeapon) {
+        setHud((h) => ({ ...h, msg: "Silah yok! (E ile loot al)" }));
+        setTimeout(() => setHud((h) => ({ ...h, msg: "" })), 800);
+        return;
+      }
+
+      let canShoot = true;
+      setHud((h) => {
+        if (h.dead) return h;
+        if (h.ammo <= 0) {
+          canShoot = false;
+          return { ...h, msg: "Ammo bitti! (R)" };
+        }
+        return { ...h, ammo: h.ammo - 1, msg: "" };
+      });
+      if (!canShoot) return;
+
+      raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+      const botMeshes = bots.map((b) => b.mesh);
+      const hits = raycaster.intersectObjects(botMeshes, true);
+
+      const from = camera.position.clone();
+      const to = hits.length ? hits[0].point.clone() : from.clone().add(camera.getWorldDirection(new THREE.Vector3()).multiplyScalar(40));
+      spawnTracer(from, to);
+
+      if (hits.length > 0) {
+        const hitObj = hits[0].object;
+        const root = bots.find((b) => hitObj.parent?.parent === b.mesh || hitObj.parent === b.mesh || hitObj === b.mesh);
+        if (root) {
+          const dmg = WEAPONS[playerWeapon].damage * 10; // arcade his
+          root.hp -= dmg;
+
+          addDamageText(root.mesh.position.clone().add(new THREE.Vector3(0, 2.1, 0)), dmg);
+
+          if (root.hp <= 0) {
+            scene.remove(root.mesh);
+            const idx = bots.indexOf(root);
+            if (idx >= 0) bots.splice(idx, 1);
+            setHud((h) => ({ ...h, score: h.score + 25 }));
+            setTimeout(() => spawnBot(), 900);
+          }
+        }
+      }
+
+      muzzleFlash.position.copy(camera.position);
+      muzzleFlash.intensity = 2.3;
+      setTimeout(() => (muzzleFlash.intensity = 0), 55);
+    }
+
+    // ---------- Controls ----------
+    const keys: Keys = { w: false, a: false, s: false, d: false, shift: false, space: false, e: false };
+    let yaw = 0;
+    let pitch = 0;
+
+    const vel = new THREE.Vector3(0, 0, 0);
+    const tmp = new THREE.Vector3();
+    const forward = new THREE.Vector3();
+    const right = new THREE.Vector3();
+    const up = new THREE.Vector3(0, 1, 0);
+
+    const PLAYER_HEIGHT = 1.8;
+    const GROUND_Y = 0;
+    let onGround = true;
+
+    const SPEED = 6.2;
+    const SPRINT = 9.0;
+    const JUMP = 6.2;
+    const GRAVITY = 18.0;
+
+    // parachute state
+    let parachuting = false;
+
+    // iniş koruması (inişte "aniden can gitmesin")
+    let spawnShield = 0;
+
+    // ---------- Collision ----------
     function resolveObstaclesFor(pos: THREE.Vector3, radius: number) {
       for (const box of obstacles) {
         const b = new THREE.Box3().setFromObject(box);
@@ -593,133 +707,7 @@ export default function PlayClient() {
       }
     }
 
-    // =============================
-    // SHOOTING + HIT POPUPS + TRACERS
-    // =============================
-    const raycaster = new THREE.Raycaster();
-    const muzzleFlash = new THREE.PointLight(0xfff2a6, 0, 10);
-    scene.add(muzzleFlash);
-
-    // tracer pool (yellow lines)
-    type Tracer = { line: THREE.Line; ttl: number };
-    const tracers: Tracer[] = [];
-    const tracerMat = new THREE.LineBasicMaterial({ color: 0xffd400, transparent: true, opacity: 0.9 });
-
-    function addTracer(from: THREE.Vector3, to: THREE.Vector3) {
-      const geo = new THREE.BufferGeometry().setFromPoints([from, to]);
-      const line = new THREE.Line(geo, tracerMat);
-      scene.add(line);
-      tracers.push({ line, ttl: 0.08 });
-    }
-
-    // damage popups (2D overlay)
-    type Popup = { id: number; text: string; pos: THREE.Vector3; ttl: number };
-    const popups: Popup[] = [];
-    let popupId = 1;
-
-    function addPopup(text: string, worldPos: THREE.Vector3) {
-      popups.push({ id: popupId++, text, pos: worldPos.clone(), ttl: 0.9 });
-    }
-
-    function applyDamageToPlayer(dmg: number) {
-      setHud((h) => {
-        if (h.dead) return h;
-        const hp = Math.max(0, h.hp - dmg);
-        return { ...h, hp, dead: hp <= 0, msg: hp <= 0 ? "💀 GAME OVER" : h.msg };
-      });
-    }
-
-    function healPlayer(amount: number) {
-      setHud((h) => {
-        if (h.dead) return h;
-        return { ...h, hp: Math.min(100, h.hp + amount), msg: `+${amount} HP` };
-      });
-      setTimeout(() => setHud((h) => ({ ...h, msg: "" })), 900);
-    }
-
-    function shootPlayer(now: number) {
-      const h = hudRef.current;
-      if (h.dead) return;
-      if (h.phase !== "PLAY") return;
-      if (parachuting) return;
-
-      if (!playerWeapon) {
-        setHud((s) => ({ ...s, msg: "Silah yok! (E ile loot al)" }));
-        setTimeout(() => setHud((s) => ({ ...s, msg: "" })), 900);
-        return;
-      }
-
-      const st = WEAPONS[playerWeapon];
-      if (now < playerCanShootAt) return;
-      playerCanShootAt = now + st.cooldown;
-
-      // ammo
-      if (hudRef.current.ammo <= 0) {
-        setHud((s) => ({ ...s, msg: "Ammo bitti! (R)" }));
-        setTimeout(() => setHud((s) => ({ ...s, msg: "" })), 800);
-        return;
-      }
-      setHud((s) => ({ ...s, ammo: Math.max(0, s.ammo - 1), msg: "" }));
-
-      // ray from camera center
-      raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
-
-      const botMeshes = bots.map((b) => b.mesh);
-      const hits = raycaster.intersectObjects(botMeshes, true);
-
-      // tracer
-      const from = camera.getWorldPosition(new THREE.Vector3());
-      const to = hits.length ? hits[0].point.clone() : from.clone().add(camera.getWorldDirection(new THREE.Vector3()).multiplyScalar(80));
-      addTracer(from, to);
-
-      if (hits.length > 0) {
-        const hitObj = hits[0].object;
-        const bot = bots.find((b) => hitObj.parent?.parent === b.mesh || hitObj.parent === b.mesh || hitObj === b.mesh);
-        if (bot) {
-          const dmg = st.damage;
-          bot.hp -= dmg;
-          addPopup(`-${dmg}`, hits[0].point);
-
-          if (bot.hp <= 0) {
-            scene.remove(bot.mesh);
-            const idx = bots.indexOf(bot);
-            if (idx >= 0) bots.splice(idx, 1);
-            setHud((s) => ({ ...s, score: s.score + 25 }));
-            // respawn
-            setTimeout(() => {
-              if (!hudRef.current.dead) spawnBot();
-            }, 900);
-          }
-        }
-      }
-
-      // flash
-      muzzleFlash.position.copy(from);
-      muzzleFlash.intensity = 2.1;
-      setTimeout(() => (muzzleFlash.intensity = 0), 55);
-    }
-
-    // =============================
-    // CONTROLS (FPS)
-    // =============================
-    const keys: Keys = { w: false, a: false, s: false, d: false, shift: false, space: false, e: false };
-    let yaw = 0; // left-right
-    let pitch = 0; // up-down
-
-    const vel = new THREE.Vector3(0, 0, 0);
-    const tmp = new THREE.Vector3();
-    const forward = new THREE.Vector3();
-    const right = new THREE.Vector3();
-    const up = new THREE.Vector3(0, 1, 0);
-
-    let onGround = true;
-
-    const SPEED = 6.0;
-    const SPRINT = 9.0;
-    const JUMP = 6.0;
-    const GRAVITY = 18.0;
-
-    // pointer lock
+    // ---------- Pointer Lock ----------
     const canvas = renderer.domElement;
 
     function requestLock() {
@@ -728,28 +716,31 @@ export default function PlayClient() {
     function onPointerLockChange() {
       setLocked(document.pointerLockElement === canvas);
     }
+
     function onMouseMove(e: MouseEvent) {
       if (document.pointerLockElement !== canvas) return;
       const mx = e.movementX || 0;
       const my = e.movementY || 0;
+
       const SENS = 0.0022;
       yaw -= mx * SENS;
       pitch -= my * SENS;
 
-      // FPS: yukarı-aşağı serbest ama limitli
-      pitch = clamp(pitch, -1.15, 0.95);
+      // FPS pitch sınırı
+      pitch = clamp(pitch, -1.1, 0.95);
     }
 
     function onMouseDown(e: MouseEvent) {
       if (e.button !== 0) return;
-      if (hudRef.current.phase !== "PLAY") return;
-      if (hudRef.current.dead) return;
+      if (hud.phase !== "PLAY") return;
+      if (hud.dead) return;
 
       if (document.pointerLockElement !== canvas) {
         requestLock();
         return;
       }
-      shootPlayer(performance.now() / 1000);
+      if (parachuting) return;
+      shootPlayer();
     }
 
     function onKeyDown(e: KeyboardEvent) {
@@ -762,19 +753,14 @@ export default function PlayClient() {
       if (e.code === "KeyE") keys.e = true;
 
       if (e.code === "KeyR") {
-        // reload only if weapon
-        if (!playerWeapon) {
-          setHud((s) => ({ ...s, msg: "Silah yok" }));
-          setTimeout(() => setHud((s) => ({ ...s, msg: "" })), 700);
-          return;
-        }
-        const st = WEAPONS[playerWeapon];
-        setHud((s) => ({ ...s, ammo: st.ammoMax, msg: "Reload" }));
-        setTimeout(() => setHud((s) => ({ ...s, msg: "" })), 600);
+        setHud((h) => {
+          if (!playerWeapon) return { ...h, msg: "Silah yok" };
+          return { ...h, ammo: playerWeapon === "SHOTGUN" ? 10 : 30, msg: "Reload" };
+        });
+        setTimeout(() => setHud((h) => ({ ...h, msg: "" })), 600);
       }
-
       if (e.code === "Escape") document.exitPointerLock?.();
-      if (e.code === "Enter" && hudRef.current.dead) window.location.reload();
+      if (e.code === "Enter" && hud.dead) window.location.reload();
     }
 
     function onKeyUp(e: KeyboardEvent) {
@@ -794,10 +780,9 @@ export default function PlayClient() {
     window.addEventListener("keyup", onKeyUp);
 
     canvas.addEventListener("click", () => {
-      requestLock();
+      if (!dropped) requestLock();
     });
 
-    // resize
     function onResize() {
       if (!mountRef.current) return;
       const w = mountRef.current.clientWidth;
@@ -805,21 +790,10 @@ export default function PlayClient() {
       renderer.setSize(w, h);
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
-
-      // overlay
-      if (overlayRef.current) {
-        overlayRef.current.width = w;
-        overlayRef.current.height = h;
-      }
     }
     window.addEventListener("resize", onResize);
 
-    // init overlay size
-    requestAnimationFrame(() => onResize());
-
-    // =============================
-    // MINIMAP
-    // =============================
+    // ---------- Minimap ----------
     const minimap = minimapRef.current;
     const mctx = minimap?.getContext("2d") || null;
 
@@ -832,19 +806,17 @@ export default function PlayClient() {
       const sz = (z: number) => ((z / MAP_SIZE) + 0.5) * H;
 
       mctx.clearRect(0, 0, W, H);
-      // grass
-      mctx.fillStyle = "#0e6a2e";
+      mctx.fillStyle = "#0b2a14";
       mctx.fillRect(0, 0, W, H);
 
       // sand
       mctx.fillStyle = "rgba(250,204,21,0.70)";
       mctx.fillRect(
-        sx(sand.position.x - (SEA_W + 70) / 2),
-        sz(sand.position.z - (SEA_H + 70) / 2),
-        ((SEA_W + 70) / MAP_SIZE) * W,
-        ((SEA_H + 70) / MAP_SIZE) * H
+        sx(sand.position.x - (SEA_W + 60) / 2),
+        sz(sand.position.z - (SEA_H + 60) / 2),
+        ((SEA_W + 60) / MAP_SIZE) * W,
+        ((SEA_H + 60) / MAP_SIZE) * H
       );
-
       // sea
       mctx.fillStyle = "rgba(29,78,216,0.85)";
       mctx.fillRect(
@@ -854,8 +826,7 @@ export default function PlayClient() {
         (SEA_H / MAP_SIZE) * H
       );
 
-      // border
-      mctx.strokeStyle = "rgba(34,197,94,0.95)";
+      mctx.strokeStyle = "rgba(34,197,94,0.9)";
       mctx.lineWidth = 3;
       mctx.strokeRect(6, 6, W - 12, H - 12);
 
@@ -892,9 +863,7 @@ export default function PlayClient() {
       mctx.fill();
     }
 
-    // =============================
-    // LOOT PICKUP
-    // =============================
+    // ---------- Loot pickup ----------
     function tryPickupMedkit() {
       for (const k of medkits) {
         if (k.taken) continue;
@@ -903,9 +872,7 @@ export default function PlayClient() {
           k.taken = true;
           scene.remove(k.mesh);
           healPlayer(35);
-          setTimeout(() => {
-            if (!hudRef.current.dead) spawnMedkit();
-          }, 2200);
+          setTimeout(() => spawnMedkit(), 2200);
           return true;
         }
       }
@@ -920,9 +887,7 @@ export default function PlayClient() {
           w.taken = true;
           scene.remove(w.mesh);
           equipPlayerWeapon(w.type);
-          setTimeout(() => {
-            if (!hudRef.current.dead) spawnWeaponLoot();
-          }, 2500);
+          setTimeout(() => spawnWeaponLoot(), 2500);
           return true;
         }
       }
@@ -943,127 +908,83 @@ export default function PlayClient() {
       return { best, bestD };
     }
 
-    // =============================
-    // BOT WEAPON VISUAL
-    // =============================
-    function attachBotWeapon(bot: Bot, type: WeaponType) {
-      if (bot.weaponMesh) {
-        bot.mesh.remove(bot.weaponMesh);
-        bot.weaponMesh = null;
-      }
-      const wm = makeWeaponMesh(type);
-      wm.scale.setScalar(0.78);
-      wm.rotation.y = Math.PI;
-      wm.rotation.x = 0.05;
-      wm.position.set(0.40, 1.05, -0.35);
-      bot.mesh.add(wm);
-      bot.weaponMesh = wm;
+    // ---------- Bot Vision: distance + FOV + line-of-sight ----------
+    const tmpDir = new THREE.Vector3();
+    const botForward = new THREE.Vector3();
+
+    function botCanSeePlayer(bot: Bot, playerPos: THREE.Vector3) {
+      const botHead = bot.mesh.position.clone().add(new THREE.Vector3(0, 1.55, 0));
+      const playerHead = playerPos.clone().add(new THREE.Vector3(0, 1.55, 0));
+
+      const toP = playerHead.clone().sub(botHead);
+      const dist = toP.length();
+      if (dist > BOT_VISION_RANGE) return false;
+
+      // FOV cone
+      botForward.set(0, 0, 1).applyQuaternion(bot.mesh.quaternion).normalize();
+      tmpDir.copy(toP).normalize();
+      const ang = Math.acos(clamp(botForward.dot(tmpDir), -1, 1));
+      if (ang > BOT_FOV * 0.5) return false;
+
+      // Line of sight: obstacle araya girerse görme
+      losRay.set(botHead, tmpDir);
+      losRay.far = dist;
+      const blocks = losRay.intersectObjects(obstacles, false);
+      if (blocks.length > 0) return false;
+
+      return true;
     }
 
-    // =============================
-    // OVERLAY DRAW (damage popups)
-    // =============================
-    function drawOverlay(dt: number) {
-      const c = overlayRef.current;
-      if (!c) return;
-      const ctx = c.getContext("2d");
-      if (!ctx) return;
-
-      ctx.clearRect(0, 0, c.width, c.height);
-
-      // damage popups
-      ctx.save();
-      ctx.font = "bold 22px system-ui, -apple-system, Segoe UI, Roboto";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-
-      for (let i = popups.length - 1; i >= 0; i--) {
-        const p = popups[i];
-        p.ttl -= dt;
-        p.pos.y += dt * 0.6; // yukarı süzülsün
-
-        if (p.ttl <= 0) {
-          popups.splice(i, 1);
-          continue;
-        }
-
-        const v = p.pos.clone().project(camera);
-        const x = (v.x * 0.5 + 0.5) * c.width;
-        const y = (-v.y * 0.5 + 0.5) * c.height;
-
-        const alpha = clamp(p.ttl / 0.9, 0, 1);
-        ctx.globalAlpha = alpha;
-        ctx.fillStyle = "rgba(255,215,0,0.95)";
-        ctx.strokeStyle = "rgba(2,6,23,0.85)";
-        ctx.lineWidth = 4;
-        ctx.strokeText(p.text, x, y);
-        ctx.fillText(p.text, x, y);
-      }
-
-      ctx.restore();
-    }
-
-    // =============================
-    // LOOP
-    // =============================
+    // ---------- Loop ----------
     const clock = new THREE.Clock();
 
     function tick() {
       const dt = Math.min(clock.getDelta(), 0.033);
-      const now = performance.now() / 1000;
 
-      // tracer update
-      for (let i = tracers.length - 1; i >= 0; i--) {
-        tracers[i].ttl -= dt;
-        if (tracers[i].ttl <= 0) {
-          scene.remove(tracers[i].line);
-          tracers[i].line.geometry.dispose();
-          tracers.splice(i, 1);
-        }
-      }
-
-      // BUS phase: otobüs hareket + E ile atla (paraşüt)
-      if (hudRef.current.phase === "BUS") {
+      // BUS phase
+      if (hud.phase === "BUS") {
         busT += dt * 0.08;
-        const bx = THREE.MathUtils.lerp(-HALF + 40, HALF - 40, (Math.sin(busT) + 1) / 2);
+        const bx = THREE.MathUtils.lerp(-HALF + 30, HALF - 30, (Math.sin(busT) + 1) / 2);
         const bz = THREE.MathUtils.lerp(-HALF + 60, HALF - 60, (Math.cos(busT * 0.9) + 1) / 2);
         bus.position.set(bx, 0, bz);
 
-        // kamera bus izlesin (sinema)
-        camera.position.set(bus.position.x + 24, 34, bus.position.z + 24);
+        // camera bus view
+        camera.position.set(bus.position.x + 20, 28, bus.position.z + 20);
         camera.lookAt(bus.position.x, 18, bus.position.z);
 
-        if (keys.e && !dropped) {
+        // E ile atla → paraşütle süzül
+        if (keys.e) {
           dropped = true;
           parachuting = true;
           setHud((h) => ({ ...h, phase: "PLAY", parachute: true, msg: "🪂 Paraşüt açık" }));
-          player.position.set(bus.position.x - 2.2, 70, bus.position.z + 2.0);
+
+          player.position.set(bus.position.x - 2.2, 60, bus.position.z + 2.0);
           onGround = false;
-          vel.set(0, -2.0, 0);
+          vel.set(0, -2.2, 0);
         }
 
         renderer.render(scene, camera);
         drawMinimap();
-        drawOverlay(dt);
         rafRef.current = requestAnimationFrame(tick);
         return;
       }
 
-      // DEAD: freeze
-      if (hudRef.current.dead) {
+      // dead: freeze
+      if (hud.dead) {
         renderer.render(scene, camera);
         drawMinimap();
-        drawOverlay(dt);
         rafRef.current = requestAnimationFrame(tick);
         return;
       }
 
-      // FPS camera rotation from yaw/pitch
-      camera.rotation.order = "YXZ";
-      camera.rotation.y = yaw;
-      camera.rotation.x = pitch;
+      spawnShield = Math.max(0, spawnShield - dt);
 
-      // movement direction (yaw plane)
+      // FPS camera rotation (✅ roll yok, düz)
+      camera.rotation.order = "YXZ";
+      camera.rotation.set(pitch, yaw, 0);
+      camera.up.set(0, 1, 0);
+
+      // movement intent in camera yaw plane
       forward.set(Math.sin(yaw), 0, Math.cos(yaw)).normalize().multiplyScalar(-1);
       right.copy(forward).cross(up).normalize();
 
@@ -1072,7 +993,6 @@ export default function PlayClient() {
       if (keys.s) tmp.sub(forward);
       if (keys.d) tmp.add(right);
       if (keys.a) tmp.sub(right);
-
       if (tmp.lengthSq() > 0) tmp.normalize();
 
       const targetSpeed = keys.shift ? SPRINT : SPEED;
@@ -1080,16 +1000,14 @@ export default function PlayClient() {
       vel.x = THREE.MathUtils.lerp(vel.x, tmp.x * targetSpeed, accel);
       vel.z = THREE.MathUtils.lerp(vel.z, tmp.z * targetSpeed, accel);
 
-      // jump (paraşütte yok)
       if (!parachuting && keys.space && onGround) {
         vel.y = JUMP;
         onGround = false;
       }
 
-      // gravity (paraşütte çok az)
-      const g = parachuting ? 4.2 : GRAVITY;
+      const g = parachuting ? 4.0 : GRAVITY;
       if (!onGround) vel.y -= g * dt;
-      if (parachuting) vel.y = Math.max(vel.y, -3.2);
+      if (parachuting) vel.y = Math.max(vel.y, -3.0);
 
       // integrate
       player.position.x += vel.x * dt;
@@ -1104,38 +1022,41 @@ export default function PlayClient() {
 
         if (parachuting) {
           parachuting = false;
-          setHud((h) => ({ ...h, parachute: false, msg: "" }));
+          spawnShield = 2.0; // ✅ indiğinde 2 sn vurulmaz
+          setHud((h) => ({ ...h, parachute: false, msg: "🛡️ İniş koruması" }));
+          setTimeout(() => setHud((h) => ({ ...h, msg: "" })), 600);
         }
       }
 
-      // collision + clamp
+      // collisions + clamp
       resolveObstaclesFor(player.position, 0.55);
-      player.position.x = clamp(player.position.x, -HALF + 4, HALF - 4);
-      player.position.z = clamp(player.position.z, -HALF + 4, HALF - 4);
+      player.position.x = clamp(player.position.x, -HALF + 2, HALF - 2);
+      player.position.z = clamp(player.position.z, -HALF + 2, HALF - 2);
 
-      // pickup (E)
+      // E pickup
       if (!parachuting && keys.e) {
         const gotKit = tryPickupMedkit();
         if (!gotKit) tryPickupWeapon();
       }
 
-      // set FPS camera position = head
-      camera.position.set(player.position.x, player.position.y + PLAYER_HEIGHT * 0.92, player.position.z);
+      // ✅ FPS camera position: direkt oyuncunun gözü (arkadan değil)
+      camera.position.set(
+        player.position.x,
+        player.position.y + PLAYER_HEIGHT * 0.92,
+        player.position.z
+      );
 
-      // =============================
-      // BOT AI
-      // =============================
+      // Bot AI
       const playerPos = player.position.clone();
       for (const b of bots) {
         const bpos = b.mesh.position;
 
-        // bot silahsız: en yakın silaha koş
+        // Bot silah yoksa loot’a gider
         if (!b.weapon) {
           const { best } = findNearestUntakenWeapon(bpos);
           if (best) {
             const dirToW = best.mesh.position.clone().sub(bpos);
             const distW = dirToW.length();
-
             const targetYaw = Math.atan2(dirToW.x, dirToW.z);
             b.mesh.rotation.y = lerpAngle(b.mesh.rotation.y, targetYaw, 0.10);
 
@@ -1144,87 +1065,92 @@ export default function PlayClient() {
             bpos.z += dirToW.z * dt * 3.1;
 
             resolveObstaclesFor(bpos, 0.45);
-            bpos.x = clamp(bpos.x, -HALF + 4, HALF - 4);
-            bpos.z = clamp(bpos.z, -HALF + 4, HALF - 4);
+            bpos.x = clamp(bpos.x, -HALF + 2, HALF - 2);
+            bpos.z = clamp(bpos.z, -HALF + 2, HALF - 2);
 
             if (distW < 2.6 && !best.taken) {
               best.taken = true;
               scene.remove(best.mesh);
               b.weapon = best.type;
-              attachBotWeapon(b, best.type);
-              b.shootCd = rand(0.2, 1.0);
-              setTimeout(() => {
-                if (!hudRef.current.dead) spawnWeaponLoot();
-              }, 2500);
+
+              const botHand = new THREE.Object3D();
+              botHand.position.set(0.38, 1.02, -0.3);
+              b.mesh.add(botHand);
+              const wm = makeWeaponMesh(best.type);
+              wm.scale.setScalar(0.8);
+              wm.rotation.y = Math.PI;
+              wm.rotation.x = 0.05;
+              botHand.add(wm);
+
+              setTimeout(() => spawnWeaponLoot(), 2500);
             }
           }
           continue;
         }
 
-        // bot silahlı: oyuncuya döner + orta mesafe fight
+        // ✅ Bot görmüyorsa oyuncuyu kovalamaz / vurmaz
+        const sees = botCanSeePlayer(b, playerPos);
+        if (!sees) {
+          // küçük devriye
+          b.shootCd = Math.max(0, b.shootCd - dt);
+          continue;
+        }
+
+        // Bot silahlı: oyuncuya döner + orta mesafe
         const toP = playerPos.clone().sub(bpos);
         const dist = toP.length();
 
         const targetYaw = Math.atan2(toP.x, toP.z);
         b.mesh.rotation.y = lerpAngle(b.mesh.rotation.y, targetYaw, 0.08);
 
-        // yaklaş / uzaklaş (orta mesafe)
-        if (dist > 22) {
+        if (dist > 16) {
           toP.normalize();
-          bpos.x += toP.x * dt * 2.9;
-          bpos.z += toP.z * dt * 2.9;
-        } else if (dist < 10) {
+          bpos.x += toP.x * dt * 2.6;
+          bpos.z += toP.z * dt * 2.6;
+        } else if (dist < 8) {
           toP.normalize();
-          bpos.x -= toP.x * dt * 2.4;
-          bpos.z -= toP.z * dt * 2.4;
-        } else {
-          // hafif strafe
-          const strafeDir = new THREE.Vector3(toP.z, 0, -toP.x).normalize();
-          const side = Math.sin(now * 1.7 + bpos.x * 0.02) > 0 ? 1 : -1;
-          bpos.x += strafeDir.x * dt * 1.4 * side;
-          bpos.z += strafeDir.z * dt * 1.4 * side;
+          bpos.x -= toP.x * dt * 2.0;
+          bpos.z -= toP.z * dt * 2.0;
         }
 
         resolveObstaclesFor(bpos, 0.45);
-        bpos.x = clamp(bpos.x, -HALF + 4, HALF - 4);
-        bpos.z = clamp(bpos.z, -HALF + 4, HALF - 4);
+        bpos.x = clamp(bpos.x, -HALF + 2, HALF - 2);
+        bpos.z = clamp(bpos.z, -HALF + 2, HALF - 2);
 
         if (parachuting) continue;
 
-        // shoot mid range
         b.shootCd = Math.max(0, b.shootCd - dt);
-        const st = WEAPONS[b.weapon];
 
-        const inRange = dist >= 10 && dist <= st.maxRange;
+        const st = WEAPONS[b.weapon];
+        const inRange = dist >= 9 && dist <= st.maxRange;
+
         if (inRange && b.shootCd <= 0) {
           b.shootCd = st.cooldown + rand(0.05, 0.25);
 
           const t = clamp(dist / st.maxRange, 0, 1);
           const acc = st.accuracyNear * (1 - t) + st.accuracyFar * t;
 
-          // bot "ateş" tracer (isteğe bağlı küçük)
-          const fromB = b.mesh.position.clone().add(new THREE.Vector3(0, 1.4, 0));
-          const toCam = camera.getWorldPosition(new THREE.Vector3()).clone();
-          addTracer(fromB, toCam);
+          if (spawnShield <= 0 && Math.random() < acc) applyDamageToPlayer(st.damage);
+        }
+      }
 
-          if (Math.random() < acc) {
-            applyDamageToPlayer(st.damage);
-          }
+      // tracers decay
+      for (let i = tracers.length - 1; i >= 0; i--) {
+        tracers[i].life -= dt;
+        if (tracers[i].life <= 0) {
+          scene.remove(tracers[i].line);
+          tracers[i].line.geometry.dispose();
+          tracers.splice(i, 1);
         }
       }
 
       renderer.render(scene, camera);
       drawMinimap();
-      drawOverlay(dt);
-
       rafRef.current = requestAnimationFrame(tick);
     }
 
     rafRef.current = requestAnimationFrame(tick);
 
-    // =============================
-    // Cleanup
-    // =============================
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       window.removeEventListener("resize", onResize);
@@ -1234,17 +1160,41 @@ export default function PlayClient() {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
 
+      for (const t of tracers) {
+        scene.remove(t.line);
+        t.line.geometry.dispose();
+      }
+      tracerMat.dispose();
+
       renderer.dispose();
       mountRef.current?.removeChild(renderer.domElement);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hud.phase, hud.dead]);
+
+  // Basit damage text overlay
+  // (React state ile uğraşmadan DOM’da çizim: minimal)
+  const [dmgTexts, setDmgTexts] = useState<Array<{ id: string; x: number; y: number; text: string; a: number }>>([]);
+  useEffect(() => {
+    let raf: number | null = null;
+    const step = () => {
+      // dmgTexts güncellemesi yerine basit anim
+      setDmgTexts((prev) =>
+        prev
+          .map((it) => ({ ...it, y: it.y - 0.6, a: it.a - 0.02 }))
+          .filter((it) => it.a > 0)
+      );
+      raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => {
+      if (raf) cancelAnimationFrame(raf);
     };
   }, []);
 
   return (
     <div className="relative w-full h-[calc(100vh-140px)] rounded-2xl border border-slate-800 overflow-hidden bg-slate-950">
       <div ref={mountRef} className="absolute inset-0" />
-
-      {/* Overlay canvas (damage popups) */}
-      <canvas ref={overlayRef} className="absolute inset-0 pointer-events-none" />
 
       {/* Minimap */}
       <canvas
@@ -1282,7 +1232,7 @@ export default function PlayClient() {
 
       {/* Crosshair */}
       <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-        <div className="h-3 w-3 rounded-full border border-amber-200/90" />
+        <div className="h-3 w-3 rounded-full border border-indigo-300/80" />
       </div>
 
       {/* Help */}
@@ -1332,6 +1282,17 @@ export default function PlayClient() {
           </div>
         </div>
       ) : null}
+
+      {/* Damage texts (şimdilik boş; istersen bir sonraki mesajda bunları gerçek vurma anına bağlayalım) */}
+      {dmgTexts.map((d) => (
+        <div
+          key={d.id}
+          className="absolute text-yellow-300 font-extrabold pointer-events-none"
+          style={{ left: d.x, top: d.y, opacity: d.a, textShadow: "0 2px 10px rgba(0,0,0,0.65)" }}
+        >
+          {d.text}
+        </div>
+      ))}
     </div>
   );
 }
