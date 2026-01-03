@@ -626,7 +626,12 @@ export default function PlayClient() {
             player.position.x - b.mesh.position.x,
             player.position.z - b.mesh.position.z
           );
-          b.mesh.rotation.y = THREE.MathUtils.lerpAngle(b.mesh.rotation.y, targetYaw, 0.18);
+          // ESKİ HALİ:
+// b.mesh.rotation.y = THREE.MathUtils.lerpAngle(b.mesh.rotation.y, targetYaw, 0.18);
+
+// YENİ HALİ (Bunu kopyalayıp o satırın yerine yapıştırın):
+          const angleDiff = ((targetYaw - b.mesh.rotation.y + Math.PI + Math.PI * 2) % (Math.PI * 2)) - Math.PI;
+            b.mesh.rotation.y += angleDiff * 0.18;
 
           // attack
           if (dist < 1.25 && b.atkCooldown === 0) {
