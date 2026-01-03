@@ -18,7 +18,7 @@ type WeaponType = "PISTOL" | "RIFLE" | "SHOTGUN";
 
 type WeaponStats = {
   name: string;
-  damage: number; // ✅ her hit 10
+  damage: number;
   cooldown: number;
   maxRange: number;
   accuracyNear: number;
@@ -26,8 +26,7 @@ type WeaponStats = {
 };
 
 const WEAPONS: Record<WeaponType, WeaponStats> = {
-  // ✅ hepsi 10 vuruyor (aynı)
-  PISTOL: { name: "Pistol", damage: 10, cooldown: 0.22, maxRange: 30, accuracyNear: 0.55, accuracyFar: 0.20 },
+  PISTOL: { name: "Pistol", damage: 10, cooldown: 0.22, maxRange: 30, accuracyNear: 0.55, accuracyFar: 0.2 },
   RIFLE: { name: "Rifle", damage: 10, cooldown: 0.12, maxRange: 40, accuracyNear: 0.65, accuracyFar: 0.28 },
   SHOTGUN: { name: "Shotgun", damage: 10, cooldown: 0.55, maxRange: 18, accuracyNear: 0.75, accuracyFar: 0.18 },
 };
@@ -38,11 +37,15 @@ type Bot = {
   hp: number;
   shootCd: number;
   weapon: WeaponType | null;
+
+  // ✅ parachute state
+  parachute: THREE.Group;
+  parachuting: boolean;
+  vy: number;
 };
 
 type Medkit = { mesh: THREE.Group; taken: boolean };
 type WeaponLoot = { mesh: THREE.Group; taken: boolean; type: WeaponType };
-
 type BuildWall = { mesh: THREE.Mesh; hp: number };
 
 function lerpAngle(a: number, b: number, t: number) {
@@ -92,10 +95,7 @@ export default function PlayClient() {
     parachute: false,
   });
 
-  // Damage texts
-  const [dmgTexts, setDmgTexts] = useState<
-    Array<{ id: string; x: number; y: number; text: string; a: number }>
-  >([]);
+  const [dmgTexts, setDmgTexts] = useState<Array<{ id: string; x: number; y: number; text: string; a: number }>>([]);
 
   useEffect(() => {
     if (!mountRef.current) return;
@@ -105,10 +105,6 @@ export default function PlayClient() {
     // =============================
     const MAP_SIZE = 500;
     const HALF = MAP_SIZE / 2;
-
-    // Bot Vision
-    const BOT_VISION_RANGE = 28;
-    const BOT_FOV = THREE.MathUtils.degToRad(100);
 
     const BOT_CHASE_SPEED = 3.4;
     const BOT_STRAFE_SPEED = 1.6;
@@ -125,12 +121,7 @@ export default function PlayClient() {
     scene.fog = new THREE.Fog(0x050712, 60, 420);
 
     // ---------- Camera ----------
-    const camera = new THREE.PerspectiveCamera(
-      78,
-      mountRef.current.clientWidth / mountRef.current.clientHeight,
-      0.1,
-      2500
-    );
+    const camera = new THREE.PerspectiveCamera(78, mountRef.current.clientWidth / mountRef.current.clientHeight, 0.1, 2500);
     camera.up.set(0, 1, 0);
 
     // ---------- Lights ----------
@@ -145,11 +136,7 @@ export default function PlayClient() {
     // =============================
     const grass = new THREE.Mesh(
       new THREE.PlaneGeometry(MAP_SIZE, MAP_SIZE, 1, 1),
-      new THREE.MeshStandardMaterial({
-        color: 0x43d45b,
-        roughness: 0.98,
-        metalness: 0.02,
-      })
+      new THREE.MeshStandardMaterial({ color: 0x43d45b, roughness: 0.98, metalness: 0.02 })
     );
     grass.rotation.x = -Math.PI / 2;
     scene.add(grass);
@@ -191,7 +178,7 @@ export default function PlayClient() {
 
     const grid = new THREE.GridHelper(MAP_SIZE, 100, 0x22c55e, 0x0b1a12);
     (grid.material as THREE.Material).transparent = true;
-    (grid.material as THREE.Material).opacity = 0.10;
+    (grid.material as THREE.Material).opacity = 0.1;
     scene.add(grid);
 
     // ---------- Obstacles ----------
@@ -238,8 +225,7 @@ export default function PlayClient() {
     for (let i = 0; i < 14; i++) {
       const x = rand(-HALF + 60, HALF - 60);
       const z = rand(-HALF + 60, HALF - 60);
-      const inBeach =
-        Math.abs(x - sea.position.x) < (SEA_W + 70) / 2 && Math.abs(z - sea.position.z) < (SEA_H + 70) / 2;
+      const inBeach = Math.abs(x - sea.position.x) < (SEA_W + 70) / 2 && Math.abs(z - sea.position.z) < (SEA_H + 70) / 2;
       if (inBeach) continue;
       addBox(x, z, rand(10, 20), rand(6, 11), rand(10, 20));
     }
@@ -307,6 +293,47 @@ export default function PlayClient() {
       const spr = new THREE.Sprite(mat);
       spr.scale.set(2.7, 0.65, 1);
       return spr;
+    }
+
+    // =============================
+    // ✅ Parachute Mesh Factory
+    // =============================
+    function makeParachuteMesh(colorHex: number) {
+      const g = new THREE.Group();
+      g.visible = false;
+
+      const canopyMat = new THREE.MeshStandardMaterial({
+        color: colorHex,
+        roughness: 0.7,
+        metalness: 0.05,
+        emissive: 0x2a0707,
+        emissiveIntensity: 0.18,
+      });
+      const lineMat = new THREE.MeshStandardMaterial({
+        color: 0xe2e8f0,
+        roughness: 0.9,
+        metalness: 0,
+        emissive: 0x0b1020,
+        emissiveIntensity: 0.1,
+      });
+
+      const canopy = new THREE.Mesh(new THREE.SphereGeometry(2.2, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2), canopyMat);
+      canopy.position.y = 4.6;
+
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(2.15, 0.06, 10, 32), lineMat);
+      ring.rotation.x = Math.PI / 2;
+      ring.position.y = 4.45;
+
+      g.add(canopy, ring);
+
+      function makeLine(x: number, z: number) {
+        const l = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 3.6, 10), lineMat);
+        l.position.set(x, 2.8, z);
+        return l;
+      }
+      g.add(makeLine(1.2, 0.9), makeLine(-1.2, 0.9), makeLine(1.2, -0.9), makeLine(-1.2, -0.9));
+
+      return g;
     }
 
     // ---------- Player ----------
@@ -405,45 +432,8 @@ export default function PlayClient() {
       setTimeout(() => setHud((h) => ({ ...h, msg: "" })), 800);
     }
 
-    // =============================
-    // ✅ Parachute Mesh (Animasyon)
-    // =============================
-    const parachute = new THREE.Group();
-    parachute.visible = false;
-
-    const canopyMat = new THREE.MeshStandardMaterial({
-      color: 0xef4444,
-      roughness: 0.7,
-      metalness: 0.05,
-      emissive: 0x2a0707,
-      emissiveIntensity: 0.25,
-    });
-    const lineMat = new THREE.MeshStandardMaterial({
-      color: 0xe2e8f0,
-      roughness: 0.9,
-      metalness: 0,
-      emissive: 0x0b1020,
-      emissiveIntensity: 0.1,
-    });
-
-    const canopy = new THREE.Mesh(new THREE.SphereGeometry(2.2, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2), canopyMat);
-    canopy.position.y = 4.6;
-
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(2.15, 0.06, 10, 32), lineMat);
-    ring.rotation.x = Math.PI / 2;
-    ring.position.y = 4.45;
-
-    parachute.add(canopy, ring);
-
-    // ipler
-    function makeLine(x: number, z: number) {
-      const l = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 3.6, 10), lineMat);
-      l.position.set(x, 2.8, z);
-      l.rotation.x = 0;
-      return l;
-    }
-    parachute.add(makeLine(1.2, 0.9), makeLine(-1.2, 0.9), makeLine(1.2, -0.9), makeLine(-1.2, -0.9));
-
+    // ✅ Player Parachute
+    const parachute = makeParachuteMesh(0xef4444);
     player.add(parachute);
 
     // ---------- Build walls ----------
@@ -492,7 +482,7 @@ export default function PlayClient() {
     }
 
     // =============================
-    // ✅ BUS (Haritanın başından başla)
+    // ✅ BUS
     // =============================
     const bus = new THREE.Group();
     const busMat = new THREE.MeshStandardMaterial({
@@ -506,14 +496,14 @@ export default function PlayClient() {
     busBody.position.y = 18;
     bus.add(busBody);
 
-    // ✅ başlangıç: sol sınır (baş)
     const BUS_START = new THREE.Vector3(-HALF + 25, 0, -HALF + 30);
     const BUS_END = new THREE.Vector3(HALF - 25, 0, HALF - 30);
     bus.position.copy(BUS_START);
     scene.add(bus);
 
-    let busT = 0; // 0..1
+    let busT = 0;
     let dropped = false;
+    let busTimer = 0;
 
     // ---------- Bots ----------
     const bots: Bot[] = [];
@@ -540,6 +530,11 @@ export default function PlayClient() {
       label.position.set(0, 2.6, 0);
       g.add(label);
 
+      // Bot parachute
+      const botParachute = makeParachuteMesh(0x60a5fa); // mavi
+      g.add(botParachute);
+
+      // Başlangıçta yerde beklesin, drop olunca yukarı alacağız
       let x = 0,
         z = 0;
       for (let tries = 0; tries < 30; tries++) {
@@ -548,7 +543,6 @@ export default function PlayClient() {
         const inSea = Math.abs(x - sea.position.x) < SEA_W / 2 && Math.abs(z - sea.position.z) < SEA_H / 2;
         if (!inSea) break;
       }
-
       g.position.set(x, 0, z);
       scene.add(g);
 
@@ -558,9 +552,28 @@ export default function PlayClient() {
         hp: 100,
         shootCd: rand(0.2, 1.0),
         weapon: null,
+
+        parachute: botParachute,
+        parachuting: false,
+        vy: 0,
       });
     }
     for (let i = 0; i < 20; i++) spawnBot();
+
+    // ✅ Drop sonrası tüm botlar da paraşütle insin
+    function dropAllBotsFromBus() {
+      for (const b of bots) {
+        b.parachuting = true;
+        b.vy = -2.2;
+
+        const bx = bus.position.x + rand(-10, 10);
+        const bz = bus.position.z + rand(-10, 10);
+        b.mesh.position.set(bx, 60 + rand(-4, 6), bz);
+
+        b.parachute.visible = true;
+        b.parachute.rotation.set(0, 0, 0);
+      }
+    }
 
     // ---------- Medkits ----------
     const medkits: Medkit[] = [];
@@ -657,7 +670,6 @@ export default function PlayClient() {
     const muzzleFlash = new THREE.PointLight(0x9aa5ff, 0, 8);
     scene.add(muzzleFlash);
 
-    // Yellow tracer
     const tracerMat = new THREE.LineBasicMaterial({ color: 0xfacc15 });
     const tracers: Array<{ line: THREE.Line; life: number }> = [];
 
@@ -703,10 +715,7 @@ export default function PlayClient() {
       const p = pos.clone().project(camera);
       const w = mountRef.current?.clientWidth || 1;
       const h = mountRef.current?.clientHeight || 1;
-      return {
-        x: (p.x * 0.5 + 0.5) * w,
-        y: (-p.y * 0.5 + 0.5) * h,
-      };
+      return { x: (p.x * 0.5 + 0.5) * w, y: (-p.y * 0.5 + 0.5) * h };
     }
 
     function shootPlayer() {
@@ -729,11 +738,7 @@ export default function PlayClient() {
 
       raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
 
-      const targets: THREE.Object3D[] = [
-        ...bots.map((b) => b.mesh),
-        ...buildWalls.map((w) => w.mesh),
-      ];
-
+      const targets: THREE.Object3D[] = [...bots.map((b) => b.mesh), ...buildWalls.map((w) => w.mesh)];
       const hits = raycaster.intersectObjects(targets, true);
 
       const from = camera.position.clone();
@@ -752,7 +757,7 @@ export default function PlayClient() {
         } else {
           const root = bots.find((b) => obj.parent?.parent === b.mesh || obj.parent === b.mesh || obj === b.mesh);
           if (root) {
-            const dmg = WEAPONS[playerWeapon].damage; // ✅ 10
+            const dmg = WEAPONS[playerWeapon].damage;
             root.hp -= dmg;
             addDamageText(root.mesh.position.clone().add(new THREE.Vector3(0, 2.2, 0)), `-${dmg}`);
 
@@ -834,7 +839,6 @@ export default function PlayClient() {
       if (document.pointerLockElement !== canvas) return;
       const mx = e.movementX || 0;
       const my = e.movementY || 0;
-
       const SENS = 0.0022;
       yaw -= mx * SENS;
       pitch -= my * SENS;
@@ -845,7 +849,6 @@ export default function PlayClient() {
       if (e.button !== 0) return;
       if (hud.phase !== "PLAY") return;
       if (hud.dead) return;
-
       if (document.pointerLockElement !== canvas) {
         requestLock();
         return;
@@ -915,14 +918,13 @@ export default function PlayClient() {
       const W = minimap.width;
       const H = minimap.height;
 
-      const sx = (x: number) => ((x / MAP_SIZE) + 0.5) * W;
-      const sz = (z: number) => ((z / MAP_SIZE) + 0.5) * H;
+      const sx = (x: number) => (x / MAP_SIZE + 0.5) * W;
+      const sz = (z: number) => (z / MAP_SIZE + 0.5) * H;
 
       mctx.clearRect(0, 0, W, H);
       mctx.fillStyle = "#0b2a14";
       mctx.fillRect(0, 0, W, H);
 
-      // sand
       mctx.fillStyle = "rgba(250,204,21,0.70)";
       mctx.fillRect(
         sx(sand.position.x - (SEA_W + 60) / 2),
@@ -930,7 +932,6 @@ export default function PlayClient() {
         ((SEA_W + 60) / MAP_SIZE) * W,
         ((SEA_H + 60) / MAP_SIZE) * H
       );
-      // sea
       mctx.fillStyle = "rgba(29,78,216,0.85)";
       mctx.fillRect(
         sx(sea.position.x - SEA_W / 2),
@@ -939,12 +940,10 @@ export default function PlayClient() {
         (SEA_H / MAP_SIZE) * H
       );
 
-      // border
       mctx.strokeStyle = "rgba(34,197,94,0.9)";
       mctx.lineWidth = 3;
       mctx.strokeRect(6, 6, W - 12, H - 12);
 
-      // builds
       mctx.fillStyle = "rgba(148,163,184,0.95)";
       for (const w of buildWalls) {
         mctx.beginPath();
@@ -952,7 +951,6 @@ export default function PlayClient() {
         mctx.fill();
       }
 
-      // medkits
       mctx.fillStyle = "rgba(34,197,94,0.95)";
       for (const k of medkits) {
         if (k.taken) continue;
@@ -961,7 +959,6 @@ export default function PlayClient() {
         mctx.fill();
       }
 
-      // weapons
       mctx.fillStyle = "rgba(250,204,21,0.95)";
       for (const w of weaponLoots) {
         if (w.taken) continue;
@@ -970,7 +967,6 @@ export default function PlayClient() {
         mctx.fill();
       }
 
-      // bots
       mctx.fillStyle = "rgba(244,63,94,0.92)";
       for (const b of bots) {
         mctx.beginPath();
@@ -978,7 +974,6 @@ export default function PlayClient() {
         mctx.fill();
       }
 
-      // player
       mctx.fillStyle = "rgba(99,102,241,0.95)";
       mctx.beginPath();
       mctx.arc(sx(player.position.x), sz(player.position.z), 4, 0, Math.PI * 2);
@@ -1028,29 +1023,24 @@ export default function PlayClient() {
       return { best, bestD };
     }
 
-    // Bot vision
-    const tmpDir = new THREE.Vector3();
-    const botForward = new THREE.Vector3();
+    // ✅ Drop işlemi (E olsa da olmasa da)
+    function doDrop() {
+      if (dropped) return;
+      dropped = true;
+      parachuting = true;
+      spawnShield = 0;
 
-    function botCanSeePlayer(bot: Bot, playerPos: THREE.Vector3) {
-      const botHead = bot.mesh.position.clone().add(new THREE.Vector3(0, 1.55, 0));
-      const playerHead = playerPos.clone().add(new THREE.Vector3(0, 1.55, 0));
+      setHud((h) => ({ ...h, phase: "PLAY", parachute: true, msg: "🪂 Paraşüt açık" }));
 
-      const toP = playerHead.clone().sub(botHead);
-      const dist = toP.length();
-      if (dist > BOT_VISION_RANGE) return false;
+      player.position.set(bus.position.x - 2.2, 60, bus.position.z + 2.0);
+      onGround = false;
+      vel.set(0, -2.2, 0);
 
-      botForward.set(0, 0, 1).applyQuaternion(bot.mesh.quaternion).normalize();
-      tmpDir.copy(toP).normalize();
-      const ang = Math.acos(clamp(botForward.dot(tmpDir), -1, 1));
-      if (ang > BOT_FOV * 0.5) return false;
+      parachute.visible = true;
+      parachute.rotation.set(0, 0, 0);
 
-      losRay.set(botHead, tmpDir);
-      losRay.far = dist;
-      const blocks = losRay.intersectObjects([...obstacles], false);
-      if (blocks.length > 0) return false;
-
-      return true;
+      // ✅ botlar da paraşütle insin
+      dropAllBotsFromBus();
     }
 
     // Loop
@@ -1061,29 +1051,19 @@ export default function PlayClient() {
 
       // BUS phase
       if (hud.phase === "BUS") {
-        // ✅ soldan sağa düz hat: start->end
         busT += dt * 0.05;
         if (busT > 1) busT = 0;
-
         bus.position.lerpVectors(BUS_START, BUS_END, busT);
 
         camera.position.set(bus.position.x + 20, 28, bus.position.z + 20);
         camera.lookAt(bus.position.x, 18, bus.position.z);
 
-        if (keys.e) {
-          dropped = true;
-          parachuting = true;
-          spawnShield = 0;
+        // ✅ 1) E basarsa drop
+        if (keys.e) doDrop();
 
-          setHud((h) => ({ ...h, phase: "PLAY", parachute: true, msg: "🪂 Paraşüt açık" }));
-
-          player.position.set(bus.position.x - 2.2, 60, bus.position.z + 2.0);
-          onGround = false;
-          vel.set(0, -2.2, 0);
-
-          // ✅ paraşüt görünür
-          parachute.visible = true;
-        }
+        // ✅ 2) basmasa da 4.5 sn sonra otomatik drop (mecburi paraşüt)
+        busTimer += dt;
+        if (!dropped && busTimer > 4.5) doDrop();
 
         renderer.render(scene, camera);
         drawMinimap();
@@ -1091,99 +1071,125 @@ export default function PlayClient() {
         return;
       }
 
-      if (hud.dead) {
-        renderer.render(scene, camera);
-        drawMinimap();
-        rafRef.current = requestAnimationFrame(tick);
-        return;
-      }
+      // ✅ ÖLDÜN DİYE BOTLARI DURDURMA YOK!
+      // (önceden burada return vardı, bot AI çalışmıyordu)
 
       spawnShield = Math.max(0, spawnShield - dt);
 
-      // FPS camera rotation
-      camera.rotation.order = "YXZ";
-      camera.rotation.set(pitch, yaw, 0);
-      camera.up.set(0, 1, 0);
+      // ============ PLAYER UPDATE (dead ise sadece kamera sabit) ============
+      if (!hud.dead) {
+        camera.rotation.order = "YXZ";
+        camera.rotation.set(pitch, yaw, 0);
+        camera.up.set(0, 1, 0);
 
-      forward.set(Math.sin(yaw), 0, Math.cos(yaw)).normalize().multiplyScalar(-1);
-      right.copy(forward).cross(up).normalize();
+        forward.set(Math.sin(yaw), 0, Math.cos(yaw)).normalize().multiplyScalar(-1);
+        right.copy(forward).cross(up).normalize();
 
-      tmp.set(0, 0, 0);
-      if (keys.w) tmp.add(forward);
-      if (keys.s) tmp.sub(forward);
-      if (keys.d) tmp.add(right);
-      if (keys.a) tmp.sub(right);
-      if (tmp.lengthSq() > 0) tmp.normalize();
+        tmp.set(0, 0, 0);
+        if (keys.w) tmp.add(forward);
+        if (keys.s) tmp.sub(forward);
+        if (keys.d) tmp.add(right);
+        if (keys.a) tmp.sub(right);
+        if (tmp.lengthSq() > 0) tmp.normalize();
 
-      const targetSpeed = keys.shift ? SPRINT : SPEED;
-      const accel = parachuting ? 0.07 : 0.18;
-      vel.x = THREE.MathUtils.lerp(vel.x, tmp.x * targetSpeed, accel);
-      vel.z = THREE.MathUtils.lerp(vel.z, tmp.z * targetSpeed, accel);
+        const targetSpeed = keys.shift ? SPRINT : SPEED;
+        const accel = parachuting ? 0.07 : 0.18;
+        vel.x = THREE.MathUtils.lerp(vel.x, tmp.x * targetSpeed, accel);
+        vel.z = THREE.MathUtils.lerp(vel.z, tmp.z * targetSpeed, accel);
 
-      if (!parachuting && keys.space && onGround) {
-        vel.y = JUMP;
-        onGround = false;
-      }
+        if (!parachuting && keys.space && onGround) {
+          vel.y = JUMP;
+          onGround = false;
+        }
 
-      const g = parachuting ? 4.0 : GRAVITY;
-      if (!onGround) vel.y -= g * dt;
-      if (parachuting) vel.y = Math.max(vel.y, -3.0);
+        const g = parachuting ? 4.0 : GRAVITY;
+        if (!onGround) vel.y -= g * dt;
+        if (parachuting) vel.y = Math.max(vel.y, -3.0);
 
-      player.position.x += vel.x * dt;
-      player.position.z += vel.z * dt;
-      player.position.y += vel.y * dt;
+        player.position.x += vel.x * dt;
+        player.position.z += vel.z * dt;
+        player.position.y += vel.y * dt;
 
-      // ground
-      if (player.position.y < GROUND_Y) {
-        player.position.y = GROUND_Y;
-        vel.y = 0;
-        onGround = true;
+        if (player.position.y < GROUND_Y) {
+          player.position.y = GROUND_Y;
+          vel.y = 0;
+          onGround = true;
+
+          if (parachuting) {
+            parachuting = false;
+            spawnShield = 2.0;
+            setHud((h) => ({ ...h, parachute: false, msg: "🛡️ İniş koruması" }));
+            setTimeout(() => setHud((h) => ({ ...h, msg: "" })), 600);
+
+            parachute.visible = false;
+            parachute.rotation.set(0, 0, 0);
+          }
+        }
+
+        resolveObstaclesFor(player.position, 0.55);
+        player.position.x = clamp(player.position.x, -HALF + 2, HALF - 2);
+        player.position.z = clamp(player.position.z, -HALF + 2, HALF - 2);
+
+        if (!parachuting && keys.e) {
+          const gotKit = tryPickupMedkit();
+          if (!gotKit) tryPickupWeapon();
+        }
+
+        if (!parachuting && keys.f) {
+          keys.f = false;
+          buildWallAtPlayer(yaw);
+        }
 
         if (parachuting) {
-          parachuting = false;
-          spawnShield = 2.0;
-          setHud((h) => ({ ...h, parachute: false, msg: "🛡️ İniş koruması" }));
-          setTimeout(() => setHud((h) => ({ ...h, msg: "" })), 600);
-
-          // ✅ paraşüt kapanır
-          parachute.visible = false;
-          parachute.rotation.set(0, 0, 0);
+          const t = performance.now() * 0.002;
+          parachute.rotation.y = Math.sin(t) * 0.25;
+          parachute.rotation.z = Math.sin(t * 0.8) * 0.12;
         }
+
+        camera.position.set(player.position.x, player.position.y + PLAYER_HEIGHT * 0.92, player.position.z);
+      } else {
+        // dead: kamera biraz yukarıdan baksın
+        camera.position.set(player.position.x + 6, 10, player.position.z + 6);
+        camera.lookAt(player.position.x, 1.5, player.position.z);
       }
 
-      // collisions + clamp
-      resolveObstaclesFor(player.position, 0.55);
-      player.position.x = clamp(player.position.x, -HALF + 2, HALF - 2);
-      player.position.z = clamp(player.position.z, -HALF + 2, HALF - 2);
-
-      // E pickup
-      if (!parachuting && keys.e) {
-        const gotKit = tryPickupMedkit();
-        if (!gotKit) tryPickupWeapon();
-      }
-
-      // F build
-      if (!parachuting && keys.f) {
-        keys.f = false;
-        buildWallAtPlayer(yaw);
-      }
-
-      // ✅ Paraşüt animasyonu (sallansın)
-      if (parachuting) {
-        const t = performance.now() * 0.002;
-        parachute.rotation.y = Math.sin(t) * 0.25;
-        parachute.rotation.z = Math.sin(t * 0.8) * 0.12;
-      }
-
-      // FPS cam position
-      camera.position.set(player.position.x, player.position.y + PLAYER_HEIGHT * 0.92, player.position.z);
-
-      // Bots
+      // ============ BOTS UPDATE (HER ZAMAN) ============
       const playerPos = player.position.clone();
 
       for (const b of bots) {
         const bpos = b.mesh.position;
 
+        // ✅ bot parachute physics
+        if (b.parachuting) {
+          const g = 4.0;
+          b.vy -= g * dt;
+          b.vy = Math.max(b.vy, -3.0);
+          bpos.y += b.vy * dt;
+
+          const t = performance.now() * 0.002;
+          b.parachute.rotation.y = Math.sin(t + bpos.x * 0.01) * 0.25;
+          b.parachute.rotation.z = Math.sin(t * 0.8 + bpos.z * 0.01) * 0.12;
+
+          // hafif drift (oyuncuya doğru)
+          const drift = playerPos.clone().sub(bpos);
+          drift.y = 0;
+          if (drift.length() > 0.001) {
+            drift.normalize();
+            bpos.x += drift.x * dt * 0.6;
+            bpos.z += drift.z * dt * 0.6;
+          }
+
+          if (bpos.y <= 0) {
+            bpos.y = 0;
+            b.parachuting = false;
+            b.parachute.visible = false;
+            b.parachute.rotation.set(0, 0, 0);
+          }
+
+          continue; // inişte AI çalışmasın
+        }
+
+        // ✅ silah yoksa silaha koş (zaten vardı)
         if (!b.weapon) {
           const { best } = findNearestUntakenWeapon(bpos);
           if (best) {
@@ -1191,7 +1197,7 @@ export default function PlayClient() {
             const distW = dirToW.length();
 
             const targetYaw = Math.atan2(dirToW.x, dirToW.z);
-            b.mesh.rotation.y = lerpAngle(b.mesh.rotation.y, targetYaw, 0.10);
+            b.mesh.rotation.y = lerpAngle(b.mesh.rotation.y, targetYaw, 0.1);
 
             dirToW.normalize();
             bpos.x += dirToW.x * dt * 3.1;
@@ -1221,19 +1227,15 @@ export default function PlayClient() {
           continue;
         }
 
-        const sees = botCanSeePlayer(b, playerPos);
-        if (!sees) {
-          b.shootCd = Math.max(0, b.shootCd - dt);
-          continue;
-        }
-
+        // ✅ ARTIK: görmese bile hep oyuncuya yönel + yaklaş (hep hareket)
         const toP = playerPos.clone().sub(bpos);
         const dist = toP.length();
-
         const targetYaw = Math.atan2(toP.x, toP.z);
         b.mesh.rotation.y = lerpAngle(b.mesh.rotation.y, targetYaw, 0.11);
 
-        const dirP = toP.clone().normalize();
+        const dirP = toP.clone();
+        dirP.y = 0;
+        if (dirP.length() > 0.001) dirP.normalize();
 
         if (dist > 10) {
           bpos.x += dirP.x * dt * BOT_CHASE_SPEED;
@@ -1253,7 +1255,11 @@ export default function PlayClient() {
         bpos.x = clamp(bpos.x, -HALF + 2, HALF - 2);
         bpos.z = clamp(bpos.z, -HALF + 2, HALF - 2);
 
+        // paraşütle inen oyuncuya ateş yok (mantıklı)
         if (parachuting) continue;
+
+        // ✅ oyuncu ölse bile botlar hareket edecek; ama vurma gereksiz.
+        if (hud.dead) continue;
 
         b.shootCd = Math.max(0, b.shootCd - dt);
         const st = WEAPONS[b.weapon];
@@ -1285,7 +1291,6 @@ export default function PlayClient() {
           }
 
           if (spawnShield <= 0 && Math.random() < acc) {
-            // ✅ bot da 10 vuruyor
             applyDamageToPlayer(10);
           }
         }
@@ -1311,18 +1316,10 @@ export default function PlayClient() {
       dmgPopRef.uiThrottle -= dt;
       if (dmgPopRef.uiThrottle <= 0) {
         dmgPopRef.uiThrottle = 0.06;
-
         const mapped = dmgPopRef.items.map((it) => {
           const s = worldToScreen(it.world);
-          return {
-            id: it.id,
-            x: s.x,
-            y: s.y,
-            text: it.text,
-            a: clamp(it.life / 0.9, 0, 1),
-          };
+          return { id: it.id, x: s.x, y: s.y, text: it.text, a: clamp(it.life / 0.9, 0, 1) };
         });
-
         setDmgTexts(mapped);
       }
 
@@ -1358,7 +1355,6 @@ export default function PlayClient() {
     <div className="relative w-full h-[calc(100vh-140px)] rounded-2xl border border-slate-800 overflow-hidden bg-slate-950">
       <div ref={mountRef} className="absolute inset-0" />
 
-      {/* Minimap */}
       <canvas
         ref={minimapRef}
         width={240}
@@ -1366,7 +1362,6 @@ export default function PlayClient() {
         className="absolute top-3 right-3 rounded-2xl border border-slate-800 bg-slate-950/70"
       />
 
-      {/* HUD */}
       <div className="absolute top-3 left-3 flex flex-wrap gap-2">
         <div className="px-3 py-2 rounded-xl bg-slate-950/70 border border-slate-800 text-sm text-slate-200">
           ❤️ HP: <span className="font-semibold">{hud.hp}</span>
@@ -1392,12 +1387,10 @@ export default function PlayClient() {
         ) : null}
       </div>
 
-      {/* Crosshair */}
       <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
         <div className="h-3 w-3 rounded-full border border-indigo-300/80" />
       </div>
 
-      {/* Damage texts */}
       {dmgTexts.map((d) => (
         <div
           key={d.id}
@@ -1414,12 +1407,11 @@ export default function PlayClient() {
         </div>
       ))}
 
-      {/* Help */}
       <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between gap-2">
         <div className="px-3 py-2 rounded-xl bg-slate-950/70 border border-slate-800 text-xs text-slate-300">
           {hud.phase === "BUS" ? (
             <>
-              🚌 Otobüstesin • <span className="text-slate-100 font-semibold">E</span> ile atla (paraşüt)
+              🚌 Otobüstesin • <span className="text-slate-100 font-semibold">E</span> ile atla (paraşüt) • (4.5sn sonra otomatik)
             </>
           ) : (
             <>
@@ -1434,15 +1426,10 @@ export default function PlayClient() {
         </div>
 
         <div className="px-3 py-2 rounded-xl bg-slate-950/70 border border-slate-800 text-xs text-slate-300">
-          {locked ? (
-            <span className="text-emerald-300">🟢 Kontrol aktif</span>
-          ) : (
-            <span className="text-indigo-300">🟣 Tıkla → kontrolü kilitle</span>
-          )}
+          {locked ? <span className="text-emerald-300">🟢 Kontrol aktif</span> : <span className="text-indigo-300">🟣 Tıkla → kontrolü kilitle</span>}
         </div>
       </div>
 
-      {/* GAME OVER */}
       {hud.dead ? (
         <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="w-[min(520px,92vw)] rounded-2xl border border-slate-800 bg-slate-950/80 p-6 text-center">
