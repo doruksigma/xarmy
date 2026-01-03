@@ -11,13 +11,14 @@ type Keys = {
   shift: boolean;
   space: boolean;
   e: boolean;
+  f: boolean; // ✅ build
 };
 
 type WeaponType = "PISTOL" | "RIFLE" | "SHOTGUN";
 
 type WeaponStats = {
   name: string;
-  damage: number;
+  damage: number; // base
   cooldown: number; // seconds
   maxRange: number;
   accuracyNear: number; // hit chance near
@@ -25,9 +26,9 @@ type WeaponStats = {
 };
 
 const WEAPONS: Record<WeaponType, WeaponStats> = {
-  PISTOL: { name: "Pistol", damage: 2, cooldown: 0.28, maxRange: 22, accuracyNear: 0.30, accuracyFar: 0.10 },
-  RIFLE: { name: "Rifle", damage: 2, cooldown: 0.14, maxRange: 28, accuracyNear: 0.38, accuracyFar: 0.14 },
-  SHOTGUN: { name: "Shotgun", damage: 4, cooldown: 0.55, maxRange: 14, accuracyNear: 0.50, accuracyFar: 0.12 },
+  PISTOL: { name: "Pistol", damage: 4, cooldown: 0.22, maxRange: 30, accuracyNear: 0.55, accuracyFar: 0.20 },
+  RIFLE: { name: "Rifle", damage: 4, cooldown: 0.12, maxRange: 40, accuracyNear: 0.65, accuracyFar: 0.28 },
+  SHOTGUN: { name: "Shotgun", damage: 8, cooldown: 0.55, maxRange: 18, accuracyNear: 0.75, accuracyFar: 0.18 },
 };
 
 type Bot = {
@@ -40,6 +41,8 @@ type Bot = {
 
 type Medkit = { mesh: THREE.Group; taken: boolean };
 type WeaponLoot = { mesh: THREE.Group; taken: boolean; type: WeaponType };
+
+type BuildWall = { mesh: THREE.Mesh; hp: number };
 
 function lerpAngle(a: number, b: number, t: number) {
   const TWO_PI = Math.PI * 2;
@@ -89,6 +92,11 @@ export default function PlayClient() {
     parachute: false,
   });
 
+  // ✅ damage text state (ekranda -40 göstermek için)
+  const [dmgTexts, setDmgTexts] = useState<
+    Array<{ id: string; x: number; y: number; text: string; a: number }>
+  >([]);
+
   useEffect(() => {
     if (!mountRef.current) return;
 
@@ -99,8 +107,12 @@ export default function PlayClient() {
     const HALF = MAP_SIZE / 2;
 
     // Bot Vision (çok uzaktan görmesin)
-    const BOT_VISION_RANGE = 26; // player bu mesafeden uzaktaysa "görmez"
-    const BOT_FOV = THREE.MathUtils.degToRad(95); // görüş açısı (koni)
+    const BOT_VISION_RANGE = 28;
+    const BOT_FOV = THREE.MathUtils.degToRad(100);
+
+    // Bot davranış (delsin gelsin)
+    const BOT_CHASE_SPEED = 3.4;
+    const BOT_STRAFE_SPEED = 1.6;
 
     // ---------- Renderer ----------
     const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -120,7 +132,7 @@ export default function PlayClient() {
       0.1,
       2500
     );
-    camera.up.set(0, 1, 0); // ✅ ufuk düz (roll yok)
+    camera.up.set(0, 1, 0);
 
     // ---------- Lights ----------
     const hemi = new THREE.HemisphereLight(0xbfd7ff, 0x1b1330, 0.9);
@@ -135,7 +147,7 @@ export default function PlayClient() {
     const grass = new THREE.Mesh(
       new THREE.PlaneGeometry(MAP_SIZE, MAP_SIZE, 1, 1),
       new THREE.MeshStandardMaterial({
-        color: 0x2fbf4a, // ✅ daha açık yeşil
+        color: 0x43d45b, // ✅ daha açık yeşil
         roughness: 0.98,
         metalness: 0.02,
       })
@@ -149,7 +161,7 @@ export default function PlayClient() {
     const sea = new THREE.Mesh(
       new THREE.PlaneGeometry(SEA_W, SEA_H, 1, 1),
       new THREE.MeshStandardMaterial({
-        color: 0x1d4ed8, // mavi deniz
+        color: 0x1d4ed8,
         roughness: 0.35,
         metalness: 0.05,
         emissive: 0x0b2a6a,
@@ -163,7 +175,7 @@ export default function PlayClient() {
     const sand = new THREE.Mesh(
       new THREE.PlaneGeometry(SEA_W + 60, SEA_H + 60, 1, 1),
       new THREE.MeshStandardMaterial({
-        color: 0xfacc15, // sarı kum
+        color: 0xfacc15,
         roughness: 0.95,
         metalness: 0.02,
         emissive: 0x4b3a00,
@@ -234,7 +246,7 @@ export default function PlayClient() {
       addBox(x, z, rand(10, 20), rand(6, 11), rand(10, 20));
     }
 
-    // Trees (visual)
+    // Trees
     const trunkMat = new THREE.MeshStandardMaterial({ color: 0x3b2a1b, roughness: 1 });
     const leafMat = new THREE.MeshStandardMaterial({
       color: 0x22c55e,
@@ -323,7 +335,7 @@ export default function PlayClient() {
 
     scene.add(player);
 
-    // Hand anchor + weapon mesh (visible in hand)
+    // Hand anchor + weapon mesh
     const hand = new THREE.Object3D();
     hand.position.set(0.45, 1.05, -0.35);
     player.add(hand);
@@ -392,13 +404,56 @@ export default function PlayClient() {
       hand.add(playerWeaponMesh);
 
       const stats = WEAPONS[type];
-      setHud((h) => ({
-        ...h,
-        weapon: stats.name,
-        ammo: type === "SHOTGUN" ? 10 : 30,
-        msg: `✅ ${stats.name} aldın`,
-      }));
+      setHud((h) => ({ ...h, weapon: stats.name, ammo: type === "SHOTGUN" ? 10 : 30, msg: `✅ ${stats.name} aldın` }));
       setTimeout(() => setHud((h) => ({ ...h, msg: "" })), 800);
+    }
+
+    // ---------- Build walls (Fortnite like) ----------
+    const buildWalls: BuildWall[] = [];
+    const woodMat = new THREE.MeshStandardMaterial({
+      color: 0x8b5a2b,
+      roughness: 0.9,
+      metalness: 0.05,
+      emissive: 0x1a0f06,
+      emissiveIntensity: 0.15,
+    });
+
+    function damageWall(mesh: THREE.Object3D, dmg: number) {
+      const w = buildWalls.find((x) => x.mesh === mesh || x.mesh === (mesh as any).parent);
+      if (!w) return false;
+      w.hp -= dmg;
+      if (w.hp <= 0) {
+        scene.remove(w.mesh);
+        const idx = obstacles.indexOf(w.mesh);
+        if (idx >= 0) obstacles.splice(idx, 1);
+        const j = buildWalls.indexOf(w);
+        if (j >= 0) buildWalls.splice(j, 1);
+      }
+      return true;
+    }
+
+    function buildWallAtPlayer(yaw: number) {
+      // limit duvar spam
+      if (buildWalls.length > 45) return;
+
+      const forwardDir = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw)).normalize().multiplyScalar(-1);
+      const pos = player.position.clone().add(forwardDir.multiplyScalar(3.0));
+
+      // kum/deniz üstüne koyma (koysa da olur ama daha temiz)
+      const inSea = Math.abs(pos.x - sea.position.x) < SEA_W / 2 && Math.abs(pos.z - sea.position.z) < SEA_H / 2;
+      if (inSea) return;
+
+      // Wall mesh: 4x3x0.3
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(4.0, 3.0, 0.3), woodMat);
+      mesh.position.set(pos.x, 1.5, pos.z);
+      mesh.rotation.y = yaw; // baktığın yöne paralel
+      scene.add(mesh);
+
+      obstacles.push(mesh);
+      buildWalls.push({ mesh, hp: 100 });
+
+      setHud((h) => ({ ...h, msg: "🧱 Tahta duvar kuruldu (100HP)" }));
+      setTimeout(() => setHud((h) => ({ ...h, msg: "" })), 600);
     }
 
     // ---------- Bus ----------
@@ -459,8 +514,8 @@ export default function PlayClient() {
       bots.push({
         mesh: g,
         name,
-        hp: 60,
-        shootCd: rand(0.2, 1.2),
+        hp: 80,
+        shootCd: rand(0.2, 1.0),
         weapon: null,
       });
     }
@@ -512,7 +567,7 @@ export default function PlayClient() {
       medkits.push({ mesh: g, taken: false });
     }
 
-    for (let i = 0; i < 18; i++) spawnMedkit();
+    for (let i = 0; i < 22; i++) spawnMedkit();
 
     // ---------- Weapon loot ----------
     const weaponLoots: WeaponLoot[] = [];
@@ -555,27 +610,24 @@ export default function PlayClient() {
       weaponLoots.push({ mesh: g, taken: false, type: t });
     }
 
-    for (let i = 0; i < 28; i++) spawnWeaponLoot();
+    for (let i = 0; i < 30; i++) spawnWeaponLoot();
 
     // ---------- Shooting ----------
     const raycaster = new THREE.Raycaster();
-    const losRay = new THREE.Raycaster(); // bot line-of-sight
+    const losRay = new THREE.Raycaster();
+
     const muzzleFlash = new THREE.PointLight(0x9aa5ff, 0, 8);
     scene.add(muzzleFlash);
 
-    // Damage popups (simple DOM overlay)
-    const dmgRef: { items: Array<{ id: string; x: number; y: number; text: string; t: number }> } = { items: [] };
+    // Yellow tracer
+    const tracerMat = new THREE.LineBasicMaterial({ color: 0xfacc15 });
+    const tracers: Array<{ line: THREE.Line; life: number }> = [];
 
-    function worldToScreen(pos: THREE.Vector3) {
-      const p = pos.clone().project(camera);
-      const x = (p.x * 0.5 + 0.5) * (mountRef.current?.clientWidth || 1);
-      const y = (-p.y * 0.5 + 0.5) * (mountRef.current?.clientHeight || 1);
-      return { x, y };
-    }
-
-    function addDamageText(worldPos: THREE.Vector3, dmg: number) {
-      const s = worldToScreen(worldPos);
-      dmgRef.items.push({ id: Math.random().toString(36).slice(2), x: s.x, y: s.y, text: `-${dmg}`, t: 0 });
+    function spawnTracer(from: THREE.Vector3, to: THREE.Vector3) {
+      const geo = new THREE.BufferGeometry().setFromPoints([from, to]);
+      const line = new THREE.Line(geo, tracerMat);
+      scene.add(line);
+      tracers.push({ line, life: 0.08 });
     }
 
     function applyDamageToPlayer(dmg: number) {
@@ -594,15 +646,34 @@ export default function PlayClient() {
       setTimeout(() => setHud((h) => ({ ...h, msg: "" })), 900);
     }
 
-    // Yellow bullet tracer (very cheap)
-    const tracerMat = new THREE.LineBasicMaterial({ color: 0xfacc15 });
-    const tracers: Array<{ line: THREE.Line; life: number }> = [];
+    // ✅ Damage text engine (world->screen)
+    const dmgPopRef = {
+      items: [] as Array<{
+        id: string;
+        world: THREE.Vector3;
+        text: string;
+        life: number;
+      }>,
+      uiThrottle: 0,
+    };
 
-    function spawnTracer(from: THREE.Vector3, to: THREE.Vector3) {
-      const geo = new THREE.BufferGeometry().setFromPoints([from, to]);
-      const line = new THREE.Line(geo, tracerMat);
-      scene.add(line);
-      tracers.push({ line, life: 0.08 });
+    function addDamageText(worldPos: THREE.Vector3, text: string) {
+      dmgPopRef.items.push({
+        id: Math.random().toString(36).slice(2),
+        world: worldPos.clone(),
+        text,
+        life: 0.9,
+      });
+    }
+
+    function worldToScreen(pos: THREE.Vector3) {
+      const p = pos.clone().project(camera);
+      const w = mountRef.current?.clientWidth || 1;
+      const h = mountRef.current?.clientHeight || 1;
+      return {
+        x: (p.x * 0.5 + 0.5) * w,
+        y: (-p.y * 0.5 + 0.5) * h,
+      };
     }
 
     function shootPlayer() {
@@ -612,40 +683,57 @@ export default function PlayClient() {
         return;
       }
 
-      let canShoot = true;
+      let ok = true;
       setHud((h) => {
         if (h.dead) return h;
         if (h.ammo <= 0) {
-          canShoot = false;
+          ok = false;
           return { ...h, msg: "Ammo bitti! (R)" };
         }
         return { ...h, ammo: h.ammo - 1, msg: "" };
       });
-      if (!canShoot) return;
+      if (!ok) return;
 
+      // Ray at center
       raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
-      const botMeshes = bots.map((b) => b.mesh);
-      const hits = raycaster.intersectObjects(botMeshes, true);
+
+      const targets: THREE.Object3D[] = [
+        ...bots.map((b) => b.mesh),
+        ...buildWalls.map((w) => w.mesh),
+      ];
+
+      const hits = raycaster.intersectObjects(targets, true);
 
       const from = camera.position.clone();
-      const to = hits.length ? hits[0].point.clone() : from.clone().add(camera.getWorldDirection(new THREE.Vector3()).multiplyScalar(40));
+      const to =
+        hits.length > 0
+          ? hits[0].point.clone()
+          : from.clone().add(camera.getWorldDirection(new THREE.Vector3()).multiplyScalar(60));
       spawnTracer(from, to);
 
       if (hits.length > 0) {
-        const hitObj = hits[0].object;
-        const root = bots.find((b) => hitObj.parent?.parent === b.mesh || hitObj.parent === b.mesh || hitObj === b.mesh);
-        if (root) {
-          const dmg = WEAPONS[playerWeapon].damage * 10; // arcade his
-          root.hp -= dmg;
+        const obj = hits[0].object;
 
-          addDamageText(root.mesh.position.clone().add(new THREE.Vector3(0, 2.1, 0)), dmg);
+        // hit wall?
+        const wallRoot = buildWalls.find((w) => w.mesh === obj || w.mesh === obj.parent);
+        if (wallRoot) {
+          damageWall(wallRoot.mesh, 12);
+        } else {
+          // hit bot?
+          const root = bots.find((b) => obj.parent?.parent === b.mesh || obj.parent === b.mesh || obj === b.mesh);
+          if (root) {
+            // ✅ damage text like -40
+            const dmg = WEAPONS[playerWeapon].damage * 10; // arcade
+            root.hp -= dmg;
+            addDamageText(root.mesh.position.clone().add(new THREE.Vector3(0, 2.2, 0)), `-${dmg}`);
 
-          if (root.hp <= 0) {
-            scene.remove(root.mesh);
-            const idx = bots.indexOf(root);
-            if (idx >= 0) bots.splice(idx, 1);
-            setHud((h) => ({ ...h, score: h.score + 25 }));
-            setTimeout(() => spawnBot(), 900);
+            if (root.hp <= 0) {
+              scene.remove(root.mesh);
+              const idx = bots.indexOf(root);
+              if (idx >= 0) bots.splice(idx, 1);
+              setHud((h) => ({ ...h, score: h.score + 25 }));
+              setTimeout(() => spawnBot(), 900);
+            }
           }
         }
       }
@@ -656,7 +744,7 @@ export default function PlayClient() {
     }
 
     // ---------- Controls ----------
-    const keys: Keys = { w: false, a: false, s: false, d: false, shift: false, space: false, e: false };
+    const keys: Keys = { w: false, a: false, s: false, d: false, shift: false, space: false, e: false, f: false };
     let yaw = 0;
     let pitch = 0;
 
@@ -677,9 +765,7 @@ export default function PlayClient() {
 
     // parachute state
     let parachuting = false;
-
-    // iniş koruması (inişte "aniden can gitmesin")
-    let spawnShield = 0;
+    let spawnShield = 0; // iniş koruması
 
     // ---------- Collision ----------
     function resolveObstaclesFor(pos: THREE.Vector3, radius: number) {
@@ -716,7 +802,6 @@ export default function PlayClient() {
     function onPointerLockChange() {
       setLocked(document.pointerLockElement === canvas);
     }
-
     function onMouseMove(e: MouseEvent) {
       if (document.pointerLockElement !== canvas) return;
       const mx = e.movementX || 0;
@@ -725,8 +810,6 @@ export default function PlayClient() {
       const SENS = 0.0022;
       yaw -= mx * SENS;
       pitch -= my * SENS;
-
-      // FPS pitch sınırı
       pitch = clamp(pitch, -1.1, 0.95);
     }
 
@@ -751,6 +834,7 @@ export default function PlayClient() {
       if (e.code === "ShiftLeft" || e.code === "ShiftRight") keys.shift = true;
       if (e.code === "Space") keys.space = true;
       if (e.code === "KeyE") keys.e = true;
+      if (e.code === "KeyF") keys.f = true;
 
       if (e.code === "KeyR") {
         setHud((h) => {
@@ -771,6 +855,7 @@ export default function PlayClient() {
       if (e.code === "ShiftLeft" || e.code === "ShiftRight") keys.shift = false;
       if (e.code === "Space") keys.space = false;
       if (e.code === "KeyE") keys.e = false;
+      if (e.code === "KeyF") keys.f = false;
     }
 
     document.addEventListener("pointerlockchange", onPointerLockChange);
@@ -826,9 +911,18 @@ export default function PlayClient() {
         (SEA_H / MAP_SIZE) * H
       );
 
+      // border
       mctx.strokeStyle = "rgba(34,197,94,0.9)";
       mctx.lineWidth = 3;
       mctx.strokeRect(6, 6, W - 12, H - 12);
+
+      // builds
+      mctx.fillStyle = "rgba(148,163,184,0.95)";
+      for (const w of buildWalls) {
+        mctx.beginPath();
+        mctx.arc(sx(w.mesh.position.x), sz(w.mesh.position.z), 2.6, 0, Math.PI * 2);
+        mctx.fill();
+      }
 
       // medkits
       mctx.fillStyle = "rgba(34,197,94,0.95)";
@@ -908,7 +1002,7 @@ export default function PlayClient() {
       return { best, bestD };
     }
 
-    // ---------- Bot Vision: distance + FOV + line-of-sight ----------
+    // ---------- Bot Vision: distance + FOV + LOS ----------
     const tmpDir = new THREE.Vector3();
     const botForward = new THREE.Vector3();
 
@@ -920,16 +1014,16 @@ export default function PlayClient() {
       const dist = toP.length();
       if (dist > BOT_VISION_RANGE) return false;
 
-      // FOV cone
+      // FOV
       botForward.set(0, 0, 1).applyQuaternion(bot.mesh.quaternion).normalize();
       tmpDir.copy(toP).normalize();
       const ang = Math.acos(clamp(botForward.dot(tmpDir), -1, 1));
       if (ang > BOT_FOV * 0.5) return false;
 
-      // Line of sight: obstacle araya girerse görme
+      // LOS: obstacles + build walls block
       losRay.set(botHead, tmpDir);
       losRay.far = dist;
-      const blocks = losRay.intersectObjects(obstacles, false);
+      const blocks = losRay.intersectObjects([...obstacles], false);
       if (blocks.length > 0) return false;
 
       return true;
@@ -948,14 +1042,14 @@ export default function PlayClient() {
         const bz = THREE.MathUtils.lerp(-HALF + 60, HALF - 60, (Math.cos(busT * 0.9) + 1) / 2);
         bus.position.set(bx, 0, bz);
 
-        // camera bus view
         camera.position.set(bus.position.x + 20, 28, bus.position.z + 20);
         camera.lookAt(bus.position.x, 18, bus.position.z);
 
-        // E ile atla → paraşütle süzül
+        // E ile atla (paraşüt)
         if (keys.e) {
           dropped = true;
           parachuting = true;
+          spawnShield = 0;
           setHud((h) => ({ ...h, phase: "PLAY", parachute: true, msg: "🪂 Paraşüt açık" }));
 
           player.position.set(bus.position.x - 2.2, 60, bus.position.z + 2.0);
@@ -969,7 +1063,7 @@ export default function PlayClient() {
         return;
       }
 
-      // dead: freeze
+      // dead
       if (hud.dead) {
         renderer.render(scene, camera);
         drawMinimap();
@@ -979,12 +1073,12 @@ export default function PlayClient() {
 
       spawnShield = Math.max(0, spawnShield - dt);
 
-      // FPS camera rotation (✅ roll yok, düz)
+      // FPS camera rotation (roll yok)
       camera.rotation.order = "YXZ";
       camera.rotation.set(pitch, yaw, 0);
       camera.up.set(0, 1, 0);
 
-      // movement intent in camera yaw plane
+      // movement plane
       forward.set(Math.sin(yaw), 0, Math.cos(yaw)).normalize().multiplyScalar(-1);
       right.copy(forward).cross(up).normalize();
 
@@ -1022,7 +1116,7 @@ export default function PlayClient() {
 
         if (parachuting) {
           parachuting = false;
-          spawnShield = 2.0; // ✅ indiğinde 2 sn vurulmaz
+          spawnShield = 2.0; // ✅ inişte 2sn koruma
           setHud((h) => ({ ...h, parachute: false, msg: "🛡️ İniş koruması" }));
           setTimeout(() => setHud((h) => ({ ...h, msg: "" })), 600);
         }
@@ -1039,24 +1133,30 @@ export default function PlayClient() {
         if (!gotKit) tryPickupWeapon();
       }
 
-      // ✅ FPS camera position: direkt oyuncunun gözü (arkadan değil)
-      camera.position.set(
-        player.position.x,
-        player.position.y + PLAYER_HEIGHT * 0.92,
-        player.position.z
-      );
+      // ✅ F build
+      if (!parachuting && keys.f) {
+        keys.f = false; // tek basış
+        buildWallAtPlayer(yaw);
+      }
 
+      // FPS camera position: göz hizası
+      camera.position.set(player.position.x, player.position.y + PLAYER_HEIGHT * 0.92, player.position.z);
+
+      // =========================
       // Bot AI
+      // =========================
       const playerPos = player.position.clone();
+
       for (const b of bots) {
         const bpos = b.mesh.position;
 
-        // Bot silah yoksa loot’a gider
+        // bot silah yoksa loot’a gider
         if (!b.weapon) {
           const { best } = findNearestUntakenWeapon(bpos);
           if (best) {
             const dirToW = best.mesh.position.clone().sub(bpos);
             const distW = dirToW.length();
+
             const targetYaw = Math.atan2(dirToW.x, dirToW.z);
             b.mesh.rotation.y = lerpAngle(b.mesh.rotation.y, targetYaw, 0.10);
 
@@ -1088,29 +1188,34 @@ export default function PlayClient() {
           continue;
         }
 
-        // ✅ Bot görmüyorsa oyuncuyu kovalamaz / vurmaz
+        // görüş yoksa kovalamaz
         const sees = botCanSeePlayer(b, playerPos);
         if (!sees) {
-          // küçük devriye
           b.shootCd = Math.max(0, b.shootCd - dt);
           continue;
         }
 
-        // Bot silahlı: oyuncuya döner + orta mesafe
+        // ✅ Bot “delsin” gelsin: direkt üstüne gelir + hafif strafe
         const toP = playerPos.clone().sub(bpos);
         const dist = toP.length();
 
         const targetYaw = Math.atan2(toP.x, toP.z);
-        b.mesh.rotation.y = lerpAngle(b.mesh.rotation.y, targetYaw, 0.08);
+        b.mesh.rotation.y = lerpAngle(b.mesh.rotation.y, targetYaw, 0.11);
 
-        if (dist > 16) {
-          toP.normalize();
-          bpos.x += toP.x * dt * 2.6;
-          bpos.z += toP.z * dt * 2.6;
-        } else if (dist < 8) {
-          toP.normalize();
-          bpos.x -= toP.x * dt * 2.0;
-          bpos.z -= toP.z * dt * 2.0;
+        const dirP = toP.clone().normalize();
+
+        // yaklaşma
+        if (dist > 10) {
+          bpos.x += dirP.x * dt * BOT_CHASE_SPEED;
+          bpos.z += dirP.z * dt * BOT_CHASE_SPEED;
+        } else if (dist < 6) {
+          bpos.x -= dirP.x * dt * 2.0;
+          bpos.z -= dirP.z * dt * 2.0;
+        } else {
+          // orta mesafede strafe (PUBG hissi)
+          const strafe = new THREE.Vector3(-dirP.z, 0, dirP.x).multiplyScalar((Math.sin(performance.now() * 0.002 + bpos.x) > 0 ? 1 : -1));
+          bpos.x += strafe.x * dt * BOT_STRAFE_SPEED;
+          bpos.z += strafe.z * dt * BOT_STRAFE_SPEED;
         }
 
         resolveObstaclesFor(bpos, 0.45);
@@ -1119,18 +1224,44 @@ export default function PlayClient() {
 
         if (parachuting) continue;
 
+        // shoot
         b.shootCd = Math.max(0, b.shootCd - dt);
-
         const st = WEAPONS[b.weapon];
-        const inRange = dist >= 9 && dist <= st.maxRange;
+        const inRange = dist <= st.maxRange;
 
         if (inRange && b.shootCd <= 0) {
-          b.shootCd = st.cooldown + rand(0.05, 0.25);
+          b.shootCd = st.cooldown + rand(0.02, 0.18);
 
+          // accuracy distance curve
           const t = clamp(dist / st.maxRange, 0, 1);
           const acc = st.accuracyNear * (1 - t) + st.accuracyFar * t;
 
-          if (spawnShield <= 0 && Math.random() < acc) applyDamageToPlayer(st.damage);
+          // ✅ bot atışı line-of-sight ile: önce duvarı vurabilir
+          const botHead = bpos.clone().add(new THREE.Vector3(0, 1.55, 0));
+          const playerHead = playerPos.clone().add(new THREE.Vector3(0, 1.55, 0));
+          const dirShot = playerHead.clone().sub(botHead).normalize();
+
+          // bot tracer (sarı)
+          spawnTracer(botHead, botHead.clone().add(dirShot.clone().multiplyScalar(Math.min(50, dist))));
+
+          // ray to check wall block
+          losRay.set(botHead, dirShot);
+          losRay.far = Math.min(st.maxRange, dist + 0.5);
+          const hit = losRay.intersectObjects([...buildWalls.map((w) => w.mesh), ...obstacles], true);
+
+          // Eğer arada build wall varsa onu hasarla
+          if (hit.length > 0) {
+            const h = hit[0].object;
+            const wall = buildWalls.find((w) => w.mesh === h || w.mesh === h.parent);
+            if (wall) {
+              damageWall(wall.mesh, 10);
+              continue;
+            }
+          }
+
+          if (spawnShield <= 0 && Math.random() < acc) {
+            applyDamageToPlayer(st.damage);
+          }
         }
       }
 
@@ -1142,6 +1273,32 @@ export default function PlayClient() {
           tracers[i].line.geometry.dispose();
           tracers.splice(i, 1);
         }
+      }
+
+      // ✅ damage pop update
+      for (let i = dmgPopRef.items.length - 1; i >= 0; i--) {
+        dmgPopRef.items[i].life -= dt;
+        dmgPopRef.items[i].world.y += dt * 0.35; // yukarı süzülsün
+        if (dmgPopRef.items[i].life <= 0) dmgPopRef.items.splice(i, 1);
+      }
+
+      // UI throttle (her frame state basmayalım)
+      dmgPopRef.uiThrottle -= dt;
+      if (dmgPopRef.uiThrottle <= 0) {
+        dmgPopRef.uiThrottle = 0.06;
+
+        const mapped = dmgPopRef.items.map((it) => {
+          const s = worldToScreen(it.world);
+          return {
+            id: it.id,
+            x: s.x,
+            y: s.y,
+            text: it.text,
+            a: clamp(it.life / 0.9, 0, 1),
+          };
+        });
+
+        setDmgTexts(mapped);
       }
 
       renderer.render(scene, camera);
@@ -1171,26 +1328,6 @@ export default function PlayClient() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hud.phase, hud.dead]);
-
-  // Basit damage text overlay
-  // (React state ile uğraşmadan DOM’da çizim: minimal)
-  const [dmgTexts, setDmgTexts] = useState<Array<{ id: string; x: number; y: number; text: string; a: number }>>([]);
-  useEffect(() => {
-    let raf: number | null = null;
-    const step = () => {
-      // dmgTexts güncellemesi yerine basit anim
-      setDmgTexts((prev) =>
-        prev
-          .map((it) => ({ ...it, y: it.y - 0.6, a: it.a - 0.02 }))
-          .filter((it) => it.a > 0)
-      );
-      raf = requestAnimationFrame(step);
-    };
-    raf = requestAnimationFrame(step);
-    return () => {
-      if (raf) cancelAnimationFrame(raf);
-    };
-  }, []);
 
   return (
     <div className="relative w-full h-[calc(100vh-140px)] rounded-2xl border border-slate-800 overflow-hidden bg-slate-950">
@@ -1235,6 +1372,23 @@ export default function PlayClient() {
         <div className="h-3 w-3 rounded-full border border-indigo-300/80" />
       </div>
 
+      {/* Damage texts */}
+      {dmgTexts.map((d) => (
+        <div
+          key={d.id}
+          className="absolute pointer-events-none font-extrabold text-yellow-300"
+          style={{
+            left: d.x,
+            top: d.y,
+            opacity: d.a,
+            transform: "translate(-50%, -50%)",
+            textShadow: "0 2px 14px rgba(0,0,0,0.75)",
+          }}
+        >
+          {d.text}
+        </div>
+      ))}
+
       {/* Help */}
       <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between gap-2">
         <div className="px-3 py-2 rounded-xl bg-slate-950/70 border border-slate-800 text-xs text-slate-300">
@@ -1248,17 +1402,14 @@ export default function PlayClient() {
               <span className="text-slate-100 font-semibold">SHIFT</span> koş •{" "}
               <span className="text-slate-100 font-semibold">Mouse</span> bakış •{" "}
               <span className="text-slate-100 font-semibold">Sol tık</span> ateş •{" "}
-              <span className="text-slate-100 font-semibold">E</span> loot al
+              <span className="text-slate-100 font-semibold">E</span> loot •{" "}
+              <span className="text-slate-100 font-semibold">F</span> build (duvar)
             </>
           )}
         </div>
 
         <div className="px-3 py-2 rounded-xl bg-slate-950/70 border border-slate-800 text-xs text-slate-300">
-          {locked ? (
-            <span className="text-emerald-300">🟢 Kontrol aktif</span>
-          ) : (
-            <span className="text-indigo-300">🟣 Tıkla → kontrolü kilitle</span>
-          )}
+          {locked ? <span className="text-emerald-300">🟢 Kontrol aktif</span> : <span className="text-indigo-300">🟣 Tıkla → kontrolü kilitle</span>}
         </div>
       </div>
 
@@ -1282,17 +1433,6 @@ export default function PlayClient() {
           </div>
         </div>
       ) : null}
-
-      {/* Damage texts (şimdilik boş; istersen bir sonraki mesajda bunları gerçek vurma anına bağlayalım) */}
-      {dmgTexts.map((d) => (
-        <div
-          key={d.id}
-          className="absolute text-yellow-300 font-extrabold pointer-events-none"
-          style={{ left: d.x, top: d.y, opacity: d.a, textShadow: "0 2px 10px rgba(0,0,0,0.65)" }}
-        >
-          {d.text}
-        </div>
-      ))}
     </div>
   );
 }
