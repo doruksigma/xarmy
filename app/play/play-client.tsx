@@ -29,8 +29,6 @@ export default function PlayClient() {
   const rafRef = useRef<number | null>(null);
 
   const [locked, setLocked] = useState(false);
-
-  // UI / game states
   const [phase, setPhase] = useState<Phase>("ready");
   const [count, setCount] = useState(3);
 
@@ -42,14 +40,13 @@ export default function PlayClient() {
     zone: 0
   });
 
-  // minimap
   const [mini, setMini] = useState<{
     dots: MiniDot[];
     zoneR: number;
-    zoneDirDeg: number; // 0 = up, 90 = right
+    zoneDirDeg: number;
   }>({ dots: [], zoneR: 0, zoneDirDeg: 0 });
 
-  // refs to avoid per-frame react spam
+  // Refs (avoid per-frame state spam)
   const hudRef = useRef({ hp: 100, ammo: 30, score: 0, time: 0, zone: 0 });
   const phaseRef = useRef<Phase>("ready");
 
@@ -57,7 +54,7 @@ export default function PlayClient() {
     phaseRef.current = phase;
   }, [phase]);
 
-  // Countdown effect (3..2..1 -> playing)
+  // Countdown effect
   useEffect(() => {
     if (phase !== "countdown") return;
 
@@ -67,7 +64,6 @@ export default function PlayClient() {
     const t = setInterval(() => {
       c -= 1;
       setCount(c);
-
       if (c <= 0) {
         clearInterval(t);
         setPhase("playing");
@@ -150,25 +146,6 @@ export default function PlayClient() {
     addBox(12, 0, 10, 4, 4, 4);
     addBox(-14, 0, 10, 6, 2, 6);
 
-    // ---------- Targets ----------
-    const targets: THREE.Mesh[] = [];
-    const targetMat = new THREE.MeshStandardMaterial({
-      color: 0x1b2a66,
-      emissive: 0x4f46e5,
-      emissiveIntensity: 0.9,
-      roughness: 0.35
-    });
-
-    function spawnTarget(seed: number) {
-      const t = new THREE.Mesh(new THREE.SphereGeometry(0.45, 18, 18), targetMat);
-      const angle = (seed % 360) * (Math.PI / 180);
-      const r = 10 + (seed % 3) * 4;
-      t.position.set(Math.cos(angle) * r, 0.45, Math.sin(angle) * r);
-      scene.add(t);
-      targets.push(t);
-    }
-    for (let i = 0; i < 10; i++) spawnTarget(i * 37);
-
     // ---------- Player ----------
     const player = new THREE.Group();
     const bodyMat = new THREE.MeshStandardMaterial({
@@ -209,22 +186,44 @@ export default function PlayClient() {
     const JUMP = 5.8;
     const GRAVITY = 16.5;
 
+    // ---------- Targets (shootable) ----------
+    const targets: THREE.Mesh[] = [];
+    const targetMat = new THREE.MeshStandardMaterial({
+      color: 0x1b2a66,
+      emissive: 0x4f46e5,
+      emissiveIntensity: 0.9,
+      roughness: 0.35
+    });
+
+    function spawnTargetRandom() {
+      const t = new THREE.Mesh(new THREE.SphereGeometry(0.45, 18, 18), targetMat);
+      const angle = Math.random() * Math.PI * 2;
+      const r = 10 + Math.random() * 12; // 10..22 geniş dağılım
+      t.position.set(Math.cos(angle) * r, 0.45, Math.sin(angle) * r);
+      scene.add(t);
+      targets.push(t);
+    }
+
+    for (let i = 0; i < 10; i++) spawnTargetRandom();
+
     // ---------- ZONE (Battle Royale) ----------
     const zoneCenter = new THREE.Vector3(0, 0, 0);
-    let zoneRadius = 22;
+    const ZONE_INITIAL = 22;
+    let zoneRadius = ZONE_INITIAL;
+
     const zoneMin = 6.5;
     const zoneShrinkPerSec = 0.22;
     const zoneDps = 6;
 
+    // geometry oluşturup SCALE ile küçült (memory leak yok)
     const zoneRingMat = new THREE.MeshBasicMaterial({
       color: 0x4f46e5,
       transparent: true,
       opacity: 0.55,
       side: THREE.DoubleSide
     });
-
     const zoneRing = new THREE.Mesh(
-      new THREE.RingGeometry(zoneRadius - 0.08, zoneRadius + 0.08, 96),
+      new THREE.RingGeometry(ZONE_INITIAL - 0.08, ZONE_INITIAL + 0.08, 96),
       zoneRingMat
     );
     zoneRing.rotation.x = -Math.PI / 2;
@@ -267,18 +266,19 @@ export default function PlayClient() {
     function doScore(delta: number) {
       hudRef.current.score += delta;
     }
-
     function takeDamage(delta: number) {
       hudRef.current.hp = Math.max(0, hudRef.current.hp - delta);
     }
 
     function shoot() {
+      // güvenli: sadece playing + pointer lock varken ateş
       if (phaseRef.current !== "playing") return;
 
       if (hudRef.current.ammo <= 0) return;
       hudRef.current.ammo -= 1;
 
       raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+
       const shootables: THREE.Object3D[] = [...targets, ...bots.map((b) => b.mesh)];
       const hits = raycaster.intersectObjects(shootables, false);
 
@@ -286,12 +286,12 @@ export default function PlayClient() {
         const hitObj = hits[0].object as THREE.Mesh;
 
         // BOT hit?
-        const botIndex = bots.findIndex((b) => b.mesh === hitObj);
-        if (botIndex >= 0) {
-          const b = bots[botIndex];
+        const bi = bots.findIndex((b) => b.mesh === hitObj);
+        if (bi >= 0) {
+          const b = bots[bi];
           b.hp -= 20;
 
-          // HIT FLASH
+          // hit flash
           const mat = b.mesh.material as THREE.MeshStandardMaterial;
           const prev = mat.emissiveIntensity;
           mat.emissiveIntensity = 0.9;
@@ -301,13 +301,12 @@ export default function PlayClient() {
             } catch {}
           }, 80);
 
-          // KNOCKBACK (1)
-          // push bot away from player/camera forward direction
+          // KNOCKBACK
           const knockDir = new THREE.Vector3()
             .subVectors(b.mesh.position, player.position)
             .setY(0)
             .normalize();
-          // add extra along camera forward (feels snappier)
+
           const camForward = new THREE.Vector3();
           camera.getWorldDirection(camForward);
           camForward.y = 0;
@@ -317,32 +316,25 @@ export default function PlayClient() {
 
           if (b.hp <= 0) {
             scene.remove(b.mesh);
-            bots.splice(botIndex, 1);
+            bots.splice(bi, 1);
             doScore(25);
-
             setTimeout(() => spawnBot(), 700);
           } else {
             doScore(2);
           }
-
-          // flash
-          muzzleFlash.position.copy(camera.position);
-          muzzleFlash.intensity = 2.2;
-          setTimeout(() => (muzzleFlash.intensity = 0), 55);
-          return;
-        }
-
-        // Target hit?
-        const idx = targets.indexOf(hitObj);
-        if (idx >= 0) {
-          scene.remove(hitObj);
-          targets.splice(idx, 1);
-          doScore(10);
-          setTimeout(() => spawnTarget(Math.floor(Math.random() * 10000)), 450);
+        } else {
+          // Target hit?
+          const ti = targets.indexOf(hitObj);
+          if (ti >= 0) {
+            scene.remove(hitObj);
+            targets.splice(ti, 1);
+            doScore(10);
+            setTimeout(() => spawnTargetRandom(), 450);
+          }
         }
       }
 
-      // flash
+      // muzzle flash
       muzzleFlash.position.copy(camera.position);
       muzzleFlash.intensity = 2.2;
       setTimeout(() => (muzzleFlash.intensity = 0), 55);
@@ -377,9 +369,15 @@ export default function PlayClient() {
     }
 
     function onMouseDown(e: MouseEvent) {
+      if (e.button !== 0) return;
       if (phaseRef.current !== "playing") return;
-      if (document.pointerLockElement !== canvas) return;
-      if (e.button === 0) shoot();
+
+      // lock yoksa önce lock iste (ilk tık boşa gitmesin)
+      if (document.pointerLockElement !== canvas) {
+        requestLock();
+        return;
+      }
+      shoot();
     }
 
     function onKeyDown(e: KeyboardEvent) {
@@ -392,12 +390,8 @@ export default function PlayClient() {
       if (e.code === "ShiftLeft" || e.code === "ShiftRight") keys.shift = true;
       if (e.code === "Space") keys.space = true;
 
-      if (e.code === "KeyR") {
-        hudRef.current.ammo = 30;
-      }
-      if (e.code === "Escape") {
-        document.exitPointerLock?.();
-      }
+      if (e.code === "KeyR") hudRef.current.ammo = 30;
+      if (e.code === "Escape") document.exitPointerLock?.();
     }
 
     function onKeyUp(e: KeyboardEvent) {
@@ -409,21 +403,14 @@ export default function PlayClient() {
       if (e.code === "Space") keys.space = false;
     }
 
-    // click behavior: start countdown OR lock
-    function onCanvasClick() {
-      if (phaseRef.current === "ready") {
-        setPhase("countdown");
-        return;
-      }
-      if (phaseRef.current === "playing") requestLock();
-    }
+    // ✅ IMPORTANT: overlay tıklamasını React tarafında yapacağız.
+    // canvas click listener KALDIRDIK (oyuna girememe bug'ını çözer)
 
     document.addEventListener("pointerlockchange", onPointerLockChange);
     document.addEventListener("mousemove", onMouseMove);
     document.addEventListener("mousedown", onMouseDown);
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
-    canvas.addEventListener("click", onCanvasClick);
 
     // ---------- Resize ----------
     function onResize() {
@@ -436,96 +423,77 @@ export default function PlayClient() {
     }
     window.addEventListener("resize", onResize);
 
-    // ---------- Obstacles Collision ----------
+    // ---------- Collision helpers ----------
     const playerRadius = 0.45;
+    const botRadius = 0.42;
     const box3 = new THREE.Box3();
 
-    function resolveObstacles() {
+    function resolveAgainstObstacles(pos: THREE.Vector3, radius: number) {
       for (const box of obstacles) {
         box3.setFromObject(box);
 
-        box3.min.x -= playerRadius;
-        box3.max.x += playerRadius;
-        box3.min.z -= playerRadius;
-        box3.max.z += playerRadius;
+        box3.min.x -= radius;
+        box3.max.x += radius;
+        box3.min.z -= radius;
+        box3.max.z += radius;
 
-        if (player.position.y > box3.max.y + 0.2) continue;
+        if (pos.y > box3.max.y + 0.2) continue;
 
-        if (
-          player.position.x > box3.min.x &&
-          player.position.x < box3.max.x &&
-          player.position.z > box3.min.z &&
-          player.position.z < box3.max.z
-        ) {
-          const dxMin = Math.abs(player.position.x - box3.min.x);
-          const dxMax = Math.abs(box3.max.x - player.position.x);
-          const dzMin = Math.abs(player.position.z - box3.min.z);
-          const dzMax = Math.abs(box3.max.z - player.position.z);
+        if (pos.x > box3.min.x && pos.x < box3.max.x && pos.z > box3.min.z && pos.z < box3.max.z) {
+          const dxMin = Math.abs(pos.x - box3.min.x);
+          const dxMax = Math.abs(box3.max.x - pos.x);
+          const dzMin = Math.abs(pos.z - box3.min.z);
+          const dzMax = Math.abs(box3.max.z - pos.z);
 
           const m = Math.min(dxMin, dxMax, dzMin, dzMax);
-          if (m === dxMin) player.position.x = box3.min.x;
-          else if (m === dxMax) player.position.x = box3.max.x;
-          else if (m === dzMin) player.position.z = box3.min.z;
-          else player.position.z = box3.max.z;
+          if (m === dxMin) pos.x = box3.min.x;
+          else if (m === dxMax) pos.x = box3.max.x;
+          else if (m === dzMin) pos.z = box3.min.z;
+          else pos.z = box3.max.z;
         }
       }
     }
 
-    // ---------- HUD sync (throttled) ----------
+    // ---------- UI sync (throttle) ----------
     let hudAcc = 0;
     let miniAcc = 0;
 
     function syncHud(dt: number) {
       hudAcc += dt;
-      if (hudAcc < 0.12) return; // ~8 FPS UI updates
+      if (hudAcc < 0.12) return;
       hudAcc = 0;
-
       setHud({ ...hudRef.current });
     }
 
-    // ---------- Minimap sync (2) ----------
     function syncMini(dt: number) {
       miniAcc += dt;
       if (miniAcc < 0.12) return;
       miniAcc = 0;
 
-      // minimap scale: meters -> pixels
-      // show 30m radius around player
       const MAP_R = 30;
       const dots: MiniDot[] = [];
 
-      // bots
       for (const b of bots) {
         const dx = b.mesh.position.x - player.position.x;
         const dz = b.mesh.position.z - player.position.z;
         const dist = Math.sqrt(dx * dx + dz * dz);
-        if (dist <= MAP_R) {
-          dots.push({ x: dx / MAP_R, y: dz / MAP_R, kind: "bot" }); // normalized [-1..1]
-        }
+        if (dist <= MAP_R) dots.push({ x: dx / MAP_R, y: dz / MAP_R, kind: "bot" });
       }
 
-      // targets
       for (const t of targets) {
         const dx = t.position.x - player.position.x;
         const dz = t.position.z - player.position.z;
         const dist = Math.sqrt(dx * dx + dz * dz);
-        if (dist <= MAP_R) {
-          dots.push({ x: dx / MAP_R, y: dz / MAP_R, kind: "target" });
-        }
+        if (dist <= MAP_R) dots.push({ x: dx / MAP_R, y: dz / MAP_R, kind: "target" });
       }
 
-      // zone direction arrow (from player to zone center)
+      // Zone direction arrow: 0 = up (negative z), right = +x
       const zx = zoneCenter.x - player.position.x;
       const zz = zoneCenter.z - player.position.z;
-      // angle where 0 means "up" in minimap (negative z is up on screen), so:
-      const ang = Math.atan2(zx, -zz); // rad
+      const ang = Math.atan2(zx, -zz);
       const zoneDirDeg = (ang * 180) / Math.PI;
 
-      setMini({
-        dots,
-        zoneR: zoneRadius,
-        zoneDirDeg
-      });
+      setMini({ dots, zoneR: zoneRadius, zoneDirDeg });
     }
 
     // ---------- Loop ----------
@@ -534,17 +502,24 @@ export default function PlayClient() {
     function tick() {
       const dt = Math.min(clock.getDelta(), 0.033);
 
-      // time
-      if (phaseRef.current === "playing") {
-        hudRef.current.time += dt;
+      // game over: durdur (AI + zone + timer)
+      if (hudRef.current.hp <= 0) {
+        renderer.render(scene, camera);
+        syncHud(dt);
+        syncMini(dt);
+        rafRef.current = requestAnimationFrame(tick);
+        return;
       }
 
-      // look direction
+      // time only in playing
+      if (phaseRef.current === "playing") hudRef.current.time += dt;
+
+      // look
       camera.rotation.order = "YXZ";
       camera.rotation.y = yaw;
       camera.rotation.x = pitch;
 
-      // movement intent in yaw plane
+      // movement intent
       forward.set(Math.sin(yaw), 0, Math.cos(yaw)).normalize().multiplyScalar(-1);
       right.copy(forward).cross(up).normalize();
 
@@ -559,6 +534,7 @@ export default function PlayClient() {
       vel.x = THREE.MathUtils.lerp(vel.x, tmp.x * targetSpeed, 0.18);
       vel.z = THREE.MathUtils.lerp(vel.z, tmp.z * targetSpeed, 0.18);
 
+      // jump
       if (keys.space && onGround) {
         vel.y = JUMP;
         onGround = false;
@@ -570,36 +546,56 @@ export default function PlayClient() {
       player.position.z += vel.z * dt;
       player.position.y += vel.y * dt;
 
+      // ground
       if (player.position.y < GROUND_Y) {
         player.position.y = GROUND_Y;
         vel.y = 0;
         onGround = true;
       }
 
-      resolveObstacles();
+      // player obstacles
+      resolveAgainstObstacles(player.position, playerRadius);
 
       // -------- ZONE shrink + damage --------
       if (phaseRef.current === "playing") {
         zoneRadius = Math.max(zoneMin, zoneRadius - zoneShrinkPerSec * dt);
 
-        // update ring geometry
-        zoneRing.geometry.dispose();
-        zoneRing.geometry = new THREE.RingGeometry(zoneRadius - 0.08, zoneRadius + 0.08, 96);
+        // ring scale update (NO geometry recreate)
+        const s = zoneRadius / ZONE_INITIAL;
+        zoneRing.scale.setScalar(s);
 
-        // outside damage
+        // player outside damage
         const dx = player.position.x - zoneCenter.x;
         const dz = player.position.z - zoneCenter.z;
         const dist = Math.sqrt(dx * dx + dz * dz);
-        if (dist > zoneRadius) {
-          takeDamage(zoneDps * dt);
-        }
+        if (dist > zoneRadius) takeDamage(zoneDps * dt);
       }
       hudRef.current.zone = zoneRadius;
 
-      // -------- BOT AI (chase + attack + knockback integration) --------
-      if (phaseRef.current === "playing" && hudRef.current.hp > 0) {
+      // -------- BOT AI + collisions + zone behavior --------
+      if (phaseRef.current === "playing") {
         for (const b of bots) {
           b.atkCooldown = Math.max(0, b.atkCooldown - dt);
+
+          // If bot outside zone, pull it inward strongly + take minor damage
+          const bdx = b.mesh.position.x - zoneCenter.x;
+          const bdz = b.mesh.position.z - zoneCenter.z;
+          const bdist = Math.sqrt(bdx * bdx + bdz * bdz);
+          if (bdist > zoneRadius) {
+            // inward pull
+            const pull = new THREE.Vector3(-bdx, 0, -bdz).normalize().multiplyScalar(3.2);
+            b.vel.add(pull);
+            // zone dmg (bot da acı çeksin)
+            b.hp -= 12 * dt;
+            if (b.hp <= 0) {
+              scene.remove(b.mesh);
+              const idx = bots.indexOf(b);
+              if (idx >= 0) bots.splice(idx, 1);
+              doScore(8); // zone'da öldü diye az puan
+              setTimeout(() => spawnBot(), 650);
+              continue;
+            }
+          }
 
           // chase direction
           const dirToPlayer = new THREE.Vector3(
@@ -610,22 +606,27 @@ export default function PlayClient() {
           const dist = dirToPlayer.length();
           if (dist > 0.001) dirToPlayer.normalize();
 
-          // base move
           const moveSpeed = dist < 1.2 ? b.speed * 0.35 : b.speed;
           const chaseVel = dirToPlayer.multiplyScalar(moveSpeed);
 
-          // blend with knockback velocity
-          // friction on knockback
+          // knockback friction
           b.vel.multiplyScalar(THREE.MathUtils.lerp(1, 0.86, dt * 8));
-          const finalVX = chaseVel.x + b.vel.x;
-          const finalVZ = chaseVel.z + b.vel.z;
 
-          b.mesh.position.x += finalVX * dt;
-          b.mesh.position.z += finalVZ * dt;
+          const vx = chaseVel.x + b.vel.x;
+          const vz = chaseVel.z + b.vel.z;
 
-          // face player
-          const faceYaw = Math.atan2(player.position.x - b.mesh.position.x, player.position.z - b.mesh.position.z);
-          b.mesh.rotation.y = faceYaw;
+          b.mesh.position.x += vx * dt;
+          b.mesh.position.z += vz * dt;
+
+          // bot obstacles collision (prevents wall phasing)
+          resolveAgainstObstacles(b.mesh.position, botRadius);
+
+          // face player (smooth a bit)
+          const targetYaw = Math.atan2(
+            player.position.x - b.mesh.position.x,
+            player.position.z - b.mesh.position.z
+          );
+          b.mesh.rotation.y = THREE.MathUtils.lerpAngle(b.mesh.rotation.y, targetYaw, 0.18);
 
           // attack
           if (dist < 1.25 && b.atkCooldown === 0) {
@@ -642,7 +643,9 @@ export default function PlayClient() {
         player.position.z
       );
 
-      const back = new THREE.Vector3(0, 0, 1).applyEuler(new THREE.Euler(0, yaw, 0)).multiplyScalar(2.2);
+      const back = new THREE.Vector3(0, 0, 1)
+        .applyEuler(new THREE.Euler(0, yaw, 0))
+        .multiplyScalar(2.2);
       camera.position.set(headPos.x + back.x, headPos.y + 0.2, headPos.z + back.z);
 
       const lookAt = headPos
@@ -652,7 +655,6 @@ export default function PlayClient() {
 
       renderer.render(scene, camera);
 
-      // UI sync
       syncHud(dt);
       syncMini(dt);
 
@@ -664,18 +666,27 @@ export default function PlayClient() {
     // ---------- Cleanup ----------
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
+
       window.removeEventListener("resize", onResize);
       document.removeEventListener("pointerlockchange", onPointerLockChange);
       document.removeEventListener("mousemove", onMouseMove);
       document.removeEventListener("mousedown", onMouseDown);
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
-      canvas.removeEventListener("click", onCanvasClick);
 
+      // dispose renderer
       renderer.dispose();
       mountRef.current?.removeChild(renderer.domElement);
     };
   }, []);
+
+  // ✅ Overlay tık: oyuna girme fix'i burada
+  const onOverlayClick = () => {
+    if (phaseRef.current === "ready") {
+      setPhase("countdown");
+      return;
+    }
+  };
 
   const gameOver = hud.hp <= 0;
 
@@ -683,6 +694,15 @@ export default function PlayClient() {
     <div className="relative w-full h-[calc(100vh-140px)] rounded-2xl border border-slate-800 overflow-hidden bg-slate-950">
       {/* Canvas mount */}
       <div ref={mountRef} className="absolute inset-0" />
+
+      {/* Crosshair */}
+      <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+        <div className="relative">
+          <div className="h-6 w-px bg-slate-200/70" />
+          <div className="absolute left-1/2 top-1/2 h-px w-6 -translate-x-1/2 -translate-y-1/2 bg-slate-200/70" />
+          <div className="absolute left-1/2 top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-indigo-300/80" />
+        </div>
+      </div>
 
       {/* HUD */}
       <div className="absolute top-3 left-3 flex flex-wrap gap-2">
@@ -704,30 +724,21 @@ export default function PlayClient() {
         </div>
       </div>
 
-      {/* MINIMAP (top-right) */}
+      {/* MINIMAP */}
       <div className="absolute top-3 right-3">
         <div className="relative h-[140px] w-[140px] rounded-2xl bg-slate-950/70 border border-slate-800 overflow-hidden">
-          {/* crosshair lines */}
           <div className="absolute left-1/2 top-0 bottom-0 w-px bg-slate-700/60" />
           <div className="absolute top-1/2 left-0 right-0 h-px bg-slate-700/60" />
 
-          {/* player dot center */}
           <div className="absolute left-1/2 top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-emerald-300 shadow" />
 
-          {/* dots */}
           {mini.dots.map((d, i) => {
-            // map normalized [-1..1] to pixels inside 140px, leave padding
             const PAD = 10;
             const W = 140 - PAD * 2;
             const H = 140 - PAD * 2;
-
             const x = PAD + (d.x * 0.5 + 0.5) * W;
             const y = PAD + (d.y * 0.5 + 0.5) * H;
-
-            const cls =
-              d.kind === "bot"
-                ? "bg-red-400"
-                : "bg-indigo-300";
+            const cls = d.kind === "bot" ? "bg-red-400" : "bg-indigo-300";
 
             return (
               <div
@@ -745,13 +756,11 @@ export default function PlayClient() {
           {/* zone direction arrow */}
           <div className="absolute left-1/2 top-1/2">
             <div
-              className="h-0 w-0"
               style={{
                 transform: `translate(-50%, -50%) rotate(${mini.zoneDirDeg}deg)`
               }}
             >
               <div
-                className="h-0 w-0"
                 style={{
                   borderLeft: "7px solid transparent",
                   borderRight: "7px solid transparent",
@@ -776,7 +785,7 @@ export default function PlayClient() {
           <span className="text-slate-100 font-semibold">SPACE</span> zıpla •{" "}
           <span className="text-slate-100 font-semibold">SHIFT</span> koş •{" "}
           <span className="text-slate-100 font-semibold">Mouse</span> bakış •{" "}
-          <span className="text-slate-100 font-semibold">Sol tık</span> ateş •{" "}
+          <span className="text-slate-100 font-semibold">Sol tık</span> ateş/kilit •{" "}
           <span className="text-slate-100 font-semibold">R</span> doldur
         </div>
 
@@ -784,14 +793,18 @@ export default function PlayClient() {
           {locked ? (
             <span className="text-emerald-300">🟢 Kontrol aktif</span>
           ) : (
-            <span className="text-indigo-300">🟣 Tıkla → oyun başlat / kontrol</span>
+            <span className="text-indigo-300">🟣 Playing’de sol tık → kilit/ateş</span>
           )}
         </div>
       </div>
 
-      {/* READY / COUNTDOWN OVERLAY */}
+      {/* READY / COUNTDOWN OVERLAY (clickable -> fixes "oyuna giremiyorum") */}
       {(phase === "ready" || phase === "countdown") && (
-        <div className="absolute inset-0 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm">
+        <button
+          type="button"
+          onClick={onOverlayClick}
+          className="absolute inset-0 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm"
+        >
           <div className="text-center space-y-3 px-6">
             <div className="text-2xl font-extrabold text-slate-100">
               {phase === "ready" ? "Arenaya Hazır mısın?" : "Başlıyor..."}
@@ -799,7 +812,7 @@ export default function PlayClient() {
 
             {phase === "ready" && (
               <div className="text-slate-300 text-sm">
-                Tıkla → 3-2-1 → oyun başlasın
+                Buraya tıkla → 3-2-1 → oyun başlasın
               </div>
             )}
 
@@ -808,16 +821,10 @@ export default function PlayClient() {
             )}
 
             <div className="text-xs text-slate-400">
-              Zone daralır • Dışarıda hasar yersin • Kırmızı noktalar bot • Mor noktalar hedef
+              Zone daralır • Dışarıda hasar yersin • Kırmızı bot • Mor hedef
             </div>
-
-            {phase === "ready" && (
-              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-800 bg-slate-900/60 text-slate-200">
-                🖱️ Tıkla ve başlat
-              </div>
-            )}
           </div>
-        </div>
+        </button>
       )}
 
       {/* GAME OVER */}
