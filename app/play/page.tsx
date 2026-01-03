@@ -1,6 +1,6 @@
-import dynamic from "next/dynamic";
+"use client";
 
-const PlayClient = dynamic(() => import("./play-client"), { ssr: false });
+import PlayClient from "./play-client";
 
 export default function PlayPage() {
   return <PlayClient />;
