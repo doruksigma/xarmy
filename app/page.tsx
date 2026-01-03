@@ -1,5 +1,5 @@
 import Link from "next/link";
-
+ 
 export default function HomePage() {
   return (
     <div className="min-h-[calc(100vh-120px)] flex flex-col justify-center">
