@@ -2,697 +2,918 @@
 
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
-import { Capsule } from "three/examples/jsm/math/Capsule.js";
 
-// --- TİPLER ---
-type Keys = { w: boolean; a: boolean; s: boolean; d: boolean; shift: boolean; space: boolean; };
-type Phase = "ready" | "countdown" | "playing";
+type Keys = { w: boolean; a: boolean; s: boolean; d: boolean; shift: boolean; space: boolean; e: boolean };
+
+type WeaponType = "Pistol" | "Rifle" | "Shotgun";
+type WeaponDef = { type: WeaponType; name: string; ammoMax: number; fireRate: number; damage: number; spread: number };
+
+const WEAPONS: WeaponDef[] = [
+  { type: "Pistol", name: "🔫 Tabanca", ammoMax: 18, fireRate: 4.5, damage: 9, spread: 0.012 },
+  { type: "Rifle", name: "🪖 Tüfek", ammoMax: 30, fireRate: 10, damage: 6, spread: 0.010 },
+  { type: "Shotgun", name: "💥 Pompalı", ammoMax: 8, fireRate: 1.4, damage: 4, spread: 0.060 } // pellet ile çarpan
+];
+
+const BOT_NAMES = [
+  "Polat Alemdar", "Memati", "Abdülhey", "Pala", "Candan", "Kurtlar Vadisi Botu",
+  "Tombik Ayı", "Kedi Komando", "Recep İvedik", "Zeki Müren", "Süper Mario",
+  "Gandalf", "Çaycı Hüseyin", "Ekmek Teknesi", "Deli Yürek", "Kara Murat",
+  "Şahin K", "Darth Vader", "SpongeBob", "Yılmaz", "Ezel"
+];
+
+type LootItem = {
+  id: string;
+  mesh: THREE.Mesh;
+  weapon: WeaponDef;
+  ammo: number;
+};
 
 type Bot = {
-  id: number;
-  name: string; // Bot ismi
-  mesh: THREE.Mesh;
-  hp: number;
-  speed: number;
-  atkCooldown: number;
-  vel: THREE.Vector3;
-  capsule: Capsule; // Çarpışma için daha hassas
-};
-
-type Loot = {
+  id: string;
+  name: string;
   mesh: THREE.Group;
-  type: "ammo";
-  amount: number;
-  active: boolean;
+  hp: number;
+  weapon: WeaponDef;
+  ammo: number;
+  cooldown: number; // seconds
+  roamAngle: number;
+  roamTimer: number;
 };
 
-type MiniDot = { x: number; y: number; kind: "bot" | "target" | "loot" };
-
-// Komik Bot İsimleri Havuzu
-const BOT_NAMES = [
-  "Polat Alemdar", "Memati Baş", "Abdülhey", "Güllü Erhan", 
-  "Testere Necmi", "Karahanlı", "Laz Ziya", "Hüsrev Ağa", 
-  "Kılıç", "Nizamettin", "Pala", "Bedir", "Halo Dayı"
-];
+function rand(min: number, max: number) {
+  return min + Math.random() * (max - min);
+}
+function pick<T>(arr: T[]) {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+function clamp(v: number, a: number, b: number) {
+  return Math.max(a, Math.min(b, v));
+}
 
 export default function PlayClient() {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const rafRef = useRef<number | null>(null);
 
-  const [phase, setPhase] = useState<Phase>("ready");
-  const [count, setCount] = useState(3);
-
-  // Başlangıçta mermi 0. Yerden toplanacak.
-  const [hud, setHud] = useState({ hp: 100, ammo: 0, score: 0, time: 0, zone: 0 });
-  const [mini, setMini] = useState<{ dots: MiniDot[]; zoneR: number; zoneDirDeg: number; mapSize: number }>({
-    dots: [], zoneR: 0, zoneDirDeg: 0, mapSize: 1
+  const [locked, setLocked] = useState(false);
+  const [hud, setHud] = useState({
+    hp: 100,
+    ammo: 30,
+    score: 0,
+    weaponName: "🪖 Tüfek",
+    phase: "BUS" as "BUS" | "PLAY",
+    killFeed: "" as string
   });
 
-  const hudRef = useRef({ hp: 100, ammo: 0, score: 0, time: 0, zone: 0 });
-  const phaseRef = useRef<Phase>("ready");
-  const playerDroppedRef = useRef(false); // Otobüsten atladı mı kontrolü
-
-  useEffect(() => { phaseRef.current = phase; }, [phase]);
-
-  // Geri Sayım
+  // HUD’u daha az re-render yapmak için (performans)
+  const hudRef = useRef(hud);
   useEffect(() => {
-    if (phase !== "countdown") return;
-    let c = 3; setCount(c);
-    const t = setInterval(() => {
-      c -= 1; setCount(c);
-      if (c <= 0) { clearInterval(t); setPhase("playing"); }
-    }, 1000);
-    return () => clearInterval(t);
-  }, [phase]);
+    hudRef.current = hud;
+  }, [hud]);
 
   useEffect(() => {
     if (!mountRef.current) return;
 
-    // 1. Renderer & Sahne
-    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5)); // Performans için pixel ratio düşürdük
+    // ---------- Renderer ----------
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight);
-    renderer.setClearColor(0x87CEEB, 1); // Gökyüzü mavisi
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.setClearColor(0x050712, 1);
     mountRef.current.appendChild(renderer.domElement);
 
+    // ---------- Scene ----------
     const scene = new THREE.Scene();
-    // Hafif mavi sis (atmosferik derinlik için)
-    scene.fog = new THREE.FogExp2(0x87CEEB, 0.0025);
+    scene.fog = new THREE.Fog(0x050712, 40, 220);
 
-    const camera = new THREE.PerspectiveCamera(75, mountRef.current.clientWidth / mountRef.current.clientHeight, 0.1, 1000);
+    // ---------- Camera ----------
+    const camera = new THREE.PerspectiveCamera(
+      75,
+      mountRef.current.clientWidth / mountRef.current.clientHeight,
+      0.1,
+      800
+    );
 
-    // 2. Işıklandırma (Güneşli Gün)
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
-    scene.add(ambientLight);
+    // ---------- Lights ----------
+    const hemi = new THREE.HemisphereLight(0xbfd7ff, 0x1b1330, 0.85);
+    scene.add(hemi);
 
-    const sunLight = new THREE.DirectionalLight(0xffddee, 1.2);
-    sunLight.position.set(100, 150, 50);
-    sunLight.castShadow = true;
-    sunLight.shadow.camera.top = 200;
-    sunLight.shadow.camera.bottom = -200;
-    sunLight.shadow.camera.left = -200;
-    sunLight.shadow.camera.right = 200;
-    sunLight.shadow.mapSize.width = 2048;
-    sunLight.shadow.mapSize.height = 2048;
-    scene.add(sunLight);
+    const dir = new THREE.DirectionalLight(0xffffff, 0.95);
+    dir.position.set(30, 50, 20);
+    scene.add(dir);
 
-    // 3. Harita: Zemin, Orman ve Evler
-    const MAP_SIZE = 500;
-    const groundGeo = new THREE.PlaneGeometry(MAP_SIZE, MAP_SIZE);
-    // Çim rengi zemin
-    const groundMat = new THREE.MeshStandardMaterial({ color: 0x3b7d3b, roughness: 0.8 });
+    const accent = new THREE.PointLight(0x6d5cff, 1.2, 80);
+    accent.position.set(0, 18, 0);
+    scene.add(accent);
+
+    // ---------- Map size ----------
+    const MAP_SIZE = 520; // geniş harita
+    const HALF = MAP_SIZE / 2;
+
+    // ---------- Ground ----------
+    const groundGeo = new THREE.PlaneGeometry(MAP_SIZE, MAP_SIZE, 1, 1);
+    const groundMat = new THREE.MeshStandardMaterial({
+      color: 0x071022,
+      roughness: 0.95,
+      metalness: 0.02
+    });
     const ground = new THREE.Mesh(groundGeo, groundMat);
     ground.rotation.x = -Math.PI / 2;
-    ground.receiveShadow = true;
     scene.add(ground);
 
-    const colliders: THREE.Mesh[] = []; // Ağaçlar ve evler buraya
+    const grid = new THREE.GridHelper(MAP_SIZE, 120, 0x253155, 0x141a33);
+    (grid.material as THREE.Material).transparent = true;
+    (grid.material as THREE.Material).opacity = 0.17;
+    scene.add(grid);
 
-    // --- Ağaç Oluşturucu ---
-    const treeTrunkGeo = new THREE.CylinderGeometry(0.5, 0.7, 2, 8);
-    const treeTrunkMat = new THREE.MeshStandardMaterial({ color: 0x4d2926 });
-    const treeTopGeo = new THREE.ConeGeometry(3, 7, 8);
-    const treeTopMat = new THREE.MeshStandardMaterial({ color: 0x1a5c1a });
+    // ---------- Obstacles (evler + kayalar) ----------
+    const obstacles: THREE.Mesh[] = [];
 
-    function spawnTree(x: number, z: number) {
-      const trunk = new THREE.Mesh(treeTrunkGeo, treeTrunkMat);
-      trunk.position.set(x, 1, z);
-      trunk.castShadow = true;
-      
-      const top = new THREE.Mesh(treeTopGeo, treeTopMat);
-      top.position.set(x, 1 + 3.5, z);
-      top.castShadow = true;
+    const houseMat = new THREE.MeshStandardMaterial({
+      color: 0x121a33,
+      roughness: 0.65,
+      metalness: 0.12,
+      emissive: 0x0f1533,
+      emissiveIntensity: 0.55
+    });
 
-      scene.add(trunk, top);
-      // Sadece gövdeyi çarpışmaya ekleyelim ki üstünden atlanabilsin
-      colliders.push(trunk); 
+    const roofMat = new THREE.MeshStandardMaterial({
+      color: 0x1a2450,
+      roughness: 0.8,
+      metalness: 0.05,
+      emissive: 0x121a33,
+      emissiveIntensity: 0.35
+    });
+
+    const rockMat = new THREE.MeshStandardMaterial({
+      color: 0x0d162f,
+      roughness: 0.95,
+      metalness: 0.02
+    });
+
+    function addObstacleMesh(m: THREE.Mesh) {
+      scene.add(m);
+      obstacles.push(m);
+      return m;
     }
 
-    // Rastgele 180 Ağaç (Merkezden uzak)
-    for (let i = 0; i < 180; i++) {
-      let x, z;
-      do {
-        x = (Math.random() - 0.5) * MAP_SIZE * 0.9;
-        z = (Math.random() - 0.5) * MAP_SIZE * 0.9;
-      } while (Math.abs(x) < 30 && Math.abs(z) < 30); // Merkeze çok yakın olmasın
-      spawnTree(x, z);
+    function makeHouse(x: number, z: number, w: number, h: number, d: number) {
+      const base = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), houseMat);
+      base.position.set(x, h / 2, z);
+
+      const roof = new THREE.Mesh(new THREE.ConeGeometry(Math.max(w, d) * 0.65, Math.max(1.3, h * 0.7), 4), roofMat);
+      roof.position.set(x, h + Math.max(0.7, h * 0.35), z);
+      roof.rotation.y = rand(0, Math.PI);
+
+      addObstacleMesh(base);
+      scene.add(roof);
     }
 
-    // --- Ev Oluşturucu ---
-    const houseBodyGeo = new THREE.BoxGeometry(8, 4, 6);
-    const houseBodyMat = new THREE.MeshStandardMaterial({ color: 0x8B4513 });
-    const houseRoofGeo = new THREE.ConeGeometry(6, 3, 4);
-    const houseRoofMat = new THREE.MeshStandardMaterial({ color: 0x654321 });
-    
-    function spawnHouse(x: number, z: number, rotY: number) {
-        const body = new THREE.Mesh(houseBodyGeo, houseBodyMat);
-        body.position.set(x, 2, z);
-        body.rotation.y = rotY;
-        body.castShadow = true;
-        body.receiveShadow = true;
-
-        const roof = new THREE.Mesh(houseRoofGeo, houseRoofMat);
-        roof.position.set(x, 4 + 1.5, z);
-        roof.rotation.y = rotY + Math.PI/4; // Çatıyı döndür
-        roof.castShadow = true;
-        
-        scene.add(body, roof);
-        colliders.push(body);
+    function makeRock(x: number, z: number) {
+      const s = rand(1.1, 3.4);
+      const m = new THREE.Mesh(new THREE.DodecahedronGeometry(s, 0), rockMat);
+      m.position.set(x, s * 0.45, z);
+      m.rotation.set(rand(0, Math.PI), rand(0, Math.PI), rand(0, Math.PI));
+      addObstacleMesh(m);
     }
 
-    // Rastgele 15 Ev
-    for (let i = 0; i < 15; i++) {
-        let x = (Math.random() - 0.5) * MAP_SIZE * 0.8;
-        let z = (Math.random() - 0.5) * MAP_SIZE * 0.8;
-        spawnHouse(x, z, Math.random() * Math.PI);
+    // Köy alanları
+    for (let i = 0; i < 10; i++) {
+      const cx = rand(-HALF * 0.65, HALF * 0.65);
+      const cz = rand(-HALF * 0.65, HALF * 0.65);
+      const count = Math.floor(rand(2, 6));
+      for (let k = 0; k < count; k++) {
+        makeHouse(cx + rand(-18, 18), cz + rand(-18, 18), rand(6, 12), rand(3.5, 6.5), rand(6, 12));
+      }
     }
 
+    // Kayalar
+    for (let i = 0; i < 55; i++) {
+      makeRock(rand(-HALF * 0.9, HALF * 0.9), rand(-HALF * 0.9, HALF * 0.9));
+    }
 
-    // 4. Oyuncu Yapısı
+    // ---------- Trees (orman) ----------
+    const trees: THREE.Group[] = [];
+    const trunkMat = new THREE.MeshStandardMaterial({ color: 0x2a1d13, roughness: 1.0 });
+    const leafMat = new THREE.MeshStandardMaterial({ color: 0x0b3a2a, roughness: 0.9, metalness: 0.0, emissive: 0x041b12, emissiveIntensity: 0.35 });
+
+    function makeTree(x: number, z: number) {
+      const g = new THREE.Group();
+      const trunkH = rand(2.2, 5.2);
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.5, trunkH, 8), trunkMat);
+      trunk.position.y = trunkH / 2;
+
+      const crownCount = Math.floor(rand(2, 4));
+      for (let i = 0; i < crownCount; i++) {
+        const s = rand(1.4, 2.8);
+        const crown = new THREE.Mesh(new THREE.IcosahedronGeometry(s, 0), leafMat);
+        crown.position.set(rand(-0.4, 0.4), trunkH * 0.65 + i * 0.85, rand(-0.4, 0.4));
+        g.add(crown);
+      }
+
+      g.add(trunk);
+      g.position.set(x, 0, z);
+      g.rotation.y = rand(0, Math.PI * 2);
+      scene.add(g);
+      trees.push(g);
+    }
+
+    // Orman dağılımı
+    for (let i = 0; i < 240; i++) {
+      const x = rand(-HALF * 0.95, HALF * 0.95);
+      const z = rand(-HALF * 0.95, HALF * 0.95);
+      // köy merkezlerine çok yaklaşmasın
+      if (Math.abs(x) < 18 && Math.abs(z) < 18) continue;
+      makeTree(x, z);
+    }
+
+    // ---------- Player ----------
     const player = new THREE.Group();
+    const bodyMat = new THREE.MeshStandardMaterial({
+      color: 0x0f1733,
+      roughness: 0.35,
+      metalness: 0.2,
+      emissive: 0x111a44,
+      emissiveIntensity: 0.6
+    });
+
+    const cyl = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 1.1, 14), bodyMat);
+    cyl.position.y = 0.95;
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.38, 16, 16), bodyMat);
+    head.position.y = 1.55;
+    const hip = new THREE.Mesh(new THREE.SphereGeometry(0.36, 16, 16), bodyMat);
+    hip.position.y = 0.40;
+    player.add(cyl, head, hip);
+    player.position.set(0, 0, 0);
     scene.add(player);
-    // Oyuncu çarpışma kapsülü (daha doğru fizik için)
-    const playerCapsule = new Capsule(new THREE.Vector3(0, 0.9, 0), new THREE.Vector3(0, 1.8, 0), 0.45);
 
-    const keys: Keys = { w: false, a: false, s: false, d: false, shift: false, space: false };
-    let yaw = 0, pitch = 0;
-    const vel = new THREE.Vector3();
-    let onGround = false;
+    // ---------- Bus (otobüs) ----------
+    const bus = new THREE.Group();
+    const busBodyMat = new THREE.MeshStandardMaterial({ color: 0x101a33, roughness: 0.35, metalness: 0.2, emissive: 0x1a2450, emissiveIntensity: 0.6 });
+    const busGlassMat = new THREE.MeshStandardMaterial({ color: 0x0b1020, roughness: 0.15, metalness: 0.6, emissive: 0x0b1020, emissiveIntensity: 0.4 });
 
-    // 5. Gelişmiş Botlar (20 Adet)
-    const bots: Bot[] = [];
-    const botMat = new THREE.MeshStandardMaterial({ color: 0x222222 }); // Koyu takım elbiseli gibi
-    const botHeadMat = new THREE.MeshStandardMaterial({ color: 0xdca577 }); // Ten rengi
+    const busBody = new THREE.Mesh(new THREE.BoxGeometry(7.5, 2.3, 2.8), busBodyMat);
+    busBody.position.y = 1.6;
+    const busCab = new THREE.Mesh(new THREE.BoxGeometry(2.2, 2.0, 2.8), busBodyMat);
+    busCab.position.set(3.2, 1.5, 0);
 
-    function spawnBot(id: number) {
-        const botGroup = new THREE.Group();
-        
-        const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.4, 1.0, 4, 8), botMat);
-        body.position.y = 0.9;
-        body.castShadow = true;
+    const busGlass = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.2, 2.6), busGlassMat);
+    busGlass.position.set(3.2, 1.8, 0);
 
-        const head = new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 8), botHeadMat);
-        head.position.y = 1.65;
-        head.castShadow = true;
-        
-        // Botun eline basit silah
-        const weapon = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.6), new THREE.MeshStandardMaterial({color: 0x111111}));
-        weapon.position.set(0.25, 1.1, 0.3);
-        
-        botGroup.add(body, head, weapon);
-        
-        // Rastgele uzak bir konumda doğsun
-        const angle = Math.random() * Math.PI * 2;
-        const r = (MAP_SIZE / 3) + Math.random() * (MAP_SIZE / 6);
-        botGroup.position.set(Math.cos(angle) * r, 0, Math.sin(angle) * r);
-        
-        scene.add(botGroup);
+    bus.add(busBody, busCab, busGlass);
+    bus.position.set(-HALF + 30, 18, -HALF + 50);
+    scene.add(bus);
 
-        const name = BOT_NAMES[Math.floor(Math.random() * BOT_NAMES.length)];
-        
-        bots.push({
-            id,
-            name,
-            mesh: botGroup as THREE.Mesh, // Tür zorlaması, grup mesh gibi davranır
-            hp: 60, // Canları biraz daha fazla
-            speed: 3 + Math.random() * 1.5,
-            atkCooldown: 0,
-            vel: new THREE.Vector3(),
-            capsule: new Capsule(new THREE.Vector3(0,0.9,0), new THREE.Vector3(0,1.8,0), 0.4)
-        });
+    let phase: "BUS" | "PLAY" = "BUS";
+    let busT = 0;
+    let dropped = false;
+
+    // ---------- Controls State ----------
+    const keys: Keys = { w: false, a: false, s: false, d: false, shift: false, space: false, e: false };
+    let yaw = 0;
+    let pitch = 0;
+
+    // Movement
+    const vel = new THREE.Vector3(0, 0, 0);
+    const tmp = new THREE.Vector3();
+    const forward = new THREE.Vector3();
+    const right = new THREE.Vector3();
+    const up = new THREE.Vector3(0, 1, 0);
+
+    const PLAYER_HEIGHT = 1.8;
+    const GROUND_Y = 0;
+    let onGround = true;
+
+    const SPEED = 5.4;
+    const SPRINT = 8.2;
+    const JUMP = 5.8;
+    const GRAVITY = 16.5;
+
+    // ---------- Weapons ----------
+    let currentWeapon: WeaponDef = WEAPONS.find(w => w.type === "Rifle")!;
+    let ammo = currentWeapon.ammoMax;
+
+    function setWeapon(w: WeaponDef, a: number) {
+      currentWeapon = w;
+      ammo = clamp(a, 0, w.ammoMax);
+      setHud((h) => ({ ...h, weaponName: w.name, ammo }));
     }
-    for (let i = 0; i < 20; i++) spawnBot(i);
 
-    // 6. Loot Sistemi (Yerdeki Silahlar)
-    const loots: Loot[] = [];
-    
-    function spawnLoot() {
-        const lootGroup = new THREE.Group();
-
-        // Basit bir M4 tüfek modeli temsili
-        const stock = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.15, 0.3), new THREE.MeshStandardMaterial({color: 0x333333}));
-        const body = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 0.4), new THREE.MeshStandardMaterial({color: 0x555555}));
-        body.position.z = -0.35;
-        const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.5), new THREE.MeshStandardMaterial({color: 0x222222}));
-        barrel.rotation.x = Math.PI/2;
-        barrel.position.z = -0.8;
-        
-        lootGroup.add(stock, body, barrel);
-        
-        lootGroup.position.set(
-            (Math.random() - 0.5) * MAP_SIZE * 0.9,
-            0.2, // Yerden biraz yukarıda
-            (Math.random() - 0.5) * MAP_SIZE * 0.9
-        );
-        lootGroup.rotation.y = Math.random() * Math.PI * 2;
-        
-        // Parlama efekti
-        const pointLight = new THREE.PointLight(0xffff00, 0.5, 3);
-        pointLight.position.y = 0.5;
-        lootGroup.add(pointLight);
-
-        scene.add(lootGroup);
-        loots.push({ mesh: lootGroup, type: "ammo", amount: 30, active: true });
-    }
-    // 40 adet silah dağıt
-    for(let i=0; i<40; i++) spawnLoot();
-
-
-    // 7. Zone (Devasa)
-    const ZONE_INITIAL = 160;
-    let zoneRadius = ZONE_INITIAL;
-    const zoneCenter = new THREE.Vector3(0, 0, 0);
-    const zoneRing = new THREE.Mesh(
-      new THREE.RingGeometry(ZONE_INITIAL - 0.5, ZONE_INITIAL + 0.5, 128),
-      new THREE.MeshBasicMaterial({ color: 0xff4444, transparent: true, opacity: 0.4, side: THREE.DoubleSide })
-    );
-    zoneRing.rotation.x = -Math.PI / 2;
-    zoneRing.position.y = 0.1;
-    scene.add(zoneRing);
-
-    // 8. Ateşleme Efektleri (Oyuncu ve Botlar için)
+    // ---------- Raycaster / shooting ----------
     const raycaster = new THREE.Raycaster();
-    const muzzleFlashPlayer = new THREE.PointLight(0xffaa00, 0, 10);
-    scene.add(muzzleFlashPlayer);
+    const muzzleFlash = new THREE.PointLight(0x9aa5ff, 0, 8);
+    scene.add(muzzleFlash);
 
-    // Bot ateş efekti için yardımcı fonksiyon
-    function showBotMuzzleFlash(botPos: THREE.Vector3, targetPos: THREE.Vector3) {
-        const flash = new THREE.PointLight(0xff5500, 2, 8);
-        const dir = new THREE.Vector3().subVectors(targetPos, botPos).normalize();
-        // Flash'ı botun biraz önüne koy
-        flash.position.copy(botPos).add(new THREE.Vector3(0, 1.1, 0)).add(dir.multiplyScalar(0.8));
-        scene.add(flash);
-        setTimeout(() => scene.remove(flash), 50);
+    let shootCooldown = 0; // seconds
+
+    function applyDamageToPlayer(dmg: number) {
+      setHud((h) => {
+        const nhp = Math.max(0, h.hp - dmg);
+        return { ...h, hp: nhp };
+      });
     }
 
-    // OYUNCU ATEŞ ETME
-    function shoot() {
-      if (phaseRef.current !== "playing") return;
-      if (hudRef.current.ammo <= 0) {
-        console.log("Mermi yok! Yerden silah al.");
+    function shootFromCamera() {
+      if (phase !== "PLAY") return;
+      if (shootCooldown > 0) return;
+      if (ammo <= 0) {
+        // boş feedback (basit)
+        muzzleFlash.intensity = 0.4;
+        setTimeout(() => (muzzleFlash.intensity = 0), 40);
         return;
       }
-      hudRef.current.ammo--;
 
-      raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
-      // Sadece botları hedef al
-      const hits = raycaster.intersectObjects(bots.map(b => b.mesh), true);
+      // fire rate
+      shootCooldown = 1 / currentWeapon.fireRate;
 
+      // ammo düş
+      ammo -= 1;
+      setHud((h) => ({ ...h, ammo }));
+
+      // spread
+      const sx = (Math.random() - 0.5) * currentWeapon.spread;
+      const sy = (Math.random() - 0.5) * currentWeapon.spread;
+
+      raycaster.setFromCamera(new THREE.Vector2(sx, sy), camera);
+
+      // botlara vur
+      const botMeshes = bots.map((b) => b.mesh);
+      const hits = raycaster.intersectObjects(botMeshes, true);
       if (hits.length > 0) {
-        // En üstteki ebeveyn mesh'i bul (Grup)
-        let hitObj = hits[0].object;
-        while(hitObj.parent && hitObj.parent.type !== 'Scene') { hitObj = hitObj.parent; }
+        const hit = hits[0].object;
+        const bot = bots.find((b) => b.mesh === hit || b.mesh.children.includes(hit as any) || b.mesh.getObjectById(hit.id));
+        if (bot) {
+          bot.hp -= currentWeapon.damage;
+          if (bot.hp <= 0) {
+            // öldü
+            bot.hp = 0;
+            scene.remove(bot.mesh);
+            deadBotIds.add(bot.id);
 
-        const bi = bots.findIndex(b => b.mesh === hitObj);
-        if (bi >= 0) {
-          const b = bots[bi];
-          b.hp -= 25;
-          console.log(`${b.name} vuruldu! Kalan can: ${b.hp}`);
-          
-          // Vurulma efekti (Kısa süreli kırmızı parlama)
-          b.mesh.children.forEach(child => {
-             if(child instanceof THREE.Mesh && child.material instanceof THREE.MeshStandardMaterial) {
-                 child.material.emissive.setHex(0xff0000);
-                 setTimeout(() => { child.material.emissive.setHex(0x000000) }, 100);
-             }
-          });
-
-          if (b.hp <= 0) {
-            console.log(`--- ${b.name} ETKİSİZ HALE GETİRİLDİ ---`);
-            scene.remove(b.mesh);
-            bots.splice(bi, 1);
-            hudRef.current.score += 1;
+            setHud((h) => ({
+              ...h,
+              score: h.score + 25,
+              killFeed: `🎯 ${bot.name} düştü (+25)`
+            }));
+            setTimeout(() => setHud((h) => ({ ...h, killFeed: "" })), 900);
           }
         }
       }
-      
-      // Oyuncu namlu parlaması
-      muzzleFlashPlayer.position.copy(player.position).add(new THREE.Vector3(0, 1.5, 0));
-      muzzleFlashPlayer.intensity = 3;
-      setTimeout(() => muzzleFlashPlayer.intensity = 0, 50);
+
+      // flash
+      muzzleFlash.position.copy(camera.position);
+      muzzleFlash.intensity = 2.2;
+      setTimeout(() => (muzzleFlash.intensity = 0), 55);
     }
 
-    // --- FİZİK & ÇARPIŞMA YARDIMCILARI ---
-    const box3 = new THREE.Box3();
-    const tempVec = new THREE.Vector3();
-    const tempCapsule = new Capsule();
+    // ---------- Loot (silahlar yerde, rastgele) ----------
+    const loot: LootItem[] = [];
+    const lootMat = new THREE.MeshStandardMaterial({ color: 0x1b2a66, emissive: 0x4f46e5, emissiveIntensity: 0.9, roughness: 0.35 });
 
-    // Kapsül tabanlı çarpışma (Daha iyi kayma sağlar)
-    function resolveCollisionsWithWorld(capsule: Capsule, velocity: THREE.Vector3) {
-        for (const wall of colliders) {
-            box3.setFromObject(wall);
-            // Basit bir AABB kontrolü ile gereksiz detaylı kontrolleri ele
-            if(!box3.intersectsSphere(new THREE.Sphere(capsule.start, capsule.radius + 0.5))) continue;
+    function spawnLootOne(id: string) {
+      const w = pick(WEAPONS);
+      const box = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.35, 0.35), lootMat);
+      box.position.set(rand(-HALF * 0.92, HALF * 0.92), 0.22, rand(-HALF * 0.92, HALF * 0.92));
+      box.rotation.y = rand(0, Math.PI * 2);
+      scene.add(box);
 
-            // Kapsül-Kutu çarpışması (Three.js içinde yerleşik yok, basit approximation)
-            // En yakın noktayı bulup iteceğiz.
-            tempVec.copy(capsule.start).setY(Math.min(box3.max.y, Math.max(box3.min.y, capsule.start.y)));
-            box3.clampPoint(tempVec, tempVec);
+      loot.push({
+        id,
+        mesh: box,
+        weapon: w,
+        ammo: w.ammoMax
+      });
+    }
 
-            const distance = tempVec.distanceToSquared(capsule.start);
-            if(distance < capsule.radius * capsule.radius && distance > 0) {
-                const overlap = capsule.radius - Math.sqrt(distance);
-                tempVec.sub(capsule.start).normalize().multiplyScalar(-overlap);
-                tempVec.y = 0; // Y ekseninde itme yapma (duvara tırmanmayı önle)
-                
-                capsule.translate(tempVec);
-                // Hızın duvara dik bileşenini sıfırla (kayma efekti)
-                velocity.addScaledVector(tempVec.normalize(), -velocity.dot(tempVec) * 1.2); 
-            }
+    // Haritaya 45 loot at
+    for (let i = 0; i < 45; i++) spawnLootOne(`loot_${i}`);
+
+    function tryPickupLoot() {
+      // E ile yakınındaki loot’u al
+      const p = player.position;
+      let best: LootItem | null = null;
+      let bestD = 9999;
+
+      for (const it of loot) {
+        const d = it.mesh.position.distanceTo(p);
+        if (d < 2.3 && d < bestD) {
+          best = it;
+          bestD = d;
         }
+      }
+      if (!best) return;
+
+      // al
+      setWeapon(best.weapon, best.ammo);
+      scene.remove(best.mesh);
+      const idx = loot.indexOf(best);
+      if (idx >= 0) loot.splice(idx, 1);
+
+      setHud((h) => ({ ...h, killFeed: `📦 Aldın: ${best!.weapon.name}` }));
+      setTimeout(() => setHud((h) => ({ ...h, killFeed: "" })), 900);
     }
 
+    // ---------- Bots (20 adet, isimli, ateş eden) ----------
+    const bots: Bot[] = [];
+    const deadBotIds = new Set<string>();
 
-    // 9. OYUN DÖNGÜSÜ (TICK)
+    const botMat = new THREE.MeshStandardMaterial({
+      color: 0x0e1a3a,
+      roughness: 0.4,
+      metalness: 0.15,
+      emissive: 0x1a2450,
+      emissiveIntensity: 0.55
+    });
+
+    function createBot(i: number) {
+      const g = new THREE.Group();
+      const body = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 1.05, 12), botMat);
+      body.position.y = 0.9;
+      const headb = new THREE.Mesh(new THREE.SphereGeometry(0.36, 14, 14), botMat);
+      headb.position.y = 1.5;
+      g.add(body, headb);
+
+      g.position.set(rand(-HALF * 0.75, HALF * 0.75), 0, rand(-HALF * 0.75, HALF * 0.75));
+      scene.add(g);
+
+      const w = pick(WEAPONS);
+      const b: Bot = {
+        id: `bot_${i}`,
+        name: BOT_NAMES[i % BOT_NAMES.length],
+        mesh: g,
+        hp: 40,
+        weapon: w,
+        ammo: w.ammoMax,
+        cooldown: rand(0.2, 1.0),
+        roamAngle: rand(0, Math.PI * 2),
+        roamTimer: rand(1.5, 4.0)
+      };
+      bots.push(b);
+    }
+
+    for (let i = 0; i < 20; i++) createBot(i);
+
+    // Botlar ateş eder: line-of-sight + cooldown
+    const botRay = new THREE.Raycaster();
+    function botShoot(bot: Bot) {
+      if (bot.ammo <= 0) {
+        bot.ammo = bot.weapon.ammoMax; // basit reload
+        return;
+      }
+      bot.ammo -= 1;
+
+      // bot yönü -> oyuncu
+      const from = bot.mesh.position.clone().add(new THREE.Vector3(0, 1.4, 0));
+      const to = player.position.clone().add(new THREE.Vector3(0, 1.2, 0));
+      const dirv = to.clone().sub(from).normalize();
+
+      // spread
+      dirv.x += (Math.random() - 0.5) * bot.weapon.spread * 1.8;
+      dirv.y += (Math.random() - 0.5) * bot.weapon.spread * 1.2;
+      dirv.z += (Math.random() - 0.5) * bot.weapon.spread * 1.8;
+      dirv.normalize();
+
+      botRay.set(from, dirv);
+
+      // önce engel var mı?
+      const block = botRay.intersectObjects(obstacles, false);
+      const hitPlayerDist = from.distanceTo(to);
+
+      if (block.length > 0 && block[0].distance < hitPlayerDist) {
+        return; // arada duvar var
+      }
+
+      // vurma olasılığı: çok yakında daha yüksek
+      const dist = from.distanceTo(to);
+      const baseHit = dist < 12 ? 0.65 : dist < 25 ? 0.35 : 0.18;
+      if (Math.random() < baseHit) {
+        applyDamageToPlayer(bot.weapon.damage);
+      }
+    }
+
+    // ---------- Zone (daha büyük) ----------
+    const zoneCenter = new THREE.Vector3(0, 0, 0);
+    const ZONE_INITIAL = 120; // büyüttük
+    const ZONE_MIN = 22;
+    let zoneRadius = ZONE_INITIAL;
+
+    // ring görselini DISPOSE yapmadan scale ile büyüt-küçült
+    const ringBaseRadius = ZONE_INITIAL;
+    const zoneRingMat = new THREE.MeshBasicMaterial({ color: 0x4f46e5, transparent: true, opacity: 0.25, side: THREE.DoubleSide });
+    const zoneRing = new THREE.Mesh(new THREE.RingGeometry(ringBaseRadius - 0.35, ringBaseRadius + 0.35, 128), zoneRingMat);
+    zoneRing.rotation.x = -Math.PI / 2;
+    zoneRing.position.y = 0.03;
+    scene.add(zoneRing);
+
+    // shrink daha yavaş
+    let zoneShrinkTimer = 0;
+
+    function isOutsideZone(pos: THREE.Vector3) {
+      const dx = pos.x - zoneCenter.x;
+      const dz = pos.z - zoneCenter.z;
+      return Math.sqrt(dx * dx + dz * dz) > zoneRadius;
+    }
+
+    // ---------- Pointer Lock ----------
+    const canvas = renderer.domElement;
+
+    function requestLock() {
+      canvas.requestPointerLock?.();
+    }
+    function onPointerLockChange() {
+      const isLocked = document.pointerLockElement === canvas;
+      setLocked(isLocked);
+    }
+    function onMouseMove(e: MouseEvent) {
+      if (document.pointerLockElement !== canvas) return;
+      const mx = e.movementX || 0;
+      const my = e.movementY || 0;
+
+      const SENS = 0.0022;
+      yaw -= mx * SENS;
+      pitch -= my * SENS;
+
+      const limit = Math.PI / 2 - 0.05;
+      pitch = Math.max(-limit, Math.min(limit, pitch));
+    }
+    function onMouseDown(e: MouseEvent) {
+      if (e.button !== 0) return;
+
+      // oyuna giriş + lock
+      if (document.pointerLockElement !== canvas) {
+        requestLock();
+        return;
+      }
+      shootFromCamera();
+    }
+
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.code === "KeyW") keys.w = true;
+      if (e.code === "KeyA") keys.a = true;
+      if (e.code === "KeyS") keys.s = true;
+      if (e.code === "KeyD") keys.d = true;
+      if (e.code === "ShiftLeft" || e.code === "ShiftRight") keys.shift = true;
+      if (e.code === "Space") keys.space = true;
+      if (e.code === "KeyE") keys.e = true;
+
+      // reload
+      if (e.code === "KeyR") {
+        ammo = currentWeapon.ammoMax;
+        setHud((h) => ({ ...h, ammo }));
+      }
+
+      if (e.code === "Escape") {
+        document.exitPointerLock?.();
+      }
+    }
+    function onKeyUp(e: KeyboardEvent) {
+      if (e.code === "KeyW") keys.w = false;
+      if (e.code === "KeyA") keys.a = false;
+      if (e.code === "KeyS") keys.s = false;
+      if (e.code === "KeyD") keys.d = false;
+      if (e.code === "ShiftLeft" || e.code === "ShiftRight") keys.shift = false;
+      if (e.code === "Space") keys.space = false;
+      if (e.code === "KeyE") keys.e = false;
+    }
+
+    document.addEventListener("pointerlockchange", onPointerLockChange);
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mousedown", onMouseDown);
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+
+    // ---------- Resize ----------
+    function onResize() {
+      if (!mountRef.current) return;
+      const w = mountRef.current.clientWidth;
+      const h = mountRef.current.clientHeight;
+      renderer.setSize(w, h);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+    }
+    window.addEventListener("resize", onResize);
+
+    // ---------- Collision (basit push-out) ----------
+    const playerRadius = 0.45;
+
+    // Box3 cache (GC azalt)
+    const box3 = new THREE.Box3();
+
+    function resolveObstaclesFor(posObj: THREE.Object3D, radius: number) {
+      for (const box of obstacles) {
+        box3.setFromObject(box);
+        box3.min.x -= radius;
+        box3.max.x += radius;
+        box3.min.z -= radius;
+        box3.max.z += radius;
+
+        // y yüksekliği çok önemli değil (düz zemin)
+        if (
+          posObj.position.x > box3.min.x &&
+          posObj.position.x < box3.max.x &&
+          posObj.position.z > box3.min.z &&
+          posObj.position.z < box3.max.z
+        ) {
+          const dxMin = Math.abs(posObj.position.x - box3.min.x);
+          const dxMax = Math.abs(box3.max.x - posObj.position.x);
+          const dzMin = Math.abs(posObj.position.z - box3.min.z);
+          const dzMax = Math.abs(box3.max.z - posObj.position.z);
+
+          const m = Math.min(dxMin, dxMax, dzMin, dzMax);
+          if (m === dxMin) posObj.position.x = box3.min.x;
+          else if (m === dxMax) posObj.position.x = box3.max.x;
+          else if (m === dzMin) posObj.position.z = box3.min.z;
+          else posObj.position.z = box3.max.z;
+        }
+      }
+    }
+
+    // ---------- Init HUD weapon ----------
+    setWeapon(currentWeapon, ammo);
+
+    // ---------- Loop ----------
     const clock = new THREE.Clock();
     let uiTimer = 0;
 
-    const tick = () => {
-      const dt = Math.min(clock.getDelta(), 0.05); // Max delta time sınırlaması
+    function tick() {
+      const dt = Math.min(clock.getDelta(), 0.033);
+
+      // cooldown
+      shootCooldown = Math.max(0, shootCooldown - dt);
+
+      // phase BUS: otobüs ilerlesin, oyuncu otobüste dursun; E ile in
+      if (phase === "BUS") {
+        busT += dt * 0.06; // hız
+        const pathX = THREE.MathUtils.lerp(-HALF + 40, HALF - 40, busT);
+        const pathZ = THREE.MathUtils.lerp(-HALF + 60, HALF - 60, busT);
+        bus.position.set(pathX, 18, pathZ);
+        bus.rotation.y = Math.atan2(HALF - 40 - (-HALF + 40), HALF - 60 - (-HALF + 60)) + Math.PI * 0.5;
+
+        // oyuncu otobüste
+        player.position.set(bus.position.x - 1.5, 18, bus.position.z);
+
+        // kamera “bus cam” hissi
+        yaw += dt * 0.08;
+
+        const camPos = bus.position.clone().add(new THREE.Vector3(8, 5, 8));
+        camera.position.lerp(camPos, 0.15);
+        camera.lookAt(bus.position.clone().add(new THREE.Vector3(0, -2, 0)));
+
+        // otomatik 4 saniye sonra veya E ile drop
+        if (!dropped) {
+          const autoDrop = busT > 0.08; // ~1.3-1.5s
+          if (keys.e || autoDrop) {
+            dropped = true;
+            phase = "PLAY";
+            setHud((h) => ({ ...h, phase: "PLAY" }));
+            // oyuncuyu yere yakın bir yere indir
+            player.position.set(bus.position.x - 2.2, 0, bus.position.z + 2.0);
+          }
+        }
+
+        renderer.render(scene, camera);
+        rafRef.current = requestAnimationFrame(tick);
+        return;
+      }
+
+      // ---- GAME OVER ----
       if (hudRef.current.hp <= 0) {
         renderer.render(scene, camera);
         rafRef.current = requestAnimationFrame(tick);
         return;
       }
 
-      if (phaseRef.current === "playing") {
-        hudRef.current.time += dt;
+      // look direction
+      camera.rotation.order = "YXZ";
+      camera.rotation.y = yaw;
+      camera.rotation.x = pitch;
 
-        // --- OTOBÜSTEN ATLAMA MEKANİĞİ ---
-        if (!playerDroppedRef.current) {
-            // Haritanın köşesinde yüksekte başlat
-            player.position.set(-MAP_SIZE * 0.4, 120, -MAP_SIZE * 0.4);
-            // Hafif ileri hız ver (otobüsten atlamış gibi)
-            vel.set(5, 0, 5); 
-            playerDroppedRef.current = true;
-            onGround = false;
-        }
+      // movement intent
+      forward.set(Math.sin(yaw), 0, Math.cos(yaw)).normalize().multiplyScalar(-1);
+      right.copy(forward).cross(up).normalize();
 
-        // --- OYUNCU HAREKET FİZİĞİ ---
-        // Yere basıyorsa kontroller aktif
-        const speed = keys.shift ? 10 : 6;
-        const forward = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw)).normalize().multiplyScalar(-1);
-        const right = new THREE.Vector3().copy(forward).cross(new THREE.Vector3(0, 1, 0)).normalize();
-        
-        const moveIntent = new THREE.Vector3();
-        if(onGround) {
-            if (keys.w) moveIntent.add(forward); if (keys.s) moveIntent.sub(forward);
-            if (keys.d) moveIntent.add(right); if (keys.a) moveIntent.sub(right);
-            if (moveIntent.lengthSq() > 0) moveIntent.normalize();
-            
-            // Yerdeyken hızlanma/yavaşlama
-            vel.x = THREE.MathUtils.lerp(vel.x, moveIntent.x * speed, 10 * dt);
-            vel.z = THREE.MathUtils.lerp(vel.z, moveIntent.z * speed, 10 * dt);
-        } else {
-             // Havadayken kontrol çok az
-             vel.x = THREE.MathUtils.lerp(vel.x, moveIntent.x * speed, 1 * dt);
-             vel.z = THREE.MathUtils.lerp(vel.z, moveIntent.z * speed, 1 * dt);
-        }
+      tmp.set(0, 0, 0);
+      if (keys.w) tmp.add(forward);
+      if (keys.s) tmp.sub(forward);
+      if (keys.d) tmp.add(right);
+      if (keys.a) tmp.sub(right);
+      if (tmp.lengthSq() > 0) tmp.normalize();
 
-        // Yerçekimi ve Zıplama
-        if (keys.space && onGround) { vel.y = 8; onGround = false; }
-        vel.y -= 25 * dt; // Yerçekimi
+      const targetSpeed = keys.shift ? SPRINT : SPEED;
+      vel.x = THREE.MathUtils.lerp(vel.x, tmp.x * targetSpeed, 0.18);
+      vel.z = THREE.MathUtils.lerp(vel.z, tmp.z * targetSpeed, 0.18);
 
-        // Hızı pozisyona uygula (geçici)
-        tempVec.copy(vel).multiplyScalar(dt);
-        player.position.add(tempVec);
-        
-        // Kapsülü güncelle ve çarpışmaları çöz
-        playerCapsule.start.copy(player.position).setY(player.position.y + 0.9);
-        playerCapsule.end.copy(player.position).setY(player.position.y + 1.8);
-        resolveCollisionsWithWorld(playerCapsule, vel);
-        player.position.copy(playerCapsule.start).setY(playerCapsule.start.y - 0.9);
+      // jump
+      if (keys.space && onGround) {
+        vel.y = JUMP;
+        onGround = false;
+      }
 
-        // Zemin kontrolü
-        if (player.position.y <= 0) {
-            player.position.y = 0;
-            vel.y = Math.max(0, vel.y); // Yere çarpınca aşağı hızı sıfırla
-            onGround = true;
-        } else {
-            onGround = false;
-        }
+      // gravity
+      if (!onGround) vel.y -= GRAVITY * dt;
 
-        // --- LOOT TOPLAMA ---
-        loots.forEach(loot => {
-            if(loot.active && player.position.distanceTo(loot.mesh.position) < 2.5) {
-                loot.active = false;
-                scene.remove(loot.mesh);
-                hudRef.current.ammo = 30; // Mermiyi fulle
-                console.log("Silah alındı! Mermi fullendi.");
-            }
-            // Loot animasyonu
-            if(loot.active) loot.mesh.rotation.y += dt;
-        });
+      // integrate
+      player.position.x += vel.x * dt;
+      player.position.z += vel.z * dt;
+      player.position.y += vel.y * dt;
 
+      // ground collision
+      if (player.position.y < GROUND_Y) {
+        player.position.y = GROUND_Y;
+        vel.y = 0;
+        onGround = true;
+      }
 
-        // --- ZONE DARALMASI ---
-        // Çok daha yavaş daralsın (90 saniyede kapansın yaklaşık)
-        zoneRadius = Math.max(5, zoneRadius - (ZONE_INITIAL / 90) * dt);
-        zoneRing.scale.setScalar(zoneRadius / ZONE_INITIAL);
-        if (player.position.distanceTo(zoneCenter) > zoneRadius) hudRef.current.hp -= 4 * dt;
-        hudRef.current.zone = zoneRadius;
+      // obstacles
+      resolveObstaclesFor(player, playerRadius);
 
-        // --- GELİŞMİŞ BOT YAPAY ZEKASI ---
-        for (let i = bots.length - 1; i >= 0; i--) {
-          const b = bots[i];
-          const dist = b.mesh.position.distanceTo(player.position);
-          
-          // Zone hasarı
-          if (b.mesh.position.distanceTo(zoneCenter) > zoneRadius) {
-            b.hp -= 8 * dt;
-          }
+      // Loot pickup
+      if (keys.e) {
+        tryPickupLoot();
+        keys.e = false; // tek basış gibi
+      }
 
-          // Hareketi Kapsül ile yap
-          const toPlayer = new THREE.Vector3().subVectors(player.position, b.mesh.position).setY(0).normalize();
-          // Botlar çok yaklaşmasın, uzaktan sıksın (4 birim mesafede dursun)
-          if(dist > 5) {
-               b.vel.add(toPlayer.multiplyScalar(b.speed * dt * 5)); // Hızlanma
-          } else if (dist < 3) {
-               b.vel.sub(toPlayer.multiplyScalar(b.speed * dt * 2)); // Geri çekilme
-          }
-          
-          // Sürtünme ve Yerçekimi
-          b.vel.x *= 0.9; b.vel.z *= 0.9;
-          b.vel.y -= 25 * dt;
+      // Zone shrink
+      zoneShrinkTimer += dt;
+      if (zoneShrinkTimer > 0.25 && zoneRadius > ZONE_MIN) {
+        zoneShrinkTimer = 0;
+        zoneRadius = Math.max(ZONE_MIN, zoneRadius - 0.12); // daha yavaş shrink
+        zoneRing.scale.setScalar(zoneRadius / ringBaseRadius);
+      }
 
-          // Hızı uygula
-          tempVec.copy(b.vel).multiplyScalar(dt);
-          b.mesh.position.add(tempVec);
-
-           // Bot Kapsül güncelle ve çarpışma
-           b.capsule.start.copy(b.mesh.position).setY(b.mesh.position.y + 0.9);
-           b.capsule.end.copy(b.mesh.position).setY(b.mesh.position.y + 1.8);
-           resolveCollisionsWithWorld(b.capsule, b.vel);
-           b.mesh.position.copy(b.capsule.start).setY(b.capsule.start.y - 0.9);
-           
-           // Zemin
-           if (b.mesh.position.y <= 0) { b.mesh.position.y = 0; b.vel.y = 0; }
-
-          // Oyuncuya dön
-          b.mesh.lookAt(player.position.x, b.mesh.position.y, player.position.z);
-
-          // --- BOT ATEŞ ETME MEKANİĞİ ---
-          b.atkCooldown -= dt;
-          if (dist < 30 && b.atkCooldown <= 0) { // 30 metre menzil
-            // Raycast ile görüş hattı kontrolü (Arada ağaç ev var mı?)
-            raycaster.set(b.mesh.position.clone().add(new THREE.Vector3(0,1.5,0)), toPlayer);
-            const intersects = raycaster.intersectObjects([...colliders, ...bots.map(bt=>bt.mesh).filter(m=>m!==b.mesh)], true);
-            
-            let canSeePlayer = true;
-            if(intersects.length > 0 && intersects[0].distance < dist) {
-                canSeePlayer = false; // Önünde engel var
-            }
-
-            if(canSeePlayer) {
-                // Ateş et!
-                b.atkCooldown = 1.5 + Math.random(); // 1.5 - 2.5 sn arası bekle
-                hudRef.current.hp -= Math.random() * 15 + 5; // 5-20 arası hasar
-                showBotMuzzleFlash(b.mesh.position, player.position);
-                console.log(`${b.name} sana ateş etti!`);
-            }
-          }
-
-          if (b.hp <= 0) {
-            console.log(`${b.name} zone içinde öldü.`);
-            scene.remove(b.mesh);
-            bots.splice(i, 1);
-          }
+      // Zone damage
+      if (isOutsideZone(player.position)) {
+        // 0.5 saniyede bir hasar (UI timer ile)
+        uiTimer += dt;
+        if (uiTimer > 0.5) {
+          uiTimer = 0;
+          applyDamageToPlayer(3);
         }
       }
 
-      // Kamera Takibi (FPS)
-      camera.rotation.order = "YXZ";
-      camera.rotation.y = yaw; camera.rotation.x = pitch;
-      camera.position.copy(player.position).add(new THREE.Vector3(0, 1.7, 0));
+      // Camera follow
+      const headPos = new THREE.Vector3(player.position.x, player.position.y + PLAYER_HEIGHT * 0.78, player.position.z);
+      const back = new THREE.Vector3(0, 0, 1).applyEuler(new THREE.Euler(0, yaw, 0)).multiplyScalar(2.2);
+      camera.position.set(headPos.x + back.x, headPos.y + 0.2, headPos.z + back.z);
+      const lookAt = headPos.clone().add(new THREE.Vector3(0, 0, -1).applyEuler(new THREE.Euler(pitch, yaw, 0)).multiplyScalar(8));
+      camera.lookAt(lookAt);
+
+      // Loot anim (hafif dönsün)
+      for (const it of loot) {
+        it.mesh.rotation.y += dt * 1.2;
+        it.mesh.position.y = 0.22 + Math.sin((performance.now() / 1000) * 2 + it.mesh.position.x * 0.1) * 0.03;
+      }
+
+      // Bot AI + shooting
+      for (const b of bots) {
+        if (deadBotIds.has(b.id)) continue;
+
+        // botlar zone dışına çıktıysa içeri it + hasar
+        const outside = isOutsideZone(b.mesh.position);
+        if (outside) {
+          // içeri doğru çek
+          const dirIn = zoneCenter.clone().sub(b.mesh.position).setY(0).normalize();
+          b.mesh.position.add(dirIn.multiplyScalar(dt * 3.0));
+          b.hp -= dt * 4; // zone hasarı
+          if (b.hp <= 0) {
+            b.hp = 0;
+            scene.remove(b.mesh);
+            deadBotIds.add(b.id);
+            setHud((h) => ({ ...h, score: h.score + 15, killFeed: `☠️ ${b.name} zone’da gitti (+15)` }));
+            setTimeout(() => setHud((h) => ({ ...h, killFeed: "" })), 900);
+            continue;
+          }
+        }
+
+        // oyuncuya yönel
+        const toP = player.position.clone().sub(b.mesh.position);
+        const dist = toP.length();
+        const dirToP = toP.normalize();
+
+        // hareket: yakında strafing, uzakta yaklaş
+        b.roamTimer -= dt;
+        if (b.roamTimer <= 0) {
+          b.roamTimer = rand(1.2, 3.2);
+          b.roamAngle = rand(-Math.PI, Math.PI);
+        }
+
+        let moveDir = new THREE.Vector3(0, 0, 0);
+        if (dist > 14) {
+          moveDir = dirToP.clone();
+        } else {
+          // strafing + biraz geri
+          const side = new THREE.Vector3(-dirToP.z, 0, dirToP.x);
+          moveDir = side.multiplyScalar(Math.sin(b.roamAngle)).add(dirToP.clone().multiplyScalar(-0.25)).normalize();
+        }
+
+        const botSpeed = dist > 25 ? 4.2 : 3.2;
+        b.mesh.position.add(moveDir.multiplyScalar(dt * botSpeed));
+
+        // bot collision
+        resolveObstaclesFor(b.mesh, 0.38);
+
+        // bot yüzünü oyuncuya çevir (yumuşak)
+        const targetYaw = Math.atan2(dirToP.x, dirToP.z);
+        b.mesh.rotation.y = THREE.MathUtils.lerpAngle(b.mesh.rotation.y, targetYaw, 0.08);
+
+        // shoot
+        b.cooldown = Math.max(0, b.cooldown - dt);
+        if (dist < 45 && b.cooldown <= 0) {
+          b.cooldown = 1 / b.weapon.fireRate + rand(0.02, 0.09);
+          botShoot(b);
+        }
+      }
 
       renderer.render(scene, camera);
-
-      // UI Güncelleme (Saniyede 10 kere)
-      uiTimer += dt;
-      if (uiTimer > 0.1) {
-        setHud({ ...hudRef.current });
-        
-        // Minimap için ölçekleme faktörü (Harita büyüdü)
-        const miniScale = MAP_SIZE / 2; // Harita boyutunun yarısı
-        const dots: MiniDot[] = [];
-        
-        // Botları göster (Kırmızı)
-        bots.forEach(b => {
-          const dx = b.mesh.position.x - player.position.x;
-          const dz = b.mesh.position.z - player.position.z;
-          if(Math.abs(dx) < miniScale && Math.abs(dz) < miniScale) {
-             dots.push({ x: dx / miniScale, y: dz / miniScale, kind: "bot" });
-          }
-        });
-
-        // Lootları göster (Sarı)
-        loots.forEach(l => {
-            if(!l.active) return;
-            const dx = l.mesh.position.x - player.position.x;
-            const dz = l.mesh.position.z - player.position.z;
-            if(Math.abs(dx) < miniScale && Math.abs(dz) < miniScale) {
-               dots.push({ x: dx / miniScale, y: dz / miniScale, kind: "loot" });
-            }
-        });
-        
-        const zoneDir = new THREE.Vector3().subVectors(zoneCenter, player.position);
-        setMini({ dots, zoneR: zoneRadius, zoneDirDeg: Math.atan2(zoneDir.x, -zoneDir.z) * (180/Math.PI), mapSize: MAP_SIZE });
-        uiTimer = 0;
-      }
-
       rafRef.current = requestAnimationFrame(tick);
-    };
+    }
 
-    // Kontroller
-    const onMouseMove = (e: MouseEvent) => {
-      if (document.pointerLockElement !== renderer.domElement || phaseRef.current !== "playing") return;
-      yaw -= e.movementX * 0.002;
-      pitch -= e.movementY * 0.002;
-      pitch = Math.max(-Math.PI/2 + 0.1, Math.min(Math.PI/2 - 0.1, pitch));
-    };
-    const onKey = (e: KeyboardEvent, val: boolean) => {
-      if (e.code === "KeyW") keys.w = val; if (e.code === "KeyS") keys.s = val;
-      if (e.code === "KeyA") keys.a = val; if (e.code === "KeyD") keys.d = val;
-      if (e.code === "Space") keys.space = val; if (e.code === "ShiftLeft") keys.shift = val;
-    };
-
-    window.addEventListener("keydown", (e) => onKey(e, true));
-    window.addEventListener("keyup", (e) => onKey(e, false));
-    document.addEventListener("mousemove", onMouseMove);
-    renderer.domElement.addEventListener("mousedown", (e) => {
-      if(phaseRef.current !== "playing") return;
-      if (document.pointerLockElement !== renderer.domElement) renderer.domElement.requestPointerLock();
-      else if(e.button === 0) shoot();
-    });
-
+    // start in BUS
+    setHud((h) => ({ ...h, phase: "BUS" }));
     rafRef.current = requestAnimationFrame(tick);
 
+    // ---------- Cleanup ----------
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
-      scene.traverse(obj => {
-        if (obj instanceof THREE.Mesh) {
-          obj.geometry.dispose();
-          if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
-          else obj.material.dispose();
-        }
-      });
+      window.removeEventListener("resize", onResize);
+      document.removeEventListener("pointerlockchange", onPointerLockChange);
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mousedown", onMouseDown);
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+
+      // dispose
       renderer.dispose();
       mountRef.current?.removeChild(renderer.domElement);
-      // Event listenerları temizlemeyi unutma
-      window.removeEventListener("keydown", (e) => onKey(e, true));
-      window.removeEventListener("keyup", (e) => onKey(e, false));
-      document.removeEventListener("mousemove", onMouseMove);
     };
   }, []);
 
-  return (
-    <div className="relative w-full h-screen overflow-hidden bg-slate-950 select-none">
-      <div ref={mountRef} className="absolute inset-0" />
-      
-      {/* HUD */}
-      <div className="absolute top-4 left-4 flex flex-col gap-2 pointer-events-none">
-        <div className="flex gap-2">
-            <div className={`px-4 py-2 rounded-lg border bg-black/70 backdrop-blur transition-colors ${hud.hp < 30 ? 'border-red-500 text-red-500 animate-pulse' : 'border-slate-700 text-white'}`}>
-            ❤️ {Math.ceil(hud.hp)}
-            </div>
-            <div className={`px-4 py-2 rounded-lg border border-slate-700 bg-black/70 backdrop-blur ${hud.ammo === 0 ? 'text-red-500' : 'text-indigo-400'}`}>
-            🔫 {hud.ammo > 0 ? hud.ammo : 'MERMİ YOK!'}
-            </div>
-        </div>
-        <div className="flex gap-2">
-            <div className="px-4 py-2 rounded-lg border border-slate-700 bg-black/70 backdrop-blur text-emerald-400">
-            ☠️ Kills: {hud.score}
-            </div>
-            <div className="px-4 py-2 rounded-lg border border-slate-700 bg-black/70 backdrop-blur text-orange-400">
-            🔥 Zone: {Math.round(hud.zone)}m
-            </div>
-        </div>
-      </div>
+  const phaseLabel = hud.phase === "BUS" ? "🚌 Otobüstesin — E ile atla" : "🏁 Arena";
 
-      {/* MINIMAP (Daha Büyük) */}
-      <div className="absolute top-4 right-4 h-48 w-48 rounded-full bg-black/60 border-2 border-slate-600 overflow-hidden backdrop-blur shadow-xl">
-        <div className="absolute inset-0 flex items-center justify-center relative">
-          {/* Oyuncu */}
-          <div className="absolute w-3 h-3 bg-white border-2 border-slate-800 rounded-full z-20 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
-          
-          {/* Dotlar */}
-          {mini.dots.map((d, i) => (
-            <div key={i} className={`absolute w-2 h-2 rounded-full -translate-x-1/2 -translate-y-1/2 z-10 ${d.kind === "bot" ? "bg-red-600" : "bg-yellow-400 animate-pulse"}`}
-              style={{ left: `${50 + d.x * 50}%`, top: `${50 + d.y * 50}%` }} />
-          ))}
-          
-          {/* Zone Oku */}
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-0"
-            style={{ transform: `rotate(${mini.zoneDirDeg}deg)` }}>
-             <div className="w-0 h-0 border-l-[8px] border-l-transparent border-r-[8px] border-r-transparent border-b-[16px] border-b-red-500/80 translateY-[-60px]" />
-          </div>
-          <div className="absolute bottom-2 inset-x-0 text-center text-xs text-slate-400">Harita: {mini.mapSize}m</div>
-        </div>
-      </div>
+  return (
+    <div className="relative w-full h-[calc(100vh-140px)] rounded-2xl border border-slate-800 overflow-hidden bg-slate-950">
+      <div ref={mountRef} className="absolute inset-0" />
 
       {/* Crosshair */}
-      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-        <div className="w-[4px] h-[4px] bg-white rounded-full shadow-[0_0_4px_rgba(0,0,0,0.5)]"></div>
+      <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+        <div className="h-7 w-7 rounded-full border border-slate-200/25 relative">
+          <div className="absolute left-1/2 top-1/2 h-1 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-slate-200/50" />
+        </div>
       </div>
 
-      {/* Bilgi Mesajı (Mermi Yoksa) */}
-      {phase === "playing" && hud.ammo === 0 && hud.hp > 0 && (
-          <div className="absolute bottom-20 inset-x-0 text-center pointer-events-none animate-bounce">
-              <div className="inline-block px-6 py-3 bg-red-600/80 text-white font-bold text-xl rounded-xl border-2 border-red-400/50">
-                  YERDEN SİLAH AL! (Sarı Noktalar)
-              </div>
-          </div>
-      )}
+      {/* HUD */}
+      <div className="absolute top-3 left-3 flex flex-wrap gap-2">
+        <div className="px-3 py-2 rounded-xl bg-slate-950/70 border border-slate-800 text-sm text-slate-200">
+          {phaseLabel}
+        </div>
+        <div className="px-3 py-2 rounded-xl bg-slate-950/70 border border-slate-800 text-sm text-slate-200">
+          ❤️ HP: <span className="font-semibold">{hud.hp}</span>
+        </div>
+        <div className="px-3 py-2 rounded-xl bg-slate-950/70 border border-slate-800 text-sm text-slate-200">
+          {hud.weaponName} • Ammo: <span className="font-semibold">{hud.ammo}</span>{" "}
+          <span className="text-slate-400">(R)</span>
+        </div>
+        <div className="px-3 py-2 rounded-xl bg-slate-950/70 border border-slate-800 text-sm text-slate-200">
+          🏆 Score: <span className="font-semibold">{hud.score}</span>
+        </div>
+      </div>
 
+      {/* Kill feed */}
+      {hud.killFeed ? (
+        <div className="absolute top-3 right-3 px-3 py-2 rounded-xl bg-slate-950/70 border border-slate-800 text-sm text-slate-200">
+          {hud.killFeed}
+        </div>
+      ) : null}
 
-      {/* Arayüzler (Hazır / Geri Sayım / Oyun Sonu) */}
-      {phase !== "playing" && hud.hp > 0 && (
-        <div className="absolute inset-0 bg-slate-950/80 flex flex-col items-center justify-center backdrop-blur-md cursor-pointer" onClick={() => phase === "ready" && setPhase("countdown")}>
-          {phase === "ready" ? (
-            <div className="text-center group">
-                <h1 className="text-6xl font-black text-white mb-2 tracking-tighter">BATTLE ROYALE</h1>
-                <p className="text-xl text-slate-300 mb-8">Polat ve ekibine karşı hayatta kal.</p>
-                <button className="px-12 py-5 bg-indigo-600 text-white rounded-2xl font-bold text-2xl group-hover:scale-110 group-hover:bg-indigo-500 transition-all shadow-lg shadow-indigo-500/30">ATLA!</button>
-                <p className="mt-4 text-sm text-slate-500">Başlamak için tıkla</p>
-            </div>
+      {/* Help */}
+      <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between gap-2">
+        <div className="px-3 py-2 rounded-xl bg-slate-950/70 border border-slate-800 text-xs text-slate-300">
+          <span className="text-slate-100 font-semibold">WASD</span> hareket •{" "}
+          <span className="text-slate-100 font-semibold">SPACE</span> zıpla •{" "}
+          <span className="text-slate-100 font-semibold">SHIFT</span> koş •{" "}
+          <span className="text-slate-100 font-semibold">Mouse</span> bakış •{" "}
+          <span className="text-slate-100 font-semibold">Sol tık</span> ateş •{" "}
+          <span className="text-slate-100 font-semibold">E</span> loot al •{" "}
+          <span className="text-slate-100 font-semibold">R</span> doldur
+        </div>
+
+        <div className="px-3 py-2 rounded-xl bg-slate-950/70 border border-slate-800 text-xs text-slate-300">
+          {locked ? (
+            <span className="text-emerald-300">🟢 Kontrol aktif</span>
           ) : (
-            <div className="text-[12rem] font-black text-white/20 animate-ping relative">
-                {count}
-                <div className="absolute inset-0 flex items-center justify-center text-white text-9xl font-black animate-none">{count}</div>
-            </div>
+            <span className="text-indigo-300">🟣 Tıkla → kontrolü kilitle</span>
           )}
         </div>
-      )}
+      </div>
 
-      {hud.hp <= 0 && (
-        <div className="absolute inset-0 bg-red-950/95 flex flex-col items-center justify-center text-white z-50 backdrop-blur-sm">
-          <h2 className="text-7xl font-black mb-2 text-red-500 tracking-tighter">ÖLDÜN</h2>
-          <p className="text-2xl mb-8 opacity-90">Toplam Leş: <span className="font-bold text-yellow-400 text-3xl ml-2">{hud.score}</span></p>
-          <button onClick={() => window.location.reload()} className="px-10 py-4 bg-white text-red-950 rounded-2xl font-black text-xl hover:bg-slate-200 transition-colors shadow-xl">TEKRAR DENE</button>
+      {/* Game over */}
+      {hud.hp <= 0 ? (
+        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center">
+          <div className="max-w-md w-[92%] rounded-2xl border border-slate-800 bg-slate-950/80 p-6 text-center">
+            <div className="text-2xl font-extrabold text-slate-100">💀 Game Over</div>
+            <div className="mt-2 text-slate-300">Skor: <span className="font-semibold">{hud.score}</span></div>
+            <div className="mt-4 text-sm text-slate-400">Sayfayı yenileyip tekrar dene.</div>
+          </div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
