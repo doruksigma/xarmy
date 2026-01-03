@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 const nav = [
   { href: "/", label: "Ana Sayfa" },
@@ -7,6 +10,8 @@ const nav = [
 ];
 
 export default function Navbar() {
+  const pathname = usePathname();
+
   return (
     <header className="sticky top-0 z-50 border-b border-slate-800/70 bg-slate-950/70 backdrop-blur">
       <div className="mx-auto max-w-6xl px-4 py-3 flex items-center justify-between">
@@ -30,21 +35,34 @@ export default function Navbar() {
 
         {/* Nav */}
         <nav className="hidden md:flex items-center gap-1">
-          {nav.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className="px-3 py-2 rounded-xl text-sm text-slate-200 hover:bg-slate-900/60 hover:text-white transition"
-            >
-              {item.label}
-            </Link>
-          ))}
+          {nav.map((item) => {
+            const active =
+              item.href === "/"
+                ? pathname === "/"
+                : pathname.startsWith(item.href);
+
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`px-3 py-2 rounded-xl text-sm transition
+                  ${
+                    active
+                      ? "bg-indigo-500/15 text-indigo-300"
+                      : "text-slate-200 hover:bg-slate-900/60 hover:text-white"
+                  }
+                `}
+              >
+                {item.label}
+              </Link>
+            );
+          })}
         </nav>
 
         {/* CTA */}
         <div className="flex items-center gap-2">
           <Link
-            href="/games"
+            href="/play"
             className="px-4 py-2 rounded-xl bg-indigo-500 text-white text-sm font-semibold hover:bg-indigo-600 transition"
           >
             Başla
