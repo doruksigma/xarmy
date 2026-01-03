@@ -49,6 +49,12 @@ function pick<T>(arr: T[]) {
 function clamp(v: number, a: number, b: number) {
   return Math.max(a, Math.min(b, v));
 }
+function lerpAngle(a: number, b: number, t: number) {
+  const TWO_PI = Math.PI * 2;
+  let diff = (b - a) % TWO_PI;
+  diff = ((2 * diff) % TWO_PI) - diff; // shortest direction
+  return a + diff * t;
+}
 
 export default function PlayClient() {
   const mountRef = useRef<HTMLDivElement | null>(null);
@@ -812,7 +818,7 @@ export default function PlayClient() {
 
         // bot yüzünü oyuncuya çevir (yumuşak)
         const targetYaw = Math.atan2(dirToP.x, dirToP.z);
-        b.mesh.rotation.y = THREE.MathUtils.lerpAngle(b.mesh.rotation.y, targetYaw, 0.08);
+        b.mesh.rotation.y = lerpAngle(b.mesh.rotation.y, targetYaw, 0.08);
 
         // shoot
         b.cooldown = Math.max(0, b.cooldown - dt);
