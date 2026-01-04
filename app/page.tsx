@@ -1,5 +1,5 @@
 import Link from "next/link";
- 
+
 export default function HomePage() {
   return (
     <div className="min-h-[calc(100vh-120px)] flex flex-col justify-center">
@@ -12,7 +12,7 @@ export default function HomePage() {
         </h1>
 
         <p className="max-w-2xl mx-auto text-slate-400 text-lg">
-          Hız, zeka ve refleks odaklı mini oyunlar.  
+          Hız, zeka ve refleks odaklı mini oyunlar.
           Skorunu yükselt, sıralamaya gir, lider ol.
         </p>
 
@@ -30,6 +30,17 @@ export default function HomePage() {
             className="px-6 py-3 rounded-xl bg-slate-800 text-slate-100 hover:bg-slate-700 transition"
           >
             🎮 Oyunlar
+          </Link>
+
+          {/* ✅ CHESS BUTTON */}
+          <Link
+            href="/games/chess"
+            className="px-7 py-3 rounded-xl bg-emerald-500 text-white font-semibold hover:bg-emerald-600 transition flex items-center gap-2"
+          >
+            ♟️ Satranç
+            <span className="text-[10px] bg-black/20 px-2 py-1 rounded-lg">
+              Stockfish
+            </span>
           </Link>
 
           <Link
