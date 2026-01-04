@@ -1,13 +1,16 @@
-// Stockfish WASM'i CDN'den yükle
-importScripts("https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.2/stockfish.js");
+// app/games/chess/engine.worker.ts
+import Stockfish from "stockfish";
 
-// @ts-ignore
-const stockfish = STOCKFISH();
+// stockfish() worker-like bir nesne döndürür: postMessage/onmessage
+const sf: any = Stockfish();
 
-stockfish.onmessage = (line: string) => {
-  postMessage(line);
+// Stockfish -> UI
+sf.onmessage = (e: any) => {
+  const line = typeof e === "string" ? e : e?.data;
+  (self as any).postMessage(line);
 };
 
-onmessage = (e) => {
-  stockfish.postMessage(e.data);
+// UI -> Stockfish
+(self as any).onmessage = (e: MessageEvent) => {
+  sf.postMessage(e.data);
 };
