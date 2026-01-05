@@ -14,6 +14,7 @@
   "dependencies": {
     "chess.js": "^1.4.0",
     "next": "^15.5.9",
+    "peerjs": "^1.5.5",
     "react": "19.0.0",
     "react-chessboard": "^5.8.6",
     "react-dom": "19.0.0",
@@ -33,4 +34,4 @@
     "typescript": "^5.7.0",
     "worker-loader": "^3.0.8"
   }
-} 
+}
