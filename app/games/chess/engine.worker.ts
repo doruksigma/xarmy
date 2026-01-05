@@ -1,16 +1,27 @@
-// app/games/chess/engine.worker.ts
+// Stockfish'i CDN'den yükle
+const stockfishURL = "https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.2/stockfish.js";
 
-// TypeScript type derdini bitirmek için require kullanıyoruz
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const Stockfish = require("stockfish");
-
-const sf: any = Stockfish();
-
-sf.onmessage = (e: any) => {
-  const line = typeof e === "string" ? e : e?.data;
-  (self as any).postMessage(line);
-};
-
-(self as any).onmessage = (e: MessageEvent) => {
-  sf.postMessage(e.data);
-};
+self.addEventListener('message', async (e) => {
+  if (e.data === 'init') {
+    try {
+      // @ts-ignore
+      self.importScripts(stockfishURL);
+      // @ts-ignore
+      if (typeof self.Stockfish === 'function') {
+        // @ts-ignore
+        const engine = self.Stockfish();
+        engine.onmessage = (msg: string) => self.postMessage(msg);
+        
+        self.addEventListener('message', (ev) => {
+          if (ev.data !== 'init') {
+            engine.postMessage(ev.data);
+          }
+        });
+        
+        self.postMessage('ready');
+      }
+    } catch (err) {
+      self.postMessage('error');
+    }
+  }
+});
