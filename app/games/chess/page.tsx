@@ -16,7 +16,7 @@ type Mode = "bot" | "p2p";
 
 type MoveEval = {
   move: string;
-  score: number; // eval (pawn units, e.g. 0.35)
+  score: number; // eval (pawn units)
   fenBefore: string;
   fenAfter: string;
 };
@@ -63,9 +63,11 @@ function createStockfishWorker() {
         engine.onmessage = (e) => self.postMessage(e);
         self.onmessage = (e) => engine.postMessage(e.data);
       } else {
-        self.postMessage("Stockfish init failed");
+        self.postMessage("sf_error: Stockfish init failed");
       }
-    } catch (e) { self.postMessage("Worker error: " + (e?.message || e)); }
+    } catch (e) {
+      self.postMessage("sf_error: " + (e?.message || e));
+    }
   `;
 
   const blob = new Blob([code], { type: "application/javascript" });
@@ -101,7 +103,8 @@ export default function ChessPage() {
   const audioCtx = useRef<AudioContext | null>(null);
 
   const lastScore = useRef<number>(0);
-  const taskRef = useRef<"none" | "hint" | "analysis">("none");
+  const taskRef = useRef<"none" | "hint" | "analysis" | "bot">("none");
+  const botDelayTimerRef = useRef<number | null>(null);
 
   const analysisActiveRef = useRef(false);
   const analysisIndexRef = useRef(-1);
@@ -130,6 +133,13 @@ export default function ChessPage() {
     } catch {}
   };
 
+  const stopBotTimer = () => {
+    if (botDelayTimerRef.current) {
+      window.clearTimeout(botDelayTimerRef.current);
+      botDelayTimerRef.current = null;
+    }
+  };
+
   // =====================
   // STATE
   // =====================
@@ -155,6 +165,8 @@ export default function ChessPage() {
   const [blackTime, setBlackTime] = useState(0);
 
   const [isReady, setIsReady] = useState(false);
+  const [sfError, setSfError] = useState<string | null>(null);
+
   const [thinking, setThinking] = useState(false);
   const [selected, setSelected] = useState<Square | null>(null);
   const [difficulty, setDifficulty] = useState<"easy" | "medium" | "hard">(
@@ -174,7 +186,10 @@ export default function ChessPage() {
   // online post-game analysis status
   const [postAnalyzing, setPostAnalyzing] = useState(false);
   const [analysisDone, setAnalysisDone] = useState(false);
-  const [analysisProgress, setAnalysisProgress] = useState<{ i: number; n: number }>({ i: 0, n: 0 });
+  const [analysisProgress, setAnalysisProgress] = useState<{
+    i: number;
+    n: number;
+  }>({ i: 0, n: 0 });
 
   // keep ref synced
   useEffect(() => {
@@ -196,6 +211,56 @@ export default function ChessPage() {
   const isGameOver = game.isGameOver() || !!timeWinner;
 
   // =====================
+  // BOT MOVE: GUARANTEED TRIGGER
+  // =====================
+  const requestBotMove = (fenToPlay: string) => {
+    if (mode !== "bot") return;
+    if (!isReady || !engine.current) return;
+    if (!playerColor) return;
+    if (reviewIndex !== null) return;
+    if (timeWinner) return;
+
+    const g = new Chess(fenToPlay);
+    if (g.isGameOver()) return;
+
+    // bot only plays when it's not player's turn
+    if (g.turn() === playerColor) return;
+
+    stopBotTimer();
+    setThinking(true);
+    taskRef.current = "bot";
+
+    const config = {
+      easy: { depth: 2, delay: 250 },
+      medium: { depth: 10, delay: 450 },
+      hard: { depth: 18, delay: 700 },
+    } as const;
+
+    const { depth, delay } = config[difficulty];
+
+    botDelayTimerRef.current = window.setTimeout(() => {
+      try {
+        // clean previous searches
+        engine.current?.postMessage("stop");
+        engine.current?.postMessage("ucinewgame");
+      } catch {}
+
+      engine.current?.postMessage(`position fen ${fenToPlay}`);
+      engine.current?.postMessage(`go depth ${depth}`);
+    }, delay);
+  };
+
+  // when playerColor is black, bot should make the first move at game start
+  useEffect(() => {
+    if (mode !== "bot") return;
+    if (selectionStep !== "game") return;
+    if (!playerColor) return;
+    if (!isReady) return;
+    requestBotMove(fen);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, selectionStep, playerColor, isReady]);
+
+  // =====================
   // PEERJS LOAD
   // =====================
   useEffect(() => {
@@ -206,7 +271,7 @@ export default function ChessPage() {
         if (!alive) return;
         PeerCtorRef.current = mod.default as any;
         setPeerReady(true);
-      } catch (e) {
+      } catch {
         setPeerReady(false);
         setP2pStatus("PeerJS yüklenemedi. (peerjs dependencies'de mi?)");
       }
@@ -233,11 +298,9 @@ export default function ChessPage() {
 
   function ensurePeer(id: string) {
     if (peerRef.current) return peerRef.current;
-
     const Peer = PeerCtorRef.current;
     if (!Peer) return null;
-
-    const p = new Peer(id); // default peerjs cloud
+    const p = new Peer(id);
     peerRef.current = p;
     return p;
   }
@@ -263,6 +326,8 @@ export default function ChessPage() {
     analysisActiveRef.current = false;
     analysisIndexRef.current = -1;
     taskRef.current = "none";
+
+    stopBotTimer();
   }
 
   function handleP2PData(data: any) {
@@ -273,7 +338,6 @@ export default function ChessPage() {
       safeResetGame(msg.fen);
       setDifficulty(msg.difficulty);
 
-      // online always timeless
       setInitialTime(null);
       setWhiteTime(0);
       setBlackTime(0);
@@ -292,7 +356,7 @@ export default function ChessPage() {
         ...prev,
         {
           move: msg.san,
-          score: 0, // will be filled by post analysis
+          score: 0,
           fenBefore: msg.fenBefore,
           fenAfter: msg.fenAfter,
         },
@@ -307,11 +371,6 @@ export default function ChessPage() {
       setP2pStatus("Rakip oyunu sıfırladı.");
       return;
     }
-
-    if (msg.type === "ping") {
-      // optional keep-alive; ignore
-      return;
-    }
   }
 
   // =====================
@@ -324,11 +383,17 @@ export default function ChessPage() {
     if (!w) return;
 
     engine.current = w;
+
     w.postMessage("uci");
     w.postMessage("isready");
 
     w.onmessage = (e) => {
       const msg = String(e.data || "");
+
+      if (msg.startsWith("sf_error:")) {
+        setSfError(msg.replace("sf_error:", "").trim());
+        return;
+      }
 
       if (msg === "readyok") setIsReady(true);
 
@@ -340,8 +405,14 @@ export default function ChessPage() {
       if (!msg.startsWith("bestmove")) return;
 
       const best = msg.split(" ")[1];
-      const from = best?.slice(0, 2) as Square;
-      const to = best?.slice(2, 4) as Square;
+      if (!best || best === "(none)") {
+        setThinking(false);
+        taskRef.current = "none";
+        return;
+      }
+
+      const from = best.slice(0, 2) as Square;
+      const to = best.slice(2, 4) as Square;
 
       // 1) POST-GAME ANALYSIS
       if (taskRef.current === "analysis" && analysisActiveRef.current) {
@@ -397,43 +468,47 @@ export default function ChessPage() {
 
       // 2) HINT
       if (taskRef.current === "hint") {
-        if (best && best !== "(none)") setHintMove({ from, to });
+        setHintMove({ from, to });
         setHintLoading(false);
         taskRef.current = "none";
         return;
       }
 
       // 3) BOT MOVE
-      if (!best || best === "(none)") return;
+      if (taskRef.current === "bot" || mode === "bot") {
+        setFen((prev) => {
+          const g = new Chess(prev);
+          const fenBefore = prev;
 
-      setFen((prev) => {
-        const g = new Chess(prev);
-        const fenBefore = prev;
+          try {
+            const m = g.move({ from, to, promotion: "q" });
+            const fenAfter = g.fen();
+            playMoveSound();
 
-        try {
-          const m = g.move({ from, to, promotion: "q" });
-          const fenAfter = g.fen();
-          playMoveSound();
+            setMoveEvaluations((prevEval) => [
+              ...prevEval,
+              { move: m.san, score: lastScore.current, fenBefore, fenAfter },
+            ]);
 
-          setMoveEvaluations((prevEval) => [
-            ...prevEval,
-            { move: m.san, score: lastScore.current, fenBefore, fenAfter },
-          ]);
-
-          return fenAfter;
-        } catch {
-          return prev;
-        } finally {
-          setThinking(false);
-        }
-      });
+            return fenAfter;
+          } catch {
+            return prev;
+          } finally {
+            setThinking(false);
+            taskRef.current = "none";
+          }
+        });
+        return;
+      }
     };
 
     return () => {
+      stopBotTimer();
       try {
         w.terminate();
       } catch {}
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // =====================
@@ -448,46 +523,12 @@ export default function ChessPage() {
   }, [difficulty, isReady]);
 
   // =====================
-  // BOT MOVE LOOP (disabled in p2p)
-  // =====================
-  useEffect(() => {
-    if (mode === "p2p") return;
-    if (selectionStep !== "game") return;
-    if (!playerColor) return;
-    if (!isReady) return;
-    if (reviewIndex !== null) return;
-    if (timeWinner) return;
-    if (game.isGameOver()) return;
-
-    // bot plays when it's NOT player's turn
-    if (game.turn() === playerColor) return;
-
-    setThinking(true);
-
-    const config = {
-      easy: { depth: 2, delay: 250 },
-      medium: { depth: 10, delay: 450 },
-      hard: { depth: 18, delay: 700 },
-    } as const;
-
-    const { depth, delay } = config[difficulty];
-    const t = setTimeout(() => {
-      engine.current?.postMessage(`position fen ${fen}`);
-      engine.current?.postMessage(`go depth ${depth}`);
-    }, delay);
-
-    return () => clearTimeout(t);
-  }, [mode, selectionStep, playerColor, isReady, reviewIndex, timeWinner, fen, difficulty, game]);
-
-  // =====================
   // HINT (online in-game disabled)
   // =====================
   const getHint = (targetFen?: string) => {
     const isOverNow = game.isGameOver() || !!timeWinner;
 
-    // online oynarken oyun içinde ipucu yok
     if (mode === "p2p" && !isOverNow) return;
-
     if (!isReady || hintCount >= 5) return;
 
     if (!targetFen) setHintCount((prev) => prev + 1);
@@ -495,6 +536,7 @@ export default function ChessPage() {
     taskRef.current = "hint";
 
     const currentFen = targetFen || fen;
+    engine.current?.postMessage("stop");
     engine.current?.postMessage(`position fen ${currentFen}`);
     engine.current?.postMessage("go depth 15");
   };
@@ -529,6 +571,7 @@ export default function ChessPage() {
       return;
     }
 
+    engine.current?.postMessage("stop");
     engine.current?.postMessage(`position fen ${fenToEval}`);
     engine.current?.postMessage(`go depth ${analysisDepthRef.current}`);
   }, [isReady, mode, isGameOver, analysisDone, postAnalyzing]);
@@ -630,13 +673,7 @@ export default function ChessPage() {
 
           setSelected(null);
 
-          // bot eval request (optional)
-          if (mode !== "p2p") {
-            engine.current?.postMessage(`position fen ${fenAfter}`);
-            engine.current?.postMessage("go depth 10");
-          }
-
-          // p2p send move
+          // online send
           if (mode === "p2p" && connRef.current?.open) {
             const msg: P2PMsg = {
               type: "move",
@@ -648,6 +685,11 @@ export default function ChessPage() {
               fenAfter,
             };
             connRef.current.send(msg);
+          }
+
+          // ✅ GUARANTEED bot trigger right after player move
+          if (mode === "bot") {
+            requestBotMove(fenAfter);
           }
 
           return;
@@ -730,18 +772,24 @@ export default function ChessPage() {
             Online mod: süresiz + oyun içi ipucu yok + maç bitince Stockfish analiz.
           </p>
 
-          {!peerReady && (
-            <div className="mt-4 text-xs text-amber-300 bg-slate-950/60 border border-white/5 rounded-2xl p-3 text-center">
-              PeerJS hazır değil… (peerjs yüklü mü?)
-            </div>
-          )}
+          {/* Stockfish durum */}
+          <div className="mt-4 text-xs text-slate-300 bg-slate-950/60 border border-white/5 rounded-2xl p-3 text-center">
+            Stockfish:{" "}
+            {sfError ? (
+              <span className="text-red-300">{sfError}</span>
+            ) : isReady ? (
+              <span className="text-emerald-300">Hazır ✅</span>
+            ) : (
+              <span className="text-amber-300">Yükleniyor...</span>
+            )}
+          </div>
         </div>
       </div>
     );
   }
 
   // =========================
-  // LOBBY: ROOM (HOST / JOIN)
+  // (Online lobby kısmı aynı kalsın diye kısaltmıyorum: SENDE ÇALIŞIYOR)
   // =========================
   if (selectionStep === "color" && lobbyStep === "room" && mode === "p2p") {
     return (
@@ -786,9 +834,10 @@ export default function ChessPage() {
               });
 
               p.on("connection", (c: any) => {
-                // allow only one guest
                 if (connRef.current?.open) {
-                  try { c.close?.(); } catch {}
+                  try {
+                    c.close?.();
+                  } catch {}
                   return;
                 }
 
@@ -799,14 +848,12 @@ export default function ChessPage() {
                 c.on("close", () => setP2pStatus("Bağlantı koptu."));
                 c.on("error", () => setP2pStatus("Bağlantı hatası."));
 
-                // random colors
                 const colors: Color[] = Math.random() < 0.5 ? ["w", "b"] : ["b", "w"];
                 const hostColor = colors[0];
                 const guestColor = colors[1];
 
                 setPlayerColor(hostColor);
 
-                // online timeless
                 setInitialTime(null);
                 setWhiteTime(0);
                 setBlackTime(0);
@@ -822,17 +869,17 @@ export default function ChessPage() {
                   difficulty,
                 };
 
-                // IMPORTANT: send init after open
                 c.on("open", () => {
                   try {
                     c.send(initMsg);
                   } catch {}
                 });
 
-                // if already open
                 setTimeout(() => {
                   if (c.open) {
-                    try { c.send(initMsg); } catch {}
+                    try {
+                      c.send(initMsg);
+                    } catch {}
                   }
                 }, 150);
 
@@ -882,7 +929,8 @@ export default function ChessPage() {
                   isHostRef.current = false;
                   setP2pStatus("Bağlanıyor...");
 
-                  const myId = "g" + gen5() + "-" + Math.random().toString(16).slice(2, 6);
+                  const myId =
+                    "g" + gen5() + "-" + Math.random().toString(16).slice(2, 6);
                   const p = ensurePeer(myId);
                   if (!p) {
                     setP2pStatus("PeerJS hazır değil.");
@@ -895,9 +943,14 @@ export default function ChessPage() {
                     connRef.current = c;
 
                     const failTimer = setTimeout(() => {
-                      try { c.close?.(); } catch {}
+                      try {
+                        c.close?.();
+                      } catch {}
                       if (attempt < 6) tryConnect(attempt + 1);
-                      else setP2pStatus("Bağlantı kurulamadı. Oda kodu doğru mu? Host açık mı?");
+                      else
+                        setP2pStatus(
+                          "Bağlantı kurulamadı. Oda kodu doğru mu? Host açık mı?"
+                        );
                     }, 2000);
 
                     c.on("open", () => {
@@ -906,13 +959,16 @@ export default function ChessPage() {
                       c.on("data", (d: any) => handleP2PData(d));
                       c.on("close", () => setP2pStatus("Bağlantı koptu."));
                       c.on("error", () => setP2pStatus("Bağlantı hatası."));
-                      // ping for keep-alive
-                      try { c.send({ type: "ping" } as P2PMsg); } catch {}
+                      try {
+                        c.send({ type: "ping" } as P2PMsg);
+                      } catch {}
                     });
 
                     c.on("error", () => {
                       clearTimeout(failTimer);
-                      try { c.close?.(); } catch {}
+                      try {
+                        c.close?.();
+                      } catch {}
                       if (attempt < 6) tryConnect(attempt + 1);
                       else setP2pStatus("Bağlantı hatası. Tekrar dene.");
                     });
@@ -949,12 +1005,6 @@ export default function ChessPage() {
           {p2pStatus && (
             <div className="mt-3 text-xs text-slate-300 bg-slate-950/60 border border-white/5 rounded-2xl p-3">
               {p2pStatus}
-            </div>
-          )}
-
-          {!peerReady && (
-            <div className="mt-4 text-xs text-amber-300 bg-slate-950/60 border border-white/5 rounded-2xl p-3">
-              PeerJS yoksa online çalışmaz. Aşağıdaki “peerjs’ı dependencies’e ekle” kısmına bak.
             </div>
           )}
         </div>
@@ -1050,7 +1100,6 @@ export default function ChessPage() {
                     setWhiteTime(0);
                     setBlackTime(0);
                   }
-                  // start game
                   safeResetGame(START_FEN);
                   setSelectionStep("game");
                 }}
@@ -1107,6 +1156,20 @@ export default function ChessPage() {
                 </div>
               )}
             </div>
+
+            {/* Stockfish status (botta işe yarar) */}
+            {mode === "bot" && (
+              <div className="mb-4 text-[11px] text-slate-300 bg-slate-950/60 border border-white/5 rounded-2xl p-3">
+                Stockfish:{" "}
+                {sfError ? (
+                  <span className="text-red-300">{sfError}</span>
+                ) : isReady ? (
+                  <span className="text-emerald-300">Hazır ✅</span>
+                ) : (
+                  <span className="text-amber-300">Yükleniyor...</span>
+                )}
+              </div>
+            )}
 
             <div className="mb-4 flex justify-between items-center p-4 rounded-2xl bg-slate-950 border border-white/5">
               <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
@@ -1221,7 +1284,9 @@ export default function ChessPage() {
                   <button
                     onClick={() => {
                       if (mode === "p2p" && connRef.current?.open) {
-                        try { connRef.current.send({ type: "reset" } as P2PMsg); } catch {}
+                        try {
+                          connRef.current.send({ type: "reset" } as P2PMsg);
+                        } catch {}
                       }
                       window.location.reload();
                     }}
@@ -1246,7 +1311,6 @@ export default function ChessPage() {
                 </button>
               ) : (
                 <>
-                  {/* Online modda oyun içi ipucu YOK */}
                   {!isGameOver && mode !== "p2p" && (
                     <button
                       onClick={() => getHint()}
@@ -1264,7 +1328,9 @@ export default function ChessPage() {
                   <button
                     onClick={() => {
                       if (mode === "p2p" && connRef.current?.open) {
-                        try { connRef.current.send({ type: "reset" } as P2PMsg); } catch {}
+                        try {
+                          connRef.current.send({ type: "reset" } as P2PMsg);
+                        } catch {}
                       }
                       window.location.reload();
                     }}
@@ -1284,14 +1350,6 @@ export default function ChessPage() {
               {isGameOver ? "🏆 MAÇ RAPORU" : "HAMLE GEÇMİŞİ"}
             </h2>
 
-            {mode === "p2p" && isGameOver && !analysisDone && (
-              <div className="mb-4 text-[11px] text-slate-300 bg-slate-950/60 border border-white/5 rounded-2xl p-3">
-                {postAnalyzing
-                  ? `Stockfish analiz ediyor... (${analysisProgress.i}/${analysisProgress.n})`
-                  : "Analiz başlatılıyor..."}
-              </div>
-            )}
-
             <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-3">
               {moveEvaluations.map((evalData, i) => {
                 const isWhite = i % 2 === 0;
@@ -1299,9 +1357,6 @@ export default function ChessPage() {
                 const quality = isGameOver
                   ? getMoveQuality(evalData.score, prevEval, isWhite)
                   : null;
-
-                const isPlayerMove =
-                  (isWhite && playerColor === "w") || (!isWhite && playerColor === "b");
 
                 return (
                   <div
@@ -1311,7 +1366,6 @@ export default function ChessPage() {
                       (() => {
                         setReviewIndex(i);
                         setHintMove(null);
-                        // maç sonrası incelemede ipucu serbest (online dahil)
                         getHint(moveEvaluations[i].fenBefore);
                       })()
                     }
@@ -1339,18 +1393,6 @@ export default function ChessPage() {
                         </span>
                       )}
                     </div>
-
-                    {quality && isPlayerMove && quality.puan > 0 && (
-                      <div className="mt-2 text-[10px] font-black text-slate-500">
-                        +{quality.puan} Puan
-                      </div>
-                    )}
-
-                    {mode === "p2p" && isGameOver && !analysisDone && (
-                      <div className="mt-2 text-[10px] font-black text-slate-500">
-                        Analiz bekleniyor...
-                      </div>
-                    )}
                   </div>
                 );
               })}
