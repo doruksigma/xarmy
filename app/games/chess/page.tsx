@@ -3,9 +3,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Chess, Square, PieceSymbol, Color } from "chess.js";
 
-// =====================
-// CONSTANTS
-// =====================
 const START_FEN =
   "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
@@ -16,7 +13,7 @@ type Mode = "bot" | "p2p";
 
 type MoveEval = {
   move: string;
-  score: number; // eval (pawn units)
+  score: number; // eval (pawn units, e.g. 0.35)
   fenBefore: string;
   fenAfter: string;
 };
@@ -27,7 +24,7 @@ type P2PMsg =
       fen: string;
       hostColor: Color;
       guestColor: Color;
-      initialTime: null; // online always timeless
+      initialTime: number | null; // online süresiz => null
       difficulty: "easy" | "medium" | "hard";
     }
   | {
@@ -39,44 +36,12 @@ type P2PMsg =
       fenBefore: string;
       fenAfter: string;
     }
-  | { type: "reset" }
-  | { type: "ping" };
+  | { type: "reset" };
 
 function gen5() {
   return String(Math.floor(10000 + Math.random() * 90000));
 }
 
-// =====================
-// STOCKFISH WORKER (CDN)
-// =====================
-function createStockfishWorker() {
-  if (typeof window === "undefined") return null;
-
-  const stockfishURL =
-    "https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.2/stockfish.js";
-
-  const code = `
-    try {
-      self.importScripts("${stockfishURL}");
-      if (typeof self.Stockfish === 'function') {
-        const engine = self.Stockfish();
-        engine.onmessage = (e) => self.postMessage(e);
-        self.onmessage = (e) => engine.postMessage(e.data);
-      } else {
-        self.postMessage("sf_error: Stockfish init failed");
-      }
-    } catch (e) {
-      self.postMessage("sf_error: " + (e?.message || e));
-    }
-  `;
-
-  const blob = new Blob([code], { type: "application/javascript" });
-  return new Worker(URL.createObjectURL(blob));
-}
-
-// =====================
-// UI HELPERS
-// =====================
 function pieceToChar(p: { type: PieceSymbol; color: Color }) {
   const map: any = {
     w: { k: "♔", q: "♕", r: "♖", b: "♗", n: "♘", p: "♙" },
@@ -85,201 +50,220 @@ function pieceToChar(p: { type: PieceSymbol; color: Color }) {
   return map[p.color][p.type];
 }
 
+type PeerCtor = new (id?: string, options?: any) => any;
+
 export default function ChessPage() {
   // =====================
-  // PEERJS (dynamic import, SSR-safe)
+  // SSR SAFE MOUNT
   // =====================
-  const PeerCtorRef = useRef<any>(null);
-  const [peerReady, setPeerReady] = useState(false);
-
-  const peerRef = useRef<any>(null);
-  const connRef = useRef<any>(null);
-  const isHostRef = useRef(false);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  if (!mounted) return null;
 
   // =====================
-  // ENGINE / AUDIO
+  // AUDIO (click sound)
   // =====================
-  const engine = useRef<Worker | null>(null);
   const audioCtx = useRef<AudioContext | null>(null);
-
-  const lastScore = useRef<number>(0);
-  const taskRef = useRef<"none" | "hint" | "analysis" | "bot">("none");
-  const botDelayTimerRef = useRef<number | null>(null);
-
-  const analysisActiveRef = useRef(false);
-  const analysisIndexRef = useRef(-1);
-  const analysisDepthRef = useRef(14);
-  const movesRef = useRef<MoveEval[]>([]);
-
   const playMoveSound = () => {
     try {
-      if (!audioCtx.current)
+      if (!audioCtx.current) {
         audioCtx.current = new (window.AudioContext ||
           (window as any).webkitAudioContext)();
+      }
       const ctx = audioCtx.current;
       if (ctx.state === "suspended") ctx.resume();
 
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.type = "sine";
-      osc.frequency.setValueAtTime(150, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(40, ctx.currentTime + 0.1);
-      gain.gain.setValueAtTime(0.08, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
+      osc.frequency.setValueAtTime(180, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(60, ctx.currentTime + 0.08);
+      gain.gain.setValueAtTime(0.06, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.08);
+
       osc.connect(gain);
       gain.connect(ctx.destination);
       osc.start();
-      osc.stop(ctx.currentTime + 0.1);
+      osc.stop(ctx.currentTime + 0.085);
     } catch {}
   };
 
-  const stopBotTimer = () => {
-    if (botDelayTimerRef.current) {
-      window.clearTimeout(botDelayTimerRef.current);
-      botDelayTimerRef.current = null;
-    }
-  };
-
   // =====================
-  // STATE
+  // STOCKFISH (npm package, dynamic import) ✅ FIX
   // =====================
-  const [mounted, setMounted] = useState(false);
-
-  // lobby
-  const [mode, setMode] = useState<Mode | null>(null);
-  const [lobbyStep, setLobbyStep] = useState<"mode" | "room">("mode");
-  const [myCode, setMyCode] = useState("");
-  const [joinCode, setJoinCode] = useState("");
-  const [p2pStatus, setP2pStatus] = useState("");
-
-  // bot flow
-  const [selectionStep, setSelectionStep] = useState<"color" | "time" | "game">(
-    "color"
-  );
-  const [playerColor, setPlayerColor] = useState<Color | null>(null);
-  const [initialTime, setInitialTime] = useState<number | null>(null);
-
-  // game data
-  const [fen, setFen] = useState(START_FEN);
-  const [whiteTime, setWhiteTime] = useState(0);
-  const [blackTime, setBlackTime] = useState(0);
-
+  const engineRef = useRef<any>(null);
   const [isReady, setIsReady] = useState(false);
-  const [sfError, setSfError] = useState<string | null>(null);
 
-  const [thinking, setThinking] = useState(false);
-  const [selected, setSelected] = useState<Square | null>(null);
-  const [difficulty, setDifficulty] = useState<"easy" | "medium" | "hard">(
-    "medium"
-  );
-  const [timeWinner, setTimeWinner] = useState<string | null>(null);
+  // task routing
+  const taskRef = useRef<"none" | "hint" | "botmove" | "analysis">("none");
+  const lastScore = useRef<number>(0);
 
-  const [moveEvaluations, setMoveEvaluations] = useState<MoveEval[]>([]);
-  const [reviewIndex, setReviewIndex] = useState<number | null>(null);
+  // post-game analysis
+  const analysisActiveRef = useRef(false);
+  const analysisIndexRef = useRef(-1);
+  const analysisDepthRef = useRef(14);
 
-  const [hintMove, setHintMove] = useState<{ from: Square; to: Square } | null>(
-    null
-  );
-  const [hintLoading, setHintLoading] = useState(false);
-  const [hintCount, setHintCount] = useState(0);
-
-  // online post-game analysis status
   const [postAnalyzing, setPostAnalyzing] = useState(false);
   const [analysisDone, setAnalysisDone] = useState(false);
-  const [analysisProgress, setAnalysisProgress] = useState<{
-    i: number;
-    n: number;
-  }>({ i: 0, n: 0 });
+  const [analysisProgress, setAnalysisProgress] = useState<{ i: number; n: number }>({ i: 0, n: 0 });
 
-  // keep ref synced
-  useEffect(() => {
-    movesRef.current = moveEvaluations;
-  }, [moveEvaluations]);
-
-  // chess instance (review or live)
-  const game = useMemo(() => {
-    const f =
-      reviewIndex !== null && moveEvaluations[reviewIndex]
-        ? moveEvaluations[reviewIndex].fenBefore
-        : fen;
-    return new Chess(f);
-  }, [fen, reviewIndex, moveEvaluations]);
-
-  const displayRanks = playerColor === "b" ? [...ranks].reverse() : ranks;
-  const displayFiles = playerColor === "b" ? [...files].reverse() : files;
-
-  const isGameOver = game.isGameOver() || !!timeWinner;
-
-  // =====================
-  // BOT MOVE: GUARANTEED TRIGGER
-  // =====================
-  const requestBotMove = (fenToPlay: string) => {
-    if (mode !== "bot") return;
-    if (!isReady || !engine.current) return;
-    if (!playerColor) return;
-    if (reviewIndex !== null) return;
-    if (timeWinner) return;
-
-    const g = new Chess(fenToPlay);
-    if (g.isGameOver()) return;
-
-    // bot only plays when it's not player's turn
-    if (g.turn() === playerColor) return;
-
-    stopBotTimer();
-    setThinking(true);
-    taskRef.current = "bot";
-
-    const config = {
-      easy: { depth: 2, delay: 250 },
-      medium: { depth: 10, delay: 450 },
-      hard: { depth: 18, delay: 700 },
-    } as const;
-
-    const { depth, delay } = config[difficulty];
-
-    botDelayTimerRef.current = window.setTimeout(() => {
-      try {
-        // clean previous searches
-        engine.current?.postMessage("stop");
-        engine.current?.postMessage("ucinewgame");
-      } catch {}
-
-      engine.current?.postMessage(`position fen ${fenToPlay}`);
-      engine.current?.postMessage(`go depth ${depth}`);
-    }, delay);
+  const movesRef = useRef<MoveEval[]>([]);
+  const setMoves = (updater: (prev: MoveEval[]) => MoveEval[]) => {
+    setMoveEvaluations((prev) => {
+      const next = updater(prev);
+      movesRef.current = next;
+      return next;
+    });
   };
 
-  // when playerColor is black, bot should make the first move at game start
+  const initEngineOnce = useRef(false);
   useEffect(() => {
-    if (mode !== "bot") return;
-    if (selectionStep !== "game") return;
-    if (!playerColor) return;
-    if (!isReady) return;
-    requestBotMove(fen);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, selectionStep, playerColor, isReady]);
+    if (initEngineOnce.current) return;
+    initEngineOnce.current = true;
+
+    (async () => {
+      try {
+        const mod = await import("stockfish");
+        const factory = (mod as any).default ?? (mod as any);
+        const engine = factory(); // engine-like object with postMessage/onmessage
+        engineRef.current = engine;
+
+        engine.onmessage = (event: any) => {
+          const raw = typeof event === "string" ? event : event?.data;
+          const msg = String(raw || "");
+
+          if (msg === "uciok") {
+            // ok
+          }
+          if (msg === "readyok") {
+            setIsReady(true);
+            return;
+          }
+
+          // score parse
+          if (msg.startsWith("info") && msg.includes("score cp")) {
+            const m = msg.match(/score cp (-?\d+)/);
+            if (m) lastScore.current = parseInt(m[1], 10) / 100;
+          }
+
+          if (!msg.startsWith("bestmove")) return;
+          const best = msg.split(" ")[1];
+          if (!best || best === "(none)") return;
+
+          const from = best.slice(0, 2) as Square;
+          const to = best.slice(2, 4) as Square;
+
+          // 1) Hint
+          if (taskRef.current === "hint") {
+            setHintMove({ from, to });
+            setHintLoading(false);
+            taskRef.current = "none";
+            return;
+          }
+
+          // 2) Bot move
+          if (taskRef.current === "botmove") {
+            taskRef.current = "none";
+            applyMoveFromEngine(from, to);
+            return;
+          }
+
+          // 3) Post-game analysis step
+          if (taskRef.current === "analysis" && analysisActiveRef.current) {
+            const idx = analysisIndexRef.current;
+            const list = movesRef.current;
+
+            if (idx >= 0 && idx < list.length) {
+              const scoreForPos = lastScore.current;
+
+              setMoves((prev) => {
+                if (!prev[idx]) return prev;
+                const copy = [...prev];
+                copy[idx] = { ...copy[idx], score: scoreForPos };
+                return copy;
+              });
+
+              setAnalysisProgress((p) => ({ i: Math.min(p.i + 1, p.n), n: p.n }));
+
+              const nextIdx = idx + 1;
+              analysisIndexRef.current = nextIdx;
+
+              setTimeout(() => {
+                const cur = movesRef.current;
+                if (nextIdx >= cur.length) {
+                  analysisActiveRef.current = false;
+                  taskRef.current = "none";
+                  setPostAnalyzing(false);
+                  setAnalysisDone(true);
+                  setP2pStatus("Maç analizi tamamlandı ✅");
+                  return;
+                }
+
+                const fenToEval = cur[nextIdx]?.fenAfter;
+                if (!fenToEval) {
+                  analysisActiveRef.current = false;
+                  taskRef.current = "none";
+                  setPostAnalyzing(false);
+                  setAnalysisDone(true);
+                  setP2pStatus("Maç analizi tamamlandı ✅");
+                  return;
+                }
+
+                analysisActiveRef.current = true;
+                taskRef.current = "analysis";
+                analysisIndexRef.current = nextIdx;
+
+                engineRef.current?.postMessage(`position fen ${fenToEval}`);
+                engineRef.current?.postMessage(`go depth ${analysisDepthRef.current}`);
+              }, 0);
+            }
+            return;
+          }
+        };
+
+        engine.postMessage("uci");
+        engine.postMessage("isready");
+      } catch (e) {
+        console.error("Stockfish init failed", e);
+        setIsReady(false);
+      }
+    })();
+  }, []);
 
   // =====================
-  // PEERJS LOAD
+  // P2P (PeerJS dynamic import)
   // =====================
+  const PeerCtorRef = useRef<PeerCtor | null>(null);
+  const peerRef = useRef<any>(null);
+  const connRef = useRef<any>(null);
+  const isHostRef = useRef(false);
+
+  const [p2pStatus, setP2pStatus] = useState("");
+
   useEffect(() => {
-    let alive = true;
     (async () => {
       try {
         const mod = await import("peerjs");
-        if (!alive) return;
-        PeerCtorRef.current = mod.default as any;
-        setPeerReady(true);
-      } catch {
-        setPeerReady(false);
-        setP2pStatus("PeerJS yüklenemedi. (peerjs dependencies'de mi?)");
+        PeerCtorRef.current = (mod as any).default;
+      } catch (e) {
+        console.error("peerjs load failed", e);
       }
     })();
-    return () => {
-      alive = false;
-    };
   }, []);
+
+  function ensurePeer(id: string) {
+    if (peerRef.current) return peerRef.current;
+
+    const Peer = PeerCtorRef.current;
+    if (!Peer) {
+      setP2pStatus("PeerJS yükleniyor...");
+      return null;
+    }
+
+    const p = new Peer(id);
+    peerRef.current = p;
+    return p;
+  }
 
   function cleanupP2P() {
     try {
@@ -291,43 +275,6 @@ export default function ChessPage() {
     connRef.current = null;
     peerRef.current = null;
     isHostRef.current = false;
-
-    setMyCode("");
-    setP2pStatus("");
-  }
-
-  function ensurePeer(id: string) {
-    if (peerRef.current) return peerRef.current;
-    const Peer = PeerCtorRef.current;
-    if (!Peer) return null;
-    const p = new Peer(id);
-    peerRef.current = p;
-    return p;
-  }
-
-  function safeResetGame(startFen?: string) {
-    const f = startFen || START_FEN;
-
-    setFen(f);
-    setMoveEvaluations([]);
-    setReviewIndex(null);
-    setHintMove(null);
-    setHintCount(0);
-    setHintLoading(false);
-    setTimeWinner(null);
-    setSelected(null);
-    setThinking(false);
-    lastScore.current = 0;
-
-    setPostAnalyzing(false);
-    setAnalysisDone(false);
-    setAnalysisProgress({ i: 0, n: 0 });
-
-    analysisActiveRef.current = false;
-    analysisIndexRef.current = -1;
-    taskRef.current = "none";
-
-    stopBotTimer();
   }
 
   function handleP2PData(data: any) {
@@ -352,14 +299,9 @@ export default function ChessPage() {
       playMoveSound();
       setFen(msg.fenAfter);
 
-      setMoveEvaluations((prev) => [
+      setMoves((prev) => [
         ...prev,
-        {
-          move: msg.san,
-          score: 0,
-          fenBefore: msg.fenBefore,
-          fenAfter: msg.fenAfter,
-        },
+        { move: msg.san, score: 0, fenBefore: msg.fenBefore, fenAfter: msg.fenAfter },
       ]);
 
       setThinking(false);
@@ -374,182 +316,179 @@ export default function ChessPage() {
   }
 
   // =====================
-  // STOCKFISH INIT
+  // UI / GAME STATE
+  // =====================
+  const [mode, setMode] = useState<Mode | null>(null);
+  const [lobbyStep, setLobbyStep] = useState<"mode" | "room">("mode");
+  const [myCode, setMyCode] = useState("");
+  const [joinCode, setJoinCode] = useState("");
+
+  const [selectionStep, setSelectionStep] = useState<"color" | "time" | "game">("color");
+  const [playerColor, setPlayerColor] = useState<Color | null>(null);
+  const [initialTime, setInitialTime] = useState<number | null>(null);
+
+  const [fen, setFen] = useState(START_FEN);
+  const [whiteTime, setWhiteTime] = useState(0);
+  const [blackTime, setBlackTime] = useState(0);
+
+  const [thinking, setThinking] = useState(false);
+  const [selected, setSelected] = useState<Square | null>(null);
+  const [difficulty, setDifficulty] = useState<"easy" | "medium" | "hard">("medium");
+  const [timeWinner, setTimeWinner] = useState<string | null>(null);
+
+  const [moveEvaluations, setMoveEvaluations] = useState<MoveEval[]>([]);
+  useEffect(() => {
+    movesRef.current = moveEvaluations;
+  }, [moveEvaluations]);
+
+  const [reviewIndex, setReviewIndex] = useState<number | null>(null);
+
+  const [hintMove, setHintMove] = useState<{ from: Square; to: Square } | null>(null);
+  const [hintLoading, setHintLoading] = useState(false);
+  const [hintCount, setHintCount] = useState(0);
+
+  const game = useMemo(() => {
+    const base =
+      reviewIndex !== null && moveEvaluations[reviewIndex]
+        ? moveEvaluations[reviewIndex].fenBefore
+        : fen;
+    return new Chess(base);
+  }, [fen, reviewIndex, moveEvaluations]);
+
+  const displayRanks = playerColor === "b" ? [...ranks].reverse() : ranks;
+  const displayFiles = playerColor === "b" ? [...files].reverse() : files;
+
+  const isGameOver = game.isGameOver() || !!timeWinner;
+
+  function safeResetGame(startFen?: string) {
+    const f = startFen || START_FEN;
+
+    setFen(f);
+    setMoveEvaluations([]);
+    movesRef.current = [];
+    setReviewIndex(null);
+
+    setHintMove(null);
+    setHintLoading(false);
+    setHintCount(0);
+
+    setSelected(null);
+    setThinking(false);
+    setTimeWinner(null);
+
+    setPostAnalyzing(false);
+    setAnalysisDone(false);
+    setAnalysisProgress({ i: 0, n: 0 });
+
+    analysisActiveRef.current = false;
+    analysisIndexRef.current = -1;
+    taskRef.current = "none";
+    lastScore.current = 0;
+  }
+
+  // =====================
+  // Engine options (difficulty)
   // =====================
   useEffect(() => {
-    setMounted(true);
-
-    const w = createStockfishWorker();
-    if (!w) return;
-
-    engine.current = w;
-
-    w.postMessage("uci");
-    w.postMessage("isready");
-
-    w.onmessage = (e) => {
-      const msg = String(e.data || "");
-
-      if (msg.startsWith("sf_error:")) {
-        setSfError(msg.replace("sf_error:", "").trim());
-        return;
-      }
-
-      if (msg === "readyok") setIsReady(true);
-
-      if (msg.startsWith("info") && msg.includes("score cp")) {
-        const m = msg.match(/score cp (-?\d+)/);
-        if (m) lastScore.current = parseInt(m[1], 10) / 100;
-      }
-
-      if (!msg.startsWith("bestmove")) return;
-
-      const best = msg.split(" ")[1];
-      if (!best || best === "(none)") {
-        setThinking(false);
-        taskRef.current = "none";
-        return;
-      }
-
-      const from = best.slice(0, 2) as Square;
-      const to = best.slice(2, 4) as Square;
-
-      // 1) POST-GAME ANALYSIS
-      if (taskRef.current === "analysis" && analysisActiveRef.current) {
-        const idx = analysisIndexRef.current;
-        const list = movesRef.current;
-
-        if (idx >= 0 && idx < list.length) {
-          const scoreForPos = lastScore.current;
-
-          setMoveEvaluations((prev) => {
-            if (!prev[idx]) return prev;
-            const copy = [...prev];
-            copy[idx] = { ...copy[idx], score: scoreForPos };
-            return copy;
-          });
-
-          setAnalysisProgress((p) => ({ i: Math.min(p.i + 1, p.n), n: p.n }));
-
-          const nextIdx = idx + 1;
-          analysisIndexRef.current = nextIdx;
-
-          setTimeout(() => {
-            const now = movesRef.current;
-            if (nextIdx >= now.length) {
-              analysisActiveRef.current = false;
-              taskRef.current = "none";
-              setPostAnalyzing(false);
-              setAnalysisDone(true);
-              setP2pStatus("Maç analizi tamamlandı ✅");
-              return;
-            }
-
-            const fenToEval = now[nextIdx]?.fenAfter;
-            if (!fenToEval) {
-              analysisActiveRef.current = false;
-              taskRef.current = "none";
-              setPostAnalyzing(false);
-              setAnalysisDone(true);
-              setP2pStatus("Maç analizi tamamlandı ✅");
-              return;
-            }
-
-            analysisActiveRef.current = true;
-            taskRef.current = "analysis";
-            analysisIndexRef.current = nextIdx;
-
-            engine.current?.postMessage(`position fen ${fenToEval}`);
-            engine.current?.postMessage(`go depth ${analysisDepthRef.current}`);
-          }, 0);
-        }
-        return;
-      }
-
-      // 2) HINT
-      if (taskRef.current === "hint") {
-        setHintMove({ from, to });
-        setHintLoading(false);
-        taskRef.current = "none";
-        return;
-      }
-
-      // 3) BOT MOVE
-      if (taskRef.current === "bot" || mode === "bot") {
-        setFen((prev) => {
-          const g = new Chess(prev);
-          const fenBefore = prev;
-
-          try {
-            const m = g.move({ from, to, promotion: "q" });
-            const fenAfter = g.fen();
-            playMoveSound();
-
-            setMoveEvaluations((prevEval) => [
-              ...prevEval,
-              { move: m.san, score: lastScore.current, fenBefore, fenAfter },
-            ]);
-
-            return fenAfter;
-          } catch {
-            return prev;
-          } finally {
-            setThinking(false);
-            taskRef.current = "none";
-          }
-        });
-        return;
-      }
-    };
-
-    return () => {
-      stopBotTimer();
-      try {
-        w.terminate();
-      } catch {}
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // =====================
-  // BOT DIFFICULTY
-  // =====================
-  useEffect(() => {
-    if (!isReady || !engine.current) return;
-    const skillLevels = { easy: 0, medium: 10, hard: 20 };
-    engine.current.postMessage(
-      `setoption name Skill Level value ${skillLevels[difficulty]}`
-    );
+    if (!isReady || !engineRef.current) return;
+    const skill = { easy: 0, medium: 10, hard: 20 }[difficulty];
+    // stockfish.js supports this uci option
+    engineRef.current.postMessage(`setoption name Skill Level value ${skill}`);
   }, [difficulty, isReady]);
 
   // =====================
-  // HINT (online in-game disabled)
+  // Bot move request (IMPORTANT: drive with "go")
+  // =====================
+  function requestBotMove(currentFen: string) {
+    if (!isReady || !engineRef.current) return;
+
+    // ensure position
+    engineRef.current.postMessage(`position fen ${currentFen}`);
+
+    // time/depth config
+    const cfg = {
+      easy: { depth: 6 },
+      medium: { depth: 10 },
+      hard: { depth: 14 },
+    }[difficulty];
+
+    taskRef.current = "botmove";
+    engineRef.current.postMessage(`go depth ${cfg.depth}`);
+  }
+
+  function applyMoveFromEngine(from: Square, to: Square) {
+    setFen((prev) => {
+      const g = new Chess(prev);
+      const fenBefore = prev;
+      try {
+        const mv = g.move({ from, to, promotion: "q" });
+        const fenAfter = g.fen();
+
+        playMoveSound();
+        setMoves((p) => [
+          ...p,
+          { move: mv.san, score: lastScore.current, fenBefore, fenAfter },
+        ]);
+
+        return fenAfter;
+      } catch {
+        return prev;
+      } finally {
+        setThinking(false);
+      }
+    });
+  }
+
+  // =====================
+  // Bot loop (not in p2p)
+  // =====================
+  useEffect(() => {
+    if (mode !== "bot") return;
+    if (selectionStep !== "game") return;
+    if (!playerColor) return;
+    if (!isReady) return;
+    if (reviewIndex !== null) return;
+    if (timeWinner) return;
+    if (game.isGameOver()) return;
+
+    // bot plays when turn != playerColor
+    if (game.turn() !== playerColor) {
+      setThinking(true);
+      const t = setTimeout(() => requestBotMove(fen), 250);
+      return () => clearTimeout(t);
+    }
+  }, [mode, selectionStep, playerColor, isReady, reviewIndex, timeWinner, game, fen]);
+
+  // =====================
+  // Hint (online in-game disabled; allowed post-game review)
   // =====================
   const getHint = (targetFen?: string) => {
-    const isOverNow = game.isGameOver() || !!timeWinner;
+    const overNow = game.isGameOver() || !!timeWinner;
 
-    if (mode === "p2p" && !isOverNow) return;
-    if (!isReady || hintCount >= 5) return;
+    // ✅ online oynarken oyun içi ipucu yok
+    if (mode === "p2p" && !overNow) return;
 
-    if (!targetFen) setHintCount((prev) => prev + 1);
+    if (!isReady || !engineRef.current) return;
+    if (hintCount >= 5) return;
+
+    if (!targetFen) setHintCount((c) => c + 1);
+
     setHintLoading(true);
     taskRef.current = "hint";
 
     const currentFen = targetFen || fen;
-    engine.current?.postMessage("stop");
-    engine.current?.postMessage(`position fen ${currentFen}`);
-    engine.current?.postMessage("go depth 15");
+    engineRef.current.postMessage(`position fen ${currentFen}`);
+    engineRef.current.postMessage("go depth 12");
   };
 
   // =====================
-  // POST-GAME ANALYSIS (online)
+  // Online post-game analysis
   // =====================
   useEffect(() => {
     if (!isReady) return;
     if (mode !== "p2p") return;
     if (!isGameOver) return;
-    if (analysisDone) return;
-    if (postAnalyzing) return;
+    if (analysisDone || postAnalyzing) return;
     if (movesRef.current.length === 0) return;
 
     setPostAnalyzing(true);
@@ -571,13 +510,12 @@ export default function ChessPage() {
       return;
     }
 
-    engine.current?.postMessage("stop");
-    engine.current?.postMessage(`position fen ${fenToEval}`);
-    engine.current?.postMessage(`go depth ${analysisDepthRef.current}`);
+    engineRef.current?.postMessage(`position fen ${fenToEval}`);
+    engineRef.current?.postMessage(`go depth ${analysisDepthRef.current}`);
   }, [isReady, mode, isGameOver, analysisDone, postAnalyzing]);
 
   // =====================
-  // TIMER (bot optional; online always timeless)
+  // Timer (online: initialTime null)
   // =====================
   useEffect(() => {
     let interval: any;
@@ -601,13 +539,12 @@ export default function ChessPage() {
     if (!initialTime) return;
     if (timeWinner) return;
     if (selectionStep !== "game") return;
-
     if (whiteTime === 0) setTimeWinner("Siyah Kazandı");
     if (blackTime === 0) setTimeWinner("Beyaz Kazandı");
   }, [whiteTime, blackTime, initialTime, timeWinner, selectionStep]);
 
   // =====================
-  // SCORING
+  // Scoring labels
   // =====================
   const getMoveQuality = (current: number, prev: number, isWhite: boolean) => {
     const diff = isWhite ? current - prev : prev - current;
@@ -629,7 +566,7 @@ export default function ChessPage() {
   }, [moveEvaluations, playerColor]);
 
   // =====================
-  // BOARD INTERACTION
+  // Board interaction
   // =====================
   function onSquareClick(square: Square) {
     if (
@@ -650,51 +587,48 @@ export default function ChessPage() {
       const fenBefore = fen;
 
       try {
-        const move = gCopy.move({
-          from: selected,
-          to: square,
-          promotion: "q",
-        });
-
-        if (move) {
-          const fenAfter = gCopy.fen();
-          playMoveSound();
-
-          setFen(fenAfter);
-          setMoveEvaluations((prev) => [
-            ...prev,
-            {
-              move: move.san,
-              score: mode === "p2p" ? 0 : lastScore.current,
-              fenBefore,
-              fenAfter,
-            },
-          ]);
-
+        const mv = gCopy.move({ from: selected, to: square, promotion: "q" });
+        if (!mv) {
           setSelected(null);
-
-          // online send
-          if (mode === "p2p" && connRef.current?.open) {
-            const msg: P2PMsg = {
-              type: "move",
-              from: selected,
-              to: square,
-              promotion: "q",
-              san: move.san,
-              fenBefore,
-              fenAfter,
-            };
-            connRef.current.send(msg);
-          }
-
-          // ✅ GUARANTEED bot trigger right after player move
-          if (mode === "bot") {
-            requestBotMove(fenAfter);
-          }
-
           return;
         }
-      } catch {}
+
+        const fenAfter = gCopy.fen();
+        playMoveSound();
+        setFen(fenAfter);
+
+        setMoves((p) => [
+          ...p,
+          { move: mv.san, score: mode === "p2p" ? 0 : lastScore.current, fenBefore, fenAfter },
+        ]);
+
+        setSelected(null);
+
+        // bot: immediately request response
+        if (mode === "bot") {
+          // give engine a tiny breath, then go
+          setThinking(true);
+          setTimeout(() => requestBotMove(fenAfter), 200);
+        }
+
+        // p2p: send move
+        if (mode === "p2p" && connRef.current?.open) {
+          const msg: P2PMsg = {
+            type: "move",
+            from: selected,
+            to: square,
+            promotion: "q",
+            san: mv.san,
+            fenBefore,
+            fenAfter,
+          };
+          connRef.current.send(msg);
+        }
+
+        return;
+      } catch {
+        // fallthrough to selection update
+      }
     }
 
     const piece = game.get(square);
@@ -722,13 +656,8 @@ export default function ChessPage() {
     return { x, y };
   };
 
-  // =====================
-  // MOUNT GUARD
-  // =====================
-  if (!mounted) return null;
-
   // =========================
-  // LOBBY: MODE SELECTION
+  // LOBBY: MODE
   // =========================
   if (selectionStep === "color" && lobbyStep === "mode") {
     return (
@@ -742,6 +671,9 @@ export default function ChessPage() {
             <button
               onClick={() => {
                 cleanupP2P();
+                setMyCode("");
+                setJoinCode("");
+                setP2pStatus("");
                 setMode("bot");
                 setLobbyStep("mode");
                 setSelectionStep("color");
@@ -754,42 +686,34 @@ export default function ChessPage() {
             <button
               onClick={() => {
                 cleanupP2P();
+                setMyCode("");
+                setJoinCode("");
+                setP2pStatus("");
                 setMode("p2p");
                 setLobbyStep("room");
-                setP2pStatus(peerReady ? "" : "PeerJS yükleniyor...");
               }}
-              className={`py-4 rounded-2xl font-black uppercase text-xs tracking-widest ${
-                peerReady ? "bg-indigo-600 hover:bg-indigo-500" : "bg-indigo-600/50 opacity-70"
-              }`}
-              disabled={!peerReady}
-              title={!peerReady ? "PeerJS yükleniyor..." : ""}
+              className="py-4 rounded-2xl bg-indigo-600 hover:bg-indigo-500 font-black uppercase text-xs tracking-widest"
             >
               🧑‍🤝‍🧑 Online (P2P)
             </button>
           </div>
 
           <p className="mt-6 text-xs text-slate-400 text-center">
-            Online mod: süresiz + oyun içi ipucu yok + maç bitince Stockfish analiz.
+            Online: süresiz • oyun içi ipucu yok • maç bitince Stockfish analiz.
           </p>
 
-          {/* Stockfish durum */}
-          <div className="mt-4 text-xs text-slate-300 bg-slate-950/60 border border-white/5 rounded-2xl p-3 text-center">
-            Stockfish:{" "}
-            {sfError ? (
-              <span className="text-red-300">{sfError}</span>
-            ) : isReady ? (
-              <span className="text-emerald-300">Hazır ✅</span>
-            ) : (
-              <span className="text-amber-300">Yükleniyor...</span>
-            )}
-          </div>
+          {!isReady && (
+            <p className="mt-3 text-xs text-amber-300 text-center">
+              Stockfish hazırlanıyor... (bot birazdan aktif olur)
+            </p>
+          )}
         </div>
       </div>
     );
   }
 
   // =========================
-  // (Online lobby kısmı aynı kalsın diye kısaltmıyorum: SENDE ÇALIŞIYOR)
+  // LOBBY: ROOM (P2P)
   // =========================
   if (selectionStep === "color" && lobbyStep === "room" && mode === "p2p") {
     return (
@@ -802,6 +726,9 @@ export default function ChessPage() {
             <button
               onClick={() => {
                 cleanupP2P();
+                setMyCode("");
+                setJoinCode("");
+                setP2pStatus("");
                 setLobbyStep("mode");
               }}
               className="text-xs font-black uppercase text-slate-400 hover:text-white"
@@ -812,32 +739,22 @@ export default function ChessPage() {
 
           <button
             onClick={() => {
-              if (!peerReady) {
-                setP2pStatus("PeerJS yükleniyor... 1-2 sn bekle.");
-                return;
-              }
-
               cleanupP2P();
+
               const code = gen5();
               setMyCode(code);
-              setP2pStatus("Oda oluşturuluyor... Rakip bekleniyor...");
+              setP2pStatus("Kod oluşturuldu. Rakip bekleniyor...");
               isHostRef.current = true;
 
               const p = ensurePeer(code);
-              if (!p) {
-                setP2pStatus("PeerJS hazır değil.");
-                return;
-              }
+              if (!p) return;
 
-              p.on("open", () => {
-                setP2pStatus(`Hazır. Kod: ${code}`);
-              });
+              p.on("open", () => setP2pStatus(`Hazır. Kod: ${code}`));
 
+              // ✅ allow exactly one opponent; if another tries, reject
               p.on("connection", (c: any) => {
-                if (connRef.current?.open) {
-                  try {
-                    c.close?.();
-                  } catch {}
+                if (connRef.current) {
+                  try { c.close?.(); } catch {}
                   return;
                 }
 
@@ -845,7 +762,10 @@ export default function ChessPage() {
                 setP2pStatus("Rakip bağlandı. Oyun başlatılıyor...");
 
                 c.on("data", (d: any) => handleP2PData(d));
-                c.on("close", () => setP2pStatus("Bağlantı koptu."));
+                c.on("close", () => {
+                  connRef.current = null;
+                  setP2pStatus("Bağlantı koptu.");
+                });
                 c.on("error", () => setP2pStatus("Bağlantı hatası."));
 
                 const colors: Color[] = Math.random() < 0.5 ? ["w", "b"] : ["b", "w"];
@@ -869,32 +789,14 @@ export default function ChessPage() {
                   difficulty,
                 };
 
-                c.on("open", () => {
-                  try {
-                    c.send(initMsg);
-                  } catch {}
-                });
-
-                setTimeout(() => {
-                  if (c.open) {
-                    try {
-                      c.send(initMsg);
-                    } catch {}
-                  }
-                }, 150);
-
+                c.send(initMsg);
                 setSelectionStep("game");
                 setP2pStatus("Oyun başladı! (Süresiz)");
               });
 
-              p.on("error", (e: any) => {
-                setP2pStatus("Peer hata: " + (e?.type || e?.message || "unknown"));
-              });
+              p.on("error", (e: any) => setP2pStatus("Peer hata: " + (e?.type || "unknown")));
             }}
-            className={`w-full py-4 rounded-2xl font-black uppercase text-xs tracking-widest ${
-              peerReady ? "bg-emerald-600 hover:bg-emerald-500" : "bg-emerald-600/50 opacity-70"
-            }`}
-            disabled={!peerReady}
+            className="w-full py-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 font-black uppercase text-xs tracking-widest"
           >
             ✅ Oda Oluştur (5 Haneli Kod)
           </button>
@@ -906,21 +808,14 @@ export default function ChessPage() {
             <div className="mt-2 flex gap-2">
               <input
                 value={joinCode}
-                onChange={(e) =>
-                  setJoinCode(e.target.value.replace(/\D/g, "").slice(0, 5))
-                }
+                onChange={(e) => setJoinCode(e.target.value.replace(/\D/g, "").slice(0, 5))}
                 placeholder="Örn: 48219"
                 className="flex-1 bg-slate-950 border border-white/10 rounded-2xl px-4 py-3 font-mono text-lg outline-none"
               />
               <button
                 onClick={() => {
-                  if (!peerReady) {
-                    setP2pStatus("PeerJS yükleniyor... 1-2 sn bekle.");
-                    return;
-                  }
-
-                  const room = joinCode.trim();
-                  if (room.length !== 5) {
+                  const code = joinCode.trim();
+                  if (code.length !== 5) {
                     setP2pStatus("Kod 5 hane olmalı.");
                     return;
                   }
@@ -929,63 +824,30 @@ export default function ChessPage() {
                   isHostRef.current = false;
                   setP2pStatus("Bağlanıyor...");
 
-                  const myId =
-                    "g" + gen5() + "-" + Math.random().toString(16).slice(2, 6);
+                  const myId = "g" + gen5() + "-" + Math.random().toString(16).slice(2, 8);
                   const p = ensurePeer(myId);
-                  if (!p) {
-                    setP2pStatus("PeerJS hazır değil.");
-                    return;
-                  }
-
-                  const tryConnect = (attempt: number) => {
-                    setP2pStatus(`Bağlanıyor... (Deneme ${attempt}/6)`);
-                    const c = p.connect(room, { reliable: true });
-                    connRef.current = c;
-
-                    const failTimer = setTimeout(() => {
-                      try {
-                        c.close?.();
-                      } catch {}
-                      if (attempt < 6) tryConnect(attempt + 1);
-                      else
-                        setP2pStatus(
-                          "Bağlantı kurulamadı. Oda kodu doğru mu? Host açık mı?"
-                        );
-                    }, 2000);
-
-                    c.on("open", () => {
-                      clearTimeout(failTimer);
-                      setP2pStatus("Bağlandı. Oyun başlatma bekleniyor...");
-                      c.on("data", (d: any) => handleP2PData(d));
-                      c.on("close", () => setP2pStatus("Bağlantı koptu."));
-                      c.on("error", () => setP2pStatus("Bağlantı hatası."));
-                      try {
-                        c.send({ type: "ping" } as P2PMsg);
-                      } catch {}
-                    });
-
-                    c.on("error", () => {
-                      clearTimeout(failTimer);
-                      try {
-                        c.close?.();
-                      } catch {}
-                      if (attempt < 6) tryConnect(attempt + 1);
-                      else setP2pStatus("Bağlantı hatası. Tekrar dene.");
-                    });
-                  };
+                  if (!p) return;
 
                   p.on("open", () => {
-                    tryConnect(1);
+                    const c = p.connect(code, { reliable: true });
+                    connRef.current = c;
+
+                    c.on("open", () => {
+                      setP2pStatus("Bağlandı. Başlatma bekleniyor...");
+                      c.on("data", (d: any) => handleP2PData(d));
+                      c.on("close", () => {
+                        connRef.current = null;
+                        setP2pStatus("Bağlantı koptu.");
+                      });
+                      c.on("error", () => setP2pStatus("Bağlantı hatası."));
+                    });
+
+                    c.on("error", () => setP2pStatus("Bağlantı hatası."));
                   });
 
-                  p.on("error", (e: any) => {
-                    setP2pStatus("Peer hata: " + (e?.type || e?.message || "unknown"));
-                  });
+                  p.on("error", (e: any) => setP2pStatus("Peer hata: " + (e?.type || "unknown")));
                 }}
-                className={`px-4 py-3 rounded-2xl font-black uppercase text-xs tracking-widest ${
-                  peerReady ? "bg-indigo-600 hover:bg-indigo-500" : "bg-indigo-600/50 opacity-70"
-                }`}
-                disabled={!peerReady}
+                className="px-4 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-500 font-black uppercase text-xs tracking-widest"
               >
                 BAĞLAN
               </button>
@@ -1028,6 +890,7 @@ export default function ChessPage() {
               onClick={() => {
                 setMode("bot");
                 setPlayerColor("w");
+                safeResetGame(START_FEN);
                 setSelectionStep("time");
               }}
               className="p-8 bg-white/5 hover:bg-white/10 rounded-3xl border border-white/5 transition-all flex flex-col items-center gap-3"
@@ -1037,10 +900,12 @@ export default function ChessPage() {
                 Beyaz
               </span>
             </button>
+
             <button
               onClick={() => {
                 setMode("bot");
                 setPlayerColor("b");
+                safeResetGame(START_FEN);
                 setSelectionStep("time");
               }}
               className="p-8 bg-white/5 hover:bg-white/10 rounded-3xl border border-white/5 transition-all flex flex-col items-center gap-3"
@@ -1063,6 +928,12 @@ export default function ChessPage() {
           >
             🧑‍🤝‍🧑 Online Modu Aç
           </button>
+
+          {!isReady && (
+            <p className="mt-3 text-xs text-amber-300">
+              Stockfish hazırlanıyor... (bot birazdan aktif)
+            </p>
+          )}
         </div>
       </div>
     );
@@ -1072,7 +943,7 @@ export default function ChessPage() {
   // BOT FLOW: TIME
   // =========================
   if (selectionStep === "time") {
-    const opts: Array<{ l: string; v: number | null }> = [
+    const opts = [
       { l: "1 DK", v: 60 },
       { l: "3 DK", v: 180 },
       { l: "5 DK", v: 300 },
@@ -1100,8 +971,13 @@ export default function ChessPage() {
                     setWhiteTime(0);
                     setBlackTime(0);
                   }
-                  safeResetGame(START_FEN);
                   setSelectionStep("game");
+
+                  // if player is black, bot should open (white) after screen loads
+                  if (mode === "bot" && playerColor === "b") {
+                    setThinking(true);
+                    setTimeout(() => requestBotMove(START_FEN), 250);
+                  }
                 }}
                 className="py-4 bg-white/5 hover:bg-indigo-600 rounded-2xl font-black uppercase text-xs tracking-widest transition-all"
               >
@@ -1114,9 +990,6 @@ export default function ChessPage() {
     );
   }
 
-  // =========================
-  // WINNER TEXT
-  // =========================
   const winnerText =
     timeWinner ||
     (game.isCheckmate()
@@ -1157,25 +1030,11 @@ export default function ChessPage() {
               )}
             </div>
 
-            {/* Stockfish status (botta işe yarar) */}
-            {mode === "bot" && (
-              <div className="mb-4 text-[11px] text-slate-300 bg-slate-950/60 border border-white/5 rounded-2xl p-3">
-                Stockfish:{" "}
-                {sfError ? (
-                  <span className="text-red-300">{sfError}</span>
-                ) : isReady ? (
-                  <span className="text-emerald-300">Hazır ✅</span>
-                ) : (
-                  <span className="text-amber-300">Yükleniyor...</span>
-                )}
-              </div>
-            )}
-
             <div className="mb-4 flex justify-between items-center p-4 rounded-2xl bg-slate-950 border border-white/5">
               <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
                 RAKİP {mode === "p2p" ? "(ONLINE • SÜRESİZ)" : "(BOT)"}
               </span>
-              {initialTime && (
+              {initialTime && playerColor && (
                 <span className="text-xl font-mono font-black">
                   {formatTime(playerColor === "w" ? blackTime : whiteTime)}
                 </span>
@@ -1192,14 +1051,7 @@ export default function ChessPage() {
                   className="absolute inset-0 w-full h-full pointer-events-none z-50"
                   viewBox="0 0 100 100"
                 >
-                  <marker
-                    id="arrowhead"
-                    markerWidth="8"
-                    markerHeight="8"
-                    refX="7"
-                    refY="4"
-                    orient="auto"
-                  >
+                  <marker id="arrowhead" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
                     <path d="M 0 0 L 8 4 L 0 8 z" fill="#3b82f6" />
                   </marker>
                   <line
@@ -1245,7 +1097,7 @@ export default function ChessPage() {
               <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
                 SEN
               </span>
-              {initialTime && (
+              {initialTime && playerColor && (
                 <span className="text-xl font-mono font-black">
                   {formatTime(playerColor === "w" ? whiteTime : blackTime)}
                 </span>
@@ -1284,9 +1136,7 @@ export default function ChessPage() {
                   <button
                     onClick={() => {
                       if (mode === "p2p" && connRef.current?.open) {
-                        try {
-                          connRef.current.send({ type: "reset" } as P2PMsg);
-                        } catch {}
+                        connRef.current.send({ type: "reset" } as P2PMsg);
                       }
                       window.location.reload();
                     }}
@@ -1311,6 +1161,7 @@ export default function ChessPage() {
                 </button>
               ) : (
                 <>
+                  {/* ✅ Online modda oyun içi ipucu yok */}
                   {!isGameOver && mode !== "p2p" && (
                     <button
                       onClick={() => getHint()}
@@ -1328,9 +1179,7 @@ export default function ChessPage() {
                   <button
                     onClick={() => {
                       if (mode === "p2p" && connRef.current?.open) {
-                        try {
-                          connRef.current.send({ type: "reset" } as P2PMsg);
-                        } catch {}
+                        connRef.current.send({ type: "reset" } as P2PMsg);
                       }
                       window.location.reload();
                     }}
@@ -1341,6 +1190,12 @@ export default function ChessPage() {
                 </>
               )}
             </div>
+
+            {!isReady && (
+              <div className="mt-4 text-xs text-amber-200 bg-amber-500/10 border border-amber-500/20 rounded-2xl p-3">
+                Stockfish hazır değil. Bot birkaç saniye içinde aktif olur.
+              </div>
+            )}
           </div>
         </div>
 
@@ -1350,7 +1205,15 @@ export default function ChessPage() {
               {isGameOver ? "🏆 MAÇ RAPORU" : "HAMLE GEÇMİŞİ"}
             </h2>
 
-            <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-3">
+            {mode === "p2p" && isGameOver && !analysisDone && (
+              <div className="mb-4 text-[11px] text-slate-300 bg-slate-950/60 border border-white/5 rounded-2xl p-3">
+                {postAnalyzing
+                  ? `Stockfish analiz ediyor... (${analysisProgress.i}/${analysisProgress.n})`
+                  : "Analiz başlatılıyor..."}
+              </div>
+            )}
+
+            <div className="flex-1 overflow-y-auto pr-2 space-y-3">
               {moveEvaluations.map((evalData, i) => {
                 const isWhite = i % 2 === 0;
                 const prevEval = i === 0 ? 0 : moveEvaluations[i - 1].score;
@@ -1358,17 +1221,19 @@ export default function ChessPage() {
                   ? getMoveQuality(evalData.score, prevEval, isWhite)
                   : null;
 
+                const isPlayerMove =
+                  (isWhite && playerColor === "w") || (!isWhite && playerColor === "b");
+
                 return (
                   <div
                     key={i}
-                    onClick={() =>
-                      isGameOver &&
-                      (() => {
-                        setReviewIndex(i);
-                        setHintMove(null);
-                        getHint(moveEvaluations[i].fenBefore);
-                      })()
-                    }
+                    onClick={() => {
+                      if (!isGameOver) return;
+                      setReviewIndex(i);
+                      setHintMove(null);
+                      // ✅ maç sonrası incelemede ipucu serbest (online dahil)
+                      getHint(moveEvaluations[i].fenBefore);
+                    }}
                     className={`flex flex-col p-4 rounded-2xl transition-all border ${
                       isGameOver ? "cursor-pointer hover:bg-slate-800" : "cursor-default"
                     } ${
@@ -1393,6 +1258,18 @@ export default function ChessPage() {
                         </span>
                       )}
                     </div>
+
+                    {quality && isPlayerMove && quality.puan > 0 && (
+                      <div className="mt-2 text-[10px] font-black text-slate-500">
+                        +{quality.puan} Puan
+                      </div>
+                    )}
+
+                    {mode === "p2p" && isGameOver && !analysisDone && (
+                      <div className="mt-2 text-[10px] font-black text-slate-500">
+                        Analiz bekleniyor...
+                      </div>
+                    )}
                   </div>
                 );
               })}
