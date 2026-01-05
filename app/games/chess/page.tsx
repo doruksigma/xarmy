@@ -42,7 +42,7 @@ type Mode = "bot" | "p2p";
 
 type MoveEval = {
   move: string;
-  score: number; // stockfish eval (cp/100)
+  score: number; // cp/100 -> approx
   fenBefore: string;
   fenAfter: string;
 };
@@ -53,7 +53,7 @@ type P2PMsg =
       fen: string;
       hostColor: Color;
       guestColor: Color;
-      initialTime: number | null; // online süresiz => null
+      initialTime: number | null; // online always null
       difficulty: "easy" | "medium" | "hard";
     }
   | {
@@ -80,7 +80,6 @@ export default function ChessPage() {
   // PEERJS (DYNAMIC IMPORT, SSR-SAFE)
   // =====================
   const PeerCtorRef = useRef<PeerCtor | null>(null);
-
   const peerRef = useRef<any>(null);
   const connRef = useRef<any>(null);
   const isHostRef = useRef(false);
@@ -168,7 +167,10 @@ export default function ChessPage() {
   // online post-game analysis status
   const [postAnalyzing, setPostAnalyzing] = useState(false);
   const [analysisDone, setAnalysisDone] = useState(false);
-  const [analysisProgress, setAnalysisProgress] = useState<{ i: number; n: number }>({ i: 0, n: 0 });
+  const [analysisProgress, setAnalysisProgress] = useState<{ i: number; n: number }>({
+    i: 0,
+    n: 0,
+  });
 
   // keep ref synced
   useEffect(() => {
@@ -217,6 +219,7 @@ export default function ChessPage() {
     return p;
   }
 
+  // ✅ FIX: cleanupP2P joinCode'u SİLMİYOR (join bug fix)
   function cleanupP2P() {
     try {
       connRef.current?.close?.();
@@ -228,7 +231,7 @@ export default function ChessPage() {
     peerRef.current = null;
     isHostRef.current = false;
     setMyCode("");
-    setJoinCode("");
+    // ❌ setJoinCode("") YOK
     setP2pStatus("");
   }
 
@@ -332,6 +335,7 @@ export default function ChessPage() {
       if (taskRef.current === "analysis" && analysisActiveRef.current) {
         const idx = analysisIndexRef.current;
         const currentMoves = movesRef.current;
+
         if (idx >= 0 && idx < currentMoves.length) {
           const scoreForPos = lastScore.current;
 
@@ -347,9 +351,9 @@ export default function ChessPage() {
           const nextIdx = idx + 1;
           analysisIndexRef.current = nextIdx;
 
-          // schedule next eval
           setTimeout(() => {
             const list = movesRef.current;
+
             if (nextIdx >= list.length) {
               analysisActiveRef.current = false;
               taskRef.current = "none";
@@ -627,7 +631,7 @@ export default function ChessPage() {
             ...prev,
             {
               move: move.san,
-              score: mode === "p2p" ? 0 : lastScore.current, // online: post analysis fill
+              score: mode === "p2p" ? 0 : lastScore.current,
               fenBefore,
               fenAfter,
             },
@@ -703,7 +707,8 @@ export default function ChessPage() {
               onClick={() => {
                 cleanupP2P();
                 setMode("bot");
-                setLobbyStep("mode");
+                // ✅ FIX: lobby ekranında takılmasın, renk seçimine geçsin
+                setLobbyStep("room");
                 setSelectionStep("color");
               }}
               className="py-4 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/5 font-black uppercase text-xs tracking-widest"
@@ -732,7 +737,7 @@ export default function ChessPage() {
   }
 
   // =========================
-  // LOBBY: 5 DIGIT CODE + SEARCH/JOIN
+  // ONLINE LOBBY: ROOM
   // =========================
   if (selectionStep === "color" && lobbyStep === "room" && mode === "p2p") {
     return (
@@ -746,6 +751,7 @@ export default function ChessPage() {
               onClick={() => {
                 cleanupP2P();
                 setLobbyStep("mode");
+                setMode(null);
               }}
               className="text-xs font-black uppercase text-slate-400 hover:text-white"
             >
@@ -827,6 +833,7 @@ export default function ChessPage() {
               />
               <button
                 onClick={() => {
+                  // ✅ FIX: önce code'u al, sonra cleanup
                   const code = joinCode.trim();
                   if (code.length !== 5) {
                     setP2pStatus("Kod 5 hane olmalı.");
@@ -837,7 +844,8 @@ export default function ChessPage() {
                   isHostRef.current = false;
                   setP2pStatus("Bağlanıyor...");
 
-                  const myId = "g" + gen5() + "-" + Math.random().toString(16).slice(2, 6);
+                  const myId =
+                    "g" + gen5() + "-" + Math.random().toString(16).slice(2, 6);
                   const p = ensurePeer(myId);
                   if (!p) return;
 
@@ -850,6 +858,10 @@ export default function ChessPage() {
                       c.on("data", (d: any) => handleP2PData(d));
                       c.on("close", () => setP2pStatus("Bağlantı koptu."));
                       c.on("error", () => setP2pStatus("Bağlantı hatası."));
+                    });
+
+                    c.on("error", () => {
+                      setP2pStatus("Odaya bağlanılamadı. Kod doğru mu?");
                     });
                   });
 
@@ -885,9 +897,9 @@ export default function ChessPage() {
   }
 
   // =========================
-  // BOT FLOW (color/time)
+  // BOT FLOW: COLOR
   // =========================
-  if (selectionStep === "color") {
+  if (selectionStep === "color" && mode === "bot") {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6 font-sans">
         <div className="bg-slate-900 p-12 rounded-[3rem] border border-white/5 text-center shadow-2xl w-full max-w-sm">
@@ -898,7 +910,6 @@ export default function ChessPage() {
           <div className="grid grid-cols-2 gap-4">
             <button
               onClick={() => {
-                setMode("bot");
                 setPlayerColor("w");
                 setSelectionStep("time");
               }}
@@ -911,7 +922,6 @@ export default function ChessPage() {
             </button>
             <button
               onClick={() => {
-                setMode("bot");
                 setPlayerColor("b");
                 setSelectionStep("time");
               }}
@@ -933,14 +943,17 @@ export default function ChessPage() {
             }}
             className="mt-6 w-full py-3 bg-indigo-600/10 hover:bg-indigo-600/20 text-indigo-300 rounded-2xl font-black uppercase text-xs transition-all border border-indigo-500/20"
           >
-            🧑‍🤝‍🧑 Online Modu Aç
+            ← Ana Menü
           </button>
         </div>
       </div>
     );
   }
 
-  if (selectionStep === "time") {
+  // =========================
+  // BOT FLOW: TIME
+  // =========================
+  if (selectionStep === "time" && mode === "bot") {
     const opts = [
       { l: "1 DK", v: 60 },
       { l: "3 DK", v: 180 },
@@ -976,6 +989,13 @@ export default function ChessPage() {
               </button>
             ))}
           </div>
+
+          <button
+            onClick={() => setSelectionStep("color")}
+            className="mt-6 w-full py-3 bg-white/5 hover:bg-white/10 text-slate-200 rounded-2xl font-black uppercase text-xs transition-all border border-white/5"
+          >
+            ← Geri
+          </button>
         </div>
       </div>
     );
@@ -990,7 +1010,7 @@ export default function ChessPage() {
       : "BERABERE");
 
   // =========================
-  // GAME UI
+  // GAME UI (bot + online)
   // =========================
   return (
     <div className="min-h-screen bg-slate-950 p-4 md:p-8 flex flex-col items-center font-sans selection:bg-indigo-500/30 text-white">
@@ -1042,14 +1062,7 @@ export default function ChessPage() {
                   className="absolute inset-0 w-full h-full pointer-events-none z-50"
                   viewBox="0 0 100 100"
                 >
-                  <marker
-                    id="arrowhead"
-                    markerWidth="8"
-                    markerHeight="8"
-                    refX="7"
-                    refY="4"
-                    orient="auto"
-                  >
+                  <marker id="arrowhead" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
                     <path d="M 0 0 L 8 4 L 0 8 z" fill="#3b82f6" />
                   </marker>
                   <line
@@ -1070,6 +1083,7 @@ export default function ChessPage() {
                   const square = `${f}${r}` as Square;
                   const p = game.get(square);
                   const isDark = (ri + fi) % 2 === 1;
+
                   return (
                     <button
                       key={square}
@@ -1159,6 +1173,7 @@ export default function ChessPage() {
                 </button>
               ) : (
                 <>
+                  {/* online modda oyun içi ipucu yok */}
                   {!isGameOver && mode !== "p2p" && (
                     <button
                       onClick={() => getHint()}
@@ -1186,6 +1201,21 @@ export default function ChessPage() {
                   </button>
                 </>
               )}
+            </div>
+
+            <div className="mt-6">
+              <button
+                onClick={() => {
+                  cleanupP2P();
+                  setMode(null);
+                  setLobbyStep("mode");
+                  setSelectionStep("color");
+                  safeResetGame(START_FEN);
+                }}
+                className="w-full py-3 bg-white/5 hover:bg-white/10 text-slate-200 rounded-2xl font-black uppercase text-xs transition-all border border-white/5"
+              >
+                ← Ana Menü
+              </button>
             </div>
           </div>
         </div>
