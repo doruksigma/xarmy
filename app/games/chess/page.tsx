@@ -42,7 +42,7 @@ type Mode = "bot" | "p2p";
 
 type MoveEval = {
   move: string;
-  score: number; // cp/100 -> approx
+  score: number; // cp/100 (approx)
   fenBefore: string;
   fenAfter: string;
 };
@@ -65,13 +65,15 @@ type P2PMsg =
       fenBefore: string;
       fenAfter: string;
     }
-  | { type: "reset" };
+  | { type: "reset" }
+  | { type: "room_full" };
 
 function gen5() {
   return String(Math.floor(10000 + Math.random() * 90000));
 }
 
-const START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+const START_FEN =
+  "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
 type PeerCtor = new (id?: string, options?: any) => any;
 
@@ -90,16 +92,13 @@ export default function ChessPage() {
   const engine = useRef<Worker | null>(null);
   const audioCtx = useRef<AudioContext | null>(null);
 
-  // stockfish task routing
   const taskRef = useRef<"none" | "hint" | "analysis">("none");
   const lastScore = useRef<number>(0);
 
-  // post-game analysis refs
   const analysisActiveRef = useRef(false);
   const analysisIndexRef = useRef(-1);
   const analysisDepthRef = useRef(14);
 
-  // keep moves in a ref to avoid stale closure
   const movesRef = useRef<MoveEval[]>([]);
 
   const playMoveSound = () => {
@@ -128,21 +127,18 @@ export default function ChessPage() {
   // =====================
   const [mounted, setMounted] = useState(false);
 
-  // lobby
   const [mode, setMode] = useState<Mode | null>(null);
   const [lobbyStep, setLobbyStep] = useState<"mode" | "room">("mode");
   const [myCode, setMyCode] = useState("");
   const [joinCode, setJoinCode] = useState("");
   const [p2pStatus, setP2pStatus] = useState("");
 
-  // game flow
   const [selectionStep, setSelectionStep] = useState<"color" | "time" | "game">(
     "color"
   );
   const [playerColor, setPlayerColor] = useState<Color | null>(null);
   const [initialTime, setInitialTime] = useState<number | null>(null);
 
-  // game data
   const [fen, setFen] = useState(START_FEN);
   const [whiteTime, setWhiteTime] = useState(0);
   const [blackTime, setBlackTime] = useState(0);
@@ -164,7 +160,6 @@ export default function ChessPage() {
   const [hintLoading, setHintLoading] = useState(false);
   const [hintCount, setHintCount] = useState(0);
 
-  // online post-game analysis status
   const [postAnalyzing, setPostAnalyzing] = useState(false);
   const [analysisDone, setAnalysisDone] = useState(false);
   const [analysisProgress, setAnalysisProgress] = useState<{ i: number; n: number }>({
@@ -172,12 +167,10 @@ export default function ChessPage() {
     n: 0,
   });
 
-  // keep ref synced
   useEffect(() => {
     movesRef.current = moveEvaluations;
   }, [moveEvaluations]);
 
-  // chess instance (review or live)
   const game = useMemo(() => {
     const f =
       reviewIndex !== null && moveEvaluations[reviewIndex]
@@ -192,7 +185,7 @@ export default function ChessPage() {
   const isGameOver = game.isGameOver() || !!timeWinner;
 
   // =====================
-  // PEERJS INIT (client only)
+  // PEERJS LOAD
   // =====================
   useEffect(() => {
     (async () => {
@@ -205,21 +198,28 @@ export default function ChessPage() {
     })();
   }, []);
 
+  // ✅ Stabil PeerJS config for HTTPS deployments
   function ensurePeer(id: string) {
     if (peerRef.current) return peerRef.current;
 
     const Peer = PeerCtorRef.current;
     if (!Peer) {
-      setP2pStatus("PeerJS yükleniyor...");
+      setP2pStatus("PeerJS yükleniyor... 2-3 sn bekleyip tekrar dene.");
       return null;
     }
 
-    const p = new Peer(id); // PeerJS Cloud default signaling
+    const p = new Peer(id, {
+      host: "0.peerjs.com",
+      port: 443,
+      path: "/",
+      secure: true,
+    });
+
     peerRef.current = p;
     return p;
   }
 
-  // ✅ FIX: cleanupP2P joinCode'u SİLMİYOR (join bug fix)
+  // ✅ joinCode'u silmiyoruz
   function cleanupP2P() {
     try {
       connRef.current?.close?.();
@@ -231,7 +231,6 @@ export default function ChessPage() {
     peerRef.current = null;
     isHostRef.current = false;
     setMyCode("");
-    // ❌ setJoinCode("") YOK
     setP2pStatus("");
   }
 
@@ -262,11 +261,15 @@ export default function ChessPage() {
     const msg = data as P2PMsg;
     if (!msg || typeof msg !== "object" || !("type" in msg)) return;
 
+    if (msg.type === "room_full") {
+      setP2pStatus("Oda dolu (bu kodla sadece 1 kişi bağlanabilir).");
+      return;
+    }
+
     if (msg.type === "init") {
       safeResetGame(msg.fen);
       setDifficulty(msg.difficulty);
 
-      // online süresiz
       setInitialTime(null);
       setWhiteTime(0);
       setBlackTime(0);
@@ -285,7 +288,7 @@ export default function ChessPage() {
         ...prev,
         {
           move: msg.san,
-          score: 0, // maç sonu analiz dolduracak
+          score: 0,
           fenBefore: msg.fenBefore,
           fenAfter: msg.fenAfter,
         },
@@ -331,12 +334,12 @@ export default function ChessPage() {
       const from = best?.slice(0, 2) as Square;
       const to = best?.slice(2, 4) as Square;
 
-      // 1) POST-GAME ANALYSIS
+      // analysis
       if (taskRef.current === "analysis" && analysisActiveRef.current) {
         const idx = analysisIndexRef.current;
-        const currentMoves = movesRef.current;
+        const list = movesRef.current;
 
-        if (idx >= 0 && idx < currentMoves.length) {
+        if (idx >= 0 && idx < list.length) {
           const scoreForPos = lastScore.current;
 
           setMoveEvaluations((prev) => {
@@ -352,9 +355,8 @@ export default function ChessPage() {
           analysisIndexRef.current = nextIdx;
 
           setTimeout(() => {
-            const list = movesRef.current;
-
-            if (nextIdx >= list.length) {
+            const list2 = movesRef.current;
+            if (nextIdx >= list2.length) {
               analysisActiveRef.current = false;
               taskRef.current = "none";
               setPostAnalyzing(false);
@@ -363,7 +365,7 @@ export default function ChessPage() {
               return;
             }
 
-            const fenToEval = list[nextIdx]?.fenAfter;
+            const fenToEval = list2[nextIdx]?.fenAfter;
             if (!fenToEval) {
               analysisActiveRef.current = false;
               taskRef.current = "none";
@@ -381,11 +383,10 @@ export default function ChessPage() {
             engine.current?.postMessage(`go depth ${analysisDepthRef.current}`);
           }, 0);
         }
-
         return;
       }
 
-      // 2) HINT
+      // hint
       if (taskRef.current === "hint") {
         if (best && best !== "(none)") setHintMove({ from, to });
         setHintLoading(false);
@@ -393,7 +394,7 @@ export default function ChessPage() {
         return;
       }
 
-      // 3) BOT MOVE
+      // bot move
       if (!best || best === "(none)") return;
 
       setFen((prev) => {
@@ -426,9 +427,6 @@ export default function ChessPage() {
     };
   }, []);
 
-  // =====================
-  // BOT DIFFICULTY
-  // =====================
   useEffect(() => {
     if (isReady && engine.current) {
       const skillLevels = { easy: 0, medium: 10, hard: 20 };
@@ -438,9 +436,7 @@ export default function ChessPage() {
     }
   }, [difficulty, isReady]);
 
-  // =====================
-  // BOT MOVE LOOP (disabled in p2p)
-  // =====================
+  // bot move loop
   useEffect(() => {
     if (mode === "p2p") return;
 
@@ -483,13 +479,8 @@ export default function ChessPage() {
     game,
   ]);
 
-  // =====================
-  // HINT (online in-game disabled)
-  // =====================
   const getHint = (targetFen?: string) => {
     const isOverNow = game.isGameOver() || !!timeWinner;
-
-    // online oynarken oyun içinde ipucu yok
     if (mode === "p2p" && !isOverNow) return;
 
     if (!isReady || hintCount >= 5) return;
@@ -503,9 +494,7 @@ export default function ChessPage() {
     engine.current?.postMessage("go depth 15");
   };
 
-  // =====================
-  // POST-GAME ANALYSIS (online)
-  // =====================
+  // post-game analysis online
   useEffect(() => {
     if (!isReady) return;
     if (mode !== "p2p") return;
@@ -537,9 +526,7 @@ export default function ChessPage() {
     engine.current?.postMessage(`go depth ${analysisDepthRef.current}`);
   }, [isReady, mode, isGameOver, analysisDone, postAnalyzing]);
 
-  // =====================
-  // TIMER (online is timeless => initialTime null)
-  // =====================
+  // timer
   useEffect(() => {
     let interval: any;
 
@@ -550,11 +537,8 @@ export default function ChessPage() {
       !timeWinner
     ) {
       interval = setInterval(() => {
-        if (game.turn() === "w") {
-          setWhiteTime((t) => (t <= 1 ? 0 : t - 1));
-        } else {
-          setBlackTime((t) => (t <= 1 ? 0 : t - 1));
-        }
+        if (game.turn() === "w") setWhiteTime((t) => (t <= 1 ? 0 : t - 1));
+        else setBlackTime((t) => (t <= 1 ? 0 : t - 1));
       }, 1000);
     }
 
@@ -570,9 +554,6 @@ export default function ChessPage() {
     if (blackTime === 0) setTimeWinner("Beyaz Kazandı");
   }, [whiteTime, blackTime, initialTime, timeWinner, selectionStep]);
 
-  // =====================
-  // MOVE QUALITY / SCORE
-  // =====================
   const getMoveQuality = (current: number, prev: number, isWhite: boolean) => {
     const diff = isWhite ? current - prev : prev - current;
     if (diff < -2.5) return { label: "Blunder", puan: 0, color: "text-red-500" };
@@ -586,7 +567,6 @@ export default function ChessPage() {
       const isWhite = i % 2 === 0;
       const isPlayerMove =
         (isWhite && playerColor === "w") || (!isWhite && playerColor === "b");
-
       if (!isPlayerMove) return sum;
 
       const prevScore = i === 0 ? 0 : moveEvaluations[i - 1].score;
@@ -594,9 +574,6 @@ export default function ChessPage() {
     }, 0);
   }, [moveEvaluations, playerColor]);
 
-  // =====================
-  // BOARD HELPERS
-  // =====================
   function onSquareClick(square: Square) {
     if (
       selectionStep !== "game" ||
@@ -616,11 +593,7 @@ export default function ChessPage() {
       const fenBefore = fen;
 
       try {
-        const move = gCopy.move({
-          from: selected,
-          to: square,
-          promotion: "q",
-        });
+        const move = gCopy.move({ from: selected, to: square, promotion: "q" });
 
         if (move) {
           const fenAfter = gCopy.fen();
@@ -629,23 +602,16 @@ export default function ChessPage() {
           setFen(fenAfter);
           setMoveEvaluations((prev) => [
             ...prev,
-            {
-              move: move.san,
-              score: mode === "p2p" ? 0 : lastScore.current,
-              fenBefore,
-              fenAfter,
-            },
+            { move: move.san, score: mode === "p2p" ? 0 : lastScore.current, fenBefore, fenAfter },
           ]);
 
           setSelected(null);
 
-          // bot eval request
           if (mode !== "p2p") {
             engine.current?.postMessage(`position fen ${fenAfter}`);
             engine.current?.postMessage("go depth 10");
           }
 
-          // p2p send
           if (mode === "p2p" && connRef.current?.open) {
             const msg: P2PMsg = {
               type: "move",
@@ -692,7 +658,7 @@ export default function ChessPage() {
   if (!mounted) return null;
 
   // =========================
-  // LOBBY: MODE SELECTION
+  // LOBBY: MODE
   // =========================
   if (selectionStep === "color" && lobbyStep === "mode") {
     return (
@@ -707,9 +673,8 @@ export default function ChessPage() {
               onClick={() => {
                 cleanupP2P();
                 setMode("bot");
-                // ✅ FIX: lobby ekranında takılmasın, renk seçimine geçsin
-                setLobbyStep("room");
                 setSelectionStep("color");
+                setLobbyStep("room");
               }}
               className="py-4 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/5 font-black uppercase text-xs tracking-widest"
             >
@@ -737,9 +702,11 @@ export default function ChessPage() {
   }
 
   // =========================
-  // ONLINE LOBBY: ROOM
+  // ONLINE: ROOM
   // =========================
   if (selectionStep === "color" && lobbyStep === "room" && mode === "p2p") {
+    const peerReady = !!PeerCtorRef.current;
+
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6 font-sans text-white">
         <div className="bg-slate-900 p-10 rounded-[3rem] border border-white/5 w-full max-w-md shadow-2xl">
@@ -760,6 +727,7 @@ export default function ChessPage() {
           </div>
 
           <button
+            disabled={!peerReady}
             onClick={() => {
               cleanupP2P();
 
@@ -774,6 +742,15 @@ export default function ChessPage() {
               p.on("open", () => setP2pStatus(`Hazır. Kod: ${code}`));
 
               p.on("connection", (c: any) => {
+                // ✅ only 1 guest allowed (2 kişi = host+guest)
+                if (connRef.current) {
+                  try {
+                    c.on("open", () => c.send({ type: "room_full" } as P2PMsg));
+                    setTimeout(() => c.close?.(), 300);
+                  } catch {}
+                  return;
+                }
+
                 connRef.current = c;
                 setP2pStatus("Rakip bağlandı. Oyun başlatılıyor...");
 
@@ -781,39 +758,42 @@ export default function ChessPage() {
                 c.on("close", () => setP2pStatus("Bağlantı koptu."));
                 c.on("error", () => setP2pStatus("Bağlantı hatası."));
 
-                // rastgele renk
-                const colors: Color[] = Math.random() < 0.5 ? ["w", "b"] : ["b", "w"];
-                const hostColor = colors[0];
-                const guestColor = colors[1];
+                // ✅ FIX: init'i MUTLAKA connection OPEN olduktan sonra gönder
+                c.on("open", () => {
+                  const colors: Color[] = Math.random() < 0.5 ? ["w", "b"] : ["b", "w"];
+                  const hostColor = colors[0];
+                  const guestColor = colors[1];
 
-                setPlayerColor(hostColor);
+                  setPlayerColor(hostColor);
 
-                // online süresiz
-                setInitialTime(null);
-                setWhiteTime(0);
-                setBlackTime(0);
+                  setInitialTime(null);
+                  setWhiteTime(0);
+                  setBlackTime(0);
 
-                safeResetGame(START_FEN);
+                  safeResetGame(START_FEN);
 
-                const initMsg: P2PMsg = {
-                  type: "init",
-                  fen: START_FEN,
-                  hostColor,
-                  guestColor,
-                  initialTime: null,
-                  difficulty,
-                };
+                  const initMsg: P2PMsg = {
+                    type: "init",
+                    fen: START_FEN,
+                    hostColor,
+                    guestColor,
+                    initialTime: null,
+                    difficulty,
+                  };
 
-                c.send(initMsg);
-                setSelectionStep("game");
-                setP2pStatus("Oyun başladı! (Süresiz)");
+                  c.send(initMsg);
+                  setSelectionStep("game");
+                  setP2pStatus("Oyun başladı! (Süresiz)");
+                });
               });
 
               p.on("error", (e: any) => {
                 setP2pStatus("Peer hata: " + (e?.type || "unknown"));
               });
             }}
-            className="w-full py-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 font-black uppercase text-xs tracking-widest"
+            className={`w-full py-4 rounded-2xl font-black uppercase text-xs tracking-widest ${
+              peerReady ? "bg-emerald-600 hover:bg-emerald-500" : "bg-slate-800 opacity-60"
+            }`}
           >
             ✅ Oda Oluştur (5 Haneli Kod)
           </button>
@@ -825,15 +805,13 @@ export default function ChessPage() {
             <div className="mt-2 flex gap-2">
               <input
                 value={joinCode}
-                onChange={(e) =>
-                  setJoinCode(e.target.value.replace(/\D/g, "").slice(0, 5))
-                }
+                onChange={(e) => setJoinCode(e.target.value.replace(/\D/g, "").slice(0, 5))}
                 placeholder="Örn: 48219"
                 className="flex-1 bg-slate-950 border border-white/10 rounded-2xl px-4 py-3 font-mono text-lg outline-none"
               />
               <button
+                disabled={!peerReady}
                 onClick={() => {
-                  // ✅ FIX: önce code'u al, sonra cleanup
                   const code = joinCode.trim();
                   if (code.length !== 5) {
                     setP2pStatus("Kod 5 hane olmalı.");
@@ -844,8 +822,7 @@ export default function ChessPage() {
                   isHostRef.current = false;
                   setP2pStatus("Bağlanıyor...");
 
-                  const myId =
-                    "g" + gen5() + "-" + Math.random().toString(16).slice(2, 6);
+                  const myId = "g" + gen5() + "-" + Math.random().toString(16).slice(2, 6);
                   const p = ensurePeer(myId);
                   if (!p) return;
 
@@ -853,23 +830,31 @@ export default function ChessPage() {
                     const c = p.connect(code, { reliable: true });
                     connRef.current = c;
 
+                    // ✅ data handler'ı open'dan önce de bağla (race condition fix)
+                    c.on("data", (d: any) => handleP2PData(d));
+                    c.on("close", () => setP2pStatus("Bağlantı koptu."));
+                    c.on("error", () => setP2pStatus("Bağlantı hatası / NAT engeli olabilir."));
+
                     c.on("open", () => {
-                      setP2pStatus("Bağlandı. Başlatma bekleniyor...");
-                      c.on("data", (d: any) => handleP2PData(d));
-                      c.on("close", () => setP2pStatus("Bağlantı koptu."));
-                      c.on("error", () => setP2pStatus("Bağlantı hatası."));
+                      setP2pStatus("Bağlandı. Oyun başlatma bekleniyor...");
+                      // init host'tan gelecek
                     });
 
-                    c.on("error", () => {
-                      setP2pStatus("Odaya bağlanılamadı. Kod doğru mu?");
-                    });
+                    // timeout
+                    setTimeout(() => {
+                      if (selectionStep !== "game" && !playerColor) {
+                        setP2pStatus("Host'tan başlangıç gelmedi. Kod doğru mu? Tekrar dene.");
+                      }
+                    }, 8000);
                   });
 
                   p.on("error", (e: any) => {
                     setP2pStatus("Peer hata: " + (e?.type || "unknown"));
                   });
                 }}
-                className="px-4 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-500 font-black uppercase text-xs tracking-widest"
+                className={`px-4 py-3 rounded-2xl font-black uppercase text-xs tracking-widest ${
+                  peerReady ? "bg-indigo-600 hover:bg-indigo-500" : "bg-slate-800 opacity-60"
+                }`}
               >
                 BAĞLAN
               </button>
@@ -891,13 +876,19 @@ export default function ChessPage() {
               {p2pStatus}
             </div>
           )}
+
+          {!peerReady && (
+            <div className="mt-3 text-[11px] text-slate-400">
+              PeerJS yükleniyor... (1-2 sn)
+            </div>
+          )}
         </div>
       </div>
     );
   }
 
   // =========================
-  // BOT FLOW: COLOR
+  // BOT: COLOR
   // =========================
   if (selectionStep === "color" && mode === "bot") {
     return (
@@ -941,7 +932,7 @@ export default function ChessPage() {
               setLobbyStep("mode");
               setSelectionStep("color");
             }}
-            className="mt-6 w-full py-3 bg-indigo-600/10 hover:bg-indigo-600/20 text-indigo-300 rounded-2xl font-black uppercase text-xs transition-all border border-indigo-500/20"
+            className="mt-6 w-full py-3 bg-white/5 hover:bg-white/10 text-slate-200 rounded-2xl font-black uppercase text-xs transition-all border border-white/5"
           >
             ← Ana Menü
           </button>
@@ -951,7 +942,7 @@ export default function ChessPage() {
   }
 
   // =========================
-  // BOT FLOW: TIME
+  // BOT: TIME
   // =========================
   if (selectionStep === "time" && mode === "bot") {
     const opts = [
@@ -1010,7 +1001,7 @@ export default function ChessPage() {
       : "BERABERE");
 
   // =========================
-  // GAME UI (bot + online)
+  // GAME UI
   // =========================
   return (
     <div className="min-h-screen bg-slate-950 p-4 md:p-8 flex flex-col items-center font-sans selection:bg-indigo-500/30 text-white">
@@ -1062,7 +1053,14 @@ export default function ChessPage() {
                   className="absolute inset-0 w-full h-full pointer-events-none z-50"
                   viewBox="0 0 100 100"
                 >
-                  <marker id="arrowhead" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                  <marker
+                    id="arrowhead"
+                    markerWidth="8"
+                    markerHeight="8"
+                    refX="7"
+                    refY="4"
+                    orient="auto"
+                  >
                     <path d="M 0 0 L 8 4 L 0 8 z" fill="#3b82f6" />
                   </marker>
                   <line
@@ -1173,7 +1171,6 @@ export default function ChessPage() {
                 </button>
               ) : (
                 <>
-                  {/* online modda oyun içi ipucu yok */}
                   {!isGameOver && mode !== "p2p" && (
                     <button
                       onClick={() => getHint()}
@@ -1238,9 +1235,7 @@ export default function ChessPage() {
               {moveEvaluations.map((evalData, i) => {
                 const isWhite = i % 2 === 0;
                 const prevEval = i === 0 ? 0 : moveEvaluations[i - 1].score;
-                const quality = isGameOver
-                  ? getMoveQuality(evalData.score, prevEval, isWhite)
-                  : null;
+                const quality = isGameOver ? getMoveQuality(evalData.score, prevEval, isWhite) : null;
 
                 const isPlayerMove =
                   (isWhite && playerColor === "w") || (!isWhite && playerColor === "b");
@@ -1253,7 +1248,6 @@ export default function ChessPage() {
                       (() => {
                         setReviewIndex(i);
                         setHintMove(null);
-                        // maç sonrası incelemede ipucu serbest (online dahil)
                         getHint(moveEvaluations[i].fenBefore);
                       })()
                     }
