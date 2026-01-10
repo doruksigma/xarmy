@@ -17,7 +17,6 @@ function createStockfishWorker() {
         const engine = self.Stockfish();
 
         engine.onmessage = (e) => {
-          // bazı buildler string, bazıları {data:"..."} döner
           const msg = (typeof e === 'string') ? e : (e && e.data ? e.data : e);
           self.postMessage(msg);
         };
@@ -54,13 +53,16 @@ type EvalRow = {
   move: string; // SAN
   score: number; // pawn units
   fenBefore: string;
+  moverColor?: Color; // ✅ hamleyi yapan taraf (w/b)
 };
+
+type Difficulty = "easy" | "medium" | "hard";
 
 export default function ChessPage() {
   const engine = useRef<Worker | null>(null);
   const audioCtx = useRef<AudioContext | null>(null);
 
-  // ✅ engine'in iki farklı işi var: bot hamlesi veya ipucu (internal task)
+  // ✅ engine'in iki işi var: bot hamlesi veya ipucu (internal task)
   const isInternalTask = useRef(false);
 
   const [fen, setFen] = useState(
@@ -70,9 +72,7 @@ export default function ChessPage() {
   const [isReady, setIsReady] = useState(false);
   const [thinking, setThinking] = useState(false);
   const [selected, setSelected] = useState<Square | null>(null);
-  const [difficulty, setDifficulty] = useState<"easy" | "medium" | "hard">(
-    "medium"
-  );
+  const [difficulty, setDifficulty] = useState<Difficulty>("medium");
 
   const [playerColor, setPlayerColor] = useState<Color | null>(null);
   const [gameStarted, setGameStarted] = useState(false);
@@ -86,6 +86,7 @@ export default function ChessPage() {
 
   // ✅ Stockfish skor cache
   const lastScore = useRef<number>(0);
+  const lastScoreCp = useRef<number>(0); // ✅ raw cp (int)
 
   // ✅ Teacher / AI explanation state
   const [explanation, setExplanation] = useState<string | null>(null);
@@ -96,6 +97,8 @@ export default function ChessPage() {
   const lastBotMoveSan = useRef<string | null>(null);
   const lastBotFenBefore = useRef<string | null>(null);
   const lastBotScore = useRef<number>(0);
+  const lastBotScoreCp = useRef<number>(0);
+  const lastBotMoverColor = useRef<Color | null>(null);
 
   const game = useMemo(() => {
     const currentFen =
@@ -123,16 +126,36 @@ export default function ChessPage() {
       gain.connect(ctx.destination);
       osc.start();
       osc.stop(ctx.currentTime + 0.1);
-    } catch (e) {}
+    } catch {}
   };
 
-  // ✅ AI explanation call
+  function depthFor(d: Difficulty) {
+    if (d === "easy") return 2;
+    if (d === "medium") return 8;
+    return 14;
+  }
+
+  // ✅ kalite ipucu (AI’ye “genel kaçma” baskısı)
+  function qualityHintFromDiff(diffAbs: number) {
+    // diffAbs: pawn units (örn 1.2)
+    if (diffAbs >= 2.0) return "blunder";
+    if (diffAbs >= 0.6) return "mistake";
+    if (diffAbs >= 0.25) return "inaccuracy";
+    return "ok";
+  }
+
+  // ✅ AI explanation call (daha zengin payload)
   async function fetchExplanation(payload: {
-    fen: string;
+    fenBefore: string;
+    fenAfter?: string;
     moveUci: string;
     moveSan?: string | null;
-    score: number;
-    playerColor: Color;
+    score: number; // pawn units
+    scoreCp?: number; // raw cp
+    moverColor: Color; // ✅ hamleyi yapan taraf
+    playerColor: Color; // kullanıcı rengi
+    sideToMoveAfter?: Color; // hamle sonrası sıra kimde
+    qualityHint?: "ok" | "inaccuracy" | "mistake" | "blunder";
   }) {
     setExplainLoading(true);
     setExplanation("🎓 Öğretmen hamleyi açıklıyor...");
@@ -146,7 +169,7 @@ export default function ChessPage() {
 
       const data = await res.json();
       setExplanation(data?.reason || "Açıklama üretilemedi.");
-    } catch (e) {
+    } catch {
       setExplanation("Açıklama alınamadı (API hatası).");
     } finally {
       setExplainLoading(false);
@@ -166,14 +189,11 @@ export default function ChessPage() {
     w.postMessage("isready");
 
     w.onmessage = (e) => {
-      // ✅ önemli: her şeyi string'e normalize et
       const raw = e.data;
       const msg =
         typeof raw === "string" ? raw : raw?.data ?? String(raw ?? "");
 
-      // init signals
       if (msg === "SF_INIT_OK") {
-        // tekrar handshake
         w.postMessage("uci");
         w.postMessage("isready");
         return;
@@ -183,7 +203,6 @@ export default function ChessPage() {
         return;
       }
 
-      // ready
       if (msg === "readyok") {
         setIsReady(true);
         return;
@@ -195,12 +214,13 @@ export default function ChessPage() {
 
       // ✅ score updates
       if (msg.startsWith("info")) {
-        // cp score
         const scoreMatch = msg.match(/score cp (-?\d+)/);
         if (scoreMatch) {
-          lastScore.current = parseInt(scoreMatch[1], 10) / 100;
+          const cp = parseInt(scoreMatch[1], 10);
+          lastScoreCp.current = cp;
+          lastScore.current = cp / 100;
 
-          // son satırın skorunu güncelle (isteğe bağlı)
+          // son satırın skorunu güncelle
           setMoveEvaluations((prev) => {
             if (prev.length === 0) return prev;
             const copy = [...prev];
@@ -227,7 +247,6 @@ export default function ChessPage() {
         const to = moveUci.slice(2, 4) as Square;
 
         if (isInternalTask.current) {
-          // ipucu / analiz ok
           setHintMove({ from, to });
           setHintLoading(false);
           return;
@@ -244,20 +263,30 @@ export default function ChessPage() {
 
             playMoveSound();
 
-            // maç listesine ekle
+            // ✅ bot hamle anındaki en güncel skor (bestmove gelmeden hemen önceki info)
+            const snapScore = lastScore.current;
+            const snapScoreCp = lastScoreCp.current;
+
+            // hamleyi yapan taraf (w/b)
+            const moverColor = m.color as Color;
+
             setMoveEvaluations((prevEval) => [
               ...prevEval,
-              { move: m.san, score: lastScore.current, fenBefore },
+              {
+                move: m.san,
+                score: snapScore,
+                fenBefore,
+                moverColor,
+              },
             ]);
 
-            // ✅ "neden?" butonu için bot hamlesini kaydet
+            // "neden?" butonu için kaydet
             lastBotMoveUci.current = moveUci;
             lastBotMoveSan.current = m.san;
             lastBotFenBefore.current = fenBefore;
-            lastBotScore.current = lastScore.current;
-
-            // bot hamle yaptı -> eski açıklamayı tut veya temizle (isteğe bağlı)
-            // setExplanation(null);
+            lastBotScore.current = snapScore;
+            lastBotScoreCp.current = snapScoreCp;
+            lastBotMoverColor.current = moverColor;
 
             return g.fen();
           } catch {
@@ -287,10 +316,8 @@ export default function ChessPage() {
       setThinking(true);
       isInternalTask.current = false;
 
-      const depths = { easy: 2, medium: 8, hard: 14 };
-      const depth = depths[difficulty];
+      const depth = depthFor(difficulty);
 
-      // küçük gecikme daha stabil (UI click vs)
       setTimeout(() => {
         engine.current?.postMessage("stop");
         engine.current?.postMessage("ucinewgame");
@@ -328,6 +355,10 @@ export default function ChessPage() {
     if (selected) {
       const gCopy = new Chess(fen);
       const fenBefore = fen;
+
+      // önceki skor (hamle kalitesi için)
+      const prevScore = lastScore.current;
+
       try {
         const move = gCopy.move({
           from: selected,
@@ -339,19 +370,32 @@ export default function ChessPage() {
           playMoveSound();
           setFen(gCopy.fen());
 
-          // listeye ekle (ilk skor: son known)
           setMoveEvaluations((prev) => [
             ...prev,
-            { move: move.san, score: lastScore.current, fenBefore },
+            {
+              move: move.san,
+              score: lastScore.current,
+              fenBefore,
+              moverColor: move.color as Color,
+            },
           ]);
 
           setSelected(null);
 
-          // kullanıcı hamlesinden sonra motoru kısa bir eval için tetikle (isteğe bağlı)
+          // kullanıcı hamlesinden sonra motoru kısa eval için tetikle
           isInternalTask.current = false;
           engine.current?.postMessage("stop");
           engine.current?.postMessage(`position fen ${gCopy.fen()}`);
           engine.current?.postMessage("go depth 10");
+
+          // kullanıcı hamlesinde teacher paneli temizle (isteğe bağlı)
+          // setExplanation(null);
+
+          // (İstersen burada da "neden?" için kullanıcı hamlesini saklayabiliriz)
+          // Şimdilik sadece bot hamlesi için buton var.
+
+          // prevScore kullanılmadıysa kaldırabilirsin; istersen AI "hata mı?" paneli ekleriz.
+          void prevScore;
 
           return;
         }
@@ -408,7 +452,6 @@ export default function ChessPage() {
 
   if (!mounted) return null;
 
-  // Start screen
   if (!gameStarted) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6 font-sans">
@@ -619,23 +662,34 @@ export default function ChessPage() {
                 onClick={() => {
                   const moveUci = lastBotMoveUci.current;
                   const fenBefore = lastBotFenBefore.current;
-                  if (!moveUci || !fenBefore || !playerColor) {
+                  const moverColor = lastBotMoverColor.current;
+                  if (!moveUci || !fenBefore || !playerColor || !moverColor) {
                     setExplanation("Önce bot bir hamle yapsın 🙂");
                     return;
                   }
+
+                  // kalite ipucu: oyuncu rengine göre değil, hamleyi yapan tarafa göre yorumlatacağız
+                  const qHint = qualityHintFromDiff(0); // placeholder
+
                   fetchExplanation({
-                    fen: fenBefore,
+                    fenBefore,
+                    fenAfter: fen, // mevcut fen (bot hamle sonrası)
                     moveUci,
                     moveSan: lastBotMoveSan.current,
                     score: lastBotScore.current,
+                    scoreCp: lastBotScoreCp.current,
+                    moverColor,
                     playerColor,
+                    sideToMoveAfter: new Chess(fen).turn(),
+                    qualityHint: qHint,
                   });
                 }}
                 disabled={
                   explainLoading ||
                   !lastBotMoveUci.current ||
                   !lastBotFenBefore.current ||
-                  !playerColor
+                  !playerColor ||
+                  !lastBotMoverColor.current
                 }
                 className="w-full py-4 rounded-2xl font-black uppercase text-xs border border-indigo-500/20
                            bg-indigo-500/10 text-indigo-200 hover:bg-indigo-500/20 transition-all
@@ -654,6 +708,7 @@ export default function ChessPage() {
 
                     {lastBotMoveSan.current && (
                       <span className="ml-auto text-[10px] font-black text-slate-300 bg-black/20 px-2 py-1 rounded-lg">
+                        {lastBotMoverColor.current === "w" ? "Beyaz" : "Siyah"} •{" "}
                         {lastBotMoveSan.current} •{" "}
                         {lastBotScore.current >= 0 ? "+" : ""}
                         {lastBotScore.current.toFixed(2)}
@@ -677,13 +732,20 @@ export default function ChessPage() {
                       onClick={() => {
                         const moveUci = lastBotMoveUci.current;
                         const fenBefore = lastBotFenBefore.current;
-                        if (!moveUci || !fenBefore || !playerColor) return;
+                        const moverColor = lastBotMoverColor.current;
+                        if (!moveUci || !fenBefore || !playerColor || !moverColor) return;
+
                         fetchExplanation({
-                          fen: fenBefore,
+                          fenBefore,
+                          fenAfter: fen,
                           moveUci,
                           moveSan: lastBotMoveSan.current,
                           score: lastBotScore.current,
+                          scoreCp: lastBotScoreCp.current,
+                          moverColor,
                           playerColor,
+                          sideToMoveAfter: new Chess(fen).turn(),
+                          qualityHint: "ok",
                         });
                       }}
                       disabled={explainLoading}
@@ -709,11 +771,7 @@ export default function ChessPage() {
               {moveEvaluations.map((evalData, i) => {
                 const isWhite = i % 2 === 0;
                 const prevEval = i === 0 ? 0 : moveEvaluations[i - 1].score;
-                const quality = getMoveQuality(
-                  evalData.score,
-                  prevEval,
-                  isWhite
-                );
+                const quality = getMoveQuality(evalData.score, prevEval, isWhite);
 
                 return (
                   <div
@@ -744,14 +802,10 @@ export default function ChessPage() {
 
                     {quality && (
                       <div className="flex items-center gap-2">
-                        <span
-                          className={`text-[9px] font-black uppercase ${quality.color}`}
-                        >
+                        <span className={`text-[9px] font-black uppercase ${quality.color}`}>
                           {quality.label}
                         </span>
-                        <span
-                          className={`text-[10px] font-black ${quality.color}`}
-                        >
+                        <span className={`text-[10px] font-black ${quality.color}`}>
                           {quality.icon}
                         </span>
                       </div>
