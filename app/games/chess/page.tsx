@@ -6,7 +6,6 @@ import { Chess, Square, PieceSymbol, Color } from "chess.js";
 function createStockfishWorker() {
   if (typeof window === "undefined") return null;
 
-  // asm.js build (WASM değil) -> daha az baş ağrıtır
   const CDN_PRIMARY =
     "https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.2/stockfish.js";
   const CDN_FALLBACK =
@@ -55,7 +54,8 @@ function createStockfishWorker() {
   const blob = new Blob([code], { type: "application/javascript" });
   const url = URL.createObjectURL(blob);
   const w = new Worker(url);
-  URL.revokeObjectURL(url);
+  // revoke hemen yapmak bazı ortamlarda sorun çıkarabiliyor; kaldırdım.
+  // URL.revokeObjectURL(url);
   return w;
 }
 
@@ -79,12 +79,14 @@ type EvalRow = {
 const START_FEN =
   "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
+type Task = "bot" | "hint" | "eval" | null;
+
 export default function ChessPage() {
   const engine = useRef<Worker | null>(null);
   const audioCtx = useRef<AudioContext | null>(null);
 
-  // ✅ engine'in iki işi: bot hamlesi veya ipucu
-  const isInternalTask = useRef(false);
+  // ✅ Tek doğru kontrol: şu an engine ne için çalışıyor?
+  const taskRef = useRef<Task>(null);
 
   const [fen, setFen] = useState(START_FEN);
   const [mounted, setMounted] = useState(false);
@@ -102,21 +104,20 @@ export default function ChessPage() {
   const [hintMove, setHintMove] = useState<{ from: Square; to: Square } | null>(null);
   const [hintLoading, setHintLoading] = useState(false);
 
-  // Stockfish skor cache
   const lastScore = useRef<number>(0);
 
   // Teacher explanation
   const [explanation, setExplanation] = useState<string | null>(null);
   const [explainLoading, setExplainLoading] = useState(false);
 
-  // son bot hamlesi (butonla yorum için)
   const lastBotMoveUci = useRef<string | null>(null);
   const lastBotMoveSan = useRef<string | null>(null);
   const lastBotFenBefore = useRef<string | null>(null);
   const lastBotScore = useRef<number>(0);
 
   const game = useMemo(() => {
-    const currentFen = reviewIndex !== null ? moveEvaluations[reviewIndex]?.fenBefore : fen;
+    const currentFen =
+      reviewIndex !== null ? moveEvaluations[reviewIndex]?.fenBefore : fen;
     return new Chess(currentFen || fen);
   }, [fen, reviewIndex, moveEvaluations]);
 
@@ -144,10 +145,10 @@ export default function ChessPage() {
   };
 
   async function fetchExplanation(payload: {
-    fen: string; // hamle öncesi fen
+    fen: string;
     moveUci: string;
     moveSan?: string | null;
-    score: number; // pawn units
+    score: number;
     playerColor: Color;
   }) {
     setExplainLoading(true);
@@ -169,16 +170,15 @@ export default function ChessPage() {
     }
   }
 
-  // Engine init + handshake
+  // ✅ engine helper
+  const sf = (m: string) => engine.current?.postMessage(m);
+
   useEffect(() => {
     setMounted(true);
 
     const w = createStockfishWorker();
     if (!w) return;
-
     engine.current = w;
-
-    const send = (m: string) => engine.current?.postMessage(m);
 
     const onMsg = (e: MessageEvent) => {
       const msg = String(e.data || "");
@@ -189,14 +189,13 @@ export default function ChessPage() {
       }
 
       if (msg === "SF_INIT_OK") {
-        // UCI handshake
-        send("uci");
-        send("isready");
+        sf("uci");
+        sf("isready");
         return;
       }
 
       if (msg.includes("uciok")) {
-        send("isready");
+        sf("isready");
         return;
       }
 
@@ -210,12 +209,13 @@ export default function ChessPage() {
         const scoreMatch = msg.match(/score cp (-?\d+)/);
         if (scoreMatch) {
           lastScore.current = parseInt(scoreMatch[1], 10) / 100;
-
-          // son satır skor update (isteğe bağlı)
           setMoveEvaluations((prev) => {
             if (prev.length === 0) return prev;
             const copy = [...prev];
-            copy[copy.length - 1] = { ...copy[copy.length - 1], score: lastScore.current };
+            copy[copy.length - 1] = {
+              ...copy[copy.length - 1],
+              score: lastScore.current,
+            };
             return copy;
           });
         }
@@ -225,49 +225,61 @@ export default function ChessPage() {
       // bestmove
       if (msg.startsWith("bestmove")) {
         const moveUci = msg.split(" ")[1];
+
+        const currentTask = taskRef.current; // ✅ kritik
+        taskRef.current = null; // ✅ her bestmove sonrası temizle
+
         if (!moveUci || moveUci === "(none)") {
-          if (!isInternalTask.current) setThinking(false);
-          setHintLoading(false);
+          if (currentTask === "bot") setThinking(false);
+          if (currentTask === "hint") setHintLoading(false);
           return;
         }
 
         const from = moveUci.slice(0, 2) as Square;
         const to = moveUci.slice(2, 4) as Square;
 
-        if (isInternalTask.current) {
+        // ✅ HINT: sadece ok çiz
+        if (currentTask === "hint") {
           setHintMove({ from, to });
           setHintLoading(false);
           return;
         }
 
-        // bot hamlesi uygula
-        setFen((prevFen) => {
-          const g = new Chess(prevFen);
-          const fenBefore = prevFen;
+        // ✅ EVAL: hamle uygulama (sadece skor güncelledik zaten)
+        if (currentTask === "eval") {
+          return;
+        }
 
-          try {
-            const m = g.move({ from, to, promotion: "q" });
-            if (!m) return prevFen;
+        // ✅ BOT: hamleyi uygula
+        if (currentTask === "bot") {
+          setFen((prevFen) => {
+            const g = new Chess(prevFen);
+            const fenBefore = prevFen;
 
-            playMoveSound();
+            try {
+              const m = g.move({ from, to, promotion: "q" });
+              if (!m) return prevFen;
 
-            setMoveEvaluations((prevEval) => [
-              ...prevEval,
-              { move: m.san, score: lastScore.current, fenBefore },
-            ]);
+              playMoveSound();
 
-            lastBotMoveUci.current = moveUci;
-            lastBotMoveSan.current = m.san;
-            lastBotFenBefore.current = fenBefore;
-            lastBotScore.current = lastScore.current;
+              setMoveEvaluations((prevEval) => [
+                ...prevEval,
+                { move: m.san, score: lastScore.current, fenBefore },
+              ]);
 
-            return g.fen();
-          } catch {
-            return prevFen;
-          } finally {
-            setThinking(false);
-          }
-        });
+              lastBotMoveUci.current = moveUci;
+              lastBotMoveSan.current = m.san;
+              lastBotFenBefore.current = fenBefore;
+              lastBotScore.current = lastScore.current;
+
+              return g.fen();
+            } catch {
+              return prevFen;
+            } finally {
+              setThinking(false);
+            }
+          });
+        }
 
         return;
       }
@@ -276,8 +288,8 @@ export default function ChessPage() {
     w.addEventListener("message", onMsg);
 
     // Kick
-    send("uci");
-    send("isready");
+    sf("uci");
+    sf("isready");
 
     return () => {
       w.removeEventListener("message", onMsg);
@@ -286,7 +298,7 @@ export default function ChessPage() {
     };
   }, []);
 
-  // Bot hamlesi otomatik
+  // ✅ Bot hamlesi otomatik
   useEffect(() => {
     if (
       gameStarted &&
@@ -297,29 +309,36 @@ export default function ChessPage() {
       reviewIndex === null
     ) {
       setThinking(true);
-      isInternalTask.current = false;
+      taskRef.current = "bot";
 
       const depths = { easy: 2, medium: 8, hard: 14 };
       const depth = depths[difficulty];
 
       setTimeout(() => {
-        engine.current?.postMessage("stop");
-        engine.current?.postMessage("ucinewgame");
-        engine.current?.postMessage(`position fen ${fen}`);
-        engine.current?.postMessage(`go depth ${depth}`);
-      }, 350);
+        sf("stop");
+        sf(`position fen ${fen}`);
+        sf(`go depth ${depth}`);
+      }, 250);
     }
   }, [fen, isReady, game, difficulty, reviewIndex, gameStarted, playerColor]);
 
   const getHint = (targetFen?: string) => {
     if (!isReady) return;
     setHintLoading(true);
-    isInternalTask.current = true;
+    taskRef.current = "hint";
 
     const currentFen = targetFen || fen;
-    engine.current?.postMessage("stop");
-    engine.current?.postMessage(`position fen ${currentFen}`);
-    engine.current?.postMessage("go depth 15");
+    sf("stop");
+    sf(`position fen ${currentFen}`);
+    sf("go depth 15");
+  };
+
+  const requestEvalOnly = (targetFen: string) => {
+    if (!isReady) return;
+    taskRef.current = "eval";
+    sf("stop");
+    sf(`position fen ${targetFen}`);
+    sf("go depth 10");
   };
 
   function onSquareClick(square: Square) {
@@ -345,15 +364,15 @@ export default function ChessPage() {
           playMoveSound();
           setFen(gCopy.fen());
 
-          setMoveEvaluations((prev) => [...prev, { move: move.san, score: lastScore.current, fenBefore }]);
+          setMoveEvaluations((prev) => [
+            ...prev,
+            { move: move.san, score: lastScore.current, fenBefore },
+          ]);
 
           setSelected(null);
 
-          // kullanıcı hamlesinden sonra küçük eval (isteğe bağlı)
-          isInternalTask.current = false;
-          engine.current?.postMessage("stop");
-          engine.current?.postMessage(`position fen ${gCopy.fen()}`);
-          engine.current?.postMessage("go depth 10");
+          // ✅ sadece eval, bot hamlesi değil
+          requestEvalOnly(gCopy.fen());
           return;
         }
       } catch {}
@@ -386,7 +405,6 @@ export default function ChessPage() {
 
   if (!mounted) return null;
 
-  // Start screen
   if (!gameStarted) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6 font-sans">
@@ -564,7 +582,7 @@ export default function ChessPage() {
               )}
             </div>
 
-            {/* ✅ Neden bu hamle? */}
+            {/* Neden bu hamle? */}
             <div className="mt-4">
               <button
                 onClick={() => {
@@ -607,34 +625,6 @@ export default function ChessPage() {
                   </div>
 
                   <p className="text-sm text-slate-200 italic leading-relaxed">“{explanation}”</p>
-
-                  <div className="mt-3 flex gap-2">
-                    <button
-                      onClick={() => setExplanation(null)}
-                      className="px-3 py-2 rounded-xl bg-slate-950/50 text-slate-200 text-[10px] font-black uppercase hover:bg-slate-800 transition"
-                    >
-                      Kapat
-                    </button>
-
-                    <button
-                      onClick={() => {
-                        const moveUci = lastBotMoveUci.current;
-                        const fenBefore = lastBotFenBefore.current;
-                        if (!moveUci || !fenBefore || !playerColor) return;
-                        fetchExplanation({
-                          fen: fenBefore,
-                          moveUci,
-                          moveSan: lastBotMoveSan.current,
-                          score: lastBotScore.current,
-                          playerColor,
-                        });
-                      }}
-                      disabled={explainLoading}
-                      className="ml-auto px-3 py-2 rounded-xl bg-indigo-600 text-white text-[10px] font-black uppercase hover:bg-indigo-700 transition disabled:opacity-50"
-                    >
-                      {explainLoading ? "Analiz..." : "Yenile"}
-                    </button>
-                  </div>
                 </div>
               )}
             </div>
