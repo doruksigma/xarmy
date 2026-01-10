@@ -27,9 +27,10 @@ function depthByDifficulty(d: Difficulty) {
 }
 
 /**
- * ✅ İNDİRMEDEN STOCKFISH (CDN Worker)
- * - DIRECT Worker: importScripts yok
- * - type:"classic" (stockfish 10.x için doğru)
+ * ✅ İNDİRMEDEN STOCKFISH (CSP/CORS dostu):
+ * - Worker'ı SAME-ORIGIN blob'tan açar
+ * - İçeride importScripts ile CDN stockfish.js çeker
+ * - engine mesajlarını normalize edip dışarı aktarır
  */
 function createStockfishWorker() {
   if (typeof window === "undefined") return null;
@@ -39,15 +40,55 @@ function createStockfishWorker() {
   const CDN_FALLBACK =
     "https://cdn.jsdelivr.net/npm/stockfish@10.0.2/src/stockfish.js";
 
-  try {
-    return new Worker(CDN_PRIMARY, { type: "classic" as any });
-  } catch {
-    try {
-      return new Worker(CDN_FALLBACK, { type: "classic" as any });
-    } catch {
-      return null;
+  const code = `
+    function send(m){ try{ self.postMessage(String(m)); }catch(e){} }
+
+    self.onerror = function(e){
+      send("SF_WORKER_ERROR::" + (e && e.message ? e.message : "unknown"));
+    };
+
+    let engine = null;
+
+    function boot(url){
+      try{
+        importScripts(url);
+        if (typeof self.Stockfish === "function") {
+          engine = self.Stockfish();
+          return true;
+        }
+      }catch(e){
+        send("SF_IMPORT_FAIL::" + url + "::" + (e && e.message ? e.message : String(e)));
+      }
+      return false;
     }
-  }
+
+    boot("${CDN_PRIMARY}") || boot("${CDN_FALLBACK}");
+
+    if(!engine){
+      send("SF_INIT_FAILED");
+    } else {
+      send("SF_INIT_OK");
+
+      engine.onmessage = function(e){
+        const msg = (typeof e === "string") ? e : (e && e.data ? e.data : "");
+        if (msg) send(msg);
+      };
+
+      self.onmessage = function(e){
+        try{
+          engine.postMessage(e.data);
+        }catch(err){
+          send("SF_ENGINE_POST_FAIL::" + (err && err.message ? err.message : String(err)));
+        }
+      };
+    }
+  `;
+
+  const blob = new Blob([code], { type: "application/javascript" });
+  const url = URL.createObjectURL(blob);
+  const w = new Worker(url);
+  // URL.revokeObjectURL(url); // bazı ortamlarda erken revoke sorun çıkarabiliyor
+  return w;
 }
 
 type EvalRow = { move: string; score: number; fenBefore: string };
@@ -165,7 +206,38 @@ export default function ChessPage() {
     let gotReadyOk = false;
 
     const onMsg = (e: MessageEvent) => {
-      const msg = String(e.data || "");
+      const msg =
+        typeof e.data === "string"
+          ? e.data
+          : e.data?.data
+          ? String(e.data.data)
+          : String(e.data || "");
+
+      if (msg === "SF_INIT_FAILED") {
+        console.error("SF_INIT_FAILED");
+        setIsReady(false);
+        return;
+      }
+      if (msg.startsWith("SF_IMPORT_FAIL::")) {
+        console.error(msg);
+        // fallback denendi; init yine de fail olabilir, bekleyelim
+        return;
+      }
+      if (msg.startsWith("SF_WORKER_ERROR::")) {
+        console.error(msg);
+        setIsReady(false);
+        return;
+      }
+      if (msg.startsWith("SF_ENGINE_POST_FAIL::")) {
+        console.error(msg);
+        return;
+      }
+
+      if (msg === "SF_INIT_OK") {
+        sf("uci");
+        sf("isready");
+        return;
+      }
 
       // handshake
       if (msg.includes("uciok")) {
@@ -179,16 +251,18 @@ export default function ChessPage() {
         return;
       }
 
-      // bazı buildlerde uciok geç gelirse:
+      // bazı buildlerde banner/log gelir; handshake'i tekrar zorla
       if (!gotUciOk && msg.includes("Stockfish")) {
-        // banner geldi, uci'yi yeniden söyle (zararsız)
         sf("uci");
+        sf("isready");
+      }
+      if (!gotReadyOk && msg.includes("id name")) {
         sf("isready");
       }
 
       // score stream
       if (msg.startsWith("info")) {
-        const m = msg.match(/score cp (-?\d+)/);
+        const m = msg.match(/score cp (-?\\d+)/);
         if (m) lastScore.current = parseInt(m[1], 10) / 100;
         return;
       }
@@ -248,10 +322,9 @@ export default function ChessPage() {
       }
     };
 
-    // ✅ bazı worker’lar onmessage yerine event listener ile stabil
     w.addEventListener("message", onMsg);
 
-    // Kick (2 kez söylemek zararsız, bazı buildlerde ilk mesaj kaçabiliyor)
+    // Kick: bazen ilk mesaj kaçabilir, iki kez yolla (zararsız)
     sf("uci");
     sf("isready");
     setTimeout(() => {
@@ -259,7 +332,7 @@ export default function ChessPage() {
         sf("uci");
         sf("isready");
       }
-    }, 400);
+    }, 450);
 
     return () => {
       w.removeEventListener("message", onMsg);
@@ -374,6 +447,7 @@ export default function ChessPage() {
 
   if (!mounted) return null;
 
+  // Start screen
   if (!gameStarted) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6">
@@ -418,7 +492,7 @@ export default function ChessPage() {
 
           {!isReady && (
             <p className="mt-6 text-xs text-slate-500">
-              Eğer LOADING’de kalırsa: (1) CDN engeli, (2) CSP worker engeli.
+              Eğer LOADING’de kalırsa: CDN erişimi veya CSP worker engeli olabilir.
             </p>
           )}
         </div>
@@ -513,11 +587,7 @@ export default function ChessPage() {
                       onClick={() => onSquareClick(sq)}
                       className={`relative w-full h-full flex items-center justify-center text-4xl md:text-5xl transition-all
                         ${base} ${hover}
-                        ${
-                          selected === sq
-                            ? "ring-4 ring-emerald-500 ring-inset"
-                            : ""
-                        }
+                        ${selected === sq ? "ring-4 ring-emerald-500 ring-inset" : ""}
                       `}
                     >
                       <span
