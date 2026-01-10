@@ -7,6 +7,9 @@ type Difficulty = "easy" | "medium" | "hard";
 
 const START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
+// ✅ Stockfish 10 (Pure JS sürümü) CDN üzerinden en stabil çalışan sürümdür.
+const STOCKFISH_CDN_URL = "https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.2/stockfish.js";
+
 function depthByDifficulty(d: Difficulty) {
   if (d === "easy") return 2;
   if (d === "medium") return 8;
@@ -18,41 +21,45 @@ export default function ChessPage() {
   const [difficulty, setDifficulty] = useState<Difficulty>("medium");
   const [engineStatus, setEngineStatus] = useState<"off" | "booting" | "ready" | "failed">("off");
   const [thinking, setThinking] = useState(false);
+  const [uciMove, setUciMove] = useState("e2e4");
 
   const gameRef = useRef(new Chess(START_FEN));
   const engineRef = useRef<Worker | null>(null);
   const readyRef = useRef(false);
 
-  // Basit örnek move input (UCI: e2e4 gibi)
-  const [uciMove, setUciMove] = useState("e2e4");
-
   useEffect(() => {
-    // mount: engine init
     setEngineStatus("booting");
-    const w = new Worker("/stockfish/stockfish-worker.js");
-    engineRef.current = w;
 
-    const send = (msg: string) => w.postMessage(msg);
+    // ✅ Inline Worker: Dış dosyaya ihtiyaç duymaz
+    const blobCode = `
+      self.importScripts("${STOCKFISH_CDN_URL}");
+      const engine = typeof self.Stockfish === "function" ? self.Stockfish() : null;
+      
+      if (engine) {
+        engine.onmessage = (e) => {
+          const msg = (typeof e === 'string') ? e : e.data;
+          self.postMessage(msg);
+        };
+        self.onmessage = (e) => engine.postMessage(e.data);
+        // Motor yüklendiğinde bir sinyal gönderelim
+        self.postMessage("INTERNAL_LOADED");
+      }
+    `;
+
+    const blob = new Blob([blobCode], { type: "application/javascript" });
+    const w = new Worker(URL.createObjectURL(blob));
+    engineRef.current = w;
 
     const onMsg = (e: MessageEvent) => {
       const msg = String(e.data || "");
-      // İstersen debug:
-      // console.log("SF:", msg);
+      console.log("Stockfish Output:", msg); // Debug için
 
-      if (msg === "SF_INIT_FAILED") {
-        setEngineStatus("failed");
-        readyRef.current = false;
-        return;
-      }
-      if (msg === "SF_INIT_OK") {
-        // handshake başlat
-        send("uci");
-        send("isready");
+      if (msg === "INTERNAL_LOADED") {
+        w.postMessage("uci");
         return;
       }
       if (msg.includes("uciok")) {
-        // uci ok geldiyse ready bekle
-        send("isready");
+        w.postMessage("isready");
         return;
       }
       if (msg.includes("readyok")) {
@@ -60,11 +67,8 @@ export default function ChessPage() {
         setEngineStatus("ready");
         return;
       }
-
-      // En kritik: bestmove yakala
       if (msg.startsWith("bestmove")) {
-        const parts = msg.split(" ");
-        const best = parts[1]; // örn "e2e4"
+        const best = msg.split(" ")[1];
         if (best && best !== "(none)") {
           applyEngineMove(best);
         }
@@ -74,157 +78,154 @@ export default function ChessPage() {
 
     w.addEventListener("message", onMsg);
 
-    // initial options (istersen)
-    // Not: Skill Level 0..20 (10.0.2'de çalışır)
-    // send("setoption name Skill Level value 10");
-
     return () => {
       w.removeEventListener("message", onMsg);
       w.terminate();
       engineRef.current = null;
       readyRef.current = false;
-      setEngineStatus("off");
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function resetGame() {
     gameRef.current = new Chess(START_FEN);
-    setFen(gameRef.current.fen());
+    setFen(START_FEN);
     setThinking(false);
   }
 
   function applyUserMove(uci: string) {
+    if (thinking || engineStatus !== "ready") return false;
+    
     const g = gameRef.current;
-    if (thinking) return;
+    try {
+      const move = g.move({
+        from: uci.slice(0, 2) as any,
+        to: uci.slice(2, 4) as any,
+        promotion: uci.slice(4, 5) || "q",
+      });
 
-    const from = uci.slice(0, 2);
-    const to = uci.slice(2, 4);
-    const promo = uci.slice(4, 5); // q,r,b,n olabilir
-
-    const move = g.move({ from, to, promotion: promo ? (promo as any) : undefined });
-    if (!move) return false;
-
-    setFen(g.fen());
-    return true;
+      if (move) {
+        setFen(g.fen());
+        return true;
+      }
+    } catch (e) {
+      console.error("Geçersiz hamle:", uci);
+    }
+    return false;
   }
 
   function applyEngineMove(uci: string) {
     const g = gameRef.current;
-    const from = uci.slice(0, 2);
-    const to = uci.slice(2, 4);
-    const promo = uci.slice(4, 5);
-
-    const move = g.move({ from, to, promotion: promo ? (promo as any) : undefined });
-    if (!move) return;
-
-    setFen(g.fen());
+    try {
+      g.move({
+        from: uci.slice(0, 2) as any,
+        to: uci.slice(2, 4) as any,
+        promotion: uci.slice(4, 5) || "q",
+      });
+      setFen(g.fen());
+    } catch (e) {
+      console.error("Motor hatalı hamle üretti:", uci);
+    }
   }
 
   function requestBotMove() {
-    const w = engineRef.current;
-    if (!w) return;
-    if (!readyRef.current) return;
-    if (thinking) return;
+    if (!engineRef.current || !readyRef.current || thinking) return;
 
     setThinking(true);
-
-    // önceki aramayı temizlemek iyi pratik
+    const w = engineRef.current;
     w.postMessage("stop");
-    w.postMessage("ucinewgame");
-    w.postMessage("isready");
-
-    const currentFen = gameRef.current.fen();
-    w.postMessage(`position fen ${currentFen}`);
-
-    const depth = depthByDifficulty(difficulty);
-    w.postMessage(`go depth ${depth}`);
+    w.postMessage(`position fen ${gameRef.current.fen()}`);
+    w.postMessage(`go depth ${depthByDifficulty(difficulty)}`);
   }
 
   function onPlayMove() {
-    const ok = applyUserMove(uciMove.trim());
-    if (!ok) return;
-
-    // user hamlesinden sonra bot istensin
-    requestBotMove();
+    const ok = applyUserMove(uciMove.trim().toLowerCase());
+    if (ok) {
+      // Hamle başarılıysa 500ms sonra bot hamlesini iste
+      setTimeout(requestBotMove, 500);
+    } else {
+      alert("Geçersiz hamle! Lütfen 'e2e4' gibi geçerli bir UCI hamlesi girin.");
+    }
   }
 
-  const turn = useMemo(() => {
-    try {
-      return gameRef.current.turn() === "w" ? "Beyaz" : "Siyah";
-    } catch {
-      return "-";
-    }
-  }, [fen]);
-
   return (
-    <div className="max-w-3xl mx-auto p-6">
-      <div className="flex items-start justify-between gap-4">
+    <div className="max-w-3xl mx-auto p-6 bg-slate-950 min-h-screen text-white">
+      <div className="flex items-center justify-between border-b border-slate-800 pb-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-100">♟️ Satranç (Stockfish)</h1>
-          <p className="text-slate-400 text-sm">
-            Engine:{" "}
-            <span className="font-semibold">
-              {engineStatus === "ready" ? "Hazır" : engineStatus === "booting" ? "Başlatılıyor…" : engineStatus === "failed" ? "Başlatılamadı" : "Kapalı"}
-            </span>
-            {thinking ? " • düşünüyor…" : ""}
-          </p>
-          <p className="text-slate-500 text-xs mt-1">FEN: {fen}</p>
-          <p className="text-slate-400 text-sm mt-2">Sıra: {turn}</p>
+          <h1 className="text-2xl font-black italic uppercase tracking-tighter">Trophy Chess Bot</h1>
+          <div className="flex items-center gap-2 mt-1">
+            <span className={`w-2 h-2 rounded-full ${engineStatus === "ready" ? "bg-emerald-500" : "bg-red-500 animate-pulse"}`} />
+            <p className="text-slate-400 text-xs uppercase font-bold tracking-widest">
+              {engineStatus === "ready" ? "Motor Hazır" : "Yükleniyor..."}
+            </p>
+          </div>
+        </div>
+        <button onClick={resetGame} className="px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-xl text-xs font-bold uppercase transition">
+          Sıfırla
+        </button>
+      </div>
+
+      <div className="mt-8 grid gap-6">
+        {/* Durum Paneli */}
+        <div className="bg-slate-900/50 p-6 rounded-[2rem] border border-white/5 shadow-2xl">
+          <div className="flex justify-between text-sm mb-4">
+            <span className="text-slate-500 font-bold uppercase">Sıra Kimde:</span>
+            <span className="text-indigo-400 font-black uppercase">{gameRef.current.turn() === "w" ? "Beyaz (Sen)" : "Siyah (Bot)"}</span>
+          </div>
+          
+          <div className="bg-black/40 p-3 rounded-xl font-mono text-[10px] text-slate-500 break-all border border-white/5">
+            FEN: {fen}
+          </div>
         </div>
 
-        <div className="flex gap-2">
+        {/* Kontroller */}
+        <div className="bg-slate-900 p-6 rounded-[2rem] border border-white/5">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase text-slate-500 tracking-widest">Zorluk Seviyesi</label>
+              <select
+                value={difficulty}
+                onChange={(e) => setDifficulty(e.target.value as Difficulty)}
+                className="w-full bg-slate-800 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 ring-indigo-500"
+              >
+                <option value="easy">Kolay (Hızlı)</option>
+                <option value="medium">Normal</option>
+                <option value="hard">Zor (Derin Analiz)</option>
+              </select>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase text-slate-500 tracking-widest">Hamleni Yaz (UCI)</label>
+              <div className="flex gap-2">
+                <input
+                  value={uciMove}
+                  onChange={(e) => setUciMove(e.target.value)}
+                  className="flex-1 bg-slate-800 border border-white/10 rounded-xl px-4 py-3 text-sm font-mono outline-none focus:ring-2 ring-indigo-500"
+                  placeholder="e2e4"
+                />
+                <button
+                  onClick={onPlayMove}
+                  disabled={engineStatus !== "ready" || thinking}
+                  className="px-6 py-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-30 rounded-xl font-black uppercase text-xs transition-all shadow-lg shadow-emerald-900/20"
+                >
+                  {thinking ? "..." : "Oyna"}
+                </button>
+              </div>
+            </div>
+          </div>
+
           <button
-            onClick={resetGame}
-            className="px-4 py-2 rounded-lg bg-slate-800 text-slate-100 hover:bg-slate-700 transition"
+            onClick={requestBotMove}
+            disabled={engineStatus !== "ready" || thinking}
+            className="w-full mt-4 py-4 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-30 rounded-2xl font-black uppercase text-xs tracking-widest transition-all shadow-xl shadow-indigo-900/20"
           >
-            Reset
+            {thinking ? "Bot Düşünüyor..." : "Sadece Botu Oynat"}
           </button>
         </div>
       </div>
 
-      <div className="mt-6 p-4 rounded-2xl border border-slate-800 bg-slate-900/60">
-        <div className="flex flex-wrap items-center gap-3">
-          <label className="text-slate-300 text-sm">Zorluk:</label>
-          <select
-            value={difficulty}
-            onChange={(e) => setDifficulty(e.target.value as Difficulty)}
-            className="bg-slate-800 text-slate-100 border border-slate-700 rounded-lg px-3 py-2"
-          >
-            <option value="easy">Easy (depth 2)</option>
-            <option value="medium">Medium (depth 8)</option>
-            <option value="hard">Hard (depth 13)</option>
-          </select>
-
-          <div className="flex items-center gap-2">
-            <label className="text-slate-300 text-sm">Hamle (UCI):</label>
-            <input
-              value={uciMove}
-              onChange={(e) => setUciMove(e.target.value)}
-              className="bg-slate-800 text-slate-100 border border-slate-700 rounded-lg px-3 py-2 w-28"
-              placeholder="e2e4"
-            />
-            <button
-              onClick={onPlayMove}
-              disabled={engineStatus !== "ready" || thinking}
-              className="px-4 py-2 rounded-lg bg-emerald-600 text-white font-semibold hover:bg-emerald-700 transition disabled:opacity-50"
-            >
-              Oyna
-            </button>
-
-            <button
-              onClick={requestBotMove}
-              disabled={engineStatus !== "ready" || thinking}
-              className="px-4 py-2 rounded-lg bg-indigo-600 text-white font-semibold hover:bg-indigo-700 transition disabled:opacity-50"
-            >
-              Bot Hamlesi İste
-            </button>
-          </div>
-        </div>
-
-        <p className="text-slate-500 text-xs mt-3">
-          Not: Bu örnekte taş sürükleme yok; sadece botun kesin çalıştığını doğrulamak için minimal kontrol var.
-          İstersen bir sonraki adımda drag&drop + görsel tahta ekleyelim.
+      <div className="mt-8 text-center">
+        <p className="text-slate-600 text-[10px] uppercase font-bold tracking-[0.2em]">
+          Trophy Chess Engine v1.0 • Stockfish 10 Powered
         </p>
       </div>
     </div>
