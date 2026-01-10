@@ -1,10 +1,10 @@
-// app/games/chess/page.tsx
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Chess, Square, PieceSymbol, Color } from "chess.js";
 
 type Difficulty = "easy" | "medium" | "hard";
+type Task = "bot" | "hint" | "eval" | null;
 
 const START_FEN =
   "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
@@ -20,25 +20,65 @@ function pieceToChar(p: { type: PieceSymbol; color: Color }) {
   return map[p.color][p.type];
 }
 
-type EvalRow = { move: string; score: number; fenBefore: string }; // score: pawn units
-
-function cpToPawn(cp: number | null) {
-  if (typeof cp !== "number") return 0;
-  return cp / 100;
+function depthByDifficulty(d: Difficulty) {
+  if (d === "easy") return 6;
+  if (d === "medium") return 10; // ✅ istek: bot depth 10
+  return 14;
 }
 
-function depthLike(d: Difficulty) {
-  // Lichess'te depth param yok; biz sadece "hata yapma olasılığı" simüle ediyoruz.
-  // Bu fonksiyon burada sadece "etiket/ayar" için.
-  if (d === "easy") return 2;
-  if (d === "medium") return 8;
-  return 13;
+function isPromotionMove(g: Chess, from: Square, to: Square) {
+  const pc = g.get(from);
+  if (!pc || pc.type !== "p") return false;
+  if (pc.color === "w" && to[1] === "8") return true;
+  if (pc.color === "b" && to[1] === "1") return true;
+  return false;
 }
+
+/**
+ * ✅ İNDİRMEDEN STOCKFISH (CDN + Blob Worker)
+ * - stockfish-mv.wasm paketi: stockfish.worker.js + stockfish.wasm içerir.
+ * - Blob içinde importScripts ile aynı origin gibi çalışır; Vercel'de de stabil.
+ */
+function createStockfishWorker() {
+  if (typeof window === "undefined") return null;
+
+  // Worker-ready WASM build
+  const STOCKFISH_WORKER_URL =
+    "https://cdn.jsdelivr.net/npm/stockfish-mv.wasm/stockfish.worker.js";
+
+  const code = `
+    function send(m){ try{ self.postMessage(m); }catch(e){} }
+
+    self.onerror = function(e){
+      send("SF_WORKER_ERROR::" + (e && e.message ? e.message : "unknown"));
+    };
+
+    try {
+      importScripts("${STOCKFISH_WORKER_URL}");
+      // Bu import, kendi içinde onmessage handler kurar (UCI worker)
+      send("SF_INIT_OK");
+    } catch (e) {
+      send("SF_INIT_FAILED::" + (e && e.message ? e.message : String(e)));
+    }
+  `;
+
+  const blob = new Blob([code], { type: "application/javascript" });
+  const url = URL.createObjectURL(blob);
+  const w = new Worker(url);
+  // URL.revokeObjectURL(url); // hemen revoke bazı ortamlarda sıkıntı çıkarabiliyor
+  return w;
+}
+
+type EvalRow = { move: string; score: number; fenBefore: string };
 
 export default function ChessPage() {
-  const audioCtx = useRef<AudioContext | null>(null);
+  const engineRef = useRef<Worker | null>(null);
+  const taskRef = useRef<Task>(null);
+  const lastScore = useRef<number>(0); // pawn units
 
   const [mounted, setMounted] = useState(false);
+  const [isReady, setIsReady] = useState(false);
+  const [thinking, setThinking] = useState(false);
 
   const [fen, setFen] = useState(START_FEN);
   const [playerColor, setPlayerColor] = useState<Color | null>(null);
@@ -47,68 +87,223 @@ export default function ChessPage() {
   const [selected, setSelected] = useState<Square | null>(null);
   const [difficulty, setDifficulty] = useState<Difficulty>("medium");
 
-  const [thinking, setThinking] = useState(false);
-
   const [moveEvaluations, setMoveEvaluations] = useState<EvalRow[]>([]);
   const [reviewIndex, setReviewIndex] = useState<number | null>(null);
 
-  const [hintMove, setHintMove] = useState<{ from: Square; to: Square } | null>(null);
+  const [hintMove, setHintMove] = useState<{ from: Square; to: Square } | null>(
+    null
+  );
   const [hintLoading, setHintLoading] = useState(false);
 
-  // Teacher explanation
+  // promotion modal
+  const [promoOpen, setPromoOpen] = useState(false);
+  const [promoFrom, setPromoFrom] = useState<Square | null>(null);
+  const [promoTo, setPromoTo] = useState<Square | null>(null);
+
+  // Teacher explanation (opsiyonel)
   const [explanation, setExplanation] = useState<string | null>(null);
   const [explainLoading, setExplainLoading] = useState(false);
 
-  // last bot move info
   const lastBotMoveUci = useRef<string | null>(null);
   const lastBotMoveSan = useRef<string | null>(null);
   const lastBotFenBefore = useRef<string | null>(null);
-  const lastBotScorePawn = useRef<number>(0);
+  const lastBotScore = useRef<number>(0);
 
-  // last known eval (pawn units) - UI için
-  const lastEvalPawn = useRef<number>(0);
+  const sf = (m: string) => engineRef.current?.postMessage(m);
 
   const game = useMemo(() => {
-    const currentFen = reviewIndex !== null ? moveEvaluations[reviewIndex]?.fenBefore : fen;
+    const currentFen =
+      reviewIndex !== null ? moveEvaluations[reviewIndex]?.fenBefore : fen;
     return new Chess(currentFen || fen);
   }, [fen, reviewIndex, moveEvaluations]);
 
   const displayRanks = playerColor === "b" ? [...ranks].reverse() : ranks;
   const displayFiles = playerColor === "b" ? [...files].reverse() : files;
 
+  // ✅ Arrow coords fix (black side too)
+  const getPos = (sq: Square) => {
+    let f = files.indexOf(sq[0] as any);
+    let r = ranks.indexOf(sq[1] as any);
+    if (playerColor === "b") {
+      f = 7 - f;
+      r = 7 - r;
+    }
+    return { x: f * 12.5 + 6.25, y: r * 12.5 + 6.25 };
+  };
+
+  // --- init engine once ---
   useEffect(() => {
     setMounted(true);
+
+    const w = createStockfishWorker();
+    if (!w) {
+      setIsReady(false);
+      return;
+    }
+    engineRef.current = w;
+
+    const onMsg = (e: MessageEvent) => {
+      const msg = typeof e.data === "string" ? e.data : String(e.data ?? "");
+      // console.log("SF:", msg);
+
+      if (msg.startsWith("SF_INIT_FAILED")) {
+        setIsReady(false);
+        return;
+      }
+
+      if (msg.startsWith("SF_WORKER_ERROR::")) {
+        setIsReady(false);
+        return;
+      }
+
+      if (msg === "SF_INIT_OK") {
+        sf("uci");
+        sf("isready");
+        return;
+      }
+
+      if (msg.includes("uciok")) {
+        sf("isready");
+        return;
+      }
+
+      if (msg.includes("readyok")) {
+        setIsReady(true);
+        return;
+      }
+
+      // score stream
+      if (msg.startsWith("info")) {
+        // Stockfish sends cp in centipawns
+        const m = msg.match(/score cp (-?\d+)/);
+        if (m) lastScore.current = parseInt(m[1], 10) / 100;
+        return;
+      }
+
+      // bestmove
+      if (msg.startsWith("bestmove")) {
+        const moveUci = msg.split(" ")[1];
+        const currentTask = taskRef.current;
+        taskRef.current = null;
+
+        if (!moveUci || moveUci === "(none)") {
+          if (currentTask === "bot") setThinking(false);
+          if (currentTask === "hint") setHintLoading(false);
+          return;
+        }
+
+        const from = moveUci.slice(0, 2) as Square;
+        const to = moveUci.slice(2, 4) as Square;
+
+        if (currentTask === "hint") {
+          setHintMove({ from, to });
+          setHintLoading(false);
+          return;
+        }
+
+        if (currentTask === "eval") {
+          return;
+        }
+
+        if (currentTask === "bot") {
+          setFen((prevFen) => {
+            const g = new Chess(prevFen);
+            if (g.isGameOver()) return prevFen;
+            const fenBefore = prevFen;
+
+            try {
+              const m = g.move({ from, to, promotion: "q" });
+              if (!m) return prevFen;
+
+              setMoveEvaluations((p) => [
+                ...p,
+                { move: m.san, score: lastScore.current, fenBefore },
+              ]);
+
+              lastBotMoveUci.current = moveUci;
+              lastBotMoveSan.current = m.san;
+              lastBotFenBefore.current = fenBefore;
+              lastBotScore.current = lastScore.current;
+
+              return g.fen();
+            } catch {
+              return prevFen;
+            } finally {
+              setThinking(false);
+            }
+          });
+        }
+      }
+    };
+
+    w.addEventListener("message", onMsg);
+
+    // Kick
+    sf("uci");
+    sf("isready");
+
+    return () => {
+      w.removeEventListener("message", onMsg);
+      w.terminate();
+      engineRef.current = null;
+    };
   }, []);
 
-  const playMoveSound = () => {
-    try {
-      if (!audioCtx.current) {
-        audioCtx.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-      }
-      const ctx = audioCtx.current;
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = "sine";
-      osc.frequency.setValueAtTime(160, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(55, ctx.currentTime + 0.09);
-      gain.gain.setValueAtTime(0.05, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.09);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start();
-      osc.stop(ctx.currentTime + 0.1);
-    } catch {}
+  // --- bot auto move ---
+  useEffect(() => {
+    if (
+      gameStarted &&
+      playerColor &&
+      game.turn() !== playerColor &&
+      !game.isGameOver() &&
+      isReady &&
+      reviewIndex === null
+    ) {
+      setThinking(true);
+      taskRef.current = "bot";
+
+      const depth = depthByDifficulty(difficulty);
+
+      const t = setTimeout(() => {
+        sf("stop");
+        sf("ucinewgame");
+        sf(`position fen ${fen}`);
+        sf(`go depth ${depth}`); // ✅ bot depth
+      }, 200);
+
+      return () => clearTimeout(t);
+    }
+  }, [fen, isReady, gameStarted, playerColor, difficulty, reviewIndex, game]);
+
+  // --- hint ---
+  const getHint = (targetFen?: string) => {
+    if (!isReady) return;
+    setHintLoading(true);
+    taskRef.current = "hint";
+
+    const currentFen = targetFen || fen;
+    sf("stop");
+    sf(`position fen ${currentFen}`);
+    sf("go depth 12");
+  };
+
+  const requestEvalOnly = (targetFen: string) => {
+    if (!isReady) return;
+    taskRef.current = "eval";
+    sf("stop");
+    sf(`position fen ${targetFen}`);
+    sf("go depth 10");
   };
 
   async function fetchExplanation(payload: {
     fen: string;
     moveUci: string;
     moveSan?: string | null;
-    score: number; // pawn
+    score: number;
     playerColor: Color;
   }) {
     setExplainLoading(true);
-    setExplanation("🎓 Öğretmen hamleyi açıklıyor...");
+    setExplanation("🎓 Öğretmen açıklıyor...");
 
     try {
       const res = await fetch("/api/chess-coach", {
@@ -125,105 +320,16 @@ export default function ChessPage() {
     }
   }
 
-  async function getLichessMove(targetFen: string, mode: "bot" | "hint") {
-    const res = await fetch("/api/lichess-bestmove", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ fen: targetFen, difficulty, mode }),
-    });
-
-    if (!res.ok) {
-      const t = await res.text().catch(() => "");
-      throw new Error(t || "lichess-bestmove failed");
-    }
-
-    const data: any = await res.json();
-    return {
-      bestMoveUci: String(data?.bestMoveUci || ""),
-      evalCp: typeof data?.evalCp === "number" ? (data.evalCp as number) : null,
-    };
-  }
-
-  // --- BOT AUTO MOVE (lichess) ---
-  useEffect(() => {
-    if (!gameStarted || !playerColor || reviewIndex !== null || thinking || game.isGameOver()) return;
-    if (game.turn() === playerColor) return; // player's turn değilse bot oynar
-
-    setThinking(true);
-    setHintMove(null);
-
-    (async () => {
-      try {
-        const { bestMoveUci, evalCp } = await getLichessMove(fen, "bot");
-        if (!bestMoveUci || bestMoveUci === "(none)") {
-          setThinking(false);
-          return;
-        }
-
-        const from = bestMoveUci.slice(0, 2) as Square;
-        const to = bestMoveUci.slice(2, 4) as Square;
-        const promo = (bestMoveUci.slice(4, 5) || "q") as any;
-
-        setFen((prevFen) => {
-          const g = new Chess(prevFen);
-          const fenBefore = prevFen;
-
-          try {
-            const m = g.move({ from, to, promotion: promo || "q" });
-            if (!m) return prevFen;
-
-            playMoveSound();
-
-            const pawn = cpToPawn(evalCp);
-            lastEvalPawn.current = pawn;
-
-            setMoveEvaluations((p) => [...p, { move: m.san, score: pawn, fenBefore }]);
-
-            lastBotMoveUci.current = bestMoveUci;
-            lastBotMoveSan.current = m.san;
-            lastBotFenBefore.current = fenBefore;
-            lastBotScorePawn.current = pawn;
-
-            return g.fen();
-          } catch {
-            return prevFen;
-          } finally {
-            setThinking(false);
-          }
-        });
-      } catch {
-        setThinking(false);
-      }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fen, gameStarted, playerColor, difficulty, reviewIndex]);
-
-  // --- HINT (lichess) ---
-  const getHint = (targetFen?: string) => {
-    if (thinking) return;
-    setHintLoading(true);
-    const currentFen = targetFen || fen;
-
-    (async () => {
-      try {
-        const { bestMoveUci } = await getLichessMove(currentFen, "hint");
-        if (!bestMoveUci || bestMoveUci === "(none)") {
-          setHintLoading(false);
-          return;
-        }
-        const from = bestMoveUci.slice(0, 2) as Square;
-        const to = bestMoveUci.slice(2, 4) as Square;
-        setHintMove({ from, to });
-      } catch {
-      } finally {
-        setHintLoading(false);
-      }
-    })();
-  };
-
   function onSquareClick(square: Square) {
-    if (!gameStarted || !playerColor || thinking || reviewIndex !== null || game.isGameOver()) return;
-    if (game.turn() !== playerColor) return;
+    if (
+      !gameStarted ||
+      !playerColor ||
+      game.turn() !== playerColor ||
+      thinking ||
+      game.isGameOver() ||
+      reviewIndex !== null
+    )
+      return;
 
     setHintMove(null);
 
@@ -232,15 +338,24 @@ export default function ChessPage() {
       const fenBefore = fen;
 
       try {
+        // ✅ promotion modal
+        if (isPromotionMove(g, selected, square)) {
+          setPromoFrom(selected);
+          setPromoTo(square);
+          setPromoOpen(true);
+          return;
+        }
+
         const move = g.move({ from: selected, to: square, promotion: "q" });
         if (move) {
-          playMoveSound();
           setFen(g.fen());
-
-          // skor: bir sonraki lichess eval ile güncellenecek, şimdilik lastEval
-          setMoveEvaluations((p) => [...p, { move: move.san, score: lastEvalPawn.current, fenBefore }]);
-
+          setMoveEvaluations((p) => [
+            ...p,
+            { move: move.san, score: lastScore.current, fenBefore },
+          ]);
           setSelected(null);
+
+          requestEvalOnly(g.fen());
           return;
         }
       } catch {}
@@ -251,29 +366,43 @@ export default function ChessPage() {
     else setSelected(null);
   }
 
-  const getCoords = (square: Square) => {
-    const f = files.indexOf(square[0] as any);
-    const r = ranks.indexOf(square[1] as any);
-    let x = f * 12.5 + 6.25;
-    let y = r * 12.5 + 6.25;
-    if (playerColor === "b") {
-      x = 100 - x;
-      y = 100 - y;
+  function applyPromotion(piece: "q" | "r" | "b" | "n") {
+    if (!promoFrom || !promoTo) {
+      setPromoOpen(false);
+      return;
     }
-    return { x, y };
-  };
+
+    const g = new Chess(fen);
+    const fenBefore = fen;
+
+    try {
+      const mv = g.move({ from: promoFrom, to: promoTo, promotion: piece });
+      if (mv) {
+        setFen(g.fen());
+        setMoveEvaluations((p) => [...p, { move: mv.san, score: lastScore.current, fenBefore }]);
+        setSelected(null);
+        requestEvalOnly(g.fen());
+      }
+    } catch {
+      // ignore
+    } finally {
+      setPromoOpen(false);
+      setPromoFrom(null);
+      setPromoTo(null);
+    }
+  }
 
   const getMoveQuality = (current: number, prev: number, isWhite: boolean) => {
     const diff = isWhite ? current - prev : prev - current;
-    if (diff < -2.0) return { label: "Blunder", color: "text-red-500", icon: "??" };
-    if (diff < -0.5) return { label: "Hata", color: "text-orange-500", icon: "?" };
-    if (diff > 1.0) return { label: "Harika", color: "text-blue-500", icon: "!!" };
-    return { label: "İyi", color: "text-emerald-500", icon: "✓" };
+    if (diff < -2.0) return { label: "Blunder", color: "text-red-400", icon: "??" };
+    if (diff < -0.6) return { label: "Hata", color: "text-orange-400", icon: "?" };
+    if (diff > 1.2) return { label: "Harika", color: "text-blue-300", icon: "!!" };
+    return { label: "İyi", color: "text-emerald-300", icon: "✓" };
   };
 
   if (!mounted) return null;
 
-  // START
+  // Start screen
   if (!gameStarted) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6">
@@ -281,21 +410,10 @@ export default function ChessPage() {
           <h1 className="text-4xl font-black text-white italic uppercase mb-3">X-CHESS</h1>
 
           <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-8">
-            Engine: <span className="text-emerald-400">LICHESS CLOUD</span>
-          </div>
-
-          <div className="flex gap-2 bg-slate-950 p-1 rounded-xl mb-6 justify-center">
-            {(["easy", "medium", "hard"] as const).map((lvl) => (
-              <button
-                key={lvl}
-                onClick={() => setDifficulty(lvl)}
-                className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase ${
-                  difficulty === lvl ? "bg-indigo-500 text-white" : "text-slate-400"
-                }`}
-              >
-                {lvl === "easy" ? "Kolay" : lvl === "medium" ? "Orta" : "Zor"}
-              </button>
-            ))}
+            Engine:{" "}
+            <span className={isReady ? "text-emerald-400" : "text-orange-400"}>
+              {isReady ? "READY" : "LOADING"}
+            </span>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -322,9 +440,11 @@ export default function ChessPage() {
             </button>
           </div>
 
-          <p className="mt-6 text-xs text-slate-500">
-            Not: Stockfish indirilmiyor. Worker/CDN yok → 404 ve init/uci_command hatası yok.
-          </p>
+          {!isReady && (
+            <p className="mt-6 text-xs text-slate-500">
+              LOADING’de kalırsa: network/CSP engeli olabilir. (Worker CDN importScripts)
+            </p>
+          )}
         </div>
       </div>
     );
@@ -337,16 +457,12 @@ export default function ChessPage() {
       <div className="w-full max-w-6xl flex flex-col lg:flex-row gap-8">
         {/* BOARD */}
         <div className="flex-1">
-          <div className="bg-slate-900 rounded-[2.5rem] p-6 border border-white/5 shadow-2xl">
+          <div className="bg-slate-900 rounded-[2.5rem] p-6 border border-white/5 shadow-2xl relative">
             <div className="flex justify-between items-center mb-6">
               <div>
                 <h1 className="text-3xl font-black text-white italic uppercase">X-CHESS</h1>
                 <div className="text-[10px] text-indigo-300 font-black uppercase tracking-widest mt-1">
-                  {reviewIndex !== null ? "● Analiz Modu" : "Canlı Maç"}
-                  {thinking ? " • bot düşünüyor…" : ""}
-                </div>
-                <div className="text-[10px] text-slate-400 font-black uppercase tracking-widest mt-1">
-                  Difficulty depth ~ {depthLike(difficulty)}
+                  {reviewIndex !== null ? "● Analiz Modu" : "Canlı Maç"} {thinking ? " • bot düşünüyor…" : ""}
                 </div>
               </div>
 
@@ -368,22 +484,33 @@ export default function ChessPage() {
             </div>
 
             {/* ✅ classic yellow/brown board */}
-            <div className="aspect-square grid grid-cols-8 grid-rows-8 border-8 border-amber-900 rounded-2xl overflow-hidden bg-amber-900 relative">
+            <div className="aspect-square grid grid-cols-8 grid-rows-8 border-8 border-amber-950 rounded-2xl overflow-hidden bg-amber-950 relative">
+              {/* ✅ analysis mode lock overlay */}
+              {reviewIndex !== null && (
+                <div className="absolute inset-0 z-40 bg-black/20 pointer-events-auto" />
+              )}
+
               {hintMove && (
                 <svg className="absolute inset-0 w-full h-full pointer-events-none z-50" viewBox="0 0 100 100">
                   <marker id="arrowhead" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
                     <path d="M 0 0 L 8 4 L 0 8 z" fill="#2563eb" />
                   </marker>
-                  <line
-                    x1={`${getCoords(hintMove.from).x}`}
-                    y1={`${getCoords(hintMove.from).y}`}
-                    x2={`${getCoords(hintMove.to).x}`}
-                    y2={`${getCoords(hintMove.to).y}`}
-                    stroke="#2563eb"
-                    strokeWidth="2.8"
-                    markerEnd="url(#arrowhead)"
-                    opacity="0.92"
-                  />
+                  {(() => {
+                    const start = getPos(hintMove.from);
+                    const end = getPos(hintMove.to);
+                    return (
+                      <line
+                        x1={start.x}
+                        y1={start.y}
+                        x2={end.x}
+                        y2={end.y}
+                        stroke="#2563eb"
+                        strokeWidth="2.8"
+                        markerEnd="url(#arrowhead)"
+                        opacity="0.92"
+                      />
+                    );
+                  })()}
                 </svg>
               )}
 
@@ -393,14 +520,15 @@ export default function ChessPage() {
                   const p = game.get(sq);
                   const isDark = (ri + fi) % 2 === 1;
 
-                  const base = isDark ? "bg-amber-800" : "bg-amber-200";
-                  const hover = isDark ? "hover:bg-amber-700" : "hover:bg-amber-300";
+                  const base = isDark ? "bg-amber-900" : "bg-amber-100";
+                  const hover = isDark ? "hover:bg-amber-800" : "hover:bg-amber-200";
 
                   return (
                     <button
                       key={sq}
                       onClick={() => onSquareClick(sq)}
-                      className={`relative w-full h-full flex items-center justify-center text-4xl md:text-5xl transition-all
+                      className={`relative w-full h-full flex items-center justify-center
+                        text-3xl sm:text-4xl md:text-5xl transition-all
                         ${base} ${hover}
                         ${selected === sq ? "ring-4 ring-emerald-500 ring-inset" : ""}
                       `}
@@ -435,7 +563,7 @@ export default function ChessPage() {
                   {!isGameOver && (
                     <button
                       onClick={() => getHint()}
-                      disabled={thinking || hintLoading}
+                      disabled={thinking || hintLoading || !isReady}
                       className="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-black uppercase text-xs disabled:opacity-50"
                     >
                       {hintLoading ? "💡 İpucu aranıyor…" : "💡 İpucu Al"}
@@ -443,7 +571,9 @@ export default function ChessPage() {
                   )}
                   <button
                     onClick={() => window.location.reload()}
-                    className={`${isGameOver ? "flex-1" : "w-32"} py-4 bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white rounded-2xl font-black uppercase text-xs`}
+                    className={`${
+                      isGameOver ? "flex-1" : "w-32"
+                    } py-4 bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white rounded-2xl font-black uppercase text-xs`}
                   >
                     Sıfırla
                   </button>
@@ -451,7 +581,7 @@ export default function ChessPage() {
               )}
             </div>
 
-            {/* WHY BUTTON */}
+            {/* WHY BUTTON (opsiyonel / api varsa) */}
             <div className="mt-4">
               <button
                 onClick={() => {
@@ -465,7 +595,7 @@ export default function ChessPage() {
                     fen: fenBefore,
                     moveUci,
                     moveSan: lastBotMoveSan.current,
-                    score: lastBotScorePawn.current,
+                    score: lastBotScore.current,
                     playerColor,
                   });
                 }}
@@ -486,7 +616,7 @@ export default function ChessPage() {
                     {lastBotMoveSan.current && (
                       <span className="ml-auto text-[10px] font-black text-slate-200 bg-black/20 px-2 py-1 rounded-lg">
                         {lastBotMoveSan.current} •{" "}
-                        {(lastBotScorePawn.current >= 0 ? "+" : "") + lastBotScorePawn.current.toFixed(2)}
+                        {(lastBotScore.current >= 0 ? "+" : "") + lastBotScore.current.toFixed(2)}
                       </span>
                     )}
                   </div>
@@ -494,6 +624,46 @@ export default function ChessPage() {
                 </div>
               )}
             </div>
+
+            {/* PROMOTION MODAL */}
+            {promoOpen && (
+              <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/60 p-4">
+                <div className="w-full max-w-sm rounded-3xl bg-slate-900 border border-white/10 p-6">
+                  <div className="text-white font-black text-lg mb-2">Terfi Seç</div>
+                  <div className="text-slate-400 text-xs mb-5">
+                    Piyon son sıraya geldi. Hangi taş?
+                  </div>
+
+                  <div className="grid grid-cols-4 gap-3">
+                    {([
+                      { id: "q", label: "Vezir" },
+                      { id: "r", label: "Kale" },
+                      { id: "b", label: "Fil" },
+                      { id: "n", label: "At" },
+                    ] as const).map((p) => (
+                      <button
+                        key={p.id}
+                        onClick={() => applyPromotion(p.id)}
+                        className="py-4 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 text-white font-black text-xs"
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      setPromoOpen(false);
+                      setPromoFrom(null);
+                      setPromoTo(null);
+                    }}
+                    className="mt-4 w-full py-3 rounded-2xl bg-red-500/10 text-red-300 hover:bg-red-500/20 font-black text-xs"
+                  >
+                    Vazgeç
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -523,12 +693,8 @@ export default function ChessPage() {
                     `}
                   >
                     <div className="flex items-center gap-3">
-                      <span className="text-[10px] text-slate-500 font-black w-6">
-                        {Math.floor(i / 2) + 1}.
-                      </span>
-                      <span className={`font-bold ${i % 2 === 0 ? "text-white" : "text-indigo-200"}`}>
-                        {m.move}
-                      </span>
+                      <span className="text-[10px] text-slate-500 font-black w-6">{Math.floor(i / 2) + 1}.</span>
+                      <span className={`font-bold ${i % 2 === 0 ? "text-white" : "text-indigo-200"}`}>{m.move}</span>
                     </div>
 
                     <div className="flex items-center gap-2">
