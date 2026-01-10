@@ -3,58 +3,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Chess, Square, PieceSymbol, Color } from "chess.js";
 
-function createStockfishWorker() {
-  if (typeof window === "undefined") return null;
+type Difficulty = "easy" | "medium" | "hard";
+type Task = "bot" | "hint" | "eval" | null;
 
-  const CDN_PRIMARY =
-    "https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.2/stockfish.js";
-  const CDN_FALLBACK =
-    "https://cdn.jsdelivr.net/npm/stockfish@10.0.2/src/stockfish.js";
+const START_FEN =
+  "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
-  const code = `
-    function send(m){ try{ self.postMessage(m); }catch(e){} }
-
-    self.onerror = function(e){
-      send("SF_WORKER_ERROR::" + (e && e.message ? e.message : "unknown"));
-    };
-
-    let engine = null;
-
-    function boot(url){
-      try{
-        importScripts(url);
-        if (typeof self.Stockfish === "function") {
-          engine = self.Stockfish();
-        }
-      }catch(e){
-        send("SF_IMPORT_FAIL::" + url + "::" + (e && e.message ? e.message : String(e)));
-      }
-    }
-
-    boot("${CDN_PRIMARY}");
-    if(!engine) boot("${CDN_FALLBACK}");
-
-    if(!engine){
-      send("SF_INIT_FAILED");
-    } else {
-      send("SF_INIT_OK");
-
-      engine.onmessage = function(e){
-        const msg = (typeof e === "string") ? e : (e && e.data ? e.data : "");
-        if (msg) send(msg);
-      };
-
-      self.onmessage = function(e){
-        try{ engine.postMessage(e.data); }
-        catch(err){ send("SF_ENGINE_POST_FAIL::" + (err && err.message ? err.message : String(err))); }
-      };
-    }
-  `;
-
-  const blob = new Blob([code], { type: "application/javascript" });
-  const url = URL.createObjectURL(blob);
-  return new Worker(url);
-}
+const files = ["a", "b", "c", "d", "e", "f", "g", "h"] as const;
+const ranks = ["8", "7", "6", "5", "4", "3", "2", "1"] as const;
 
 function pieceToChar(p: { type: PieceSymbol; color: Color }) {
   const map: any = {
@@ -64,32 +20,55 @@ function pieceToChar(p: { type: PieceSymbol; color: Color }) {
   return map[p.color][p.type];
 }
 
-const files = ["a", "b", "c", "d", "e", "f", "g", "h"] as const;
-const ranks = ["8", "7", "6", "5", "4", "3", "2", "1"] as const;
+function depthByDifficulty(d: Difficulty) {
+  if (d === "easy") return 2;
+  if (d === "medium") return 8;
+  return 13;
+}
+
+/**
+ * ✅ İNDİRMEDEN STOCKFISH:
+ * - CDN'den DIRECT Worker açıyoruz (importScripts / public dosyası yok)
+ * - type:"classic" (stockfish.js 10.x için doğru)
+ */
+function createStockfishWorker() {
+  if (typeof window === "undefined") return null;
+
+  const CDN_PRIMARY =
+    "https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.2/stockfish.js";
+  const CDN_FALLBACK =
+    "https://cdn.jsdelivr.net/npm/stockfish@10.0.2/src/stockfish.js";
+
+  try {
+    return new Worker(CDN_PRIMARY, { type: "classic" as any });
+  } catch {
+    try {
+      return new Worker(CDN_FALLBACK, { type: "classic" as any });
+    } catch {
+      return null;
+    }
+  }
+}
 
 type EvalRow = { move: string; score: number; fenBefore: string };
-const START_FEN =
-  "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-
-type Task = "bot" | "hint" | "eval" | null;
-type Difficulty = "easy" | "medium" | "hard";
 
 export default function ChessPage() {
   const engine = useRef<Worker | null>(null);
+  const taskRef = useRef<Task>(null);
+  const lastScore = useRef<number>(0);
+
   const audioCtx = useRef<AudioContext | null>(null);
 
-  // ✅ engine ne için çalışıyor?
-  const taskRef = useRef<Task>(null);
-
-  const [fen, setFen] = useState(START_FEN);
   const [mounted, setMounted] = useState(false);
   const [isReady, setIsReady] = useState(false);
   const [thinking, setThinking] = useState(false);
-  const [selected, setSelected] = useState<Square | null>(null);
-  const [difficulty, setDifficulty] = useState<Difficulty>("medium");
 
+  const [fen, setFen] = useState(START_FEN);
   const [playerColor, setPlayerColor] = useState<Color | null>(null);
   const [gameStarted, setGameStarted] = useState(false);
+
+  const [selected, setSelected] = useState<Square | null>(null);
+  const [difficulty, setDifficulty] = useState<Difficulty>("medium");
 
   const [moveEvaluations, setMoveEvaluations] = useState<EvalRow[]>([]);
   const [reviewIndex, setReviewIndex] = useState<number | null>(null);
@@ -98,8 +77,6 @@ export default function ChessPage() {
     null
   );
   const [hintLoading, setHintLoading] = useState(false);
-
-  const lastScore = useRef<number>(0);
 
   // Teacher explanation
   const [explanation, setExplanation] = useState<string | null>(null);
@@ -118,6 +95,8 @@ export default function ChessPage() {
 
   const displayRanks = playerColor === "b" ? [...ranks].reverse() : ranks;
   const displayFiles = playerColor === "b" ? [...files].reverse() : files;
+
+  const sf = (m: string) => engine.current?.postMessage(m);
 
   const playMoveSound = () => {
     try {
@@ -166,49 +145,35 @@ export default function ChessPage() {
     }
   }
 
-  // ✅ engine helper
-  const sf = (m: string) => engine.current?.postMessage(m);
-
+  // --- init engine once ---
   useEffect(() => {
     setMounted(true);
 
     const w = createStockfishWorker();
-    if (!w) return;
     engine.current = w;
+
+    if (!w) {
+      setIsReady(false);
+      return;
+    }
 
     const onMsg = (e: MessageEvent) => {
       const msg = String(e.data || "");
 
-      if (msg === "SF_INIT_FAILED" || msg.startsWith("SF_WORKER_ERROR::")) {
-        setIsReady(false);
-        setThinking(false);
-        setHintLoading(false);
-        taskRef.current = null;
-        return;
-      }
-
-      if (msg === "SF_INIT_OK") {
-        sf("uci");
-        sf("isready");
-        return;
-      }
-
+      // ready
       if (msg.includes("uciok")) {
         sf("isready");
         return;
       }
-
       if (msg.includes("readyok")) {
         setIsReady(true);
         return;
       }
 
-      // ✅ score updates (SADECE ref güncelle; listeyi bozma)
+      // score stream
       if (msg.startsWith("info")) {
-        const scoreMatch = msg.match(/score cp (-?\d+)/);
-        if (scoreMatch) {
-          lastScore.current = parseInt(scoreMatch[1], 10) / 100;
-        }
+        const m = msg.match(/score cp (-?\d+)/);
+        if (m) lastScore.current = parseInt(m[1], 10) / 100;
         return;
       }
 
@@ -217,7 +182,7 @@ export default function ChessPage() {
         const moveUci = msg.split(" ")[1];
 
         const currentTask = taskRef.current;
-        taskRef.current = null; // ✅ her bestmove sonrası temizle
+        taskRef.current = null;
 
         if (!moveUci || moveUci === "(none)") {
           if (currentTask === "bot") setThinking(false);
@@ -228,19 +193,16 @@ export default function ChessPage() {
         const from = moveUci.slice(0, 2) as Square;
         const to = moveUci.slice(2, 4) as Square;
 
-        // ✅ HINT: sadece ok çiz
         if (currentTask === "hint") {
           setHintMove({ from, to });
           setHintLoading(false);
           return;
         }
 
-        // ✅ EVAL: hamle uygulama
         if (currentTask === "eval") {
           return;
         }
 
-        // ✅ BOT: hamleyi uygula
         if (currentTask === "bot") {
           setFen((prevFen) => {
             const g = new Chess(prevFen);
@@ -252,8 +214,8 @@ export default function ChessPage() {
 
               playMoveSound();
 
-              setMoveEvaluations((prevEval) => [
-                ...prevEval,
+              setMoveEvaluations((p) => [
+                ...p,
                 { move: m.san, score: lastScore.current, fenBefore },
               ]);
 
@@ -286,7 +248,7 @@ export default function ChessPage() {
     };
   }, []);
 
-  // ✅ Bot hamlesi otomatik
+  // --- bot auto move ---
   useEffect(() => {
     if (
       gameStarted &&
@@ -299,8 +261,7 @@ export default function ChessPage() {
       setThinking(true);
       taskRef.current = "bot";
 
-      const depths: Record<Difficulty, number> = { easy: 2, medium: 8, hard: 14 };
-      const depth = depths[difficulty];
+      const depth = depthByDifficulty(difficulty);
 
       const t = setTimeout(() => {
         sf("stop");
@@ -312,6 +273,7 @@ export default function ChessPage() {
     }
   }, [fen, isReady, gameStarted, playerColor, difficulty, reviewIndex, game]);
 
+  // --- hint ---
   const getHint = (targetFen?: string) => {
     if (!isReady) return;
     setHintLoading(true);
@@ -345,24 +307,21 @@ export default function ChessPage() {
     setHintMove(null);
 
     if (selected) {
-      const gCopy = new Chess(fen);
+      const g = new Chess(fen);
       const fenBefore = fen;
 
       try {
-        const move = gCopy.move({ from: selected, to: square, promotion: "q" });
+        const move = g.move({ from: selected, to: square, promotion: "q" });
         if (move) {
           playMoveSound();
-          setFen(gCopy.fen());
-
-          setMoveEvaluations((prev) => [
-            ...prev,
+          setFen(g.fen());
+          setMoveEvaluations((p) => [
+            ...p,
             { move: move.san, score: lastScore.current, fenBefore },
           ]);
-
           setSelected(null);
 
-          // ✅ sadece eval, bot hamlesi değil
-          requestEvalOnly(gCopy.fen());
+          requestEvalOnly(g.fen());
           return;
         }
       } catch {}
@@ -395,15 +354,12 @@ export default function ChessPage() {
 
   if (!mounted) return null;
 
-  // START
+  // Start screen
   if (!gameStarted) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6 font-sans">
-        <div className="bg-slate-900 p-12 rounded-[3rem] border border-white/5 text-center shadow-2xl max-w-sm w-full">
-          <h1 className="text-4xl font-black text-white italic uppercase mb-3 tracking-tighter">
-            X-CHESS
-          </h1>
-
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6">
+        <div className="bg-slate-900 p-10 rounded-[2.5rem] border border-white/5 text-center max-w-sm w-full">
+          <h1 className="text-4xl font-black text-white italic uppercase mb-3">X-CHESS</h1>
           <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-8">
             Engine:{" "}
             <span className={isReady ? "text-emerald-400" : "text-orange-400"}>
@@ -417,10 +373,10 @@ export default function ChessPage() {
                 setPlayerColor("w");
                 setGameStarted(true);
               }}
-              className="p-6 bg-white/5 hover:bg-white/10 rounded-2xl border border-white/5 transition-all flex flex-col items-center gap-3 group"
+              className="p-6 bg-white/5 hover:bg-white/10 rounded-2xl border border-white/5"
             >
-              <span className="text-5xl group-hover:scale-110 transition-transform">♔</span>
-              <span className="text-[10px] font-black uppercase text-slate-400">Beyaz</span>
+              <div className="text-5xl">♔</div>
+              <div className="text-[10px] font-black uppercase text-slate-400 mt-2">Beyaz</div>
             </button>
 
             <button
@@ -428,16 +384,16 @@ export default function ChessPage() {
                 setPlayerColor("b");
                 setGameStarted(true);
               }}
-              className="p-6 bg-white/5 hover:bg-white/10 rounded-2xl border border-white/5 transition-all flex flex-col items-center gap-3 group"
+              className="p-6 bg-white/5 hover:bg-white/10 rounded-2xl border border-white/5"
             >
-              <span className="text-5xl group-hover:scale-110 transition-transform">♚</span>
-              <span className="text-[10px] font-black uppercase text-slate-400">Siyah</span>
+              <div className="text-5xl">♚</div>
+              <div className="text-[10px] font-black uppercase text-slate-400 mt-2">Siyah</div>
             </button>
           </div>
 
           {!isReady && (
             <p className="mt-6 text-xs text-slate-500">
-              Eğer burada takılı kalıyorsa: CDN/CSP engeli olabilir.
+              Eğer LOADING’de kalırsa: CSP Worker engeli olabilir. (Vercel / Header)
             </p>
           )}
         </div>
@@ -448,51 +404,39 @@ export default function ChessPage() {
   const isGameOver = new Chess(fen).isGameOver();
 
   return (
-    <div className="min-h-screen bg-slate-950 p-4 md:p-8 flex flex-col items-center font-sans selection:bg-indigo-500/30">
+    <div className="min-h-screen bg-slate-950 p-4 md:p-8 flex flex-col items-center">
       <div className="w-full max-w-6xl flex flex-col lg:flex-row gap-8">
         {/* BOARD */}
-        <div className="flex-1 relative">
-          <div className="bg-slate-900 rounded-[2.5rem] p-6 border border-white/5 shadow-2xl relative">
+        <div className="flex-1">
+          <div className="bg-slate-900 rounded-[2.5rem] p-6 border border-white/5 shadow-2xl">
             <div className="flex justify-between items-center mb-6">
-              <div className="flex flex-col">
-                <h1 className="text-3xl font-black text-white italic tracking-tighter uppercase leading-none">
-                  X-CHESS
-                </h1>
-                <span className="text-[10px] text-indigo-300 font-black uppercase mt-1 tracking-widest">
-                  {reviewIndex !== null ? "● Analiz Modu" : "Canlı Maç"}
+              <div>
+                <h1 className="text-3xl font-black text-white italic uppercase">X-CHESS</h1>
+                <div className="text-[10px] text-indigo-300 font-black uppercase tracking-widest mt-1">
+                  {reviewIndex !== null ? "● Analiz Modu" : "Canlı Maç"}{" "}
                   {thinking ? " • bot düşünüyor…" : ""}
-                </span>
+                </div>
               </div>
 
-              <div className="flex items-center gap-3">
-                <span
-                  className={`text-[10px] font-black uppercase tracking-widest ${
-                    isReady ? "text-emerald-400" : "text-orange-400"
-                  }`}
-                >
-                  {isReady ? "ENGINE READY" : "ENGINE LOADING"}
-                </span>
-
-                {!isGameOver && (
-                  <div className="flex gap-2 bg-slate-950 p-1 rounded-xl">
-                    {(["easy", "medium", "hard"] as const).map((lvl) => (
-                      <button
-                        key={lvl}
-                        onClick={() => setDifficulty(lvl)}
-                        className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase transition-all ${
-                          difficulty === lvl ? "bg-indigo-500 text-white" : "text-slate-400 hover:text-slate-200"
-                        }`}
-                      >
-                        {lvl === "easy" ? "Kolay" : lvl === "medium" ? "Orta" : "Zor"}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
+              {!isGameOver && (
+                <div className="flex gap-2 bg-slate-950 p-1 rounded-xl">
+                  {(["easy", "medium", "hard"] as const).map((lvl) => (
+                    <button
+                      key={lvl}
+                      onClick={() => setDifficulty(lvl)}
+                      className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase ${
+                        difficulty === lvl ? "bg-indigo-500 text-white" : "text-slate-400"
+                      }`}
+                    >
+                      {lvl === "easy" ? "Kolay" : lvl === "medium" ? "Orta" : "Zor"}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
-            {/* ✅ CLASSIC YELLOW/BROWN BOARD */}
-            <div className="aspect-square grid grid-cols-8 grid-rows-8 border-8 border-amber-900 rounded-2xl overflow-hidden bg-amber-900 relative shadow-2xl">
+            {/* ✅ classic yellow/brown board */}
+            <div className="aspect-square grid grid-cols-8 grid-rows-8 border-8 border-amber-900 rounded-2xl overflow-hidden bg-amber-900 relative">
               {hintMove && (
                 <svg className="absolute inset-0 w-full h-full pointer-events-none z-50" viewBox="0 0 100 100">
                   <marker id="arrowhead" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
@@ -513,8 +457,8 @@ export default function ChessPage() {
 
               {displayRanks.map((r, ri) =>
                 displayFiles.map((f, fi) => {
-                  const square = `${f}${r}` as Square;
-                  const p = game.get(square);
+                  const sq = `${f}${r}` as Square;
+                  const p = game.get(sq);
                   const isDark = (ri + fi) % 2 === 1;
 
                   const base = isDark ? "bg-amber-800" : "bg-amber-200";
@@ -522,18 +466,15 @@ export default function ChessPage() {
 
                   return (
                     <button
-                      key={square}
-                      onClick={() => onSquareClick(square)}
-                      className={[
-                        "relative w-full h-full flex items-center justify-center transition-all",
-                        "text-4xl md:text-5xl",
-                        base,
-                        hover,
-                        selected === square ? "ring-4 ring-emerald-500 ring-inset" : "",
-                      ].join(" ")}
+                      key={sq}
+                      onClick={() => onSquareClick(sq)}
+                      className={`relative w-full h-full flex items-center justify-center text-4xl md:text-5xl transition-all
+                        ${base} ${hover}
+                        ${selected === sq ? "ring-4 ring-emerald-500 ring-inset" : ""}
+                      `}
                     >
                       <span
-                        className="select-none pointer-events-none z-10"
+                        className="select-none pointer-events-none"
                         style={{
                           textShadow:
                             "0 2px 0 rgba(0,0,0,0.55), 0 0 10px rgba(0,0,0,0.30)",
@@ -547,7 +488,6 @@ export default function ChessPage() {
               )}
             </div>
 
-            {/* ACTIONS */}
             <div className="mt-6 flex gap-4">
               {reviewIndex !== null ? (
                 <button
@@ -555,7 +495,7 @@ export default function ChessPage() {
                     setReviewIndex(null);
                     setHintMove(null);
                   }}
-                  className="flex-1 py-4 bg-slate-800 text-white rounded-2xl font-black uppercase text-xs border border-white/5"
+                  className="flex-1 py-4 bg-slate-800 text-white rounded-2xl font-black uppercase text-xs"
                 >
                   İncelemeyi Kapat
                 </button>
@@ -565,14 +505,16 @@ export default function ChessPage() {
                     <button
                       onClick={() => getHint()}
                       disabled={thinking || hintLoading || !isReady}
-                      className="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-black uppercase text-xs shadow-lg disabled:opacity-50"
+                      className="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-black uppercase text-xs disabled:opacity-50"
                     >
                       {hintLoading ? "💡 İpucu aranıyor…" : "💡 İpucu Al"}
                     </button>
                   )}
                   <button
                     onClick={() => window.location.reload()}
-                    className={`${isGameOver ? "flex-1" : "w-32"} py-4 bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white rounded-2xl font-black uppercase text-xs border border-red-500/20 transition-all`}
+                    className={`${
+                      isGameOver ? "flex-1" : "w-32"
+                    } py-4 bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white rounded-2xl font-black uppercase text-xs`}
                   >
                     Sıfırla
                   </button>
@@ -580,7 +522,7 @@ export default function ChessPage() {
               )}
             </div>
 
-            {/* Neden bu hamle? */}
+            {/* WHY BUTTON */}
             <div className="mt-4">
               <button
                 onClick={() => {
@@ -598,15 +540,9 @@ export default function ChessPage() {
                     playerColor,
                   });
                 }}
-                disabled={
-                  explainLoading ||
-                  !lastBotMoveUci.current ||
-                  !lastBotFenBefore.current ||
-                  !playerColor
-                }
+                disabled={explainLoading || !lastBotMoveUci.current || !lastBotFenBefore.current}
                 className="w-full py-4 rounded-2xl font-black uppercase text-xs border border-indigo-500/20
-                           bg-indigo-500/10 text-indigo-200 hover:bg-indigo-500/20 transition-all
-                           disabled:opacity-50"
+                           bg-indigo-500/10 text-indigo-200 hover:bg-indigo-500/20 disabled:opacity-50"
               >
                 🎓 Neden bu hamle?
               </button>
@@ -618,37 +554,32 @@ export default function ChessPage() {
                     <span className="text-[10px] font-black uppercase text-indigo-400 tracking-widest">
                       Öğretmen Notu
                     </span>
-
                     {lastBotMoveSan.current && (
                       <span className="ml-auto text-[10px] font-black text-slate-200 bg-black/20 px-2 py-1 rounded-lg">
                         {lastBotMoveSan.current} •{" "}
-                        {lastBotScore.current >= 0 ? "+" : ""}
-                        {lastBotScore.current.toFixed(2)}
+                        {(lastBotScore.current >= 0 ? "+" : "") + lastBotScore.current.toFixed(2)}
                       </span>
                     )}
                   </div>
-
-                  <p className="text-sm text-slate-200 italic leading-relaxed">
-                    “{explanation}”
-                  </p>
+                  <p className="text-sm text-slate-200 italic leading-relaxed">“{explanation}”</p>
                 </div>
               )}
             </div>
           </div>
         </div>
 
-        {/* MOVES PANEL */}
-        <div className="w-full lg:w-96 flex flex-col gap-6">
-          <div className="bg-slate-900 rounded-[2rem] p-6 border border-white/5 flex-1 flex flex-col shadow-xl min-h-[500px]">
+        {/* MOVES */}
+        <div className="w-full lg:w-96">
+          <div className="bg-slate-900 rounded-[2rem] p-6 border border-white/5 shadow-xl min-h-[520px]">
             <h2 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-6 italic text-center border-b border-white/5 pb-4">
               MAÇ ANALİZİ
             </h2>
 
-            <div className="flex-1 overflow-y-auto pr-2 space-y-2">
-              {moveEvaluations.map((evalData, i) => {
+            <div className="space-y-2 max-h-[420px] overflow-y-auto pr-2">
+              {moveEvaluations.map((m, i) => {
                 const isWhite = i % 2 === 0;
                 const prevEval = i === 0 ? 0 : moveEvaluations[i - 1].score;
-                const quality = getMoveQuality(evalData.score, prevEval, isWhite);
+                const quality = getMoveQuality(m.score, prevEval, isWhite);
 
                 return (
                   <div
@@ -656,30 +587,24 @@ export default function ChessPage() {
                     onClick={() => {
                       setReviewIndex(i);
                       setHintMove(null);
-                      getHint(moveEvaluations[i].fenBefore);
+                      getHint(m.fenBefore);
                     }}
-                    className={`flex items-center justify-between p-3 rounded-xl transition-all cursor-pointer group ${
-                      reviewIndex === i
-                        ? "ring-2 ring-blue-500 bg-blue-500/10"
-                        : "bg-slate-950/50 hover:bg-slate-800"
-                    }`}
+                    className={`flex items-center justify-between p-3 rounded-xl cursor-pointer
+                      ${reviewIndex === i ? "ring-2 ring-blue-500 bg-blue-500/10" : "bg-slate-950/50 hover:bg-slate-800"}
+                    `}
                   >
                     <div className="flex items-center gap-3">
                       <span className="text-[10px] text-slate-500 font-black w-6">
                         {Math.floor(i / 2) + 1}.
                       </span>
-                      <span className={`font-bold ${isWhite ? "text-white" : "text-indigo-200"}`}>
-                        {evalData.move}
+                      <span className={`font-bold ${i % 2 === 0 ? "text-white" : "text-indigo-200"}`}>
+                        {m.move}
                       </span>
                     </div>
 
                     <div className="flex items-center gap-2">
-                      <span className={`text-[9px] font-black uppercase ${quality.color}`}>
-                        {quality.label}
-                      </span>
-                      <span className={`text-[10px] font-black ${quality.color}`}>
-                        {quality.icon}
-                      </span>
+                      <span className={`text-[9px] font-black uppercase ${quality.color}`}>{quality.label}</span>
+                      <span className={`text-[10px] font-black ${quality.color}`}>{quality.icon}</span>
                     </div>
                   </div>
                 );
@@ -690,10 +615,6 @@ export default function ChessPage() {
                   Henüz hamle yok. Başla ve hamle yap 🙂
                 </div>
               )}
-            </div>
-
-            <div className="mt-4 text-[10px] text-slate-500">
-              Bir hamleye tıklayınca o konum için ipucu oku çıkar.
             </div>
           </div>
         </div>
