@@ -1,23 +1,20 @@
-/* eslint-disable no-restricted-globals */
 // WebWorker (module) — Stockfish burada çalışır.
-
 import Stockfish from "stockfish";
 
-// stockfish paketi browser tarafında Worker-friendly API döndürür:
-// Stockfish() -> engine benzeri (postMessage/onmessage)
-const engine: any = (Stockfish as any)();
+const engine = Stockfish(); // engine: { postMessage, onmessage } benzeri
 
-function send(msg: string) {
-  (self as any).postMessage(msg);
-}
-
-// Stockfish -> dışarı
-engine.onmessage = (e: any) => {
-  const msg = typeof e === "string" ? e : e?.data;
-  if (msg) send(String(msg));
+const send = (m: any) => {
+  // main thread'e string/obj iletebiliriz
+  (self as any).postMessage(m);
 };
 
-// dışarı -> Stockfish
+// engine -> main
+engine.onmessage = (e: any) => {
+  const msg = typeof e === "string" ? e : e?.data;
+  if (msg != null) send(String(msg));
+};
+
+// main -> engine
 (self as any).onmessage = (e: MessageEvent) => {
   try {
     engine.postMessage(e.data);
@@ -26,5 +23,5 @@ engine.onmessage = (e: any) => {
   }
 };
 
-// boot ping
-send("SF_WORKER_UP");
+// küçük bir sinyal
+send("SF_WORKER_READY");
