@@ -7,58 +7,45 @@ type Payload = {
   moveUci: string;
   moveSan?: string | null;
   score: number; // pawn units (örn 0.35)
-  playerColor: "w" | "b"; // kullanıcı rengi
+  playerColor: "w" | "b";
 };
 
 type LichessEval = {
-  evalCp: number | null; // centipawn
+  evalCp: number | null;
   mate: number | null;
-  bestMove: string | null; // uci
+  bestMove: string | null;
 };
 
 async function fetchLichessCloudEval(fen: string): Promise<LichessEval> {
   const token = process.env.LICHESS_TOKEN;
-  if (!token) {
-    // token yoksa Lichess'i pas geçeceğiz
-    return { evalCp: null, mate: null, bestMove: null };
-  }
+  if (!token) return { evalCp: null, mate: null, bestMove: null };
 
-  // Lichess cloud eval endpointi: GET ile query daha stabil
   const url =
     "https://lichess.org/api/cloud-eval?fen=" +
     encodeURIComponent(fen) +
     "&multiPv=1";
 
   const r = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: "application/json",
-    },
-    // Next.js server fetch cache kapansın:
+    headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
     cache: "no-store",
   });
 
-  if (!r.ok) {
-    // Lichess rate-limit vs -> sessizce düş
-    return { evalCp: null, mate: null, bestMove: null };
-  }
+  if (!r.ok) return { evalCp: null, mate: null, bestMove: null };
 
   const data: any = await r.json();
   const pv0 = data?.pvs?.[0];
 
-  const evalCp: number | null =
-    typeof pv0?.cp === "number" ? pv0.cp : null;
-  const mate: number | null =
-    typeof pv0?.mate === "number" ? pv0.mate : null;
-
+  const evalCp: number | null = typeof pv0?.cp === "number" ? pv0.cp : null;
+  const mate: number | null = typeof pv0?.mate === "number" ? pv0.mate : null;
   const bestMove: string | null =
     typeof pv0?.moves === "string" ? pv0.moves.split(" ")[0] : null;
 
   return { evalCp, mate, bestMove };
 }
 
-// Basit bir sınıflandırma: scoreCp farkına göre
-function classifyJudgment(diffCpAbs: number): "ok" | "inaccuracy" | "mistake" | "blunder" {
+function classifyJudgment(
+  diffCpAbs: number
+): "ok" | "inaccuracy" | "mistake" | "blunder" {
   if (diffCpAbs >= 300) return "blunder";
   if (diffCpAbs >= 150) return "mistake";
   if (diffCpAbs >= 60) return "inaccuracy";
@@ -70,20 +57,17 @@ export async function POST(req: Request) {
     const body = (await req.json()) as Payload;
     const { fen, moveUci, moveSan, score, playerColor } = body;
 
-    // 1) Lichess eval (opsiyonel)
     const lichess = await fetchLichessCloudEval(fen);
 
-    // Stockfish skorunu cp'ye çevir (pawn -> cp)
     const scoreCpFromStockfish = Math.round((score || 0) * 100);
-
-    // Lichess cp varsa farkı hesapla
     const diffCpAbs =
-      lichess.evalCp === null ? 0 : Math.abs(lichess.evalCp - scoreCpFromStockfish);
+      lichess.evalCp === null
+        ? 0
+        : Math.abs(lichess.evalCp - scoreCpFromStockfish);
 
     const judgment =
       lichess.evalCp === null ? "ok" : classifyJudgment(diffCpAbs);
 
-    // 2) Gemini
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
       return NextResponse.json(
@@ -92,7 +76,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // Prompt
     const prompt = `
 Sen dünya çapında tanınan bir satranç büyükustası ve aynı zamanda çocuklara satranç öğreten tecrübeli bir eğitmensin.
 
@@ -107,27 +90,15 @@ VERİLER:
 - Bilgisayar Skoru (CP): ${scoreCpFromStockfish}
 - Oyuncu Rengi: ${playerColor === "w" ? "Beyaz" : "Siyah"}
 
-BİLGİ:
-- Skor hamleden SONRAKI değerlendirmedir.
-- Beyaz için skorun artması iyidir, düşmesi kötüdür.
-- Siyah için skorun düşmesi iyidir, artması kötüdür.
-
-GÖREV:
-1. Hamleyi değerlendir.
-2. Cevap 1 veya 2 TAM cümle olsun.
-3. HER CÜMLEDE en az BİR SOMUT NEDEN belirt:
-   - merkez kontrolü
-   - taş geliştirme
-   - şah güvenliği
-   - tempo kazanımı
-   - rakip tehdidi
-4. "iyi", "standart", "mantıklı" gibi kelimeleri TEK BAŞINA kullanma → mutlaka "çünkü ..." ile devam et.
-5. Cümleyi ASLA yarım bırakma.
-6. Giriş cümlesi kullanma, doğrudan analize başla.
-7. Eğer hamle "blunder" veya "mistake" ise, Lichess'in önerdiği hamleyle KISA bir karşılaştırma yap.
+KURALLAR:
+- Cevap 2–3 TAM cümle olsun (çok kısa olmasın).
+- HER cümlede en az 1 somut neden olsun (merkez, gelişim, şah güvenliği, tempo, tehdit).
+- "iyi/standart" tek başına yazma → mutlaka "çünkü ..." ile bağla.
+- Giriş cümlesi yok, doğrudan analize gir.
+- Eğer judgment = blunder veya mistake ise, Lichess önerisi ile 1 kısa karşılaştırma yap.
 
 TON:
-Öğretici, net ve teşvik edici.
+Net, öğretici, teşvik edici.
 `;
 
     const r = await fetch(
@@ -139,7 +110,7 @@ TON:
           contents: [{ parts: [{ text: prompt }] }],
           generationConfig: {
             temperature: 0.5,
-            maxOutputTokens: 120,
+            maxOutputTokens: 180,
           },
         }),
       }
@@ -148,7 +119,7 @@ TON:
     if (!r.ok) {
       const errText = await r.text();
       return NextResponse.json(
-        { reason: "Gemini API hata verdi: " + errText.slice(0, 200) },
+        { reason: "Gemini API hata verdi: " + errText.slice(0, 250) },
         { status: 500 }
       );
     }
