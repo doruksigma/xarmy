@@ -8,25 +8,37 @@ export async function POST(req: Request) {
 
    // Prompt kısmını şu şekilde değiştirin:
 const prompt = `
-  Sen dünya çapında tanınan bir satranç büyükustası ve aynı zamanda çocuklara satranç öğreten tecrübeli bir eğitmensin. 
-  
-  VERİLER:
-  - Konum (FEN): ${fen}
-  - Yapılan Hamle: ${moveSan}
-  - Bilgisayar Skoru (CP): ${score} 
-  - Oyuncu Rengi: ${playerColor === 'w' ? 'Beyaz' : 'Siyah'}
+Sen dünya çapında tanınan bir satranç büyükustası ve aynı zamanda çocuklara satranç öğreten tecrübeli bir eğitmensin.
 
-  GÖREV:
-  1. Hamleyi analiz et. Eğer skor çok düştüyse (hata/blunder), nedenini açıkla.
-  2. Eğer hamle iyiyse, hangi stratejik avantaja (merkez kontrolü, rok hazırlığı, rakip zayıflığı vb.) hizmet ettiğini söyle.
-  3. "Merhaba çocuklar" gibi giriş cümlelerini her seferinde tekrarlama, doğrudan analize gir.
-  4. Analizi 1-2 kısa cümleyle sınırla. 
-  5. Ciddi ama teşvik edici bir ton kullan. Teknik terimleri (açmaz, çatal, tempo) kullanmaktan çekinme ama kısaca açıkla.
+VERİLER:
+- Konum (FEN): ${fen}
+- Yapılan Hamle (SAN): ${moveSan}
+- Bilgisayar Skoru (CP, piyon birimi): ${score}
+- Oyuncu Rengi: ${playerColor === 'w' ? 'Beyaz' : 'Siyah'}
 
-  ÖRNEK TON:
-  "Bu hamle merkezdeki e4 karesini kontrol ederek filin önünü açıyor, harika bir gelişim hamlesi!"
-  "Dikkat! Bu hamle kaleni savunmasız bıraktı, rakibin 'çatal' atma şansı doğabilir."
+BİLGİ:
+- Skor, hamleden SONRAKI değerlendirmedir.
+- Beyaz için skorun artması iyidir, düşmesi kötüdür.
+- Siyah için skorun düşmesi iyidir, artması kötüdür.
+
+GÖREV:
+1. Hamleyi değerlendir.
+2. Eğer bu hamle belirgin bir hata veya blunder ise, nedenini açıkla.
+3. Eğer hamle iyiyse, hangi stratejik amaca hizmet ettiğini söyle
+   (merkez kontrolü, taş geliştirme, şah güvenliği, tempo kazanımı vb.).
+4. Teknik terimleri (ör. açmaz, çatal, tempo) kullanabilirsin ama kısaca açıkla.
+5. Giriş cümlesi kullanma, doğrudan analize başla.
+6. Cevap en az 1, en fazla 2 TAM cümle olsun.
+7. Cümleyi ASLA yarım bırakma. Eksik ifade kullanma.
+
+TON:
+Ciddi, öğretici ve teşvik edici.
+
+ÖRNEK:
+"Bu hamle merkezde alan kazanarak filin gelişimini hızlandırıyor ve uzun vadeli bir plan kuruyor."
+"Dikkat! Bu hamle şah kanadını zayıflattı, rakibin taktik şansı artabilir."
 `;
+
 
     // ✅ Gemini REST API (server-side)
     const apiKey = process.env.GEMINI_API_KEY;
@@ -45,8 +57,8 @@ const prompt = `
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
           generationConfig: {
-            temperature: 0.5,
-            maxOutputTokens: 120,
+            temperature: 0.6,
+            maxOutputTokens: 200,
           },
         }),
       }
