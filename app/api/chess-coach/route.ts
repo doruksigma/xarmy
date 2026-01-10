@@ -6,20 +6,26 @@ export async function POST(req: Request) {
   try {
     const { fen, moveUci, moveSan, score, playerColor } = await req.json();
 
-    const prompt = `
-Sen profesyonel bir satranç öğretmenisin.
-Aşağıdaki konumda Stockfish'in seçtiği hamleyi, 5. sınıf öğrencisine anlatır gibi açıkla.
+   // Prompt kısmını şu şekilde değiştirin:
+const prompt = `
+  Sen dünya çapında tanınan bir satranç büyükustası ve aynı zamanda çocuklara satranç öğreten tecrübeli bir eğitmensin. 
+  
+  VERİLER:
+  - Konum (FEN): ${fen}
+  - Yapılan Hamle: ${moveSan}
+  - Bilgisayar Skoru (CP): ${score} 
+  - Oyuncu Rengi: ${playerColor === 'w' ? 'Beyaz' : 'Siyah'}
 
-KONUM (FEN): ${fen}
-HAMLE (UCI): ${moveUci}
-HAMLE (SAN): ${moveSan || "-"}
-AVANTAJ SKORU (piyon birimi): ${score}
+  GÖREV:
+  1. Hamleyi analiz et. Eğer skor çok düştüyse (hata/blunder), nedenini açıkla.
+  2. Eğer hamle iyiyse, hangi stratejik avantaja (merkez kontrolü, rok hazırlığı, rakip zayıflığı vb.) hizmet ettiğini söyle.
+  3. "Merhaba çocuklar" gibi giriş cümlelerini her seferinde tekrarlama, doğrudan analize gir.
+  4. Analizi 1-2 kısa cümleyle sınırla. 
+  5. Ciddi ama teşvik edici bir ton kullan. Teknik terimleri (açmaz, çatal, tempo) kullanmaktan çekinme ama kısaca açıkla.
 
-Kurallar:
-- En fazla 2-3 cümle
-- İnsan diliyle: merkez kontrolü, taş geliştirme, şah güvenliği, taktik (çatal/açmaz), piyon yapısı gibi gerekçeler
-- Gereksiz teknik varyant yazma (uzun hamle dizisi yok)
-- Türkçe yaz
+  ÖRNEK TON:
+  "Bu hamle merkezdeki e4 karesini kontrol ederek filin önünü açıyor, harika bir gelişim hamlesi!"
+  "Dikkat! Bu hamle kaleni savunmasız bıraktı, rakibin 'çatal' atma şansı doğabilir."
 `;
 
     // ✅ Gemini REST API (server-side)
