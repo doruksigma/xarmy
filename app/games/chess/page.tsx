@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Chess, Square, PieceSymbol, Color } from "chess.js";
 
 type Difficulty = "easy" | "medium" | "hard";
-type Task = "bot" | "hint" | "eval" | null;
+type EvalRow = { move: string; score: number | null; fenBefore: string };
 
 const START_FEN =
   "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
@@ -21,30 +21,23 @@ function pieceToChar(p: { type: PieceSymbol; color: Color }) {
 }
 
 function depthByDifficulty(d: Difficulty) {
-  if (d === "easy") return 6;
-  if (d === "medium") return 10; // ✅ istek: bot depth 10
-  return 14;
-}
-
-function isPromotionMove(g: Chess, from: Square, to: Square) {
-  const pc = g.get(from);
-  if (!pc || pc.type !== "p") return false;
-  if (pc.color === "w" && to[1] === "8") return true;
-  if (pc.color === "b" && to[1] === "1") return true;
-  return false;
+  if (d === "easy") return 2;
+  if (d === "medium") return 8;
+  return 13;
 }
 
 /**
- * ✅ İNDİRMEDEN STOCKFISH (CDN + Blob Worker)
- * - stockfish-mv.wasm paketi: stockfish.worker.js + stockfish.wasm içerir.
- * - Blob içinde importScripts ile aynı origin gibi çalışır; Vercel'de de stabil.
+ * ✅ STOCKFISH'i İNDİRMEDEN:
+ * - CDN script'i bir Blob Worker içine importScripts ile alır
+ * - Böylece cross-origin "worker create" engellerini aşar
  */
 function createStockfishWorker() {
   if (typeof window === "undefined") return null;
 
-  // Worker-ready WASM build
-  const STOCKFISH_WORKER_URL =
-    "https://cdn.jsdelivr.net/npm/stockfish-mv.wasm/stockfish.worker.js";
+  const CDN_PRIMARY =
+    "https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.2/stockfish.js";
+  const CDN_FALLBACK =
+    "https://cdn.jsdelivr.net/npm/stockfish@10.0.2/src/stockfish.js";
 
   const code = `
     function send(m){ try{ self.postMessage(m); }catch(e){} }
@@ -53,28 +46,51 @@ function createStockfishWorker() {
       send("SF_WORKER_ERROR::" + (e && e.message ? e.message : "unknown"));
     };
 
-    try {
-      importScripts("${STOCKFISH_WORKER_URL}");
-      // Bu import, kendi içinde onmessage handler kurar (UCI worker)
+    let engine = null;
+
+    function boot(url){
+      try{
+        importScripts(url);
+        if (typeof self.Stockfish === "function") engine = self.Stockfish();
+      }catch(e){
+        send("SF_IMPORT_FAIL::" + url + "::" + (e && e.message ? e.message : String(e)));
+      }
+    }
+
+    boot("${CDN_PRIMARY}");
+    if(!engine) boot("${CDN_FALLBACK}");
+
+    if(!engine){
+      send("SF_INIT_FAILED");
+    } else {
       send("SF_INIT_OK");
-    } catch (e) {
-      send("SF_INIT_FAILED::" + (e && e.message ? e.message : String(e)));
+
+      engine.onmessage = function(e){
+        const msg = (typeof e === "string") ? e : (e && e.data ? e.data : "");
+        if (msg) send(msg);
+      };
+
+      self.onmessage = function(e){
+        try{ engine.postMessage(e.data); }
+        catch(err){ send("SF_ENGINE_POST_FAIL::" + (err && err.message ? err.message : String(err))); }
+      };
     }
   `;
 
   const blob = new Blob([code], { type: "application/javascript" });
   const url = URL.createObjectURL(blob);
   const w = new Worker(url);
-  // URL.revokeObjectURL(url); // hemen revoke bazı ortamlarda sıkıntı çıkarabiliyor
+  // URL.revokeObjectURL(url); // bazı ortamlarda erken revoke sorun çıkarabiliyor
   return w;
 }
 
-type EvalRow = { move: string; score: number; fenBefore: string };
+type Task = "bot" | "hint" | "eval" | null;
 
 export default function ChessPage() {
-  const engineRef = useRef<Worker | null>(null);
+  const engine = useRef<Worker | null>(null);
   const taskRef = useRef<Task>(null);
-  const lastScore = useRef<number>(0); // pawn units
+
+  const audioCtx = useRef<AudioContext | null>(null);
 
   const [mounted, setMounted] = useState(false);
   const [isReady, setIsReady] = useState(false);
@@ -95,21 +111,18 @@ export default function ChessPage() {
   );
   const [hintLoading, setHintLoading] = useState(false);
 
-  // promotion modal
-  const [promoOpen, setPromoOpen] = useState(false);
-  const [promoFrom, setPromoFrom] = useState<Square | null>(null);
-  const [promoTo, setPromoTo] = useState<Square | null>(null);
-
-  // Teacher explanation (opsiyonel)
+  // Teacher explanation
   const [explanation, setExplanation] = useState<string | null>(null);
   const [explainLoading, setExplainLoading] = useState(false);
 
+  // Bot hafızası (why button için)
   const lastBotMoveUci = useRef<string | null>(null);
   const lastBotMoveSan = useRef<string | null>(null);
   const lastBotFenBefore = useRef<string | null>(null);
   const lastBotScore = useRef<number>(0);
 
-  const sf = (m: string) => engineRef.current?.postMessage(m);
+  // son görülen eval (pawn units)
+  const lastScore = useRef<number>(0);
 
   const game = useMemo(() => {
     const currentFen =
@@ -120,43 +133,98 @@ export default function ChessPage() {
   const displayRanks = playerColor === "b" ? [...ranks].reverse() : ranks;
   const displayFiles = playerColor === "b" ? [...files].reverse() : files;
 
-  // ✅ Arrow coords fix (black side too)
-  const getPos = (sq: Square) => {
-    let f = files.indexOf(sq[0] as any);
-    let r = ranks.indexOf(sq[1] as any);
-    if (playerColor === "b") {
-      f = 7 - f;
-      r = 7 - r;
+  const sf = (m: string) => engine.current?.postMessage(m);
+
+  // ✅ Audio: tarayıcı kısıtını aşmak için user gesture anında resume
+  const ensureAudio = useCallback(() => {
+    try {
+      const Ctx = (window.AudioContext || (window as any).webkitAudioContext);
+      if (!Ctx) return;
+      if (!audioCtx.current) audioCtx.current = new Ctx();
+      if (audioCtx.current.state === "suspended") audioCtx.current.resume();
+    } catch {}
+  }, []);
+
+  const playMoveSound = useCallback(() => {
+    try {
+      ensureAudio();
+      const ctx = audioCtx.current;
+      if (!ctx) return;
+
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(160, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(55, ctx.currentTime + 0.1);
+
+      gain.gain.setValueAtTime(0.04, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start();
+      osc.stop(ctx.currentTime + 0.1);
+    } catch {}
+  }, [ensureAudio]);
+
+  async function fetchExplanation(payload: {
+    fen: string;
+    moveUci: string;
+    moveSan?: string | null;
+    score: number;
+    playerColor: Color;
+  }) {
+    setExplainLoading(true);
+    setExplanation("🎓 Öğretmen hamleyi açıklıyor...");
+
+    try {
+      const res = await fetch("/api/chess-coach", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+      setExplanation(data?.reason || "Açıklama üretilemedi.");
+    } catch {
+      setExplanation("Açıklama alınamadı (API hatası).");
+    } finally {
+      setExplainLoading(false);
     }
-    return { x: f * 12.5 + 6.25, y: r * 12.5 + 6.25 };
-  };
+  }
+
+  // --- mount ---
+  useEffect(() => setMounted(true), []);
 
   // --- init engine once ---
   useEffect(() => {
-    setMounted(true);
-
     const w = createStockfishWorker();
+    engine.current = w;
+
     if (!w) {
       setIsReady(false);
       return;
     }
-    engineRef.current = w;
 
     const onMsg = (e: MessageEvent) => {
-      const msg = typeof e.data === "string" ? e.data : String(e.data ?? "");
-      // console.log("SF:", msg);
+      // bazı sürümler e.data değil e.data.data vb dönebiliyor
+      const raw = (e as any)?.data;
+      const msg =
+        typeof raw === "string"
+          ? raw
+          : typeof raw?.data === "string"
+          ? raw.data
+          : String(raw ?? "");
 
-      if (msg.startsWith("SF_INIT_FAILED")) {
-        setIsReady(false);
-        return;
-      }
-
-      if (msg.startsWith("SF_WORKER_ERROR::")) {
+      if (msg === "SF_INIT_FAILED" || msg.startsWith("SF_WORKER_ERROR::")) {
         setIsReady(false);
         return;
       }
 
       if (msg === "SF_INIT_OK") {
+        // ✅ sadece init/oyun başlangıcında ucinewgame
         sf("uci");
         sf("isready");
         return;
@@ -172,17 +240,32 @@ export default function ChessPage() {
         return;
       }
 
-      // score stream
+      // ✅ score stream
       if (msg.startsWith("info")) {
-        // Stockfish sends cp in centipawns
         const m = msg.match(/score cp (-?\d+)/);
-        if (m) lastScore.current = parseInt(m[1], 10) / 100;
+        if (m) {
+          lastScore.current = parseInt(m[1], 10) / 100;
+
+          // ✅ eval task açıkken son hamlenin skorunu canlı güncelle
+          if (taskRef.current === "eval") {
+            setMoveEvaluations((prev) => {
+              if (!prev.length) return prev;
+              const copy = [...prev];
+              copy[copy.length - 1] = {
+                ...copy[copy.length - 1],
+                score: lastScore.current,
+              };
+              return copy;
+            });
+          }
+        }
         return;
       }
 
-      // bestmove
+      // ✅ bestmove
       if (msg.startsWith("bestmove")) {
         const moveUci = msg.split(" ")[1];
+
         const currentTask = taskRef.current;
         taskRef.current = null;
 
@@ -194,38 +277,56 @@ export default function ChessPage() {
 
         const from = moveUci.slice(0, 2) as Square;
         const to = moveUci.slice(2, 4) as Square;
+        const promo =
+          moveUci.length > 4 ? (moveUci[4].toLowerCase() as any) : "q"; // ✅ promotion fix
 
+        // ✅ HINT: sadece ok çiz
         if (currentTask === "hint") {
           setHintMove({ from, to });
           setHintLoading(false);
           return;
         }
 
+        // ✅ EVAL: hamle uygulama yok
         if (currentTask === "eval") {
           return;
         }
 
+        // ✅ BOT: hamleyi uygula + hamle sonrası eval iste
         if (currentTask === "bot") {
           setFen((prevFen) => {
             const g = new Chess(prevFen);
             if (g.isGameOver()) return prevFen;
+
             const fenBefore = prevFen;
 
             try {
-              const m = g.move({ from, to, promotion: "q" });
+              const m = g.move({ from, to, promotion: promo });
               if (!m) return prevFen;
 
+              playMoveSound();
+
+              // hamleyi listeye ekle; score henüz "tam doğru" olmayabilir,
+              // hemen ardından eval isteyip son elemanı güncelleyeceğiz.
               setMoveEvaluations((p) => [
                 ...p,
-                { move: m.san, score: lastScore.current, fenBefore },
+                { move: m.san, score: null, fenBefore },
               ]);
 
               lastBotMoveUci.current = moveUci;
               lastBotMoveSan.current = m.san;
               lastBotFenBefore.current = fenBefore;
-              lastBotScore.current = lastScore.current;
 
-              return g.fen();
+              const nextFen = g.fen();
+
+              // ✅ hamleden sonra yeni pozisyonu analiz ettir -> score doğru pozisyona yazılır
+              lastBotScore.current = lastScore.current; // fallback (hızlı gösterim)
+              taskRef.current = "eval";
+              sf("stop");
+              sf(`position fen ${nextFen}`);
+              sf("go depth 10");
+
+              return nextFen;
             } catch {
               return prevFen;
             } finally {
@@ -233,6 +334,8 @@ export default function ChessPage() {
             }
           });
         }
+
+        return;
       }
     };
 
@@ -245,9 +348,9 @@ export default function ChessPage() {
     return () => {
       w.removeEventListener("message", onMsg);
       w.terminate();
-      engineRef.current = null;
+      engine.current = null;
     };
-  }, []);
+  }, [playMoveSound]);
 
   // --- bot auto move ---
   useEffect(() => {
@@ -266,10 +369,9 @@ export default function ChessPage() {
 
       const t = setTimeout(() => {
         sf("stop");
-        sf("ucinewgame");
         sf(`position fen ${fen}`);
-        sf(`go depth ${depth}`); // ✅ bot depth
-      }, 200);
+        sf(`go depth ${depth}`);
+      }, 250);
 
       return () => clearTimeout(t);
     }
@@ -284,7 +386,7 @@ export default function ChessPage() {
     const currentFen = targetFen || fen;
     sf("stop");
     sf(`position fen ${currentFen}`);
-    sf("go depth 12");
+    sf("go depth 15");
   };
 
   const requestEvalOnly = (targetFen: string) => {
@@ -295,41 +397,17 @@ export default function ChessPage() {
     sf("go depth 10");
   };
 
-  async function fetchExplanation(payload: {
-    fen: string;
-    moveUci: string;
-    moveSan?: string | null;
-    score: number;
-    playerColor: Color;
-  }) {
-    setExplainLoading(true);
-    setExplanation("🎓 Öğretmen açıklıyor...");
-
-    try {
-      const res = await fetch("/api/chess-coach", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json();
-      setExplanation(data?.reason || "Açıklama üretilemedi.");
-    } catch {
-      setExplanation("Açıklama alınamadı (API hatası).");
-    } finally {
-      setExplainLoading(false);
-    }
-  }
-
   function onSquareClick(square: Square) {
     if (
       !gameStarted ||
       !playerColor ||
-      game.turn() !== playerColor ||
       thinking ||
       game.isGameOver() ||
-      reviewIndex !== null
+      reviewIndex !== null // ✅ analiz modunda kilit
     )
       return;
+
+    if (game.turn() !== playerColor) return;
 
     setHintMove(null);
 
@@ -338,23 +416,20 @@ export default function ChessPage() {
       const fenBefore = fen;
 
       try {
-        // ✅ promotion modal
-        if (isPromotionMove(g, selected, square)) {
-          setPromoFrom(selected);
-          setPromoTo(square);
-          setPromoOpen(true);
-          return;
-        }
-
         const move = g.move({ from: selected, to: square, promotion: "q" });
         if (move) {
+          playMoveSound();
           setFen(g.fen());
+
+          // oyuncu hamlesi: score şimdilik null, eval ile doldur
           setMoveEvaluations((p) => [
             ...p,
-            { move: move.san, score: lastScore.current, fenBefore },
+            { move: move.san, score: null, fenBefore },
           ]);
+
           setSelected(null);
 
+          // ✅ oyuncu hamlesinden sonra eval
           requestEvalOnly(g.fen());
           return;
         }
@@ -366,33 +441,28 @@ export default function ChessPage() {
     else setSelected(null);
   }
 
-  function applyPromotion(piece: "q" | "r" | "b" | "n") {
-    if (!promoFrom || !promoTo) {
-      setPromoOpen(false);
-      return;
-    }
-
-    const g = new Chess(fen);
-    const fenBefore = fen;
-
-    try {
-      const mv = g.move({ from: promoFrom, to: promoTo, promotion: piece });
-      if (mv) {
-        setFen(g.fen());
-        setMoveEvaluations((p) => [...p, { move: mv.san, score: lastScore.current, fenBefore }]);
-        setSelected(null);
-        requestEvalOnly(g.fen());
+  // ✅ Hint oku için: siyah seçilince koordinatları ters çevir
+  const getPos = useCallback(
+    (sq: Square) => {
+      let f = files.indexOf(sq[0] as any);
+      let r = ranks.indexOf(sq[1] as any);
+      if (playerColor === "b") {
+        f = 7 - f;
+        r = 7 - r;
       }
-    } catch {
-      // ignore
-    } finally {
-      setPromoOpen(false);
-      setPromoFrom(null);
-      setPromoTo(null);
-    }
-  }
+      return { x: f * 12.5 + 6.25, y: r * 12.5 + 6.25 };
+    },
+    [playerColor]
+  );
 
-  const getMoveQuality = (current: number, prev: number, isWhite: boolean) => {
+  const getMoveQuality = (
+    current: number | null,
+    prev: number | null,
+    isWhite: boolean
+  ) => {
+    if (current === null || prev === null)
+      return { label: "Analiz", color: "text-slate-500", icon: "●" };
+
     const diff = isWhite ? current - prev : prev - current;
     if (diff < -2.0) return { label: "Blunder", color: "text-red-400", icon: "??" };
     if (diff < -0.6) return { label: "Hata", color: "text-orange-400", icon: "?" };
@@ -407,7 +477,9 @@ export default function ChessPage() {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6">
         <div className="bg-slate-900 p-10 rounded-[2.5rem] border border-white/5 text-center max-w-sm w-full">
-          <h1 className="text-4xl font-black text-white italic uppercase mb-3">X-CHESS</h1>
+          <h1 className="text-4xl font-black text-white italic uppercase mb-3">
+            X-CHESS
+          </h1>
 
           <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-8">
             Engine:{" "}
@@ -419,30 +491,43 @@ export default function ChessPage() {
           <div className="grid grid-cols-2 gap-4">
             <button
               onClick={() => {
+                ensureAudio();
                 setPlayerColor("w");
                 setGameStarted(true);
+                setExplanation(null);
+                setHintMove(null);
+                setReviewIndex(null);
               }}
               className="p-6 bg-white/5 hover:bg-white/10 rounded-2xl border border-white/5"
             >
               <div className="text-5xl">♔</div>
-              <div className="text-[10px] font-black uppercase text-slate-400 mt-2">Beyaz</div>
+              <div className="text-[10px] font-black uppercase text-slate-400 mt-2">
+                Beyaz
+              </div>
             </button>
 
             <button
               onClick={() => {
+                ensureAudio();
                 setPlayerColor("b");
                 setGameStarted(true);
+                setExplanation(null);
+                setHintMove(null);
+                setReviewIndex(null);
               }}
               className="p-6 bg-white/5 hover:bg-white/10 rounded-2xl border border-white/5"
             >
               <div className="text-5xl">♚</div>
-              <div className="text-[10px] font-black uppercase text-slate-400 mt-2">Siyah</div>
+              <div className="text-[10px] font-black uppercase text-slate-400 mt-2">
+                Siyah
+              </div>
             </button>
           </div>
 
           {!isReady && (
             <p className="mt-6 text-xs text-slate-500">
-              LOADING’de kalırsa: network/CSP engeli olabilir. (Worker CDN importScripts)
+              LOADING’de kalırsa: CDN importScripts engeli olabilir. (Bazı ağlar/CDN
+              bloklanabilir.)
             </p>
           )}
         </div>
@@ -457,12 +542,15 @@ export default function ChessPage() {
       <div className="w-full max-w-6xl flex flex-col lg:flex-row gap-8">
         {/* BOARD */}
         <div className="flex-1">
-          <div className="bg-slate-900 rounded-[2.5rem] p-6 border border-white/5 shadow-2xl relative">
+          <div className="bg-slate-900 rounded-[2.5rem] p-6 border border-white/5 shadow-2xl">
             <div className="flex justify-between items-center mb-6">
               <div>
-                <h1 className="text-3xl font-black text-white italic uppercase">X-CHESS</h1>
+                <h1 className="text-3xl font-black text-white italic uppercase">
+                  X-CHESS
+                </h1>
                 <div className="text-[10px] text-indigo-300 font-black uppercase tracking-widest mt-1">
-                  {reviewIndex !== null ? "● Analiz Modu" : "Canlı Maç"} {thinking ? " • bot düşünüyor…" : ""}
+                  {reviewIndex !== null ? "● Analiz Modu" : "Canlı Maç"}{" "}
+                  {thinking ? " • bot düşünüyor…" : ""}
                 </div>
               </div>
 
@@ -473,7 +561,9 @@ export default function ChessPage() {
                       key={lvl}
                       onClick={() => setDifficulty(lvl)}
                       className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase ${
-                        difficulty === lvl ? "bg-indigo-500 text-white" : "text-slate-400"
+                        difficulty === lvl
+                          ? "bg-indigo-500 text-white"
+                          : "text-slate-400"
                       }`}
                     >
                       {lvl === "easy" ? "Kolay" : lvl === "medium" ? "Orta" : "Zor"}
@@ -484,17 +574,23 @@ export default function ChessPage() {
             </div>
 
             {/* ✅ classic yellow/brown board */}
-            <div className="aspect-square grid grid-cols-8 grid-rows-8 border-8 border-amber-950 rounded-2xl overflow-hidden bg-amber-950 relative">
-              {/* ✅ analysis mode lock overlay */}
-              {reviewIndex !== null && (
-                <div className="absolute inset-0 z-40 bg-black/20 pointer-events-auto" />
-              )}
-
-              {hintMove && (
-                <svg className="absolute inset-0 w-full h-full pointer-events-none z-50" viewBox="0 0 100 100">
-                  <marker id="arrowhead" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+            <div className="aspect-square grid grid-cols-8 grid-rows-8 border-8 border-amber-900 rounded-2xl overflow-hidden bg-amber-900 relative">
+              {hintMove && playerColor && (
+                <svg
+                  className="absolute inset-0 w-full h-full pointer-events-none z-50"
+                  viewBox="0 0 100 100"
+                >
+                  <marker
+                    id="arrowhead"
+                    markerWidth="8"
+                    markerHeight="8"
+                    refX="7"
+                    refY="4"
+                    orient="auto"
+                  >
                     <path d="M 0 0 L 8 4 L 0 8 z" fill="#2563eb" />
                   </marker>
+
                   {(() => {
                     const start = getPos(hintMove.from);
                     const end = getPos(hintMove.to);
@@ -520,8 +616,8 @@ export default function ChessPage() {
                   const p = game.get(sq);
                   const isDark = (ri + fi) % 2 === 1;
 
-                  const base = isDark ? "bg-amber-900" : "bg-amber-100";
-                  const hover = isDark ? "hover:bg-amber-800" : "hover:bg-amber-200";
+                  const base = isDark ? "bg-amber-800" : "bg-amber-200";
+                  const hover = isDark ? "hover:bg-amber-700" : "hover:bg-amber-300";
 
                   return (
                     <button
@@ -532,11 +628,13 @@ export default function ChessPage() {
                         ${base} ${hover}
                         ${selected === sq ? "ring-4 ring-emerald-500 ring-inset" : ""}
                       `}
+                      aria-label={sq}
                     >
                       <span
                         className="select-none pointer-events-none"
                         style={{
-                          textShadow: "0 2px 0 rgba(0,0,0,0.55), 0 0 10px rgba(0,0,0,0.30)",
+                          textShadow:
+                            "0 2px 0 rgba(0,0,0,0.55), 0 0 10px rgba(0,0,0,0.30)",
                         }}
                       >
                         {p ? pieceToChar(p) : ""}
@@ -581,7 +679,7 @@ export default function ChessPage() {
               )}
             </div>
 
-            {/* WHY BUTTON (opsiyonel / api varsa) */}
+            {/* WHY BUTTON */}
             <div className="mt-4">
               <button
                 onClick={() => {
@@ -599,7 +697,12 @@ export default function ChessPage() {
                     playerColor,
                   });
                 }}
-                disabled={explainLoading || !lastBotMoveUci.current || !lastBotFenBefore.current}
+                disabled={
+                  explainLoading ||
+                  !lastBotMoveUci.current ||
+                  !lastBotFenBefore.current ||
+                  !playerColor
+                }
                 className="w-full py-4 rounded-2xl font-black uppercase text-xs border border-indigo-500/20
                            bg-indigo-500/10 text-indigo-200 hover:bg-indigo-500/20 disabled:opacity-50"
               >
@@ -616,54 +719,17 @@ export default function ChessPage() {
                     {lastBotMoveSan.current && (
                       <span className="ml-auto text-[10px] font-black text-slate-200 bg-black/20 px-2 py-1 rounded-lg">
                         {lastBotMoveSan.current} •{" "}
-                        {(lastBotScore.current >= 0 ? "+" : "") + lastBotScore.current.toFixed(2)}
+                        {(lastBotScore.current >= 0 ? "+" : "") +
+                          lastBotScore.current.toFixed(2)}
                       </span>
                     )}
                   </div>
-                  <p className="text-sm text-slate-200 italic leading-relaxed">“{explanation}”</p>
+                  <p className="text-sm text-slate-200 italic leading-relaxed">
+                    “{explanation}”
+                  </p>
                 </div>
               )}
             </div>
-
-            {/* PROMOTION MODAL */}
-            {promoOpen && (
-              <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/60 p-4">
-                <div className="w-full max-w-sm rounded-3xl bg-slate-900 border border-white/10 p-6">
-                  <div className="text-white font-black text-lg mb-2">Terfi Seç</div>
-                  <div className="text-slate-400 text-xs mb-5">
-                    Piyon son sıraya geldi. Hangi taş?
-                  </div>
-
-                  <div className="grid grid-cols-4 gap-3">
-                    {([
-                      { id: "q", label: "Vezir" },
-                      { id: "r", label: "Kale" },
-                      { id: "b", label: "Fil" },
-                      { id: "n", label: "At" },
-                    ] as const).map((p) => (
-                      <button
-                        key={p.id}
-                        onClick={() => applyPromotion(p.id)}
-                        className="py-4 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 text-white font-black text-xs"
-                      >
-                        {p.label}
-                      </button>
-                    ))}
-                  </div>
-
-                  <button
-                    onClick={() => {
-                      setPromoOpen(false);
-                      setPromoFrom(null);
-                      setPromoTo(null);
-                    }}
-                    className="mt-4 w-full py-3 rounded-2xl bg-red-500/10 text-red-300 hover:bg-red-500/20 font-black text-xs"
-                  >
-                    Vazgeç
-                  </button>
-                </div>
-              </div>
-            )}
           </div>
         </div>
 
@@ -689,17 +755,37 @@ export default function ChessPage() {
                       getHint(m.fenBefore);
                     }}
                     className={`flex items-center justify-between p-3 rounded-xl cursor-pointer
-                      ${reviewIndex === i ? "ring-2 ring-blue-500 bg-blue-500/10" : "bg-slate-950/50 hover:bg-slate-800"}
+                      ${
+                        reviewIndex === i
+                          ? "ring-2 ring-blue-500 bg-blue-500/10"
+                          : "bg-slate-950/50 hover:bg-slate-800"
+                      }
                     `}
                   >
                     <div className="flex items-center gap-3">
-                      <span className="text-[10px] text-slate-500 font-black w-6">{Math.floor(i / 2) + 1}.</span>
-                      <span className={`font-bold ${i % 2 === 0 ? "text-white" : "text-indigo-200"}`}>{m.move}</span>
+                      <span className="text-[10px] text-slate-500 font-black w-6">
+                        {Math.floor(i / 2) + 1}.
+                      </span>
+                      <span
+                        className={`font-bold ${
+                          i % 2 === 0 ? "text-white" : "text-indigo-200"
+                        }`}
+                      >
+                        {m.move}
+                      </span>
                     </div>
 
                     <div className="flex items-center gap-2">
-                      <span className={`text-[9px] font-black uppercase ${quality.color}`}>{quality.label}</span>
-                      <span className={`text-[10px] font-black ${quality.color}`}>{quality.icon}</span>
+                      <span
+                        className={`text-[9px] font-black uppercase ${quality.color}`}
+                      >
+                        {quality.label}
+                      </span>
+                      <span
+                        className={`text-[10px] font-black ${quality.color}`}
+                      >
+                        {quality.icon}
+                      </span>
                     </div>
                   </div>
                 );
