@@ -9,6 +9,10 @@ export async function POST(req: Request) {
    // Prompt kısmını şu şekilde değiştirin:
 const prompt = `
 Sen dünya çapında tanınan bir satranç büyükustası ve aynı zamanda çocuklara satranç öğreten tecrübeli bir eğitmensin.
+EK ANALİZ (Lichess):
+- Hamle sınıflandırması: ${judgment}
+- Lichess en iyi hamle: ${lichess.bestMove}
+
 
 VERİLER:
 - Konum (FEN): ${fen}
@@ -34,6 +38,9 @@ GÖREV:
    → mutlaka "ÇÜNKÜ ..." ile devam et.
 5. Cümleyi ASLA yarım bırakma.
 6. Giriş cümlesi kullanma, doğrudan analize başla.
+7. Eğer hamle "blunder" veya "mistake" ise,
+   Lichess'in önerdiği hamleyle KISA bir karşılaştırma yap.
+  
 
 TON:
 Öğretici, net ve teşvik edici.
