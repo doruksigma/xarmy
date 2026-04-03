@@ -8,7 +8,7 @@ const nav = [
   { href: "/games", label: "Oyunlar" },
   { href: "/leaderboard", label: "Sıralama" }
 ];
-
+ 
 export default function Navbar() {
   const pathname = usePathname() ?? "";
 
