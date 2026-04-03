@@ -10,7 +10,7 @@ const nav = [
 ];
 
 export default function Navbar() {
-  const pathname = usePathname();
+  const pathname = usePathname() ?? "";
 
   return (
     <header className="sticky top-0 z-50 border-b border-slate-800/70 bg-slate-950/70 backdrop-blur">
