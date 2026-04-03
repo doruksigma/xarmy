@@ -47,6 +47,15 @@ export default function HomePage() {
             href="/leaderboard"
             className="px-6 py-3 rounded-xl border border-slate-700 text-slate-200 hover:bg-slate-800 transition"
           >
+           <Link
+  href="/games/europa-war"
+  className="px-7 py-3 rounded-xl bg-rose-500 text-white font-semibold hover:bg-rose-600 transition flex items-center gap-2"
+>
+  🌍 Europa War
+  <span className="text-[10px] bg-black/20 px-2 py-1 rounded-lg">
+    Strategy
+  </span>
+</Link>
             🏆 Skor Tablosu
           </Link>
         </div>
