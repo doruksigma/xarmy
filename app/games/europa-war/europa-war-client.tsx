@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 type UnitType = "infantry" | "tank" | "aircraft";
 
@@ -16,38 +16,11 @@ type CountryId =
   | "italy"
   | "spain";
 
-type PanelMode = "city" | "country" | "economy" | "tech" | null;
+type TerrainType = "plains" | "mountain" | "urban" | "coastal";
 
-interface Unit {
-  id: string;
-  type: UnitType;
-  ownerCountryId: CountryId;
-  attack: number;
-  defense: number;
-  moveDays: number;
-  cost: number;
-  manpowerCost: number;
-}
+type PanelMode = "territory" | "country" | "economy" | "tech" | null;
 
-interface MovingUnit {
-  unit: Unit;
-  fromCityId: string;
-  toCityId: string;
-  remainingDays: number;
-}
-
-interface City {
-  id: string;
-  name: string;
-  countryId: CountryId;
-  ownerCountryId: CountryId;
-  x: number;
-  y: number;
-  economy: number;
-  factories: number;
-  stationedUnits: Unit[];
-  neighbors: string[];
-}
+type UnitCounts = Record<UnitType, number>;
 
 interface ResearchState {
   category: UnitType;
@@ -55,7 +28,7 @@ interface ResearchState {
   remainingDays: number;
 }
 
-interface Country {
+interface CountryState {
   id: CountryId;
   name: string;
   color: string;
@@ -68,20 +41,77 @@ interface Country {
   allies: CountryId[];
 }
 
+interface Territory {
+  id: CountryId;
+  name: string;
+  originalOwnerId: CountryId;
+  ownerCountryId: CountryId;
+  economy: number;
+  factories: number;
+  terrain: TerrainType;
+  neighbors: CountryId[];
+  units: UnitCounts;
+  polygon: string;
+  labelX: number;
+  labelY: number;
+}
+
+interface MoveTask {
+  id: string;
+  ownerCountryId: CountryId;
+  fromTerritoryId: CountryId;
+  toTerritoryId: CountryId;
+  payload: UnitCounts;
+  remainingDays: number;
+  isAttack: boolean;
+}
+
+interface MoveDraft {
+  sourceTerritoryId: CountryId;
+  infantry: number;
+  tank: number;
+  aircraft: number;
+}
+
+interface SaveState {
+  countries: CountryState[];
+  territories: Territory[];
+  selectedCountryId: CountryId | null;
+  selectedTerritoryId: CountryId | null;
+  selectedTargetCountryId: CountryId | null;
+  panelMode: PanelMode;
+  running: boolean;
+  day: number;
+  eventLog: string[];
+  moveTasks: MoveTask[];
+  gameOver: {
+    winner: boolean;
+    reason: string;
+  } | null;
+}
+
+const SAVE_KEY = "europa-war-save-v2";
+
 const COUNTRY_IDS: CountryId[] = [
-  "turkey",
-  "greece",
-  "bulgaria",
-  "romania",
-  "serbia",
-  "hungary",
-  "germany",
-  "france",
-  "italy",
   "spain",
+  "france",
+  "germany",
+  "italy",
+  "hungary",
+  "serbia",
+  "romania",
+  "bulgaria",
+  "greece",
+  "turkey",
 ];
 
-function createRelations(self: CountryId): Record<CountryId, number> {
+const EMPTY_UNITS: UnitCounts = {
+  infantry: 0,
+  tank: 0,
+  aircraft: 0,
+};
+
+function makeRelations(self: CountryId): Record<CountryId, number> {
   return {
     turkey: self === "turkey" ? 100 : 0,
     greece: self === "greece" ? 100 : 0,
@@ -96,86 +126,14 @@ function createRelations(self: CountryId): Record<CountryId, number> {
   };
 }
 
-const INITIAL_COUNTRIES: Country[] = [
+const INITIAL_COUNTRIES: CountryState[] = [
   {
-    id: "turkey",
-    name: "Türkiye",
-    color: "#ef4444",
-    treasury: 1000,
+    id: "spain",
+    name: "İspanya",
+    color: "#eab308",
+    treasury: 1100,
     baseFactories: 3,
-    relations: createRelations("turkey"),
-    tech: { infantry: 0, tank: 0, aircraft: 0 },
-    activeResearch: null,
-    atWarWith: [],
-    allies: [],
-  },
-  {
-    id: "greece",
-    name: "Yunanistan",
-    color: "#3b82f6",
-    treasury: 900,
-    baseFactories: 2,
-    relations: createRelations("greece"),
-    tech: { infantry: 0, tank: 0, aircraft: 0 },
-    activeResearch: null,
-    atWarWith: [],
-    allies: [],
-  },
-  {
-    id: "bulgaria",
-    name: "Bulgaristan",
-    color: "#22c55e",
-    treasury: 850,
-    baseFactories: 2,
-    relations: createRelations("bulgaria"),
-    tech: { infantry: 0, tank: 0, aircraft: 0 },
-    activeResearch: null,
-    atWarWith: [],
-    allies: [],
-  },
-  {
-    id: "romania",
-    name: "Romanya",
-    color: "#f59e0b",
-    treasury: 950,
-    baseFactories: 2,
-    relations: createRelations("romania"),
-    tech: { infantry: 0, tank: 0, aircraft: 0 },
-    activeResearch: null,
-    atWarWith: [],
-    allies: [],
-  },
-  {
-    id: "serbia",
-    name: "Sırbistan",
-    color: "#a855f7",
-    treasury: 850,
-    baseFactories: 2,
-    relations: createRelations("serbia"),
-    tech: { infantry: 0, tank: 0, aircraft: 0 },
-    activeResearch: null,
-    atWarWith: [],
-    allies: [],
-  },
-  {
-    id: "hungary",
-    name: "Macaristan",
-    color: "#f97316",
-    treasury: 850,
-    baseFactories: 2,
-    relations: createRelations("hungary"),
-    tech: { infantry: 0, tank: 0, aircraft: 0 },
-    activeResearch: null,
-    atWarWith: [],
-    allies: [],
-  },
-  {
-    id: "germany",
-    name: "Almanya",
-    color: "#64748b",
-    treasury: 1500,
-    baseFactories: 5,
-    relations: createRelations("germany"),
+    relations: makeRelations("spain"),
     tech: { infantry: 0, tank: 0, aircraft: 0 },
     activeResearch: null,
     atWarWith: [],
@@ -187,7 +145,19 @@ const INITIAL_COUNTRIES: Country[] = [
     color: "#0ea5e9",
     treasury: 1300,
     baseFactories: 4,
-    relations: createRelations("france"),
+    relations: makeRelations("france"),
+    tech: { infantry: 0, tank: 0, aircraft: 0 },
+    activeResearch: null,
+    atWarWith: [],
+    allies: [],
+  },
+  {
+    id: "germany",
+    name: "Almanya",
+    color: "#64748b",
+    treasury: 1500,
+    baseFactories: 5,
+    relations: makeRelations("germany"),
     tech: { infantry: 0, tank: 0, aircraft: 0 },
     activeResearch: null,
     atWarWith: [],
@@ -199,19 +169,79 @@ const INITIAL_COUNTRIES: Country[] = [
     color: "#10b981",
     treasury: 1200,
     baseFactories: 3,
-    relations: createRelations("italy"),
+    relations: makeRelations("italy"),
     tech: { infantry: 0, tank: 0, aircraft: 0 },
     activeResearch: null,
     atWarWith: [],
     allies: [],
   },
   {
-    id: "spain",
-    name: "İspanya",
-    color: "#eab308",
-    treasury: 1100,
+    id: "hungary",
+    name: "Macaristan",
+    color: "#f97316",
+    treasury: 900,
+    baseFactories: 2,
+    relations: makeRelations("hungary"),
+    tech: { infantry: 0, tank: 0, aircraft: 0 },
+    activeResearch: null,
+    atWarWith: [],
+    allies: [],
+  },
+  {
+    id: "serbia",
+    name: "Sırbistan",
+    color: "#a855f7",
+    treasury: 850,
+    baseFactories: 2,
+    relations: makeRelations("serbia"),
+    tech: { infantry: 0, tank: 0, aircraft: 0 },
+    activeResearch: null,
+    atWarWith: [],
+    allies: [],
+  },
+  {
+    id: "romania",
+    name: "Romanya",
+    color: "#f59e0b",
+    treasury: 950,
+    baseFactories: 2,
+    relations: makeRelations("romania"),
+    tech: { infantry: 0, tank: 0, aircraft: 0 },
+    activeResearch: null,
+    atWarWith: [],
+    allies: [],
+  },
+  {
+    id: "bulgaria",
+    name: "Bulgaristan",
+    color: "#22c55e",
+    treasury: 850,
+    baseFactories: 2,
+    relations: makeRelations("bulgaria"),
+    tech: { infantry: 0, tank: 0, aircraft: 0 },
+    activeResearch: null,
+    atWarWith: [],
+    allies: [],
+  },
+  {
+    id: "greece",
+    name: "Yunanistan",
+    color: "#3b82f6",
+    treasury: 900,
+    baseFactories: 2,
+    relations: makeRelations("greece"),
+    tech: { infantry: 0, tank: 0, aircraft: 0 },
+    activeResearch: null,
+    atWarWith: [],
+    allies: [],
+  },
+  {
+    id: "turkey",
+    name: "Türkiye",
+    color: "#ef4444",
+    treasury: 1000,
     baseFactories: 3,
-    relations: createRelations("spain"),
+    relations: makeRelations("turkey"),
     tech: { infantry: 0, tank: 0, aircraft: 0 },
     activeResearch: null,
     atWarWith: [],
@@ -219,280 +249,187 @@ const INITIAL_COUNTRIES: Country[] = [
   },
 ];
 
-const INITIAL_CITIES: City[] = [
+const INITIAL_TERRITORIES: Territory[] = [
   {
-    id: "edirne",
-    name: "Edirne",
-    countryId: "turkey",
-    ownerCountryId: "turkey",
-    x: 77,
-    y: 52,
-    economy: 5,
-    factories: 1,
-    stationedUnits: [],
-    neighbors: ["istanbul", "sofia"],
+    id: "spain",
+    name: "İspanya",
+    originalOwnerId: "spain",
+    ownerCountryId: "spain",
+    economy: 8,
+    factories: 2,
+    terrain: "plains",
+    neighbors: ["france"],
+    units: { infantry: 6, tank: 1, aircraft: 1 },
+    polygon:
+      "M 60 330 L 170 300 L 220 330 L 210 395 L 140 430 L 80 410 L 50 370 Z",
+    labelX: 135,
+    labelY: 360,
   },
   {
-    id: "istanbul",
-    name: "İstanbul",
-    countryId: "turkey",
-    ownerCountryId: "turkey",
-    x: 84,
-    y: 57,
+    id: "france",
+    name: "Fransa",
+    originalOwnerId: "france",
+    ownerCountryId: "france",
     economy: 10,
     factories: 2,
-    stationedUnits: [],
-    neighbors: ["edirne", "ankara", "athens"],
+    terrain: "urban",
+    neighbors: ["spain", "germany", "italy"],
+    units: { infantry: 7, tank: 1, aircraft: 1 },
+    polygon:
+      "M 205 235 L 320 220 L 360 255 L 338 330 L 260 350 L 218 330 L 170 300 L 190 255 Z",
+    labelX: 265,
+    labelY: 285,
   },
   {
-    id: "ankara",
-    name: "Ankara",
-    countryId: "turkey",
-    ownerCountryId: "turkey",
-    x: 92,
-    y: 67,
-    economy: 8,
-    factories: 1,
-    stationedUnits: [],
-    neighbors: ["istanbul"],
+    id: "germany",
+    name: "Almanya",
+    originalOwnerId: "germany",
+    ownerCountryId: "germany",
+    economy: 11,
+    factories: 3,
+    terrain: "urban",
+    neighbors: ["france", "italy", "hungary"],
+    units: { infantry: 8, tank: 2, aircraft: 1 },
+    polygon:
+      "M 350 170 L 445 160 L 485 210 L 468 275 L 402 290 L 355 255 L 320 220 Z",
+    labelX: 405,
+    labelY: 220,
   },
   {
-    id: "athens",
-    name: "Atina",
-    countryId: "greece",
-    ownerCountryId: "greece",
-    x: 72,
-    y: 69,
+    id: "italy",
+    name: "İtalya",
+    originalOwnerId: "italy",
+    ownerCountryId: "italy",
+    economy: 9,
+    factories: 2,
+    terrain: "mountain",
+    neighbors: ["france", "germany", "serbia"],
+    units: { infantry: 6, tank: 1, aircraft: 1 },
+    polygon:
+      "M 320 305 L 380 300 L 420 340 L 410 395 L 370 455 L 345 430 L 360 380 L 325 350 Z",
+    labelX: 372,
+    labelY: 360,
+  },
+  {
+    id: "hungary",
+    name: "Macaristan",
+    originalOwnerId: "hungary",
+    ownerCountryId: "hungary",
     economy: 6,
     factories: 1,
-    stationedUnits: [],
-    neighbors: ["istanbul", "thessaloniki"],
+    terrain: "plains",
+    neighbors: ["germany", "serbia", "romania"],
+    units: { infantry: 5, tank: 1, aircraft: 0 },
+    polygon:
+      "M 480 220 L 555 215 L 585 250 L 560 285 L 495 286 L 468 275 Z",
+    labelX: 528,
+    labelY: 250,
   },
   {
-    id: "thessaloniki",
-    name: "Selanik",
-    countryId: "greece",
-    ownerCountryId: "greece",
-    x: 71,
-    y: 60,
+    id: "serbia",
+    name: "Sırbistan",
+    originalOwnerId: "serbia",
+    ownerCountryId: "serbia",
     economy: 5,
     factories: 1,
-    stationedUnits: [],
-    neighbors: ["athens", "sofia"],
+    terrain: "mountain",
+    neighbors: ["italy", "hungary", "bulgaria"],
+    units: { infantry: 4, tank: 0, aircraft: 0 },
+    polygon:
+      "M 485 300 L 550 295 L 578 330 L 550 365 L 492 356 L 468 320 Z",
+    labelX: 528,
+    labelY: 330,
   },
   {
-    id: "sofia",
-    name: "Sofya",
-    countryId: "bulgaria",
-    ownerCountryId: "bulgaria",
-    x: 68,
-    y: 54,
-    economy: 5,
-    factories: 1,
-    stationedUnits: [],
-    neighbors: ["edirne", "thessaloniki", "bucharest", "belgrade"],
-  },
-  {
-    id: "bucharest",
-    name: "Bükreş",
-    countryId: "romania",
+    id: "romania",
+    name: "Romanya",
+    originalOwnerId: "romania",
     ownerCountryId: "romania",
-    x: 72,
-    y: 45,
     economy: 7,
     factories: 1,
-    stationedUnits: [],
-    neighbors: ["sofia", "budapest"],
+    terrain: "plains",
+    neighbors: ["hungary", "bulgaria", "turkey"],
+    units: { infantry: 5, tank: 1, aircraft: 0 },
+    polygon:
+      "M 585 210 L 685 205 L 710 255 L 675 300 L 610 292 L 560 285 Z",
+    labelX: 636,
+    labelY: 247,
   },
   {
-    id: "belgrade",
-    name: "Belgrad",
-    countryId: "serbia",
-    ownerCountryId: "serbia",
-    x: 62,
-    y: 51,
+    id: "bulgaria",
+    name: "Bulgaristan",
+    originalOwnerId: "bulgaria",
+    ownerCountryId: "bulgaria",
     economy: 5,
     factories: 1,
-    stationedUnits: [],
-    neighbors: ["sofia", "budapest", "rome"],
+    terrain: "plains",
+    neighbors: ["serbia", "romania", "greece", "turkey"],
+    units: { infantry: 4, tank: 0, aircraft: 0 },
+    polygon:
+      "M 575 315 L 652 308 L 680 343 L 650 382 L 575 380 L 548 345 Z",
+    labelX: 615,
+    labelY: 345,
   },
   {
-    id: "budapest",
-    name: "Budapeşte",
-    countryId: "hungary",
-    ownerCountryId: "hungary",
-    x: 59,
-    y: 43,
+    id: "greece",
+    name: "Yunanistan",
+    originalOwnerId: "greece",
+    ownerCountryId: "greece",
     economy: 6,
     factories: 1,
-    stationedUnits: [],
-    neighbors: ["belgrade", "bucharest", "munich"],
+    terrain: "coastal",
+    neighbors: ["bulgaria", "turkey"],
+    units: { infantry: 4, tank: 0, aircraft: 1 },
+    polygon:
+      "M 555 392 L 625 392 L 650 440 L 615 485 L 560 465 L 535 425 Z",
+    labelX: 596,
+    labelY: 437,
   },
   {
-    id: "munich",
-    name: "Münih",
-    countryId: "germany",
-    ownerCountryId: "germany",
-    x: 47,
-    y: 35,
-    economy: 8,
-    factories: 2,
-    stationedUnits: [],
-    neighbors: ["budapest", "berlin", "rome", "paris"],
-  },
-  {
-    id: "berlin",
-    name: "Berlin",
-    countryId: "germany",
-    ownerCountryId: "germany",
-    x: 49,
-    y: 26,
+    id: "turkey",
+    name: "Türkiye",
+    originalOwnerId: "turkey",
+    ownerCountryId: "turkey",
     economy: 10,
     factories: 2,
-    stationedUnits: [],
-    neighbors: ["munich", "paris"],
-  },
-  {
-    id: "paris",
-    name: "Paris",
-    countryId: "france",
-    ownerCountryId: "france",
-    x: 31,
-    y: 34,
-    economy: 10,
-    factories: 2,
-    stationedUnits: [],
-    neighbors: ["berlin", "munich", "madrid"],
-  },
-  {
-    id: "rome",
-    name: "Roma",
-    countryId: "italy",
-    ownerCountryId: "italy",
-    x: 47,
-    y: 56,
-    economy: 8,
-    factories: 2,
-    stationedUnits: [],
-    neighbors: ["munich", "belgrade"],
-  },
-  {
-    id: "madrid",
-    name: "Madrid",
-    countryId: "spain",
-    ownerCountryId: "spain",
-    x: 18,
-    y: 48,
-    economy: 8,
-    factories: 2,
-    stationedUnits: [],
-    neighbors: ["paris"],
+    terrain: "coastal",
+    neighbors: ["romania", "bulgaria", "greece"],
+    units: { infantry: 7, tank: 1, aircraft: 1 },
+    polygon:
+      "M 690 310 L 845 320 L 885 370 L 820 430 L 690 420 L 650 382 L 680 343 Z",
+    labelX: 770,
+    labelY: 367,
   },
 ];
 
 const RESEARCH_BASE_DAYS: Record<UnitType, [number, number, number]> = {
   infantry: [20, 35, 50],
-  tank: [20, 35, 50],
-  aircraft: [20, 35, 50],
+  tank: [24, 40, 56],
+  aircraft: [26, 44, 60],
 };
 
-let unitCounter = 1;
-
-function getCountryById(countries: Country[], id: CountryId): Country {
-  const found = countries.find((c) => c.id === id);
-  if (!found) throw new Error(`Country not found: ${id}`);
-  return found;
-}
-
-function getCityById(cities: City[], id: string): City {
-  const found = cities.find((c) => c.id === id);
-  if (!found) throw new Error(`City not found: ${id}`);
-  return found;
-}
-
-function getControlledCities(cities: City[], countryId: CountryId): City[] {
-  return cities.filter((c) => c.ownerCountryId === countryId);
-}
-
-function getTotalEconomy(cities: City[], countryId: CountryId): number {
-  return getControlledCities(cities, countryId).reduce((sum, c) => sum + c.economy, 0);
-}
-
-function getTotalFactories(cities: City[], countries: Country[], countryId: CountryId): number {
-  const cityFactories = getControlledCities(cities, countryId).reduce(
-    (sum, c) => sum + c.factories,
-    0
-  );
-  return cityFactories + getCountryById(countries, countryId).baseFactories;
-}
-
-function getDailyIncome(cities: City[], countryId: CountryId): number {
-  return getControlledCities(cities, countryId).length * 20;
-}
-
-function getManpowerCap(cities: City[], countryId: CountryId): number {
-  return getTotalEconomy(cities, countryId) * 2;
-}
-
-function getUsedManpower(cities: City[], movingUnits: MovingUnit[], countryId: CountryId): number {
-  const stationed = cities
-    .flatMap((c) => c.stationedUnits)
-    .filter((u) => u.ownerCountryId === countryId)
-    .reduce((sum, u) => sum + u.manpowerCost, 0);
-
-  const moving = movingUnits
-    .filter((m) => m.unit.ownerCountryId === countryId)
-    .reduce((sum, m) => sum + m.unit.manpowerCost, 0);
-
-  return stationed + moving;
-}
-
-function createUnit(type: UnitType, ownerCountryId: CountryId, techLevel: number): Unit {
-  const defs: Record<
-    UnitType,
-    { attack: number; defense: number; moveDays: number; cost: number; manpowerCost: number }
-  > = {
-    infantry: {
-      attack: 3 + techLevel,
-      defense: 3 + techLevel,
-      moveDays: 2,
-      cost: 100,
-      manpowerCost: 1,
-    },
-    tank: {
-      attack: 6 + techLevel * 2,
-      defense: 4 + techLevel,
-      moveDays: 3,
-      cost: 300,
-      manpowerCost: 2,
-    },
-    aircraft: {
-      attack: 7 + techLevel * 2,
-      defense: 2 + techLevel,
-      moveDays: 2,
-      cost: 500,
-      manpowerCost: 2,
-    },
-  };
-
-  const d = defs[type];
-
+function cloneUnits(units: UnitCounts): UnitCounts {
   return {
-    id: `unit-${unitCounter++}`,
-    type,
-    ownerCountryId,
-    attack: d.attack,
-    defense: d.defense,
-    moveDays: d.moveDays,
-    cost: d.cost,
-    manpowerCost: d.manpowerCost,
+    infantry: units.infantry,
+    tank: units.tank,
+    aircraft: units.aircraft,
   };
 }
 
-function formatUnitLabel(type: UnitType): string {
-  if (type === "infantry") return "Asker";
-  if (type === "tank") return "Tank";
-  return "Uçak";
+function sumUnits(units: UnitCounts): number {
+  return units.infantry + units.tank + units.aircraft;
+}
+
+function getCountryName(id: CountryId, countries: CountryState[]): string {
+  return countries.find((c) => c.id === id)?.name ?? id;
+}
+
+function getCountryColor(id: CountryId, countries: CountryState[]): string {
+  return countries.find((c) => c.id === id)?.color ?? "#475569";
+}
+
+function clamp(n: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, n));
 }
 
 function formatDate(dayOffset: number): string {
@@ -505,33 +442,172 @@ function formatDate(dayOffset: number): string {
   });
 }
 
-function clampRelation(value: number): number {
-  return Math.max(-100, Math.min(100, value));
+function terrainDefenseBonus(terrain: TerrainType): number {
+  if (terrain === "mountain") return 1.3;
+  if (terrain === "urban") return 1.2;
+  if (terrain === "coastal") return 1.1;
+  return 1.0;
 }
 
-function randomInt(maxExclusive: number): number {
-  return Math.floor(Math.random() * maxExclusive);
+function tankTerrainBonus(terrain: TerrainType): number {
+  if (terrain === "plains") return 1.25;
+  if (terrain === "urban") return 0.9;
+  if (terrain === "mountain") return 0.7;
+  return 1.0;
+}
+
+function formatUnitType(type: UnitType): string {
+  if (type === "infantry") return "Asker";
+  if (type === "tank") return "Tank";
+  return "Uçak";
+}
+
+function ownedTerritories(territories: Territory[], countryId: CountryId): Territory[] {
+  return territories.filter((t) => t.ownerCountryId === countryId);
+}
+
+function totalEconomy(territories: Territory[], countryId: CountryId): number {
+  return ownedTerritories(territories, countryId).reduce((s, t) => s + t.economy, 0);
+}
+
+function totalFactories(
+  territories: Territory[],
+  countries: CountryState[],
+  countryId: CountryId
+): number {
+  const territoryFactories = ownedTerritories(territories, countryId).reduce(
+    (s, t) => s + t.factories,
+    0
+  );
+  const country = countries.find((c) => c.id === countryId);
+  return territoryFactories + (country?.baseFactories ?? 0);
+}
+
+function dailyIncome(territories: Territory[], countryId: CountryId): number {
+  const owned = ownedTerritories(territories, countryId);
+  return owned.length * 25 + owned.reduce((s, t) => s + t.economy * 4 + t.factories * 6, 0);
+}
+
+function manpowerCap(territories: Territory[], countryId: CountryId): number {
+  return totalEconomy(territories, countryId) * 4;
+}
+
+function usedManpower(
+  territories: Territory[],
+  moveTasks: MoveTask[],
+  countryId: CountryId
+): number {
+  const stationed = ownedTerritories(territories, countryId).reduce(
+    (sum, t) => sum + t.units.infantry + t.units.tank * 2 + t.units.aircraft * 2,
+    0
+  );
+  const moving = moveTasks
+    .filter((m) => m.ownerCountryId === countryId)
+    .reduce(
+      (sum, m) =>
+        sum +
+        m.payload.infantry +
+        m.payload.tank * 2 +
+        m.payload.aircraft * 2,
+      0
+    );
+  return stationed + moving;
+}
+
+function canCountryStillLive(territories: Territory[], countryId: CountryId): boolean {
+  return territories.some((t) => t.ownerCountryId === countryId);
+}
+
+function createInitialState(): SaveState {
+  return {
+    countries: INITIAL_COUNTRIES,
+    territories: INITIAL_TERRITORIES,
+    selectedCountryId: null,
+    selectedTerritoryId: null,
+    selectedTargetCountryId: null,
+    panelMode: null,
+    running: false,
+    day: 0,
+    eventLog: [],
+    moveTasks: [],
+    gameOver: null,
+  };
 }
 
 export default function EuropaWarClient() {
-  const [countries, setCountries] = useState<Country[]>(INITIAL_COUNTRIES);
-  const [cities, setCities] = useState<City[]>(INITIAL_CITIES);
+  const [countries, setCountries] = useState<CountryState[]>(INITIAL_COUNTRIES);
+  const [territories, setTerritories] = useState<Territory[]>(INITIAL_TERRITORIES);
   const [selectedCountryId, setSelectedCountryId] = useState<CountryId | null>(null);
-  const [selectedCityId, setSelectedCityId] = useState<string | null>(null);
+  const [selectedTerritoryId, setSelectedTerritoryId] = useState<CountryId | null>(null);
   const [selectedTargetCountryId, setSelectedTargetCountryId] = useState<CountryId | null>(null);
   const [panelMode, setPanelMode] = useState<PanelMode>(null);
   const [running, setRunning] = useState(false);
   const [day, setDay] = useState(0);
   const [eventLog, setEventLog] = useState<string[]>([]);
-  const [movingUnits, setMovingUnits] = useState<MovingUnit[]>([]);
-  const [selectedMovingUnitId, setSelectedMovingUnitId] = useState<string | null>(null);
+  const [moveTasks, setMoveTasks] = useState<MoveTask[]>([]);
+  const [moveDraft, setMoveDraft] = useState<MoveDraft | null>(null);
+  const [gameOver, setGameOver] = useState<{ winner: boolean; reason: string } | null>(null);
+  const [mounted, setMounted] = useState(false);
+
+  const stateRef = useRef<SaveState | null>(null);
+
+  useEffect(() => {
+    stateRef.current = {
+      countries,
+      territories,
+      selectedCountryId,
+      selectedTerritoryId,
+      selectedTargetCountryId,
+      panelMode,
+      running,
+      day,
+      eventLog,
+      moveTasks,
+      gameOver,
+    };
+  }, [
+    countries,
+    territories,
+    selectedCountryId,
+    selectedTerritoryId,
+    selectedTargetCountryId,
+    panelMode,
+    running,
+    day,
+    eventLog,
+    moveTasks,
+    gameOver,
+  ]);
+
+  useEffect(() => {
+    setMounted(true);
+    try {
+      const raw = localStorage.getItem(SAVE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as SaveState;
+        setCountries(parsed.countries);
+        setTerritories(parsed.territories);
+        setSelectedCountryId(parsed.selectedCountryId);
+        setSelectedTerritoryId(parsed.selectedTerritoryId);
+        setSelectedTargetCountryId(parsed.selectedTargetCountryId);
+        setPanelMode(parsed.panelMode);
+        setRunning(false);
+        setDay(parsed.day);
+        setEventLog(parsed.eventLog ?? []);
+        setMoveTasks(parsed.moveTasks ?? []);
+        setGameOver(parsed.gameOver ?? null);
+      }
+    } catch {
+      // ignore broken saves
+    }
+  }, []);
 
   const playerCountry = selectedCountryId
     ? countries.find((c) => c.id === selectedCountryId) ?? null
     : null;
 
-  const selectedCity = selectedCityId
-    ? cities.find((c) => c.id === selectedCityId) ?? null
+  const selectedTerritory = selectedTerritoryId
+    ? territories.find((t) => t.id === selectedTerritoryId) ?? null
     : null;
 
   const targetCountry = selectedTargetCountryId
@@ -540,46 +616,120 @@ export default function EuropaWarClient() {
 
   const playerEconomy = useMemo(() => {
     if (!selectedCountryId) return 0;
-    return getTotalEconomy(cities, selectedCountryId);
-  }, [cities, selectedCountryId]);
+    return totalEconomy(territories, selectedCountryId);
+  }, [territories, selectedCountryId]);
 
   const playerFactories = useMemo(() => {
     if (!selectedCountryId) return 0;
-    return getTotalFactories(cities, countries, selectedCountryId);
-  }, [cities, countries, selectedCountryId]);
+    return totalFactories(territories, countries, selectedCountryId);
+  }, [territories, countries, selectedCountryId]);
 
   const playerIncome = useMemo(() => {
     if (!selectedCountryId) return 0;
-    return getDailyIncome(cities, selectedCountryId);
-  }, [cities, selectedCountryId]);
+    return dailyIncome(territories, selectedCountryId);
+  }, [territories, selectedCountryId]);
 
-  const playerManpowerCap = useMemo(() => {
+  const playerCap = useMemo(() => {
     if (!selectedCountryId) return 0;
-    return getManpowerCap(cities, selectedCountryId);
-  }, [cities, selectedCountryId]);
+    return manpowerCap(territories, selectedCountryId);
+  }, [territories, selectedCountryId]);
 
-  const playerUsedManpower = useMemo(() => {
+  const playerUsed = useMemo(() => {
     if (!selectedCountryId) return 0;
-    return getUsedManpower(cities, movingUnits, selectedCountryId);
-  }, [cities, movingUnits, selectedCountryId]);
+    return usedManpower(territories, moveTasks, selectedCountryId);
+  }, [territories, moveTasks, selectedCountryId]);
 
-  function addLog(message: string): void {
-    setEventLog((prev) => [`${formatDate(day)} • ${message}`, ...prev].slice(0, 24));
+  const ownedCount = useMemo(() => {
+    if (!selectedCountryId) return 0;
+    return territories.filter((t) => t.ownerCountryId === selectedCountryId).length;
+  }, [territories, selectedCountryId]);
+
+  function addLog(message: string) {
+    setEventLog((prev) => [`${formatDate(day)} • ${message}`, ...prev].slice(0, 30));
   }
 
-  function selectCountry(countryId: CountryId): void {
+  function resetGame() {
+    const state = createInitialState();
+    setCountries(state.countries);
+    setTerritories(state.territories);
+    setSelectedCountryId(state.selectedCountryId);
+    setSelectedTerritoryId(state.selectedTerritoryId);
+    setSelectedTargetCountryId(state.selectedTargetCountryId);
+    setPanelMode(state.panelMode);
+    setRunning(state.running);
+    setDay(state.day);
+    setEventLog(state.eventLog);
+    setMoveTasks(state.moveTasks);
+    setMoveDraft(null);
+    setGameOver(null);
+    try {
+      localStorage.removeItem(SAVE_KEY);
+    } catch {}
+  }
+
+  function saveGame() {
+    try {
+      const payload: SaveState = {
+        countries,
+        territories,
+        selectedCountryId,
+        selectedTerritoryId,
+        selectedTargetCountryId,
+        panelMode,
+        running: false,
+        day,
+        eventLog,
+        moveTasks,
+        gameOver,
+      };
+      localStorage.setItem(SAVE_KEY, JSON.stringify(payload));
+      addLog("Oyun kaydedildi.");
+    } catch {
+      addLog("Kayıt başarısız.");
+    }
+  }
+
+  function loadGame() {
+    try {
+      const raw = localStorage.getItem(SAVE_KEY);
+      if (!raw) {
+        addLog("Kayıt bulunamadı.");
+        return;
+      }
+      const parsed = JSON.parse(raw) as SaveState;
+      setCountries(parsed.countries);
+      setTerritories(parsed.territories);
+      setSelectedCountryId(parsed.selectedCountryId);
+      setSelectedTerritoryId(parsed.selectedTerritoryId);
+      setSelectedTargetCountryId(parsed.selectedTargetCountryId);
+      setPanelMode(parsed.panelMode);
+      setRunning(false);
+      setDay(parsed.day);
+      setEventLog(parsed.eventLog ?? []);
+      setMoveTasks(parsed.moveTasks ?? []);
+      setMoveDraft(null);
+      setGameOver(parsed.gameOver ?? null);
+    } catch {
+      addLog("Kayıt yüklenemedi.");
+    }
+  }
+
+  function selectStartingCountry(countryId: CountryId) {
     setSelectedCountryId(countryId);
-    setSelectedCityId(null);
+    setSelectedTerritoryId(countryId);
     setSelectedTargetCountryId(null);
-    setPanelMode(null);
-    addLog(`${getCountryById(INITIAL_COUNTRIES, countryId).name} seçildi.`);
+    setPanelMode("territory");
+    addLog(`${getCountryName(countryId, countries)} seçildi.`);
   }
 
-  function updateOneCountry(countryId: CountryId, updater: (country: Country) => Country): void {
+  function updateCountry(
+    countryId: CountryId,
+    updater: (country: CountryState) => CountryState
+  ) {
     setCountries((prev) => prev.map((c) => (c.id === countryId ? updater(c) : c)));
   }
 
-  function setRelationBoth(a: CountryId, b: CountryId, delta: number): void {
+  function setRelationsBoth(a: CountryId, b: CountryId, delta: number) {
     setCountries((prev) =>
       prev.map((country) => {
         if (country.id !== a && country.id !== b) return country;
@@ -588,183 +738,209 @@ export default function EuropaWarClient() {
           ...country,
           relations: {
             ...country.relations,
-            [other]: clampRelation(country.relations[other] + delta),
+            [other]: clamp(country.relations[other] + delta, -100, 100),
           },
         };
       })
     );
   }
 
-  function declareWar(a: CountryId, b: CountryId): void {
+  function addWar(a: CountryId, b: CountryId) {
     setCountries((prev) =>
-      prev.map((country) => {
-        if (country.id === a) {
-          return {
-            ...country,
-            atWarWith: Array.from(new Set([...country.atWarWith, b])),
-          };
-        }
-        if (country.id === b) {
-          return {
-            ...country,
-            atWarWith: Array.from(new Set([...country.atWarWith, a])),
-          };
-        }
-        return country;
+      prev.map((c) => {
+        if (c.id === a) return { ...c, atWarWith: Array.from(new Set([...c.atWarWith, b])) };
+        if (c.id === b) return { ...c, atWarWith: Array.from(new Set([...c.atWarWith, a])) };
+        return c;
       })
     );
   }
 
-  function makePeace(a: CountryId, b: CountryId): void {
+  function removeWar(a: CountryId, b: CountryId) {
     setCountries((prev) =>
-      prev.map((country) => {
-        if (country.id === a) {
-          return { ...country, atWarWith: country.atWarWith.filter((id) => id !== b) };
-        }
-        if (country.id === b) {
-          return { ...country, atWarWith: country.atWarWith.filter((id) => id !== a) };
-        }
-        return country;
+      prev.map((c) => {
+        if (c.id === a) return { ...c, atWarWith: c.atWarWith.filter((id) => id !== b) };
+        if (c.id === b) return { ...c, atWarWith: c.atWarWith.filter((id) => id !== a) };
+        return c;
       })
     );
   }
 
-  function addAlliance(a: CountryId, b: CountryId): void {
+  function addAlliance(a: CountryId, b: CountryId) {
     setCountries((prev) =>
-      prev.map((country) => {
-        if (country.id === a) {
-          return { ...country, allies: Array.from(new Set([...country.allies, b])) };
-        }
-        if (country.id === b) {
-          return { ...country, allies: Array.from(new Set([...country.allies, a])) };
-        }
-        return country;
+      prev.map((c) => {
+        if (c.id === a) return { ...c, allies: Array.from(new Set([...c.allies, b])) };
+        if (c.id === b) return { ...c, allies: Array.from(new Set([...c.allies, a])) };
+        return c;
       })
     );
   }
 
-  function onCityClick(cityId: string): void {
-    const clickedCity = getCityById(cities, cityId);
+  function onTerritoryClick(territoryId: CountryId) {
+    const clicked = territories.find((t) => t.id === territoryId);
+    if (!clicked) return;
 
-    if (selectedMovingUnitId) {
-      const sourceCity = cities.find((c) => c.stationedUnits.some((u) => u.id === selectedMovingUnitId));
-      const movingUnit = cities
-        .flatMap((c) => c.stationedUnits)
-        .find((u) => u.id === selectedMovingUnitId);
-
-      if (!sourceCity || !movingUnit) {
-        setSelectedMovingUnitId(null);
+    if (moveDraft) {
+      const source = territories.find((t) => t.id === moveDraft.sourceTerritoryId);
+      if (!source) {
+        setMoveDraft(null);
+        return;
+      }
+      if (!source.neighbors.includes(clicked.id)) {
+        addLog("Sadece komşu ülkelere hareket edebilirsin.");
+        return;
+      }
+      if (
+        moveDraft.infantry <= 0 &&
+        moveDraft.tank <= 0 &&
+        moveDraft.aircraft <= 0
+      ) {
+        addLog("Hareket için en az 1 birlik seç.");
+        return;
+      }
+      if (
+        moveDraft.infantry > source.units.infantry ||
+        moveDraft.tank > source.units.tank ||
+        moveDraft.aircraft > source.units.aircraft
+      ) {
+        addLog("Seçilen birlik sayısı kaynak bölgede yok.");
         return;
       }
 
-      if (!sourceCity.neighbors.includes(clickedCity.id)) {
-        addLog("Sadece komşu şehirlere hareket edebilirsin.");
+      const attack = clicked.ownerCountryId !== source.ownerCountryId;
+      const sourceOwner = countries.find((c) => c.id === source.ownerCountryId);
+      if (attack && !sourceOwner?.atWarWith.includes(clicked.ownerCountryId)) {
+        addLog("Saldırı için önce savaş ilan et.");
         return;
       }
 
-      setCities((prev) =>
-        prev.map((city) =>
-          city.id === sourceCity.id
+      const maxMoveDays = Math.max(
+        moveDraft.infantry > 0 ? 2 : 0,
+        moveDraft.tank > 0 ? 3 : 0,
+        moveDraft.aircraft > 0 ? 1 : 0,
+        1
+      );
+
+      setTerritories((prev) =>
+        prev.map((t) =>
+          t.id === source.id
             ? {
-                ...city,
-                stationedUnits: city.stationedUnits.filter((u) => u.id !== movingUnit.id),
+                ...t,
+                units: {
+                  infantry: t.units.infantry - moveDraft.infantry,
+                  tank: t.units.tank - moveDraft.tank,
+                  aircraft: t.units.aircraft - moveDraft.aircraft,
+                },
               }
-            : city
+            : t
         )
       );
 
-      setMovingUnits((prev) => [
+      setMoveTasks((prev) => [
         ...prev,
         {
-          unit: movingUnit,
-          fromCityId: sourceCity.id,
-          toCityId: clickedCity.id,
-          remainingDays: movingUnit.moveDays,
+          id: `move-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          ownerCountryId: source.ownerCountryId,
+          fromTerritoryId: source.id,
+          toTerritoryId: clicked.id,
+          payload: {
+            infantry: moveDraft.infantry,
+            tank: moveDraft.tank,
+            aircraft: moveDraft.aircraft,
+          },
+          remainingDays: maxMoveDays,
+          isAttack: attack,
         },
       ]);
 
       addLog(
-        `${formatUnitLabel(movingUnit.type)} ${sourceCity.name} şehrinden ${clickedCity.name} şehrine hareket etti.`
+        `${source.name} bölgesinden ${clicked.name} bölgesine birlik gönderildi.`
       );
-      setSelectedMovingUnitId(null);
+      setMoveDraft(null);
       return;
     }
 
-    setSelectedCityId(cityId);
-    setSelectedTargetCountryId(null);
-    setPanelMode("city");
+    setSelectedTerritoryId(territoryId);
+    setPanelMode("territory");
+
+    if (selectedCountryId && clicked.ownerCountryId !== selectedCountryId) {
+      setSelectedTargetCountryId(clicked.ownerCountryId);
+    }
   }
 
-  function onCountryButtonClick(countryId: CountryId): void {
-    if (!selectedCountryId || countryId === selectedCountryId) return;
-    setSelectedTargetCountryId(countryId);
-    setSelectedCityId(null);
-    setPanelMode("country");
-  }
+  function produceUnit(type: UnitType) {
+    if (!selectedCountryId || !selectedTerritory || !playerCountry) return;
+    if (selectedTerritory.ownerCountryId !== selectedCountryId) return;
 
-  function produceUnit(type: UnitType): void {
-    if (!selectedCountryId || !playerCountry || !selectedCity) return;
-    if (selectedCity.ownerCountryId !== selectedCountryId) return;
+    const price =
+      type === "infantry" ? 100 :
+      type === "tank" ? 300 : 500;
 
-    const techLevel = playerCountry.tech[type];
-    const unit = createUnit(type, selectedCountryId, techLevel);
+    const manpowerCost =
+      type === "infantry" ? 1 : 2;
 
-    if (playerCountry.treasury < unit.cost) {
+    if (playerCountry.treasury < price) {
       addLog("Yeterli para yok.");
       return;
     }
 
-    if (playerUsedManpower + unit.manpowerCost > playerManpowerCap) {
-      addLog("Yeterli asker kapasitesi yok.");
+    if (playerUsed + manpowerCost > playerCap) {
+      addLog("Birlik kapasitesi dolu.");
       return;
     }
 
-    updateOneCountry(selectedCountryId, (country) => ({
-      ...country,
-      treasury: country.treasury - unit.cost,
+    updateCountry(selectedCountryId, (c) => ({
+      ...c,
+      treasury: c.treasury - price,
     }));
 
-    setCities((prev) =>
-      prev.map((city) =>
-        city.id === selectedCity.id
-          ? { ...city, stationedUnits: [...city.stationedUnits, unit] }
-          : city
+    setTerritories((prev) =>
+      prev.map((t) =>
+        t.id === selectedTerritory.id
+          ? {
+              ...t,
+              units: {
+                ...t.units,
+                [type]: t.units[type] + 1,
+              },
+            }
+          : t
       )
     );
 
-    addLog(
-      `${selectedCity.name} şehrinde ${formatUnitLabel(type)} üretildi.`
-    );
+    addLog(`${selectedTerritory.name} bölgesinde ${formatUnitType(type)} üretildi.`);
   }
 
-  function buildFactory(cityId: string): void {
-    if (!selectedCountryId || !playerCountry) return;
-    const ownedFactories = getControlledCities(cities, selectedCountryId).reduce(
-      (sum, city) => sum + city.factories,
+  function buildFactory() {
+    if (!selectedCountryId || !selectedTerritory || !playerCountry) return;
+    if (selectedTerritory.ownerCountryId !== selectedCountryId) return;
+
+    const ownedFactoryCount = ownedTerritories(territories, selectedCountryId).reduce(
+      (sum, t) => sum + t.factories,
       0
     );
-    const cost = 500 + ownedFactories * 250;
+
+    const cost = 500 + ownedFactoryCount * 250;
 
     if (playerCountry.treasury < cost) {
-      addLog("Yeni fabrika için para yetmiyor.");
+      addLog("Fabrika için para yetmiyor.");
       return;
     }
 
-    updateOneCountry(selectedCountryId, (country) => ({
-      ...country,
-      treasury: country.treasury - cost,
+    updateCountry(selectedCountryId, (c) => ({
+      ...c,
+      treasury: c.treasury - cost,
     }));
 
-    setCities((prev) =>
-      prev.map((city) =>
-        city.id === cityId ? { ...city, factories: city.factories + 1 } : city
+    setTerritories((prev) =>
+      prev.map((t) =>
+        t.id === selectedTerritory.id ? { ...t, factories: t.factories + 1 } : t
       )
     );
 
-    addLog(`${getCityById(cities, cityId).name} şehrine yeni fabrika kuruldu.`);
+    addLog(`${selectedTerritory.name} bölgesine yeni fabrika kuruldu.`);
   }
 
-  function startResearch(type: UnitType): void {
+  function startResearch(type: UnitType) {
     if (!selectedCountryId || !playerCountry) return;
     if (playerCountry.activeResearch) {
       addLog("Aynı anda sadece 1 teknoloji araştırabilirsin.");
@@ -773,267 +949,480 @@ export default function EuropaWarClient() {
 
     const currentLevel = playerCountry.tech[type];
     if (currentLevel >= 3) {
-      addLog("Bu teknoloji maksimum seviyeye ulaştı.");
+      addLog("Bu teknoloji maksimum seviyede.");
       return;
     }
 
     const baseDays = RESEARCH_BASE_DAYS[type][currentLevel];
-    const actualDays = Math.max(5, Math.ceil(baseDays / Math.max(1, playerFactories)));
+    const actual = Math.max(5, Math.ceil(baseDays / Math.max(playerFactories, 1)));
 
-    updateOneCountry(selectedCountryId, (country) => ({
-      ...country,
+    updateCountry(selectedCountryId, (c) => ({
+      ...c,
       activeResearch: {
         category: type,
         level: currentLevel + 1,
-        remainingDays: actualDays,
+        remainingDays: actual,
       },
     }));
 
+    addLog(`${formatUnitType(type)} teknoloji araştırması başladı.`);
+  }
+
+  function improveRelations() {
+    if (!selectedCountryId || !selectedTargetCountryId || !playerCountry) return;
+    if (playerCountry.treasury < 100) {
+      addLog("İlişki geliştirmek için 100 para gerekir.");
+      return;
+    }
+    updateCountry(selectedCountryId, (c) => ({ ...c, treasury: c.treasury - 100 }));
+    setRelationsBoth(selectedCountryId, selectedTargetCountryId, 10);
     addLog(
-      `${formatUnitLabel(type)} teknoloji seviye ${currentLevel + 1} araştırması başladı.`
+      `${getCountryName(selectedTargetCountryId, countries)} ile ilişkiler gelişti.`
     );
   }
 
-  function improveRelations(): void {
-    if (!selectedCountryId || !selectedTargetCountryId || !playerCountry || !targetCountry) return;
-
-    if (playerCountry.treasury < 100) {
-      addLog("İlişki geliştirmek için 100 para gerekiyor.");
-      return;
-    }
-
-    updateOneCountry(selectedCountryId, (country) => ({
-      ...country,
-      treasury: country.treasury - 100,
-    }));
-
-    setRelationBoth(selectedCountryId, selectedTargetCountryId, 10);
-    addLog(`${targetCountry.name} ile ilişkiler gelişti.`);
+  function insultCountry() {
+    if (!selectedCountryId || !selectedTargetCountryId) return;
+    setRelationsBoth(selectedCountryId, selectedTargetCountryId, -15);
+    addLog(`${getCountryName(selectedTargetCountryId, countries)} ülkesine hakaret edildi.`);
   }
 
-  function insultCountry(): void {
-    if (!selectedCountryId || !selectedTargetCountryId || !targetCountry) return;
-    setRelationBoth(selectedCountryId, selectedTargetCountryId, -15);
-    addLog(`${targetCountry.name} ülkesine hakaret edildi.`);
-  }
-
-  function offerAlliance(): void {
-    if (!selectedCountryId || !selectedTargetCountryId || !targetCountry) return;
-    const relation = getCountryById(countries, selectedCountryId).relations[selectedTargetCountryId];
+  function offerAlliance() {
+    if (!selectedCountryId || !selectedTargetCountryId) return;
+    const relation =
+      countries.find((c) => c.id === selectedCountryId)?.relations[selectedTargetCountryId] ?? 0;
     const accepted = relation >= 40 || Math.random() < relation / 100 + 0.15;
-
     if (accepted) {
       addAlliance(selectedCountryId, selectedTargetCountryId);
-      addLog(`${targetCountry.name} müttefikliği kabul etti.`);
+      addLog(
+        `${getCountryName(selectedTargetCountryId, countries)} müttefikliği kabul etti.`
+      );
     } else {
-      addLog(`${targetCountry.name} müttefikliği reddetti.`);
+      addLog(
+        `${getCountryName(selectedTargetCountryId, countries)} müttefikliği reddetti.`
+      );
     }
   }
 
-  function doDeclareWar(): void {
-    if (!selectedCountryId || !selectedTargetCountryId || !targetCountry) return;
-    declareWar(selectedCountryId, selectedTargetCountryId);
-    addLog(`${targetCountry.name} ülkesine savaş ilan edildi.`);
+  function declareWarAction() {
+    if (!selectedCountryId || !selectedTargetCountryId) return;
+    addWar(selectedCountryId, selectedTargetCountryId);
+    addLog(
+      `${getCountryName(selectedTargetCountryId, countries)} ülkesine savaş ilan edildi.`
+    );
   }
 
-  function offerPeace(): void {
-    if (!selectedCountryId || !selectedTargetCountryId || !targetCountry) return;
+  function offerPeace() {
+    if (!selectedCountryId || !selectedTargetCountryId) return;
 
-    const occupiedEnemyCities = cities.filter(
-      (city) =>
-        city.countryId === selectedTargetCountryId && city.ownerCountryId === selectedCountryId
+    const occupiedEnemyTerritories = territories.filter(
+      (t) =>
+        t.originalOwnerId === selectedTargetCountryId &&
+        t.ownerCountryId === selectedCountryId
     ).length;
 
-    const relation = getCountryById(countries, selectedCountryId).relations[selectedTargetCountryId];
-    const accepted = occupiedEnemyCities > 0 || relation > 20 || Math.random() < 0.35;
+    const relation =
+      countries.find((c) => c.id === selectedCountryId)?.relations[selectedTargetCountryId] ?? 0;
+
+    const accepted = occupiedEnemyTerritories > 0 || relation > 20 || Math.random() < 0.35;
 
     if (accepted) {
-      makePeace(selectedCountryId, selectedTargetCountryId);
-      addLog(`${targetCountry.name} barışı kabul etti.`);
+      removeWar(selectedCountryId, selectedTargetCountryId);
+      addLog(`${getCountryName(selectedTargetCountryId, countries)} barışı kabul etti.`);
     } else {
-      addLog(`${targetCountry.name} barışı reddetti.`);
+      addLog(`${getCountryName(selectedTargetCountryId, countries)} barışı reddetti.`);
     }
   }
 
-  function handleArrival(arrival: MovingUnit, countriesSnapshot: Country[], citiesSnapshot: City[]): void {
-    const attackerId = arrival.unit.ownerCountryId;
-    const targetCity = getCityById(citiesSnapshot, arrival.toCityId);
-    const defenderId = targetCity.ownerCountryId;
+  function startMoveMode() {
+    if (!selectedCountryId || !selectedTerritory) return;
+    if (selectedTerritory.ownerCountryId !== selectedCountryId) return;
+    setMoveDraft({
+      sourceTerritoryId: selectedTerritory.id,
+      infantry: 0,
+      tank: 0,
+      aircraft: 0,
+    });
+  }
 
-    if (attackerId === defenderId) {
-      setCities((prev) =>
-        prev.map((city) =>
-          city.id === targetCity.id
-            ? { ...city, stationedUnits: [...city.stationedUnits, arrival.unit] }
-            : city
-        )
-      );
+  function cancelMoveMode() {
+    setMoveDraft(null);
+  }
+
+  function airStrike() {
+    if (
+      !selectedCountryId ||
+      !selectedTerritory ||
+      !selectedTargetCountryId ||
+      !playerCountry
+    ) return;
+
+    if (selectedTerritory.ownerCountryId !== selectedCountryId) return;
+    if (!selectedTerritory.neighbors.includes(selectedTargetCountryId)) {
+      addLog("Hava saldırısı sadece komşu ülkeye yapılabilir.");
+      return;
+    }
+    if (!playerCountry.atWarWith.includes(selectedTargetCountryId)) {
+      addLog("Hava saldırısı için savaş halinde olmalısın.");
+      return;
+    }
+    if (selectedTerritory.units.aircraft <= 0) {
+      addLog("Hava saldırısı için uçak yok.");
       return;
     }
 
-    const attackerCountry = getCountryById(countriesSnapshot, attackerId);
-    const isAtWar = attackerCountry.atWarWith.includes(defenderId);
+    const target = territories.find((t) => t.id === selectedTargetCountryId);
+    if (!target) return;
 
-    if (!isAtWar) {
-      setCities((prev) =>
-        prev.map((city) =>
-          city.id === arrival.fromCityId
-            ? { ...city, stationedUnits: [...city.stationedUnits, arrival.unit] }
-            : city
-        )
-      );
-      addLog("Savaş olmadığı için birlik geri döndü.");
-      return;
-    }
+    const airTech = playerCountry.tech.aircraft;
+    const damageRoll = 1 + airTech + Math.floor(Math.random() * 3);
 
-    const attackScore = arrival.unit.attack + randomInt(5);
-    const defenseScore =
-      targetCity.stationedUnits.reduce((sum, unit) => sum + unit.defense, 0) + randomInt(5) + 2;
+    const tankDamage = Math.min(target.units.tank, Math.floor(damageRoll / 2));
+    const infantryDamage = Math.min(
+      target.units.infantry,
+      damageRoll + Math.floor(Math.random() * 2)
+    );
 
-    if (attackScore >= defenseScore) {
-      setCities((prev) =>
-        prev.map((city) =>
-          city.id === targetCity.id
+    setTerritories((prev) =>
+      prev.map((t) =>
+        t.id === target.id
+          ? {
+              ...t,
+              units: {
+                ...t.units,
+                infantry: Math.max(0, t.units.infantry - infantryDamage),
+                tank: Math.max(0, t.units.tank - tankDamage),
+              },
+            }
+          : t
+      )
+    );
+
+    addLog(
+      `${selectedTerritory.name} bölgesinden ${target.name} bölgesine hava saldırısı yapıldı.`
+    );
+  }
+
+  function resolveBattle(task: MoveTask, currentCountries: CountryState[], currentTerritories: Territory[]) {
+    const attacker = currentCountries.find((c) => c.id === task.ownerCountryId);
+    const defenderTerritory = currentTerritories.find((t) => t.id === task.toTerritoryId);
+    if (!attacker || !defenderTerritory) return;
+
+    const defenderCountry = currentCountries.find((c) => c.id === defenderTerritory.ownerCountryId);
+    if (!defenderCountry) return;
+
+    if (!task.isAttack || defenderTerritory.ownerCountryId === task.ownerCountryId) {
+      setTerritories((prev) =>
+        prev.map((t) =>
+          t.id === task.toTerritoryId
             ? {
-                ...city,
-                ownerCountryId: attackerId,
-                stationedUnits: [arrival.unit],
+                ...t,
+                units: {
+                  infantry: t.units.infantry + task.payload.infantry,
+                  tank: t.units.tank + task.payload.tank,
+                  aircraft: t.units.aircraft + task.payload.aircraft,
+                },
               }
-            : city
+            : t
+        )
+      );
+      return;
+    }
+
+    const attackerInfTech = attacker.tech.infantry;
+    const attackerTankTech = attacker.tech.tank;
+    const attackerAirTech = attacker.tech.aircraft;
+
+    const defenderInfTech = defenderCountry.tech.infantry;
+    const defenderTankTech = defenderCountry.tech.tank;
+    const defenderAirTech = defenderCountry.tech.aircraft;
+
+    const attackerAirSup =
+      task.payload.aircraft > defenderTerritory.units.aircraft ? 1.15 : 1.0;
+    const defenderAirSup =
+      defenderTerritory.units.aircraft > task.payload.aircraft ? 1.12 : 1.0;
+
+    const attackerPowerBase =
+      task.payload.infantry * (3 + attackerInfTech) +
+      task.payload.tank * (7 + attackerTankTech * 2) * tankTerrainBonus(defenderTerritory.terrain) +
+      task.payload.aircraft * (6 + attackerAirTech * 2);
+
+    const defenderPowerBase =
+      defenderTerritory.units.infantry * (3 + defenderInfTech) +
+      defenderTerritory.units.tank * (6 + defenderTankTech * 2) +
+      defenderTerritory.units.aircraft * (5 + defenderAirTech * 2);
+
+    const attackerFactoryBuff =
+      1 + (ownedTerritories(currentTerritories, task.ownerCountryId).reduce((s, t) => s + t.factories, 0) / 100);
+
+    const defenderFactoryBuff =
+      1 + (defenderTerritory.factories / 10);
+
+    const defenseTerrainBuff = terrainDefenseBonus(defenderTerritory.terrain);
+
+    const attackerRoll = 0.9 + Math.random() * 0.35;
+    const defenderRoll = 0.9 + Math.random() * 0.35;
+
+    const attackerPower =
+      attackerPowerBase * attackerAirSup * attackerFactoryBuff * attackerRoll;
+
+    const defenderPower =
+      defenderPowerBase * defenderAirSup * defenseTerrainBuff * defenderFactoryBuff * defenderRoll;
+
+    const attackerWin = attackerPower >= defenderPower;
+
+    if (attackerWin) {
+      const remainingInf = Math.max(1, Math.floor(task.payload.infantry * 0.65));
+      const remainingTank = Math.max(0, Math.floor(task.payload.tank * 0.75));
+      const remainingAir = Math.max(0, Math.floor(task.payload.aircraft * 0.8));
+
+      setTerritories((prev) =>
+        prev.map((t) =>
+          t.id === defenderTerritory.id
+            ? {
+                ...t,
+                ownerCountryId: task.ownerCountryId,
+                units: {
+                  infantry: remainingInf,
+                  tank: remainingTank,
+                  aircraft: remainingAir,
+                },
+              }
+            : t
         )
       );
 
       addLog(
-        `${getCountryById(countriesSnapshot, attackerId).name}, ${targetCity.name} şehrini ele geçirdi.`
+        `${attacker.name}, ${defenderTerritory.name} bölgesini ele geçirdi.`
       );
     } else {
+      const defenderInfLeft = Math.max(
+        0,
+        defenderTerritory.units.infantry - Math.floor(task.payload.infantry * 0.45)
+      );
+      const defenderTankLeft = Math.max(
+        0,
+        defenderTerritory.units.tank - Math.floor(task.payload.tank * 0.35)
+      );
+      const defenderAirLeft = Math.max(
+        0,
+        defenderTerritory.units.aircraft - Math.floor(task.payload.aircraft * 0.35)
+      );
+
+      setTerritories((prev) =>
+        prev.map((t) =>
+          t.id === defenderTerritory.id
+            ? {
+                ...t,
+                units: {
+                  infantry: defenderInfLeft,
+                  tank: defenderTankLeft,
+                  aircraft: defenderAirLeft,
+                },
+              }
+            : t
+        )
+      );
+
       addLog(
-        `${getCountryById(countriesSnapshot, attackerId).name} saldırısı ${targetCity.name} önünde başarısız oldu.`
+        `${attacker.name} saldırısı ${defenderTerritory.name} önünde başarısız oldu.`
       );
     }
   }
 
-  function runAI(countriesSnapshot: Country[], citiesSnapshot: City[]): void {
+  function checkGameOver(nextTerritories: Territory[], playerId: CountryId | null) {
+    if (!playerId) return;
+
+    const playerAlive = canCountryStillLive(nextTerritories, playerId);
+    const playerOwnsAll = nextTerritories.every((t) => t.ownerCountryId === playerId);
+
+    if (!playerAlive) {
+      setGameOver({
+        winner: false,
+        reason: "Tüm topraklarını kaybettin.",
+      });
+      setRunning(false);
+      return;
+    }
+
+    if (playerOwnsAll) {
+      setGameOver({
+        winner: true,
+        reason: "Avrupa’daki tüm bölgeleri ele geçirdin.",
+      });
+      setRunning(false);
+    }
+  }
+
+  function runAiStep(currentCountries: CountryState[], currentTerritories: Territory[]) {
     if (!selectedCountryId) return;
 
-    let workingCountries = countriesSnapshot;
-    let workingCities = citiesSnapshot;
-    const player = getCountryById(workingCountries, selectedCountryId);
+    let nextCountries = [...currentCountries];
+    let nextTerritories = [...currentTerritories];
+    const playerId = selectedCountryId;
 
-    for (const aiCountry of workingCountries) {
-      if (aiCountry.id === selectedCountryId) continue;
+    for (const aiCountry of nextCountries) {
+      if (aiCountry.id === playerId) continue;
+      if (!canCountryStillLive(nextTerritories, aiCountry.id)) continue;
 
-      const relation = aiCountry.relations[player.id];
+      const relation = aiCountry.relations[playerId];
+      const latestAi = nextCountries.find((c) => c.id === aiCountry.id)!;
 
-      if (relation <= -40 && !aiCountry.atWarWith.includes(player.id) && Math.random() < 0.2) {
-        workingCountries = workingCountries.map((country) => {
-          if (country.id === aiCountry.id) {
-            return { ...country, atWarWith: Array.from(new Set([...country.atWarWith, player.id])) };
+      if (relation <= -35 && !latestAi.atWarWith.includes(playerId) && Math.random() < 0.22) {
+        nextCountries = nextCountries.map((c) => {
+          if (c.id === aiCountry.id) {
+            return { ...c, atWarWith: Array.from(new Set([...c.atWarWith, playerId])) };
           }
-          if (country.id === player.id) {
-            return { ...country, atWarWith: Array.from(new Set([...country.atWarWith, aiCountry.id])) };
+          if (c.id === playerId) {
+            return { ...c, atWarWith: Array.from(new Set([...c.atWarWith, aiCountry.id])) };
           }
-          return country;
+          return c;
         });
         addLog(`${aiCountry.name}, sana savaş ilan etti.`);
       }
 
-      if (relation >= 50 && !aiCountry.allies.includes(player.id) && Math.random() < 0.2) {
-        workingCountries = workingCountries.map((country) => {
-          if (country.id === aiCountry.id) {
-            return { ...country, allies: Array.from(new Set([...country.allies, player.id])) };
+      if (relation >= 50 && !latestAi.allies.includes(playerId) && Math.random() < 0.18) {
+        nextCountries = nextCountries.map((c) => {
+          if (c.id === aiCountry.id) {
+            return { ...c, allies: Array.from(new Set([...c.allies, playerId])) };
           }
-          if (country.id === player.id) {
-            return { ...country, allies: Array.from(new Set([...country.allies, aiCountry.id])) };
+          if (c.id === playerId) {
+            return { ...c, allies: Array.from(new Set([...c.allies, aiCountry.id])) };
           }
-          return country;
+          return c;
         });
         addLog(`${aiCountry.name}, seninle müttefik oldu.`);
       }
 
-      const aiOwnedCities = workingCities.filter((city) => city.ownerCountryId === aiCountry.id);
-      const latestAi = getCountryById(workingCountries, aiCountry.id);
-
-      if (aiOwnedCities.length > 0 && latestAi.treasury >= 100 && Math.random() < 0.45) {
-        const city = aiOwnedCities[randomInt(aiOwnedCities.length)];
-        const unit = createUnit("infantry", aiCountry.id, latestAi.tech.infantry);
-
-        if (latestAi.treasury >= unit.cost) {
-          workingCountries = workingCountries.map((country) =>
-            country.id === aiCountry.id
-              ? { ...country, treasury: country.treasury - unit.cost }
-              : country
-          );
-
-          workingCities = workingCities.map((c) =>
-            c.id === city.id ? { ...c, stationedUnits: [...c.stationedUnits, unit] } : c
-          );
-        }
+      const aiTerritories = nextTerritories.filter((t) => t.ownerCountryId === aiCountry.id);
+      const aiTreasury = nextCountries.find((c) => c.id === aiCountry.id)?.treasury ?? 0;
+      if (aiTerritories.length > 0 && aiTreasury >= 100 && Math.random() < 0.5) {
+        const targetTerritory = aiTerritories[Math.floor(Math.random() * aiTerritories.length)];
+        nextCountries = nextCountries.map((c) =>
+          c.id === aiCountry.id ? { ...c, treasury: c.treasury - 100 } : c
+        );
+        nextTerritories = nextTerritories.map((t) =>
+          t.id === targetTerritory.id
+            ? { ...t, units: { ...t.units, infantry: t.units.infantry + 1 } }
+            : t
+        );
       }
 
-      const latestAiWarState = getCountryById(workingCountries, aiCountry.id);
-      if (latestAiWarState.atWarWith.includes(player.id)) {
-        const source = workingCities.find(
-          (city) =>
-            city.ownerCountryId === aiCountry.id &&
-            city.stationedUnits.length > 0 &&
-            city.neighbors.some((neighborId) => getCityById(workingCities, neighborId).ownerCountryId !== aiCountry.id)
-        );
+      const aiNow = nextCountries.find((c) => c.id === aiCountry.id)!;
+      const source = nextTerritories.find(
+        (t) =>
+          t.ownerCountryId === aiCountry.id &&
+          sumUnits(t.units) > 0 &&
+          t.neighbors.some((n) => {
+            const neighbor = nextTerritories.find((x) => x.id === n);
+            return (
+              neighbor &&
+              neighbor.ownerCountryId !== aiCountry.id &&
+              aiNow.atWarWith.includes(neighbor.ownerCountryId)
+            );
+          })
+      );
 
-        if (source) {
-          const enemyNeighbor = source.neighbors
-            .map((id) => getCityById(workingCities, id))
-            .find((city) => city.ownerCountryId !== aiCountry.id);
+      if (source) {
+        const targetId = source.neighbors.find((n) => {
+          const neighbor = nextTerritories.find((x) => x.id === n);
+          return (
+            neighbor &&
+            neighbor.ownerCountryId !== aiCountry.id &&
+            aiNow.atWarWith.includes(neighbor.ownerCountryId)
+          );
+        });
 
-          if (enemyNeighbor) {
-            const unit = source.stationedUnits[0];
+        if (targetId) {
+          const sendInf = Math.max(1, Math.floor(source.units.infantry / 2));
+          const sendTank = source.units.tank > 0 ? 1 : 0;
+          const sendAir = source.units.aircraft > 0 ? 1 : 0;
 
-            workingCities = workingCities.map((city) =>
-              city.id === source.id
-                ? { ...city, stationedUnits: city.stationedUnits.slice(1) }
-                : city
+          if (sendInf + sendTank + sendAir > 0) {
+            nextTerritories = nextTerritories.map((t) =>
+              t.id === source.id
+                ? {
+                    ...t,
+                    units: {
+                      infantry: t.units.infantry - sendInf,
+                      tank: t.units.tank - sendTank,
+                      aircraft: t.units.aircraft - sendAir,
+                    },
+                  }
+                : t
             );
 
-            setMovingUnits((prev) => [
+            setMoveTasks((prev) => [
               ...prev,
               {
-                unit,
-                fromCityId: source.id,
-                toCityId: enemyNeighbor.id,
-                remainingDays: unit.moveDays,
+                id: `ai-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                ownerCountryId: aiCountry.id,
+                fromTerritoryId: source.id,
+                toTerritoryId: targetId,
+                payload: {
+                  infantry: sendInf,
+                  tank: sendTank,
+                  aircraft: sendAir,
+                },
+                remainingDays: sendAir > 0 ? 1 : sendTank > 0 ? 3 : 2,
+                isAttack: true,
               },
             ]);
 
             addLog(
-              `${aiCountry.name}, ${source.name} şehrinden ${enemyNeighbor.name} şehrine birlik gönderdi.`
+              `${aiCountry.name}, ${source.name} bölgesinden saldırı başlattı.`
             );
           }
         }
       }
+
+      if (!aiNow.activeResearch && Math.random() < 0.3) {
+        const pick: UnitType[] = ["infantry", "tank", "aircraft"];
+        const choice = pick[Math.floor(Math.random() * pick.length)];
+        const current = aiNow.tech[choice];
+        if (current < 3) {
+          const factories = totalFactories(nextTerritories, nextCountries, aiCountry.id);
+          const base = RESEARCH_BASE_DAYS[choice][current];
+          const actual = Math.max(5, Math.ceil(base / Math.max(factories, 1)));
+          nextCountries = nextCountries.map((c) =>
+            c.id === aiCountry.id
+              ? {
+                  ...c,
+                  activeResearch: {
+                    category: choice,
+                    level: current + 1,
+                    remainingDays: actual,
+                  },
+                }
+              : c
+          );
+        }
+      }
     }
 
-    setCountries(workingCountries);
-    setCities(workingCities);
+    setCountries(nextCountries);
+    setTerritories(nextTerritories);
   }
 
-  function tickOneDay(): void {
-    const countriesSnapshot = countries;
-    const citiesSnapshot = cities;
+  function tickOneDay() {
+    const currentCountries = stateRef.current?.countries ?? countries;
+    const currentTerritories = stateRef.current?.territories ?? territories;
+    const currentTasks = stateRef.current?.moveTasks ?? moveTasks;
+    const playerId = stateRef.current?.selectedCountryId ?? selectedCountryId;
 
-    setDay((prev) => prev + 1);
+    const nextDay = day + 1;
+    setDay(nextDay);
 
-    const updatedCountries = countriesSnapshot.map((country) => {
-      let nextCountry: Country = {
+    const afterEconomy = currentCountries.map((country) => {
+      let nextCountry = {
         ...country,
-        treasury: country.treasury + getDailyIncome(citiesSnapshot, country.id),
+        treasury: country.treasury + dailyIncome(currentTerritories, country.id),
       };
 
       if (nextCountry.activeResearch) {
         const remaining = nextCountry.activeResearch.remainingDays - 1;
-
         if (remaining <= 0) {
-          const category = nextCountry.activeResearch.category;
-          const level = nextCountry.activeResearch.level;
+          const { category, level } = nextCountry.activeResearch;
           nextCountry = {
             ...nextCountry,
             tech: {
@@ -1042,7 +1431,9 @@ export default function EuropaWarClient() {
             },
             activeResearch: null,
           };
-          addLog(`${nextCountry.name} için ${formatUnitLabel(category)} teknolojisi seviye ${level} tamamlandı.`);
+          addLog(
+            `${nextCountry.name} için ${formatUnitType(category)} teknoloji seviye ${level} tamamlandı.`
+          );
         } else {
           nextCountry = {
             ...nextCountry,
@@ -1057,65 +1448,117 @@ export default function EuropaWarClient() {
       return nextCountry;
     });
 
-    setCountries(updatedCountries);
+    setCountries(afterEconomy);
 
-    const moved = movingUnits.map((item) => ({
-      ...item,
-      remainingDays: item.remainingDays - 1,
+    const decremented = currentTasks.map((task) => ({
+      ...task,
+      remainingDays: task.remainingDays - 1,
     }));
 
-    const arrivals = moved.filter((item) => item.remainingDays <= 0);
-    const staying = moved.filter((item) => item.remainingDays > 0);
+    const arrivals = decremented.filter((task) => task.remainingDays <= 0);
+    const stillMoving = decremented.filter((task) => task.remainingDays > 0);
+    setMoveTasks(stillMoving);
 
-    setMovingUnits(staying);
-    arrivals.forEach((arrival) => handleArrival(arrival, updatedCountries, citiesSnapshot));
+    arrivals.forEach((task) => resolveBattle(task, afterEconomy, currentTerritories));
 
-    if ((day + 1) % 5 === 0) {
-      runAI(updatedCountries, citiesSnapshot);
+    const latestTerritories = stateRef.current?.territories ?? currentTerritories;
+    checkGameOver(latestTerritories, playerId ?? null);
+
+    if (nextDay % 5 === 0) {
+      runAiStep(afterEconomy, latestTerritories);
     }
   }
 
   useEffect(() => {
-    if (!running || !selectedCountryId) return;
-
+    if (!running || !selectedCountryId || gameOver) return;
     const timer = setInterval(() => {
       tickOneDay();
     }, 1000);
-
     return () => clearInterval(timer);
-  }, [running, selectedCountryId, day, countries, cities, movingUnits]);
+  }, [running, selectedCountryId, gameOver, day]);
+
+  useEffect(() => {
+    if (!mounted || !selectedCountryId) return;
+    try {
+      const payload: SaveState = {
+        countries,
+        territories,
+        selectedCountryId,
+        selectedTerritoryId,
+        selectedTargetCountryId,
+        panelMode,
+        running: false,
+        day,
+        eventLog,
+        moveTasks,
+        gameOver,
+      };
+      localStorage.setItem(SAVE_KEY, JSON.stringify(payload));
+    } catch {}
+  }, [
+    mounted,
+    countries,
+    territories,
+    selectedCountryId,
+    selectedTerritoryId,
+    selectedTargetCountryId,
+    panelMode,
+    day,
+    eventLog,
+    moveTasks,
+    gameOver,
+  ]);
 
   if (!selectedCountryId) {
     return (
       <main className="min-h-screen bg-slate-950 text-slate-100 p-6">
-        <div className="mx-auto max-w-6xl">
+        <div className="mx-auto max-w-7xl">
           <h1 className="text-4xl font-extrabold text-indigo-300">🌍 Europa War</h1>
           <p className="mt-3 text-slate-400">
-            Avrupa’daki bir ülkeyi seç ve oyuna başla.
+            Avrupa haritasından bir ülkeye tıkla ve oyuna başla.
           </p>
 
-          <div className="mt-8 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {countries.map((country) => (
-              <button
-                key={country.id}
-                onClick={() => selectCountry(country.id)}
-                className="rounded-2xl border border-slate-800 bg-slate-900 p-5 text-left transition hover:border-slate-600 hover:bg-slate-800"
-              >
-                <div className="flex items-center justify-between">
-                  <h2 className="text-xl font-bold text-white">{country.name}</h2>
-                  <span
-                    className="inline-block h-4 w-4 rounded-full"
-                    style={{ backgroundColor: country.color }}
+          <div className="mt-6 overflow-hidden rounded-3xl border border-slate-800 bg-slate-900 p-4">
+            <svg viewBox="0 0 940 560" className="h-auto w-full">
+              {territories.map((territory) => (
+                <g key={territory.id}>
+                  <path
+                    d={territory.polygon}
+                    fill={getCountryColor(territory.ownerCountryId, countries)}
+                    stroke="#0f172a"
+                    strokeWidth="3"
+                    className="cursor-pointer transition-opacity hover:opacity-85"
+                    onClick={() => selectStartingCountry(territory.id)}
                   />
-                </div>
-                <div className="mt-3 text-sm text-slate-400">
-                  Başlangıç Para: {country.treasury}
-                </div>
-                <div className="mt-1 text-sm text-slate-400">
-                  Başlangıç Fabrika: {country.baseFactories}
-                </div>
-              </button>
-            ))}
+                  <text
+                    x={territory.labelX}
+                    y={territory.labelY}
+                    textAnchor="middle"
+                    fontSize="15"
+                    fill="white"
+                    fontWeight="700"
+                    style={{ pointerEvents: "none" }}
+                  >
+                    {territory.name}
+                  </text>
+                </g>
+              ))}
+            </svg>
+          </div>
+
+          <div className="mt-6 flex flex-wrap gap-3">
+            <button
+              onClick={loadGame}
+              className="rounded-xl bg-slate-800 px-4 py-2 hover:bg-slate-700"
+            >
+              Kayıt Yükle
+            </button>
+            <button
+              onClick={resetGame}
+              className="rounded-xl bg-rose-700 px-4 py-2 hover:bg-rose-800"
+            >
+              Sıfırla
+            </button>
           </div>
         </div>
       </main>
@@ -1124,31 +1567,56 @@ export default function EuropaWarClient() {
 
   const relationToTarget =
     selectedCountryId && targetCountry
-      ? getCountryById(countries, selectedCountryId).relations[targetCountry.id]
+      ? countries.find((c) => c.id === selectedCountryId)?.relations[targetCountry.id] ?? 0
       : 0;
 
-  const factoryBuildCost =
-    selectedCountryId
-      ? 500 +
-        getControlledCities(cities, selectedCountryId).reduce(
-          (sum, city) => sum + city.factories,
-          0
-        ) * 250
-      : 500;
+  const playerAtWarWithTarget =
+    !!selectedCountryId &&
+    !!selectedTargetCountryId &&
+    (countries.find((c) => c.id === selectedCountryId)?.atWarWith.includes(selectedTargetCountryId) ??
+      false);
+
+  const canAirStrikeNow =
+    !!selectedCountryId &&
+    !!selectedTerritory &&
+    !!selectedTargetCountryId &&
+    selectedTerritory.ownerCountryId === selectedCountryId &&
+    selectedTerritory.neighbors.includes(selectedTargetCountryId) &&
+    selectedTerritory.units.aircraft > 0 &&
+    playerAtWarWithTarget;
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100">
       <div className="border-b border-slate-800 bg-slate-900 px-4 py-3">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <div className="rounded-xl bg-slate-800 px-3 py-2 text-sm">
               {formatDate(day)}
             </div>
             <button
-              onClick={() => setRunning((prev) => !prev)}
-              className="rounded-xl bg-indigo-500 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-600"
+              onClick={() => setRunning((v) => !v)}
+              disabled={!!gameOver}
+              className="rounded-xl bg-indigo-500 px-4 py-2 text-sm font-semibold hover:bg-indigo-600 disabled:opacity-50"
             >
               {running ? "Durdur" : "Başlat"}
+            </button>
+            <button
+              onClick={saveGame}
+              className="rounded-xl bg-slate-800 px-4 py-2 text-sm hover:bg-slate-700"
+            >
+              Kaydet
+            </button>
+            <button
+              onClick={loadGame}
+              className="rounded-xl bg-slate-800 px-4 py-2 text-sm hover:bg-slate-700"
+            >
+              Yükle
+            </button>
+            <button
+              onClick={resetGame}
+              className="rounded-xl bg-rose-700 px-4 py-2 text-sm hover:bg-rose-800"
+            >
+              Yeni Oyun
             </button>
           </div>
 
@@ -1166,7 +1634,10 @@ export default function EuropaWarClient() {
               Fabrika: {playerFactories}
             </div>
             <div className="rounded-xl bg-slate-800 px-3 py-2">
-              Kapasite: {playerUsedManpower}/{playerManpowerCap}
+              Toprak: {ownedCount}/10
+            </div>
+            <div className="rounded-xl bg-slate-800 px-3 py-2">
+              Kapasite: {playerUsed}/{playerCap}
             </div>
 
             <button
@@ -1175,7 +1646,6 @@ export default function EuropaWarClient() {
             >
               Teknoloji
             </button>
-
             <button
               onClick={() => setPanelMode("economy")}
               className="rounded-xl bg-amber-600 px-3 py-2 hover:bg-amber-700"
@@ -1186,15 +1656,18 @@ export default function EuropaWarClient() {
         </div>
       </div>
 
-      <div className="mx-auto grid max-w-7xl grid-cols-1 gap-4 p-4 lg:grid-cols-[1fr_340px]">
-        <section className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+      <div className="mx-auto grid max-w-7xl grid-cols-1 gap-4 p-4 lg:grid-cols-[1fr_360px]">
+        <section className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
           <div className="mb-4 flex flex-wrap gap-2">
             {countries
-              .filter((country) => country.id !== selectedCountryId)
+              .filter((c) => c.id !== selectedCountryId)
               .map((country) => (
                 <button
                   key={country.id}
-                  onClick={() => onCountryButtonClick(country.id)}
+                  onClick={() => {
+                    setSelectedTargetCountryId(country.id);
+                    setPanelMode("country");
+                  }}
                   className="rounded-xl px-3 py-2 text-sm font-semibold text-white"
                   style={{ backgroundColor: country.color }}
                 >
@@ -1203,156 +1676,220 @@ export default function EuropaWarClient() {
               ))}
           </div>
 
-          <div className="relative h-[640px] overflow-hidden rounded-2xl border border-slate-800 bg-[radial-gradient(circle_at_center,_#0f172a,_#020617)]">
-            <svg className="absolute inset-0 h-full w-full pointer-events-none">
-              {cities.flatMap((city) =>
-                city.neighbors.map((neighborId) => {
-                  const neighbor = cities.find((c) => c.id === neighborId);
-                  if (!neighbor) return null;
-                  if (city.id > neighbor.id) return null;
+          <div className="overflow-hidden rounded-3xl border border-slate-800 bg-[#08111f] p-3">
+            <svg viewBox="0 0 940 560" className="h-auto w-full">
+              {moveTasks.map((task) => {
+                const from = territories.find((t) => t.id === task.fromTerritoryId);
+                const to = territories.find((t) => t.id === task.toTerritoryId);
+                if (!from || !to) return null;
+                const total = task.payload.aircraft > 0 ? 1 : task.payload.tank > 0 ? 3 : 2;
+                const ratio = clamp((total - task.remainingDays) / total, 0, 1);
+                const x = from.labelX + (to.labelX - from.labelX) * ratio;
+                const y = from.labelY + (to.labelY - from.labelY) * ratio;
 
-                  return (
+                return (
+                  <g key={task.id}>
                     <line
-                      key={`${city.id}-${neighbor.id}`}
-                      x1={`${city.x}%`}
-                      y1={`${city.y}%`}
-                      x2={`${neighbor.x}%`}
-                      y2={`${neighbor.y}%`}
-                      stroke="rgba(148,163,184,0.25)"
-                      strokeWidth="2"
+                      x1={from.labelX}
+                      y1={from.labelY}
+                      x2={to.labelX}
+                      y2={to.labelY}
+                      stroke="rgba(255,255,255,0.18)"
+                      strokeDasharray="5 4"
                     />
-                  );
-                })
-              )}
+                    <circle cx={x} cy={y} r="10" fill={getCountryColor(task.ownerCountryId, countries)} />
+                    <text
+                      x={x}
+                      y={y + 4}
+                      textAnchor="middle"
+                      fontSize="9"
+                      fill="white"
+                      fontWeight="700"
+                    >
+                      {task.remainingDays}
+                    </text>
+                  </g>
+                );
+              })}
+
+              {territories.map((territory) => (
+                <g key={territory.id}>
+                  <path
+                    d={territory.polygon}
+                    fill={getCountryColor(territory.ownerCountryId, countries)}
+                    stroke={
+                      selectedTerritoryId === territory.id ? "#ffffff" : "#0f172a"
+                    }
+                    strokeWidth={selectedTerritoryId === territory.id ? 5 : 3}
+                    className="cursor-pointer transition-opacity hover:opacity-90"
+                    onClick={() => onTerritoryClick(territory.id)}
+                  />
+                  <text
+                    x={territory.labelX}
+                    y={territory.labelY - 7}
+                    textAnchor="middle"
+                    fontSize="14"
+                    fill="white"
+                    fontWeight="800"
+                    style={{ pointerEvents: "none" }}
+                  >
+                    {territory.name}
+                  </text>
+                  <text
+                    x={territory.labelX}
+                    y={territory.labelY + 11}
+                    textAnchor="middle"
+                    fontSize="11"
+                    fill="rgba(255,255,255,0.95)"
+                    fontWeight="600"
+                    style={{ pointerEvents: "none" }}
+                  >
+                    A:{territory.units.infantry} T:{territory.units.tank} U:{territory.units.aircraft}
+                  </text>
+                </g>
+              ))}
             </svg>
-
-            {movingUnits.map((moving) => {
-              const fromCity = cities.find((c) => c.id === moving.fromCityId);
-              const toCity = cities.find((c) => c.id === moving.toCityId);
-              if (!fromCity || !toCity) return null;
-
-              const totalDays = moving.unit.moveDays;
-              const progressed = totalDays - moving.remainingDays;
-              const ratio = totalDays <= 0 ? 1 : progressed / totalDays;
-
-              const x = fromCity.x + (toCity.x - fromCity.x) * ratio;
-              const y = fromCity.y + (toCity.y - fromCity.y) * ratio;
-
-              return (
-                <div
-                  key={`moving-${moving.unit.id}`}
-                  className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/30 bg-white/10 px-2 py-1 text-[10px] font-bold text-white"
-                  style={{ left: `${x}%`, top: `${y}%` }}
-                >
-                  {formatUnitLabel(moving.unit.type)} • {moving.remainingDays}g
-                </div>
-              );
-            })}
-
-            {cities.map((city) => {
-              const owner = getCountryById(countries, city.ownerCountryId);
-
-              return (
-                <button
-                  key={city.id}
-                  onClick={() => onCityClick(city.id)}
-                  className={`absolute -translate-x-1/2 -translate-y-1/2 rounded-full border-2 px-3 py-2 text-center text-xs font-bold text-white shadow-lg transition hover:scale-105 ${
-                    selectedCityId === city.id ? "ring-4 ring-white/30" : ""
-                  }`}
-                  style={{
-                    left: `${city.x}%`,
-                    top: `${city.y}%`,
-                    backgroundColor: owner.color,
-                    borderColor: city.ownerCountryId === selectedCountryId ? "#ffffff" : "#111827",
-                    minWidth: 80,
-                  }}
-                >
-                  <div>{city.name}</div>
-                  <div className="text-[10px] opacity-80">{city.stationedUnits.length} birlik</div>
-                </button>
-              );
-            })}
           </div>
         </section>
 
-        <aside className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
-          {panelMode === "city" && selectedCity && (
+        <aside className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
+          {panelMode === "territory" && selectedTerritory && (
             <div>
-              <h2 className="text-xl font-bold text-indigo-300">{selectedCity.name}</h2>
-
+              <h2 className="text-xl font-bold text-indigo-300">{selectedTerritory.name}</h2>
               <div className="mt-3 space-y-2 text-sm text-slate-300">
-                <div>Sahip: {getCountryById(countries, selectedCity.ownerCountryId).name}</div>
-                <div>Ekonomi: {selectedCity.economy}</div>
-                <div>Fabrika: {selectedCity.factories}</div>
-                <div>Komşular: {selectedCity.neighbors.length}</div>
+                <div>Sahip: {getCountryName(selectedTerritory.ownerCountryId, countries)}</div>
+                <div>Arazi: {selectedTerritory.terrain}</div>
+                <div>Ekonomi: {selectedTerritory.economy}</div>
+                <div>Fabrika: {selectedTerritory.factories}</div>
+                <div>
+                  Birlikler — Asker: {selectedTerritory.units.infantry} / Tank:{" "}
+                  {selectedTerritory.units.tank} / Uçak: {selectedTerritory.units.aircraft}
+                </div>
               </div>
 
-              {selectedCity.ownerCountryId === selectedCountryId && (
+              {selectedTerritory.ownerCountryId === selectedCountryId && (
                 <>
-                  <div className="mt-4 space-y-2">
+                  <div className="mt-4 grid grid-cols-1 gap-2">
                     <button
                       onClick={() => produceUnit("infantry")}
-                      className="w-full rounded-xl bg-slate-800 px-3 py-2 hover:bg-slate-700"
+                      className="rounded-xl bg-slate-800 px-3 py-2 hover:bg-slate-700"
                     >
                       Asker bas (100)
                     </button>
                     <button
                       onClick={() => produceUnit("tank")}
-                      className="w-full rounded-xl bg-slate-800 px-3 py-2 hover:bg-slate-700"
+                      className="rounded-xl bg-slate-800 px-3 py-2 hover:bg-slate-700"
                     >
                       Tank bas (300)
                     </button>
                     <button
                       onClick={() => produceUnit("aircraft")}
-                      className="w-full rounded-xl bg-slate-800 px-3 py-2 hover:bg-slate-700"
+                      className="rounded-xl bg-slate-800 px-3 py-2 hover:bg-slate-700"
                     >
                       Uçak bas (500)
                     </button>
+                    <button
+                      onClick={buildFactory}
+                      className="rounded-xl bg-amber-700 px-3 py-2 hover:bg-amber-800"
+                    >
+                      Fabrika kur
+                    </button>
                   </div>
 
-                  <div className="mt-5">
-                    <h3 className="mb-2 font-semibold text-slate-200">Şehirdeki Birlikler</h3>
-                    <div className="space-y-2">
-                      {selectedCity.stationedUnits.length === 0 && (
-                        <div className="rounded-xl bg-slate-800 px-3 py-2 text-sm text-slate-400">
-                          Birlik yok
+                  <div className="mt-5 rounded-2xl border border-slate-700 bg-slate-800 p-3">
+                    <div className="font-semibold text-white">Hareket / Saldırı</div>
+
+                    {!moveDraft || moveDraft.sourceTerritoryId !== selectedTerritory.id ? (
+                      <button
+                        onClick={startMoveMode}
+                        className="mt-3 w-full rounded-xl bg-indigo-600 px-3 py-2 hover:bg-indigo-700"
+                      >
+                        Hareket modu aç
+                      </button>
+                    ) : (
+                      <div className="mt-3 space-y-3">
+                        <div className="grid grid-cols-3 gap-2">
+                          <div>
+                            <label className="mb-1 block text-xs text-slate-400">Asker</label>
+                            <input
+                              type="number"
+                              min={0}
+                              max={selectedTerritory.units.infantry}
+                              value={moveDraft.infantry}
+                              onChange={(e) =>
+                                setMoveDraft({
+                                  ...moveDraft,
+                                  infantry: clamp(
+                                    Number(e.target.value) || 0,
+                                    0,
+                                    selectedTerritory.units.infantry
+                                  ),
+                                })
+                              }
+                              className="w-full rounded-lg bg-slate-900 px-2 py-2 text-sm outline-none"
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-xs text-slate-400">Tank</label>
+                            <input
+                              type="number"
+                              min={0}
+                              max={selectedTerritory.units.tank}
+                              value={moveDraft.tank}
+                              onChange={(e) =>
+                                setMoveDraft({
+                                  ...moveDraft,
+                                  tank: clamp(
+                                    Number(e.target.value) || 0,
+                                    0,
+                                    selectedTerritory.units.tank
+                                  ),
+                                })
+                              }
+                              className="w-full rounded-lg bg-slate-900 px-2 py-2 text-sm outline-none"
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-xs text-slate-400">Uçak</label>
+                            <input
+                              type="number"
+                              min={0}
+                              max={selectedTerritory.units.aircraft}
+                              value={moveDraft.aircraft}
+                              onChange={(e) =>
+                                setMoveDraft({
+                                  ...moveDraft,
+                                  aircraft: clamp(
+                                    Number(e.target.value) || 0,
+                                    0,
+                                    selectedTerritory.units.aircraft
+                                  ),
+                                })
+                              }
+                              className="w-full rounded-lg bg-slate-900 px-2 py-2 text-sm outline-none"
+                            />
+                          </div>
                         </div>
-                      )}
 
-                      {selectedCity.stationedUnits.map((unit) => (
+                        <div className="rounded-xl bg-indigo-500/10 px-3 py-2 text-sm text-indigo-200">
+                          Şimdi komşu ülkeye tıkla.
+                        </div>
+
                         <button
-                          key={unit.id}
-                          onClick={() =>
-                            setSelectedMovingUnitId((prev) => (prev === unit.id ? null : unit.id))
-                          }
-                          className={`w-full rounded-xl border px-3 py-2 text-left text-sm ${
-                            selectedMovingUnitId === unit.id
-                              ? "border-indigo-400 bg-indigo-500/10"
-                              : "border-slate-700 bg-slate-800"
-                          }`}
+                          onClick={cancelMoveMode}
+                          className="w-full rounded-xl bg-slate-700 px-3 py-2 hover:bg-slate-600"
                         >
-                          <div className="font-semibold">
-                            {formatUnitLabel(unit.type)}
-                          </div>
-                          <div className="text-xs text-slate-400">
-                            Saldırı: {unit.attack} • Savunma: {unit.defense} • Hareket: {unit.moveDays} gün
-                          </div>
+                          Hareketi iptal et
                         </button>
-                      ))}
-                    </div>
-
-                    {selectedMovingUnitId && (
-                      <div className="mt-3 rounded-xl bg-indigo-500/10 px-3 py-2 text-sm text-indigo-200">
-                        Birlik seçildi. Şimdi komşu bir şehre tıkla.
                       </div>
                     )}
                   </div>
                 </>
               )}
 
-              {selectedCity.ownerCountryId !== selectedCountryId && (
+              {selectedTerritory.ownerCountryId !== selectedCountryId && (
                 <div className="mt-4 rounded-xl bg-rose-500/10 px-3 py-2 text-sm text-rose-200">
-                  Bu şehir başka bir ülkeye ait.
+                  Bu bölge başka bir ülkeye ait.
                 </div>
               )}
             </div>
@@ -1361,18 +1898,12 @@ export default function EuropaWarClient() {
           {panelMode === "country" && targetCountry && selectedCountryId && (
             <div>
               <h2 className="text-xl font-bold text-indigo-300">{targetCountry.name}</h2>
-
               <div className="mt-3 space-y-2 text-sm text-slate-300">
                 <div>İlişki: {relationToTarget}</div>
-                <div>
-                  Savaş durumu:{" "}
-                  {getCountryById(countries, selectedCountryId).atWarWith.includes(targetCountry.id)
-                    ? "Savaştasınız"
-                    : "Barış"}
-                </div>
+                <div>Savaş: {playerAtWarWithTarget ? "Var" : "Yok"}</div>
                 <div>
                   Müttefiklik:{" "}
-                  {getCountryById(countries, selectedCountryId).allies.includes(targetCountry.id)
+                  {countries.find((c) => c.id === selectedCountryId)?.allies.includes(targetCountry.id)
                     ? "Müttefik"
                     : "Yok"}
                 </div>
@@ -1380,7 +1911,7 @@ export default function EuropaWarClient() {
 
               <div className="mt-4 space-y-2">
                 <button
-                  onClick={doDeclareWar}
+                  onClick={declareWarAction}
                   className="w-full rounded-xl bg-rose-600 px-3 py-2 hover:bg-rose-700"
                 >
                   Savaş ilan et
@@ -1409,6 +1940,13 @@ export default function EuropaWarClient() {
                 >
                   Barış teklif et
                 </button>
+                <button
+                  onClick={airStrike}
+                  disabled={!canAirStrikeNow}
+                  className="w-full rounded-xl bg-sky-600 px-3 py-2 hover:bg-sky-700 disabled:opacity-40"
+                >
+                  Hava saldırısı
+                </button>
               </div>
             </div>
           )}
@@ -1416,12 +1954,11 @@ export default function EuropaWarClient() {
           {panelMode === "tech" && playerCountry && (
             <div>
               <h2 className="text-xl font-bold text-emerald-300">Teknoloji</h2>
-
               <div className="mt-3 rounded-xl bg-slate-800 px-3 py-2 text-sm text-slate-300">
                 {playerCountry.activeResearch ? (
                   <div>
-                    Araştırma: {formatUnitLabel(playerCountry.activeResearch.category)} Seviye{" "}
-                    {playerCountry.activeResearch.level} • Kalan:{" "}
+                    Araştırma: {formatUnitType(playerCountry.activeResearch.category)} • Seviye{" "}
+                    {playerCountry.activeResearch.level} • Kalan{" "}
                     {playerCountry.activeResearch.remainingDays} gün
                   </div>
                 ) : (
@@ -1432,30 +1969,32 @@ export default function EuropaWarClient() {
               <div className="mt-4 space-y-3">
                 {(["infantry", "tank", "aircraft"] as UnitType[]).map((type) => {
                   const level = playerCountry.tech[type];
-                  const nextLevel = level + 1;
-                  const base = level < 3 ? RESEARCH_BASE_DAYS[type][level] : 0;
-                  const actual = level < 3 ? Math.max(5, Math.ceil(base / Math.max(1, playerFactories))) : 0;
+                  const maxed = level >= 3;
+                  const base = maxed ? 0 : RESEARCH_BASE_DAYS[type][level];
+                  const actual = maxed ? 0 : Math.max(5, Math.ceil(base / Math.max(playerFactories, 1)));
 
                   return (
                     <div key={type} className="rounded-xl border border-slate-700 bg-slate-800 p-3">
                       <div className="font-semibold text-white">
-                        {formatUnitLabel(type)} • Seviye {level}/3
+                        {formatUnitType(type)} • Seviye {level}/3
                       </div>
-                      {level < 3 ? (
+                      {!maxed ? (
                         <>
                           <div className="mt-1 text-sm text-slate-400">
-                            Sonraki seviye: {nextLevel} • Süre: {actual} gün
+                            Sonraki süre: {actual} gün
                           </div>
                           <button
                             onClick={() => startResearch(type)}
                             disabled={!!playerCountry.activeResearch}
-                            className="mt-3 w-full rounded-xl bg-emerald-600 px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50 hover:bg-emerald-700"
+                            className="mt-3 w-full rounded-xl bg-emerald-600 px-3 py-2 hover:bg-emerald-700 disabled:opacity-50"
                           >
                             Araştır
                           </button>
                         </>
                       ) : (
-                        <div className="mt-2 text-sm text-emerald-300">Maksimum seviye</div>
+                        <div className="mt-2 text-sm text-emerald-300">
+                          Maksimum seviye
+                        </div>
                       )}
                     </div>
                   );
@@ -1467,24 +2006,26 @@ export default function EuropaWarClient() {
           {panelMode === "economy" && playerCountry && selectedCountryId && (
             <div>
               <h2 className="text-xl font-bold text-amber-300">Ekonomi</h2>
-
               <div className="mt-3 space-y-2 text-sm text-slate-300">
                 <div>Para: {playerCountry.treasury}</div>
-                <div>Günlük gelir: {playerIncome}</div>
+                <div>Gelir/Gün: {playerIncome}</div>
+                <div>Ekonomi: {playerEconomy}</div>
                 <div>Toplam fabrika: {playerFactories}</div>
-                <div>Yeni fabrika maliyeti: {factoryBuildCost}</div>
               </div>
 
               <div className="mt-4 space-y-2">
-                {getControlledCities(cities, selectedCountryId).map((city) => (
+                {ownedTerritories(territories, selectedCountryId).map((territory) => (
                   <button
-                    key={city.id}
-                    onClick={() => buildFactory(city.id)}
+                    key={territory.id}
+                    onClick={() => {
+                      setSelectedTerritoryId(territory.id);
+                      setPanelMode("territory");
+                    }}
                     className="w-full rounded-xl bg-slate-800 px-3 py-2 text-left hover:bg-slate-700"
                   >
-                    <div className="font-semibold text-white">{city.name}</div>
+                    <div className="font-semibold text-white">{territory.name}</div>
                     <div className="text-xs text-slate-400">
-                      Fabrika: {city.factories}
+                      Ekonomi: {territory.economy} • Fabrika: {territory.factories}
                     </div>
                   </button>
                 ))}
@@ -1496,18 +2037,16 @@ export default function EuropaWarClient() {
             <div>
               <h2 className="text-xl font-bold text-indigo-300">Kontrol Paneli</h2>
               <p className="mt-3 text-sm text-slate-400">
-                Haritadan şehir seç, ya da üstteki ülke butonlarından diplomasi yap.
+                Haritadan ülke alanına tıkla. Kendi bölgeni seçip birlik basabilir, hareket ettirebilir,
+                düşman ülke seçip diplomasi yapabilirsin.
               </p>
-              <div className="mt-4 rounded-xl bg-slate-800 px-3 py-3 text-sm text-slate-300">
-                Seçili ülke: {playerCountry?.name}
-              </div>
             </div>
           )}
         </aside>
       </div>
 
       <div className="mx-auto max-w-7xl px-4 pb-6">
-        <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+        <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
           <h2 className="mb-3 text-lg font-bold text-slate-100">Olay Günlüğü</h2>
           <div className="space-y-2">
             {eventLog.length === 0 && (
@@ -1524,6 +2063,35 @@ export default function EuropaWarClient() {
           </div>
         </div>
       </div>
+
+      {gameOver && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4">
+          <div className="w-full max-w-lg rounded-3xl border border-slate-700 bg-slate-900 p-8 text-center">
+            <div className="text-4xl">
+              {gameOver.winner ? "🏆" : "💀"}
+            </div>
+            <h2 className="mt-4 text-3xl font-extrabold text-white">
+              {gameOver.winner ? "Zafer!" : "Yenildin"}
+            </h2>
+            <p className="mt-3 text-slate-300">{gameOver.reason}</p>
+
+            <div className="mt-6 flex flex-wrap justify-center gap-3">
+              <button
+                onClick={resetGame}
+                className="rounded-xl bg-indigo-600 px-5 py-3 font-semibold hover:bg-indigo-700"
+              >
+                Yeni Oyun
+              </button>
+              <button
+                onClick={loadGame}
+                className="rounded-xl bg-slate-800 px-5 py-3 font-semibold hover:bg-slate-700"
+              >
+                Kaydı Yükle
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
