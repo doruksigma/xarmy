@@ -61,7 +61,7 @@ only as `Authorization: Bearer <token>`. A promotion move also supplies
 the room. State responses never expose either player's token or credential hash.
 
 Run the backend rule, authorization, race, and HTTP-helper regression tests from
-the repository root (Node.js 20):
+the repository root (Node.js 24):
 
 ```bash
 npm run test:chess
@@ -99,6 +99,6 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 
 ## Deployment
 
-Use `npm run build` and `npm start` on a Node.js 20 host, or deploy the Next.js
+Use `npm run build` and `npm start` on a Node.js 24 host, or deploy the Next.js
 project to Vercel. Vercel online chess rooms require the Redis REST connection
 and redeployment described above. The bot does not require external services.
