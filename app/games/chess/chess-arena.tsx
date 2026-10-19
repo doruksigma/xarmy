@@ -9,10 +9,14 @@ import {
   type CSSProperties,
 } from "react";
 import { Chess, type Color, type Square } from "chess.js";
-import { Chessboard } from "react-chessboard";
+import { Chessboard, type Arrow } from "react-chessboard";
+import { useChessCoach } from "./use-chess-coach";
+import ChessReviewPanel from "./review-panel";
+import TrainerAdvice from "./trainer-advice";
 import type { BotDifficulty, BotResponse } from "./bot";
 import type { RoomView } from "@/lib/chess-room";
 
+type GameMode = "bot" | "online" | "coach";
 type Session = { code: string; token: string };
 type Promotion = { from: string; to: string };
 const SESSION_KEY = "xarmy-chess-room";
@@ -59,7 +63,9 @@ async function roomRequest(
       cache: "no-store",
     });
   } catch {
-    throw new Error("Sunucuya ulaşılamadı. Bağlantını kontrol edip tekrar dene.");
+    throw new Error(
+      "Sunucuya ulaşılamadı. Bağlantını kontrol edip tekrar dene.",
+    );
   }
   const data = await response.json().catch(() => null);
   if (!response.ok)
@@ -83,7 +89,7 @@ function localResult(game: Chess) {
 }
 
 export default function ChessArena() {
-  const [mode, setMode] = useState<"bot" | "online">("bot");
+  const [mode, setMode] = useState<GameMode>("bot");
   const [game, setGame] = useState(() => new Chess());
   const gameRef = useRef(game);
   const [difficulty, setDifficulty] = useState<BotDifficulty>("medium");
@@ -188,7 +194,7 @@ export default function ChessArena() {
     workerRef.current = null;
     setBotThinking(false);
     if (
-      mode !== "bot" ||
+      mode === "online" ||
       !botStarted ||
       botResigned ||
       game.isGameOver() ||
@@ -216,7 +222,7 @@ export default function ChessArena() {
         if (
           finished ||
           data.requestId !== requestId ||
-          activeMode.current !== "bot"
+          activeMode.current !== mode
         )
           return;
         if (data.error || !data.move) {
@@ -268,8 +274,81 @@ export default function ChessArena() {
       : botResigned || game.isGameOver();
   const isActive =
     mode === "online" ? room?.status === "playing" : botStarted && !isFinished;
+  const coach = useChessCoach({
+    game,
+    mode,
+    active: Boolean(isActive),
+    finished: Boolean(isFinished),
+    playerColor,
+  });
+  const showReview = coach.reviewOpen;
+  const displayedGame = useMemo(() => {
+    if (!showReview) return game;
+    const board = new Chess();
+    const count =
+      coach.selectedPly < 0
+        ? 0
+        : coach.selectedPly + (coach.showPlayed ? 1 : 0);
+    game
+      .history()
+      .slice(0, count)
+      .forEach((move) => board.move(move));
+    return board;
+  }, [showReview, game, coach.selectedPly, coach.showPlayed]);
+  const boardArrows = useMemo<Arrow[]>(() => {
+    if (showReview) {
+      if (coach.showPlayed || coach.selectedPly < 0) return [];
+      const review = coach.reviews.find(
+        (move) => move.ply === coach.selectedPly,
+      );
+      if (!review) return [];
+      const arrows: Arrow[] = [];
+      if (review.bestMove)
+        arrows.push({
+          startSquare: review.bestMove.slice(0, 2),
+          endSquare: review.bestMove.slice(2, 4),
+          color: "#34d399",
+        });
+      if (
+        ["inaccuracy", "mistake", "blunder"].includes(review.judgment) &&
+        review.bestMove !== review.playedMove
+      ) {
+        arrows.push({
+          startSquare: review.playedMove.slice(0, 2),
+          endSquare: review.playedMove.slice(2, 4),
+          color: "#f87171",
+        });
+      }
+      return arrows;
+    }
+    if (
+      mode === "coach" &&
+      isActive &&
+      game.turn() === playerColor &&
+      coach.advice?.bestMove
+    )
+      return [
+        {
+          startSquare: coach.advice.bestMove.slice(0, 2),
+          endSquare: coach.advice.bestMove.slice(2, 4),
+          color: "#34d399",
+        },
+      ];
+    return [];
+  }, [
+    showReview,
+    coach.showPlayed,
+    coach.selectedPly,
+    coach.reviews,
+    coach.advice,
+    mode,
+    isActive,
+    game,
+    playerColor,
+  ]);
   const canMove = Boolean(
     isActive &&
+      !showReview &&
       !isFinished &&
       !busy &&
       !botThinking &&
@@ -277,7 +356,7 @@ export default function ChessArena() {
       (mode !== "online" || connection === "connected"),
   );
   const history = game.history();
-  const lastMove = game.history({ verbose: true }).at(-1);
+  const lastMove = displayedGame.history({ verbose: true }).at(-1);
   let status = "Tahta hazır. Bir oyun başlat.";
   if (mode === "online" && session && !room) status = "Odaya bağlanılıyor…";
   else if (mode === "online" && room?.status === "waiting")
@@ -290,7 +369,7 @@ export default function ChessArena() {
           ? "Oyunu terk ettin · Bot kazandı"
           : (localResult(game) ?? "Oyun bitti");
   } else if (isActive)
-    status = `${botThinking ? "Bot düşünüyor…" : game.turn() === playerColor ? "Sıra sende" : mode === "bot" ? "Botun sırası" : "Arkadaşının sırası"}${game.isCheck() ? " · Şah!" : ""}`;
+    status = `${botThinking ? "Bot düşünüyor…" : game.turn() === playerColor ? "Sıra sende" : mode !== "online" ? "Botun sırası" : "Arkadaşının sırası"}${game.isCheck() ? " · Şah!" : ""}`;
 
   const squareStyles = useMemo(() => {
     const styles: Record<string, CSSProperties> = {};
@@ -310,14 +389,14 @@ export default function ChessArena() {
         };
       }
     }
-    if (game.isCheck())
-      for (const row of game.board())
+    if (displayedGame.isCheck())
+      for (const row of displayedGame.board())
         for (const piece of row) {
-          if (piece?.type === "k" && piece.color === game.turn())
+          if (piece?.type === "k" && piece.color === displayedGame.turn())
             styles[piece.square] = { backgroundColor: "rgba(239,68,68,.65)" };
         }
     return styles;
-  }, [game, selected, canMove, lastMove?.san]);
+  }, [game, displayedGame, selected, canMove, lastMove?.san]);
 
   async function makeMove(
     from: string,
@@ -438,8 +517,10 @@ export default function ChessArena() {
     if (session && room && room.status !== "finished") {
       busyRef.current = true;
       setBusy(true);
+      let ended: RoomView | null = null;
       try {
-        await roomRequest(`/${session.code}/resign`, session, {});
+        ended = (await roomRequest(`/${session.code}/resign`, session, {}))
+          .room;
       } catch (err) {
         if (
           !(err instanceof RoomRequestError && [401, 404].includes(err.status))
@@ -453,6 +534,11 @@ export default function ChessArena() {
       }
       busyRef.current = false;
       setBusy(false);
+      if (room.status === "playing" && ended) {
+        applyRoom(ended);
+        setConfirmLeave(false);
+        return;
+      }
     }
     sessionRef.current = null;
     setSession(null);
@@ -467,11 +553,11 @@ export default function ChessArena() {
     saveGame(new Chess());
   }
 
-  function changeMode(next: "bot" | "online") {
+  function changeMode(next: GameMode) {
     if (
       busyRef.current ||
       session ||
-      (mode === "bot" && botStarted && !isFinished)
+      (mode !== "online" && botStarted && !isFinished)
     )
       return;
     setMode(next);
@@ -493,7 +579,7 @@ export default function ChessArena() {
             Bir hamle öne geç.
           </h1>
           <p className="mt-2 text-sm text-slate-400">
-            Botla pratik yap ya da bir oda aç, arkadaşına meydan oku.
+            Botla oyna, arkadaşına meydan oku veya eğitmeninle öğren.
           </p>
         </div>
         <span className="rounded-full border border-emerald-400/20 bg-emerald-400/5 px-3 py-1.5 text-xs text-emerald-300">
@@ -503,19 +589,21 @@ export default function ChessArena() {
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
         <section
           aria-label="Satranç tahtası"
-          className="min-w-0 rounded-2xl border border-slate-800 bg-slate-900/40 p-3 sm:p-5"
+          className="min-w-0 rounded-2xl border border-slate-800 bg-slate-900/40 p-3 sm:p-5 lg:sticky lg:top-20"
         >
           <div className="mb-3 flex items-center justify-between gap-2 text-sm">
             <div className="flex items-center gap-2">
               <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-800 text-xl">
-                {mode === "bot" ? "♟" : "♚"}
+                {mode === "online" ? "♚" : "♟"}
               </span>
               <div className="font-semibold">
-                {mode === "bot"
-                  ? "XARMY Bot"
-                  : room?.status === "waiting"
-                    ? "Rakip bekleniyor"
-                    : "Arkadaşın"}
+                {mode === "coach"
+                  ? "Yapay zekâ eğitmenin"
+                  : mode === "bot"
+                    ? "XARMY Bot"
+                    : room?.status === "waiting"
+                      ? "Rakip bekleniyor"
+                      : "Arkadaşın"}
                 <div className="text-xs font-normal text-slate-500">
                   {colorName(playerColor === "w" ? "b" : "w")} taşlar
                 </div>
@@ -527,11 +615,19 @@ export default function ChessArena() {
               </span>
             )}
           </div>
-          <div className="overflow-hidden rounded-lg border border-slate-700 shadow-xl">
+          <div
+            data-testid="chess-board"
+            data-fen={displayedGame.fen()}
+            className="overflow-hidden rounded-lg border border-slate-700 shadow-xl"
+          >
             <Chessboard
               options={{
                 id: "arena",
-                position: game.fen(),
+                position: displayedGame.fen(),
+                arrows: boardArrows,
+                allowDrawingArrows: !showReview,
+                clearArrowsOnClick: false,
+                clearArrowsOnPositionChange: true,
                 boardOrientation:
                   (playerColor === "w") !== flipped ? "white" : "black",
                 darkSquareStyle: { backgroundColor: "#6b8a79" },
@@ -549,7 +645,7 @@ export default function ChessArena() {
                     .filter((move) => move.to === targetSquare);
                   if (moves.length) void makeMove(sourceSquare, targetSquare);
                   return (
-                    mode === "bot" &&
+                    mode !== "online" &&
                     moves.length > 0 &&
                     !moves.some((move) => move.promotion)
                   );
@@ -600,266 +696,292 @@ export default function ChessArena() {
             </button>
           </div>
           <p className="mt-4 text-center text-xs text-slate-500">
-            Taşı sürükle veya önce taşa, sonra gideceği kareye dokun.
+            {showReview
+              ? "Geçmiş konumu inceliyorsun. Sağdaki hamlelerle tahtayı geri sarabilirsin."
+              : "Taşı sürükle veya önce taşa, sonra gideceği kareye dokun."}
           </p>
         </section>
         <aside className="space-y-4">
-          <section className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
-            <div
-              className="mb-5 grid grid-cols-2 gap-1 rounded-xl bg-slate-950 p-1"
-              aria-label="Oyun modu"
-            >
-              {(
-                [
-                  ["bot", "♟ Botla oyna"],
-                  ["online", "♚ Arkadaşınla oyna"],
-                ] as const
-              ).map(([value, label]) => (
-                <button
-                  key={value}
-                  type="button"
-                  aria-pressed={mode === value}
-                  disabled={
-                    busy ||
-                    Boolean(session) ||
-                    (mode === "bot" && botStarted && !isFinished)
-                  }
-                  onClick={() => changeMode(value)}
-                  className={`rounded-lg px-2 py-3 text-xs font-semibold transition disabled:cursor-default ${mode === value ? "bg-slate-800 text-white shadow" : "text-slate-400 hover:text-white"}`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            {mode === "bot" ? (
-              <>
-                <h2 className="font-bold">Kendi hızında, kendi seviyende.</h2>
-                <p className="mt-1 text-xs leading-5 text-slate-400">
-                  Bir seviye seç ve ilk hamleni yap.
-                </p>
-                <label
-                  className="mb-2 mt-5 block text-xs font-semibold text-slate-300"
-                  htmlFor="difficulty"
-                >
-                  Bot seviyesi
-                </label>
-                <select
-                  id="difficulty"
-                  disabled={botStarted && !isFinished}
-                  value={difficulty}
-                  onChange={(event) =>
-                    setDifficulty(event.target.value as BotDifficulty)
-                  }
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-sm disabled:opacity-50"
-                >
-                  <option value="easy">Kolay · Isınma turu</option>
-                  <option value="medium">Orta · Dengeli rakip</option>
-                  <option value="hard">Zor · Bir adım ötesi</option>
-                </select>
-                <div className="mb-2 mt-4 text-xs font-semibold text-slate-300">
-                  Taş rengin
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  {(["w", "b"] as const).map((color) => (
-                    <button
-                      key={color}
-                      type="button"
-                      disabled={botStarted && !isFinished}
-                      onClick={() => setPreferredColor(color)}
-                      aria-pressed={preferredColor === color}
-                      className={`${button} border ${preferredColor === color ? "border-emerald-400/70 bg-emerald-400/10 text-emerald-300" : "border-slate-700 text-slate-400"}`}
-                    >
-                      {color === "w" ? "♔" : "♚"} {colorName(color)}
-                    </button>
-                  ))}
-                </div>
-                {!botStarted || isFinished ? (
+          {mode === "coach" && isActive && !isFinished && (
+            <TrainerAdvice
+              advice={coach.advice}
+              loading={coach.hintLoading}
+              error={coach.hintError}
+              playerTurn={game.turn() === playerColor}
+              onRetry={coach.retryHint}
+              canPlay={canMove}
+              onPlay={() => {
+                const move = coach.advice?.bestMove;
+                if (move)
+                  void makeMove(move.slice(0, 2), move.slice(2, 4), move[4]);
+              }}
+            />
+          )}
+          {!showReview && (
+            <section className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+              <div
+                className="mb-5 grid grid-cols-2 gap-1 rounded-xl bg-slate-950 p-1"
+                aria-label="Oyun modu"
+              >
+                {(
+                  [
+                    ["bot", "♟ Botla oyna"],
+                    ["online", "♚ Arkadaşınla oyna"],
+                    ["coach", "✦ Yapay zekâ eğitmeni"],
+                  ] as const
+                ).map(([value, label]) => (
                   <button
-                    className={`${primary} mt-5 w-full`}
-                    onClick={startBot}
-                  >
-                    {botStarted ? "Yeniden oyna" : "Oyuna başla"}{" "}
-                    <span aria-hidden="true">→</span>
-                  </button>
-                ) : (
-                  <button
-                    className={`${secondary} mt-5 w-full`}
-                    onClick={() => setConfirmLeave(true)}
-                  >
-                    Oyunu terk et
-                  </button>
-                )}
-                {botError && (
-                  <div className="mt-3 text-sm text-amber-300" role="alert">
-                    Bot yanıt veremedi.{" "}
-                    <button
-                      className="underline"
-                      onClick={() => {
-                        setBotError(false);
-                        setBotRetry((value) => value + 1);
-                      }}
-                    >
-                      Tekrar dene
-                    </button>
-                  </div>
-                )}
-              </>
-            ) : session ? (
-              <>
-                <div className="flex items-center justify-between">
-                  <h2 className="font-bold">Oyun odan</h2>
-                  <span
-                    className={`text-xs ${connection === "connected" ? "text-emerald-400" : "text-amber-300"}`}
-                  >
-                    {connection === "connected"
-                      ? "● Bağlı"
-                      : connection === "offline"
-                        ? "● Yeniden bağlanıyor"
-                        : "● Bağlanıyor"}
-                  </span>
-                </div>
-                <p className="mt-2 text-xs leading-5 text-slate-400">
-                  Arkadaşın “Odaya katıl” alanına bu numarayı girsin.
-                </p>
-                <div className="mt-4 rounded-xl border border-dashed border-emerald-400/40 bg-emerald-400/5 p-4 text-center">
-                  <span className="text-[10px] font-semibold uppercase tracking-widest text-emerald-400">
-                    Oda numarası
-                  </span>
-                  <div
-                    data-testid="room-code"
-                    className="mt-1 font-mono text-3xl font-bold tracking-[.25em] text-white"
-                  >
-                    {session.code}
-                  </div>
-                </div>
-                <button
-                  className={`${secondary} mt-3 w-full`}
-                  onClick={async () => {
-                    try {
-                      await navigator.clipboard.writeText(session.code);
-                      setCopied(true);
-                      setTimeout(() => setCopied(false), 2000);
-                    } catch {
-                      setError(
-                        "Kopyalanamadı. Oda numarasını seçerek kopyalayabilirsin.",
-                      );
+                    key={value}
+                    type="button"
+                    aria-pressed={mode === value}
+                    disabled={
+                      busy ||
+                      Boolean(session) ||
+                      (mode !== "online" && botStarted && !isFinished)
                     }
-                  }}
-                >
-                  {copied ? "✓ Numara kopyalandı" : "Oda numarasını kopyala"}
-                </button>
-                <p className="mt-4 text-xs text-slate-400">
-                  {colorName(room?.color ?? "w")} taşlarla oynuyorsun. Odaya
-                  yalnızca iki kişi katılabilir. Oda 24 saat geçerlidir.
-                </p>
-                {connection === "offline" && (
-                  <p
-                    role="alert"
-                    className="mt-3 text-xs leading-5 text-amber-300"
+                    onClick={() => changeMode(value)}
+                    className={`${value === "coach" ? "col-span-2" : ""} rounded-lg px-2 py-3 text-xs font-semibold transition disabled:cursor-default ${mode === value ? "bg-slate-800 text-white shadow" : "text-slate-400 hover:text-white"}`}
                   >
-                    Bağlantı kesildi veya odanın süresi doldu. Bağlantı tekrar
-                    deneniyor; gerekirse odadan çıkıp yeni bir oda aç.
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {mode !== "online" ? (
+                <>
+                  <h2 className="font-bold">
+                    {mode === "coach"
+                      ? "Hamleni birlikte düşünelim."
+                      : "Kendi hızında, kendi seviyende."}
+                  </h2>
+                  <p className="mt-1 text-xs leading-5 text-slate-400">
+                    {mode === "coach"
+                      ? "Sıra sendeyken iyi hamleyi yeşil okla ve nedenleriyle gör. Maç sonunda hatalarını birlikte inceleyelim."
+                      : "Bir seviye seç ve ilk hamleni yap. Maçın bitince tüm hamlelerini inceleyebilirsin."}
                   </p>
-                )}
-                <button
-                  disabled={busy}
-                  className={`${secondary} mt-4 w-full`}
-                  onClick={() =>
-                    room?.status === "finished" || !room
-                      ? void leaveRoom()
-                      : setConfirmLeave(true)
-                  }
-                >
-                  {room?.status === "playing"
-                    ? "Terk et ve odadan çık"
-                    : "Odadan çık"}
-                </button>
-                {connection === "offline" && (
+                  <label
+                    className="mb-2 mt-5 block text-xs font-semibold text-slate-300"
+                    htmlFor="difficulty"
+                  >
+                    Bot seviyesi
+                  </label>
+                  <select
+                    id="difficulty"
+                    disabled={botStarted && !isFinished}
+                    value={difficulty}
+                    onChange={(event) =>
+                      setDifficulty(event.target.value as BotDifficulty)
+                    }
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-sm disabled:opacity-50"
+                  >
+                    <option value="easy">Kolay · Isınma turu</option>
+                    <option value="medium">Orta · Dengeli rakip</option>
+                    <option value="hard">Zor · Bir adım ötesi</option>
+                  </select>
+                  <div className="mb-2 mt-4 text-xs font-semibold text-slate-300">
+                    Taş rengin
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {(["w", "b"] as const).map((color) => (
+                      <button
+                        key={color}
+                        type="button"
+                        disabled={botStarted && !isFinished}
+                        onClick={() => setPreferredColor(color)}
+                        aria-pressed={preferredColor === color}
+                        className={`${button} border ${preferredColor === color ? "border-emerald-400/70 bg-emerald-400/10 text-emerald-300" : "border-slate-700 text-slate-400"}`}
+                      >
+                        {color === "w" ? "♔" : "♚"} {colorName(color)}
+                      </button>
+                    ))}
+                  </div>
+                  {!botStarted || isFinished ? (
+                    <button
+                      className={`${primary} mt-5 w-full`}
+                      onClick={startBot}
+                    >
+                      {botStarted ? "Yeniden oyna" : "Oyuna başla"}{" "}
+                      <span aria-hidden="true">→</span>
+                    </button>
+                  ) : (
+                    <button
+                      className={`${secondary} mt-5 w-full`}
+                      onClick={() => setConfirmLeave(true)}
+                    >
+                      Oyunu terk et
+                    </button>
+                  )}
+                  {botError && (
+                    <div className="mt-3 text-sm text-amber-300" role="alert">
+                      Bot yanıt veremedi.{" "}
+                      <button
+                        className="underline"
+                        onClick={() => {
+                          setBotError(false);
+                          setBotRetry((value) => value + 1);
+                        }}
+                      >
+                        Tekrar dene
+                      </button>
+                    </div>
+                  )}
+                </>
+              ) : session ? (
+                <>
+                  <div className="flex items-center justify-between">
+                    <h2 className="font-bold">Oyun odan</h2>
+                    <span
+                      className={`text-xs ${connection === "connected" ? "text-emerald-400" : "text-amber-300"}`}
+                    >
+                      {connection === "connected"
+                        ? "● Bağlı"
+                        : connection === "offline"
+                          ? "● Yeniden bağlanıyor"
+                          : "● Bağlanıyor"}
+                    </span>
+                  </div>
+                  <p className="mt-2 text-xs leading-5 text-slate-400">
+                    Arkadaşın “Odaya katıl” alanına bu numarayı girsin.
+                  </p>
+                  <div className="mt-4 rounded-xl border border-dashed border-emerald-400/40 bg-emerald-400/5 p-4 text-center">
+                    <span className="text-[10px] font-semibold uppercase tracking-widest text-emerald-400">
+                      Oda numarası
+                    </span>
+                    <div
+                      data-testid="room-code"
+                      className="mt-1 font-mono text-3xl font-bold tracking-[.25em] text-white"
+                    >
+                      {session.code}
+                    </div>
+                  </div>
                   <button
-                    className="mt-3 w-full text-xs text-slate-400 underline"
-                    onClick={() => {
-                      sessionRef.current = null;
-                      setSession(null);
-                      setRoom(null);
-                      setError("");
-                      setConfirmLeave(false);
-                      saveGame(new Chess());
+                    className={`${secondary} mt-3 w-full`}
+                    onClick={async () => {
                       try {
-                        sessionStorage.removeItem(SESSION_KEY);
+                        await navigator.clipboard.writeText(session.code);
+                        setCopied(true);
+                        setTimeout(() => setCopied(false), 2000);
                       } catch {
-                        /* Unavailable storage. */
+                        setError(
+                          "Kopyalanamadı. Oda numarasını seçerek kopyalayabilirsin.",
+                        );
                       }
                     }}
                   >
-                    Bağlantıyı bırak ve ana menüye dön
+                    {copied ? "✓ Numara kopyalandı" : "Oda numarasını kopyala"}
                   </button>
-                )}
-              </>
-            ) : (
-              <>
-                <h2 className="font-bold">Aynı tahta, iki arkadaş.</h2>
-                <p className="mt-2 text-xs leading-5 text-slate-400">
-                  Odanı oluştur, numarayı paylaş. Arkadaşın katılınca oyun
-                  başlar.
-                </p>
-                <button
-                  disabled={busy}
-                  className={`${primary} mt-5 w-full`}
-                  onClick={() => void enterRoom(false)}
-                >
-                  {busy ? "Bağlanıyor…" : "+ Oda oluştur"}
-                </button>
-                <div className="my-5 flex items-center gap-3 text-xs text-slate-500">
-                  <div className="h-px flex-1 bg-slate-800" />
-                  veya
-                  <div className="h-px flex-1 bg-slate-800" />
-                </div>
-                <form
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    void enterRoom(true);
-                  }}
-                >
-                  <label
-                    htmlFor="room-code"
-                    className="mb-2 block text-xs font-semibold text-slate-300"
-                  >
-                    Arkadaşının oda numarası
-                  </label>
-                  <input
-                    id="room-code"
-                    inputMode="numeric"
-                    pattern="[0-9]{6}"
-                    autoComplete="off"
-                    maxLength={6}
-                    placeholder="6 haneli numara"
-                    value={roomCode}
-                    onChange={(event) =>
-                      setRoomCode(
-                        event.target.value.replace(/\D/g, "").slice(0, 6),
-                      )
-                    }
-                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 font-mono text-center tracking-widest placeholder:text-xs placeholder:tracking-normal focus:border-emerald-400 focus:outline-none"
-                  />
+                  <p className="mt-4 text-xs text-slate-400">
+                    {colorName(room?.color ?? "w")} taşlarla oynuyorsun. Odaya
+                    yalnızca iki kişi katılabilir. Oda 24 saat geçerlidir.
+                  </p>
+                  {connection === "offline" && (
+                    <p
+                      role="alert"
+                      className="mt-3 text-xs leading-5 text-amber-300"
+                    >
+                      Bağlantı kesildi veya odanın süresi doldu. Bağlantı tekrar
+                      deneniyor; gerekirse odadan çıkıp yeni bir oda aç.
+                    </p>
+                  )}
                   <button
-                    type="submit"
-                    disabled={busy || roomCode.length !== 6}
-                    className={`${secondary} mt-3 w-full`}
+                    disabled={busy}
+                    className={`${secondary} mt-4 w-full`}
+                    onClick={() =>
+                      room?.status === "finished" || !room
+                        ? void leaveRoom()
+                        : setConfirmLeave(true)
+                    }
                   >
-                    Odaya katıl →
+                    {room?.status === "playing"
+                      ? "Oyunu terk et"
+                      : "Odadan çık"}
                   </button>
-                </form>
-              </>
-            )}
-            {error && (
-              <p
-                role="alert"
-                className="mt-4 rounded-xl border border-red-400/20 bg-red-400/5 p-3 text-xs leading-5 text-red-300"
-              >
-                {error}
-              </p>
-            )}
-          </section>
+                  {connection === "offline" && (
+                    <button
+                      className="mt-3 w-full text-xs text-slate-400 underline"
+                      onClick={() => {
+                        sessionRef.current = null;
+                        setSession(null);
+                        setRoom(null);
+                        setError("");
+                        setConfirmLeave(false);
+                        saveGame(new Chess());
+                        try {
+                          sessionStorage.removeItem(SESSION_KEY);
+                        } catch {
+                          /* Unavailable storage. */
+                        }
+                      }}
+                    >
+                      Bağlantıyı bırak ve ana menüye dön
+                    </button>
+                  )}
+                </>
+              ) : (
+                <>
+                  <h2 className="font-bold">Aynı tahta, iki arkadaş.</h2>
+                  <p className="mt-2 text-xs leading-5 text-slate-400">
+                    Odanı oluştur, numarayı paylaş. Arkadaşın katılınca oyun
+                    başlar.
+                  </p>
+                  <button
+                    disabled={busy}
+                    className={`${primary} mt-5 w-full`}
+                    onClick={() => void enterRoom(false)}
+                  >
+                    {busy ? "Bağlanıyor…" : "+ Oda oluştur"}
+                  </button>
+                  <div className="my-5 flex items-center gap-3 text-xs text-slate-500">
+                    <div className="h-px flex-1 bg-slate-800" />
+                    veya
+                    <div className="h-px flex-1 bg-slate-800" />
+                  </div>
+                  <form
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void enterRoom(true);
+                    }}
+                  >
+                    <label
+                      htmlFor="room-code"
+                      className="mb-2 block text-xs font-semibold text-slate-300"
+                    >
+                      Arkadaşının oda numarası
+                    </label>
+                    <input
+                      id="room-code"
+                      inputMode="numeric"
+                      pattern="[0-9]{6}"
+                      autoComplete="off"
+                      maxLength={6}
+                      placeholder="6 haneli numara"
+                      value={roomCode}
+                      onChange={(event) =>
+                        setRoomCode(
+                          event.target.value.replace(/\D/g, "").slice(0, 6),
+                        )
+                      }
+                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 font-mono text-center tracking-widest placeholder:text-xs placeholder:tracking-normal focus:border-emerald-400 focus:outline-none"
+                    />
+                    <button
+                      type="submit"
+                      disabled={busy || roomCode.length !== 6}
+                      className={`${secondary} mt-3 w-full`}
+                    >
+                      Odaya katıl →
+                    </button>
+                  </form>
+                </>
+              )}
+              {error && (
+                <p
+                  role="alert"
+                  className="mt-4 rounded-xl border border-red-400/20 bg-red-400/5 p-3 text-xs leading-5 text-red-300"
+                >
+                  {error}
+                </p>
+              )}
+            </section>
+          )}
           <section
             className={`rounded-2xl border p-4 ${isFinished ? "border-emerald-400/40 bg-emerald-400/10" : "border-slate-800 bg-slate-900/40"}`}
             aria-live="polite"
@@ -870,56 +992,83 @@ export default function ChessArena() {
             <p data-testid="game-status" className="text-sm font-semibold">
               {status}
             </p>
+            {isFinished && history.length > 0 && !showReview && (
+              <button
+                className={`${primary} mt-3 w-full`}
+                onClick={coach.openReview}
+              >
+                ✦ Maçı analiz et
+              </button>
+            )}
           </section>
-          <section className="rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-xs font-semibold text-slate-300">Hamleler</h2>
-              <span className="text-xs text-slate-500">
-                {history.length} yarım hamle
-              </span>
-            </div>
-            <div
-              className="max-h-52 overflow-y-auto"
-              data-testid="move-history"
-            >
-              {history.length ? (
-                <table className="w-full text-left text-sm">
-                  <thead className="sr-only">
-                    <tr>
-                      <th>Hamle</th>
-                      <th>Beyaz</th>
-                      <th>Siyah</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {Array.from(
-                      { length: Math.ceil(history.length / 2) },
-                      (_, index) => (
-                        <tr
-                          key={index}
-                          className={index % 2 ? "bg-slate-800/40" : ""}
-                        >
-                          <td className="w-10 rounded-l px-2 py-1.5 font-mono text-xs text-slate-500">
-                            {index + 1}.
-                          </td>
-                          <td className="px-2 py-1.5 font-mono text-slate-200">
-                            {history[index * 2]}
-                          </td>
-                          <td className="rounded-r px-2 py-1.5 font-mono text-slate-200">
-                            {history[index * 2 + 1] ?? "—"}
-                          </td>
-                        </tr>
-                      ),
-                    )}
-                  </tbody>
-                </table>
-              ) : (
-                <p className="py-3 text-center text-xs text-slate-500">
-                  İlk hamleyle hikâye başlar.
-                </p>
-              )}
-            </div>
-          </section>
+          {showReview ? (
+            <ChessReviewPanel
+              moves={history}
+              playerColor={playerColor}
+              reviews={coach.reviews}
+              selectedPly={coach.selectedPly}
+              onSelectPly={coach.selectPly}
+              showPlayed={coach.showPlayed}
+              onShowPlayed={coach.setShowPlayed}
+              progress={coach.progress}
+              analyzing={coach.analyzing}
+              error={coach.reviewError}
+              onRetry={coach.retryReview}
+              onClose={coach.closeReview}
+            />
+          ) : (
+            <section className="rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="text-xs font-semibold text-slate-300">
+                  Hamleler
+                </h2>
+                <span className="text-xs text-slate-500">
+                  {history.length} yarım hamle
+                </span>
+              </div>
+              <div
+                className="max-h-52 overflow-y-auto"
+                data-testid="move-history"
+              >
+                {history.length ? (
+                  <table className="w-full text-left text-sm">
+                    <thead className="sr-only">
+                      <tr>
+                        <th>Hamle</th>
+                        <th>Beyaz</th>
+                        <th>Siyah</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Array.from(
+                        { length: Math.ceil(history.length / 2) },
+                        (_, index) => (
+                          <tr
+                            key={index}
+                            className={index % 2 ? "bg-slate-800/40" : ""}
+                          >
+                            <td className="w-10 rounded-l px-2 py-1.5 font-mono text-xs text-slate-500">
+                              {index + 1}.
+                            </td>
+                            <td className="px-2 py-1.5 font-mono text-slate-200">
+                              {history[index * 2]}
+                            </td>
+                            <td className="rounded-r px-2 py-1.5 font-mono text-slate-200">
+                              {history[index * 2 + 1] ?? "—"}
+                            </td>
+                          </tr>
+                        ),
+                      )}
+                    </tbody>
+                  </table>
+                ) : (
+                  <p className="py-3 text-center text-xs text-slate-500">
+                    İlk hamleyle hikâye başlar.
+                  </p>
+                )}
+              </div>
+            </section>
+          )}
         </aside>
       </div>
       {promotion && (

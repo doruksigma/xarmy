@@ -14,6 +14,26 @@ instances. Atomic Redis transactions reject simultaneous stale moves and allow
 exactly one guest to join; room keys expire at the original 24-hour deadline.
 The local bot works without Redis.
 
+### Chess coach
+
+Choose **Yapay zekâ eğitmeni** to play against the bot with a live recommendation
+on your turn. The green arrow shows the suggested move, and the coach explains
+the concrete idea in Turkish. You can play the suggestion or choose another move.
+
+After a bot, training, or online game ends, the coach automatically reviews its
+move history. Use the move list and previous/next controls to replay positions;
+**Hamleden önce** shows the recommendation in green and mistakes in red, while
+**Hamleden sonra** shows the move as played. Each reviewed move includes its
+classification, an explanation, and the reason for the suggested alternative.
+Resigning also preserves the finished game for review before leaving the room.
+
+Hints are available during training only. Normal bot and online games reveal
+their analysis after the game ends. The analysis runs in a browser worker using
+a bounded local chess search, so no Gemini or Lichess credentials are required.
+Results arrive progressively; the UI stays usable while the remaining moves are
+analyzed. Recommendations reflect the searched continuations rather than an
+exhaustive evaluation of every possible continuation.
+
 ### Vercel setup
 
 1. Open the **xarmy** project in Vercel, then **Storage → Connect Database**

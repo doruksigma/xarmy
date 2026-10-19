@@ -1,0 +1,96 @@
+"use client";
+
+import type { PositionAdvice } from "./coach";
+
+export default function TrainerAdvice({
+  advice,
+  loading,
+  error,
+  playerTurn,
+  canPlay,
+  onPlay,
+  onRetry,
+}: {
+  advice: PositionAdvice | null;
+  loading: boolean;
+  error: string | null;
+  playerTurn: boolean;
+  canPlay: boolean;
+  onPlay: () => void;
+  onRetry: () => void;
+}) {
+  return (
+    <section
+      data-testid="trainer-advice"
+      className="rounded-2xl border border-emerald-400/30 bg-emerald-400/5 p-5"
+      aria-live="polite"
+      aria-busy={loading}
+    >
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <h2 className="text-sm font-bold text-emerald-300">
+          ✦ Eğitmeninin önerisi
+        </h2>
+        <span className="rounded-full bg-emerald-400/10 px-2 py-1 text-[10px] text-emerald-300">
+          Öğrenme modu
+        </span>
+      </div>
+      {!playerTurn ? (
+        <p className="text-sm leading-6 text-slate-300">
+          Şimdi eğitmenin oynuyor. Sıra sana gelince sonraki hamleni birlikte
+          düşünelim.
+        </p>
+      ) : loading ? (
+        <p className="animate-pulse text-sm leading-6 text-slate-300">
+          Konumu inceliyorum. İyi hamleyi ve nedenini birazdan göstereceğim…
+        </p>
+      ) : error ? (
+        <div role="alert">
+          <p className="text-sm leading-6 text-amber-300">{error}</p>
+          <button
+            onClick={onRetry}
+            className="mt-2 rounded-lg py-2 text-xs font-semibold text-emerald-300 underline"
+          >
+            Öneriyi tekrar hazırla
+          </button>
+        </div>
+      ) : advice?.bestMove ? (
+        <>
+          <div className="my-3 rounded-xl border border-emerald-400/20 bg-slate-950/50 p-3">
+            <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+              Önerilen hamle
+            </div>
+            <p
+              data-testid="trainer-best-move"
+              className="mt-1 font-mono text-2xl font-bold text-emerald-300"
+            >
+              {advice.bestSan}
+            </p>
+            <p className="mt-1 text-xs text-slate-400">
+              {advice.bestMove.slice(0, 2)} → {advice.bestMove.slice(2, 4)} ·
+              Tahtadaki yeşil ok
+            </p>
+          </div>
+          <p
+            data-testid="trainer-explanation"
+            className="text-sm leading-6 text-slate-200"
+          >
+            {advice.explanation}
+          </p>
+          <button
+            disabled={!canPlay}
+            onClick={onPlay}
+            className="mt-4 w-full rounded-xl bg-emerald-400 px-3 py-3 text-sm font-bold text-slate-950 hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Önerilen hamleyi oyna
+          </button>
+          <p className="mt-3 text-xs leading-5 text-slate-500">
+            İstersen başka bir hamle dene. Maç sonunda seçimlerini yeniden
+            inceleyebilirsin.
+          </p>
+        </>
+      ) : (
+        <p className="text-sm text-slate-400">Hamle önerisi hazırlanıyor…</p>
+      )}
+    </section>
+  );
+}
