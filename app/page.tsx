@@ -39,7 +39,7 @@ export default function HomePage() {
           >
             ♟️ Satranç
             <span className="text-[10px] bg-black/20 px-2 py-1 rounded-lg">
-              Stockfish
+              Bot & Online
             </span>
           </Link>
 

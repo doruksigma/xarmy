@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 
 const nav = [
   { href: "/", label: "Ana Sayfa" },
+  { href: "/games/chess", label: "Satranç" },
   { href: "/games", label: "Oyunlar" },
   { href: "/leaderboard", label: "Sıralama" }
 ];
@@ -39,7 +40,8 @@ export default function Navbar() {
             const active =
               item.href === "/"
                 ? pathname === "/"
-                : pathname.startsWith(item.href);
+                : pathname.startsWith(item.href) &&
+                  !nav.some(other => other.href.length > item.href.length && pathname.startsWith(other.href));
 
             return (
               <Link

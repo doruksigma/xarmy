@@ -1,5 +1,73 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Chess
+
+Open `/games/chess` to play against the local bot or create a room and share its
+six-digit code with a friend. The host plays white, the joining player plays
+black, and both browsers receive the same server-validated board. No external
+chess API key or signaling service is required. Each room lasts 24 hours; the
+browser keeps its private player token so refreshing can resume the game.
+
+Online rooms use a shared Redis REST store when an Upstash or Vercel KV REST
+connection is configured. This supports Vercel's independent serverless
+instances. Atomic Redis transactions reject simultaneous stale moves and allow
+exactly one guest to join; room keys expire at the original 24-hour deadline.
+The local bot works without Redis.
+
+### Vercel setup
+
+1. Open the **xarmy** project in Vercel, then **Storage → Connect Database**
+   (or **Marketplace → Upstash Redis**) and connect an Upstash Redis database.
+2. Make the connection available to **Production** and any **Preview** environments
+   where online rooms should work. The server accepts either complete pair:
+   `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN`, or
+   `KV_REST_API_URL` + `KV_REST_API_TOKEN`. The URL must be the HTTPS **REST**
+   endpoint, and the token must allow writes and `EVAL`; a Redis TCP URL or
+   read-only token does not work. Keep these server-side; never use `NEXT_PUBLIC_`
+   for either value or commit values to the repository.
+3. Deploy the updated `main` branch, or **Redeploy** after adding/changing the
+   environment variables. Previously built deployments do not acquire new values.
+4. Visit `/games/chess`, create an online room, and join its six-digit code in
+   another browser. Check that each player's move reaches the other board.
+
+When deployed on Vercel without a complete Redis connection, online room endpoints
+return HTTP 503 with an unavailable message. The bot remains available. Storage
+configuration requirements appear in server logs without secret values.
+
+### Local or self-hosted development
+
+With no Redis variables configured, rooms use a writable directory on the local
+Node.js host. Run `npm run build` followed by `npm start`, and optionally set
+`XARMY_CHESS_ROOM_DIR` to an application-owned persistent directory to retain
+rooms across server restarts. The default is the operating system's temporary
+directory. Multiple local Node processes must use the same directory on one
+host; independent replicas should use Redis instead. Apply request rate limits at
+the reverse proxy before exposing room creation to untrusted public traffic.
+
+The room API is:
+
+| Method and path | Request | Response |
+| --- | --- | --- |
+| `POST /api/chess/rooms` | Empty | `{ room, token }` (white) |
+| `POST /api/chess/rooms/join` | `{ "code": "123456" }` | `{ room, token }` (black) |
+| `GET /api/chess/rooms/:code` | Bearer token | `{ room }` |
+| `POST /api/chess/rooms/:code/move` | Bearer token and `{ "from": "e2", "to": "e4", "expectedVersion": 2 }` | `{ room }` |
+| `POST /api/chess/rooms/:code/resign` | Bearer token | `{ room }` |
+
+Send JSON bodies with `Content-Type: application/json`, and player credentials
+only as `Authorization: Bearer <token>`. A promotion move also supplies
+`"promotion": "q"`, `"r"`, `"b"`, or `"n"`. Use the latest room `version` as
+`expectedVersion` to reject stale moves. Resigning before a guest joins cancels
+the room. State responses never expose either player's token or credential hash.
+
+Run the backend rule, authorization, race, and HTTP-helper regression tests from
+the repository root (Node.js 20):
+
+```bash
+npm run test:chess
+npm exec tsc -- --noEmit --incremental false
+```
+
 ## Getting Started
 
 First, run the development server:
@@ -29,8 +97,8 @@ To learn more about Next.js, take a look at the following resources:
 
 You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
 
-## Deploy on Vercel
+## Deployment
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Use `npm run build` and `npm start` on a Node.js 20 host, or deploy the Next.js
+project to Vercel. Vercel online chess rooms require the Redis REST connection
+and redeployment described above. The bot does not require external services.
