@@ -41,7 +41,8 @@ export default function TrainerAdvice({
         </p>
       ) : loading ? (
         <p className="animate-pulse text-sm leading-6 text-slate-300">
-          Konumu inceliyorum. İyi hamleyi ve nedenini birazdan göstereceğim…
+          Stockfish yükleniyor ve konumu derinlemesine inceliyor. Öneriyi ve
+          nedenini birazdan göstereceğim…
         </p>
       ) : error ? (
         <div role="alert">
@@ -51,6 +52,19 @@ export default function TrainerAdvice({
             className="mt-2 rounded-lg py-2 text-xs font-semibold text-emerald-300 underline"
           >
             Öneriyi tekrar hazırla
+          </button>
+        </div>
+      ) : advice?.quality === "unmeasured" ? (
+        <div role="status">
+          <p className="text-sm leading-6 text-amber-300">
+            Yeterli arama derinliğine ulaşılamadı. Ölçülmemiş bir öneri
+            göstermiyorum.
+          </p>
+          <button
+            onClick={onRetry}
+            className="mt-2 text-sm text-emerald-300 underline"
+          >
+            Stockfish analizini yeniden dene
           </button>
         </div>
       ) : advice?.bestMove ? (
@@ -70,6 +84,22 @@ export default function TrainerAdvice({
               Tahtadaki yeşil ok
             </p>
           </div>
+          <p
+            data-testid="trainer-measurement"
+            className="mb-3 text-xs leading-5 text-slate-400"
+          >
+            Stockfish 17.1 · Derinlik {advice.depth}
+            <br />
+            Senin açısından:{" "}
+            {advice.scoreMate !== null
+              ? advice.scoreMate > 0
+                ? `${advice.scoreMate} hamlede mat`
+                : `${Math.abs(advice.scoreMate)} hamlede mat tehdidi`
+              : advice.scoreCp !== null
+                ? `${advice.scoreCp >= 0 ? "+" : ""}${(advice.scoreCp / 100).toFixed(2)} piyon`
+                : "Puan ölçülemedi"}
+            {advice.quality === "limited" ? " · Süre sınırındaki ölçüm" : ""}
+          </p>
           <p
             data-testid="trainer-explanation"
             className="text-sm leading-6 text-slate-200"

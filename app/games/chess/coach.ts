@@ -6,32 +6,53 @@ import {
   type Square,
 } from "chess.js";
 
+/** Scores always belong to the player who is about to move at the root. */
+export type EngineScore = { type: "cp" | "mate"; value: number };
+export interface CoachSearch {
+  fen: string;
+  positionCommand?: string;
+  depth: number;
+  movetime?: number;
+  searchMoves?: string[];
+}
+export interface CoachSearchResult {
+  bestMove: string | null;
+  score: EngineScore | null;
+  depth: number;
+  pv: string[];
+}
+/** A narrow interface makes the analysis auditable without a browser worker. */
+export interface CoachEngine {
+  analyze(request: CoachSearch): Promise<CoachSearchResult>;
+}
 export interface AnalysisOptions {
-  /** The worker keeps this bounded calculation away from the board UI. */
+  engine: CoachEngine;
   timeMs?: number;
   maxDepth?: number;
-  maxNodes?: number;
+  minDepth?: number;
+  /** Complete history preserves repetition and the fifty-move rule in UCI. */
+  startFen?: string;
+  moves?: string[];
 }
-
+export type AnalysisQuality = "complete" | "limited" | "unmeasured";
 export interface PositionAdvice {
   fen: string;
   bestMove: string | null;
   bestSan: string | null;
-  /** Centipawns from the side to move's perspective; positive favors that side. */
-  scoreCp: number;
+  scoreCp: number | null;
+  scoreMate: number | null;
   depth: number;
-  /** A legal principal variation, in UCI notation. */
+  quality: AnalysisQuality;
   pv: string[];
   explanation: string;
 }
-
 export type MoveJudgment =
   | "best"
   | "good"
   | "inaccuracy"
   | "mistake"
-  | "blunder";
-
+  | "blunder"
+  | "unmeasured";
 export interface MoveReview {
   fen: string;
   afterFen: string;
@@ -39,28 +60,36 @@ export interface MoveReview {
   playedSan: string;
   bestMove: string | null;
   bestSan: string | null;
-  /** Both scores use the player who made this move's perspective. */
-  scoreBefore: number;
-  scoreAfter: number;
-  lossCp: number;
+  /** Null for a mate score: forced mate is never invented as centipawns. */
+  scoreBefore: number | null;
+  scoreAfter: number | null;
+  scoreBeforeMate: number | null;
+  scoreAfterMate: number | null;
+  lossCp: number | null;
   judgment: MoveJudgment;
   explanation: string;
   betterExplanation: string;
+  /** The two searches must complete the same depth before receiving a verdict. */
   depth: number;
+  playedDepth: number;
+  quality: AnalysisQuality;
   pv: string[];
 }
-
 export type CoachRequest =
-  | { requestId: number; kind: "hint"; fen: string }
+  | {
+      requestId: number;
+      kind: "hint";
+      fen: string;
+      startFen?: string;
+      moves?: string[];
+    }
   | {
       requestId: number;
       kind: "review";
-      /** SAN and UCI are both accepted. The replay starts at the normal opening. */
       moves: string[];
       startFen?: string;
       playerColor?: Color;
     };
-
 export type CoachResponse =
   | { requestId: number; kind: "hint"; advice: PositionAdvice }
   | {
@@ -89,8 +118,6 @@ const NAMES: Record<PieceSymbol, string> = {
   q: "vezir",
   k: "şah",
 };
-const MATE = 100_000;
-const EXHAUSTED = Symbol("analysis limit");
 const CENTER: Square[] = ["d4", "e4", "d5", "e5"];
 
 export function moveToUci(
@@ -98,8 +125,6 @@ export function moveToUci(
 ): string {
   return `${move.from}${move.to}${move.promotion ?? ""}`;
 }
-
-/** Accepts UCI without losing a promotion, or SAN from chess.js's history. */
 export function playAnalysisMove(game: Chess, notation: string): Move {
   if (/^[a-h][1-8][a-h][1-8][qrbn]?$/.test(notation)) {
     return game.move({
@@ -109,75 +134,6 @@ export function playAnalysisMove(game: Chess, notation: string): Move {
     });
   }
   return game.move(notation);
-}
-
-function materialAndPosition(game: Chess): number {
-  const board = game.board();
-  let score = 0;
-  let remainingPieces = 0;
-  for (const row of board) {
-    for (const piece of row)
-      if (piece && piece.type !== "p") remainingPieces += VALUES[piece.type];
-  }
-  for (let row = 0; row < 8; row += 1) {
-    for (let file = 0; file < 8; file += 1) {
-      const piece = board[row][file];
-      if (!piece) continue;
-      const advance = piece.color === "w" ? 7 - row : row;
-      const center = 7 - Math.abs(3.5 - row) - Math.abs(3.5 - file);
-      let position = 0;
-      if (piece.type === "p") position = advance * 7 + center * 4;
-      if (piece.type === "n") position = center * 13;
-      if (piece.type === "b") position = center * 8;
-      if (piece.type === "r") position = advance * 2;
-      if (piece.type === "q") position = center * 3;
-      if (piece.type === "k")
-        position =
-          remainingPieces < 1_600 ? center * 12 : -center * 6 - advance * 4;
-      score += (piece.color === "w" ? 1 : -1) * (VALUES[piece.type] + position);
-    }
-  }
-  return game.turn() === "w" ? score : -score;
-}
-
-function priority(move: Move): number {
-  if (move.san.endsWith("#")) return MATE;
-  return (
-    (move.captured ? VALUES[move.captured] * 10 - VALUES[move.piece] : 0) +
-    (move.promotion ? VALUES[move.promotion] : 0) +
-    (move.san.includes("+") ? 40 : 0)
-  );
-}
-
-function ordered(moves: Move[], preferred?: string): Move[] {
-  return [...moves].sort((a, b) => {
-    if (moveToUci(a) === preferred) return -1;
-    if (moveToUci(b) === preferred) return 1;
-    return (
-      priority(b) - priority(a) || moveToUci(a).localeCompare(moveToUci(b))
-    );
-  });
-}
-
-function drawn(game: Chess): boolean {
-  return (
-    game.isInsufficientMaterial() ||
-    game.isDrawByFiftyMoves() ||
-    game.isThreefoldRepetition()
-  );
-}
-
-interface SearchLine {
-  score: number;
-  pv: string[];
-}
-interface RootResult {
-  move: Move | null;
-  score: number;
-  pv: string[];
-  playedScore: number;
-  playedPv: string[];
-  depth: number;
 }
 
 function bounded(
@@ -191,153 +147,88 @@ function bounded(
     : fallback;
 }
 
-/**
- * Compare every root move at the same completed depth. For reviews the played
- * move is searched first with a full window, so its score is exact at that depth
- * rather than an alpha-beta bound. An interrupted iteration is discarded whole.
- */
-function searchPosition(
+function context(
   fen: string,
-  played?: string,
-  options: AnalysisOptions = {},
-): RootResult {
-  const game = new Chess(fen);
-  const timeMs = bounded(options.timeMs, 280, 25, 1_500);
-  const maxDepth = bounded(options.maxDepth, 3, 1, 5);
-  const maxNodes = bounded(options.maxNodes, 12_000, 100, 60_000);
-  const deadline = Date.now() + timeMs;
-  const rootMoves = ordered(game.moves({ verbose: true }));
-  if (rootMoves.length === 0 || drawn(game)) {
-    const score = rootMoves.length === 0 && game.isCheck() ? -MATE : 0;
-    return {
-      move: null,
-      score,
-      pv: [],
-      playedScore: score,
-      playedPv: [],
-      depth: 0,
-    };
-  }
-  let nodes = 0;
-  const guard = () => {
-    nodes += 1;
-    if (nodes > maxNodes || Date.now() >= deadline) throw EXHAUSTED;
+  options: Pick<AnalysisOptions, "startFen" | "moves">,
+) {
+  // A bare FEN is sufficient only when no history was supplied by the caller.
+  if (!options.moves)
+    return { game: new Chess(fen), positionCommand: `position fen ${fen}` };
+  const game = options.startFen ? new Chess(options.startFen) : new Chess();
+  const uci = options.moves.map((notation) =>
+    moveToUci(playAnalysisMove(game, notation)),
+  );
+  if (game.fen() !== new Chess(fen).fen())
+    throw new Error("Hamle geçmişi konumla uyuşmuyor.");
+  const root = options.startFen
+    ? `position fen ${options.startFen}`
+    : "position startpos";
+  return {
+    game,
+    positionCommand: `${root}${uci.length ? ` moves ${uci.join(" ")}` : ""}`,
   };
-
-  // A cheap complete fallback preserves legal suggestions even on slow devices.
-  // Mate-in-one is recognized before the budgeted search, at every node too.
-  let result: RootResult = {
-    move: rootMoves[0],
-    score: -Infinity,
-    pv: [],
-    playedScore: 0,
-    playedPv: [],
-    depth: 0,
-  };
-  for (const move of rootMoves) {
-    game.move(move);
-    const score = move.san.endsWith("#")
-      ? MATE - 1
-      : drawn(game)
-        ? 0
-        : -materialAndPosition(game);
-    game.undo();
-    const notation = moveToUci(move);
-    if (score > result.score)
-      result = { ...result, move, score, pv: [notation] };
-    if (notation === played) {
-      result.playedScore = score;
-      result.playedPv = [notation];
-    }
-  }
-
-  const search = (
-    depth: number,
-    alpha: number,
-    beta: number,
-    ply: number,
-    quietDepth = 3,
-  ): SearchLine => {
-    guard();
-    const moves = ordered(game.moves({ verbose: true }));
-    if (moves.length === 0)
-      return { score: game.isCheck() ? -MATE + ply : 0, pv: [] };
-    if (drawn(game)) return { score: 0, pv: [] };
-    const mate = moves.find((move) => move.san.endsWith("#"));
-    if (mate) return { score: MATE - ply - 1, pv: [moveToUci(mate)] };
-    const inCheck = game.isCheck();
-    let candidates = moves;
-    let best: SearchLine = { score: -Infinity, pv: [] };
-    if (depth <= 0) {
-      const standPat = materialAndPosition(game);
-      if ((!inCheck && quietDepth <= 0) || quietDepth <= -2)
-        return { score: standPat, pv: [] };
-      if (!inCheck) {
-        best.score = standPat;
-        if (standPat >= beta) return best;
-        alpha = Math.max(alpha, standPat);
-        candidates = moves.filter((move) => move.captured || move.promotion);
-      }
-    }
-    for (const move of candidates) {
-      game.move(move);
-      let child: SearchLine;
-      try {
-        child = search(
-          depth - 1,
-          -beta,
-          -alpha,
-          ply + 1,
-          depth <= 0 ? quietDepth - 1 : quietDepth,
-        );
-      } finally {
-        game.undo();
-      }
-      const score = -child.score;
-      if (score > best.score)
-        best = { score, pv: [moveToUci(move), ...child.pv] };
-      alpha = Math.max(alpha, score);
-      if (alpha >= beta) break;
-    }
-    return best;
-  };
-
-  for (let depth = 1; depth <= maxDepth; depth += 1) {
-    let best: RootResult = { ...result, score: -Infinity, depth };
-    let alpha = -Infinity;
-    try {
-      // Searching the played move first produces a comparable full-window score.
-      for (const move of ordered(
-        rootMoves,
-        played ?? (result.move ? moveToUci(result.move) : undefined),
-      )) {
-        game.move(move);
-        let child: SearchLine;
-        try {
-          child = search(depth - 1, -Infinity, -alpha, 1);
-        } finally {
-          game.undo();
-        }
-        const score = -child.score;
-        const notation = moveToUci(move);
-        const pv = [notation, ...child.pv];
-        if (score > best.score) best = { ...best, move, score, pv };
-        if (notation === played) {
-          best.playedScore = score;
-          best.playedPv = pv;
-        }
-        alpha = Math.max(alpha, score);
-      }
-      result = best;
-      if (!played && result.score >= MATE - depth) break;
-    } catch (error) {
-      if (error !== EXHAUSTED) throw error;
-      break;
-    }
-  }
-  return result;
 }
 
+/** All plies are analyzed, irrespective of who hosted an online room. */
+export function reviewPositions(moves: string[], startFen?: string) {
+  const game = startFen ? new Chess(startFen) : new Chess();
+  const history: string[] = [];
+  return moves.map((notation, ply) => {
+    const position = {
+      fen: game.fen(),
+      notation,
+      ply,
+      color: game.turn(),
+      moves: [...history],
+    };
+    history.push(moveToUci(playAnalysisMove(game, notation)));
+    return position;
+  });
+}
+
+function validResult(
+  fen: string,
+  result: CoachSearchResult,
+): CoachSearchResult {
+  if (!result.bestMove)
+    throw new Error("Stockfish yasal bir hamle döndürmedi.");
+  const game = new Chess(fen);
+  playAnalysisMove(game, result.bestMove);
+  const pv = result.pv.length ? result.pv : [result.bestMove];
+  if (pv[0] !== result.bestMove)
+    throw new Error("Stockfish devamı öneriyle uyuşmuyor.");
+  const replay = new Chess(fen);
+  for (const notation of pv) playAnalysisMove(replay, notation);
+  const score =
+    result.score &&
+    ["cp", "mate"].includes(result.score.type) &&
+    Number.isFinite(result.score.value)
+      ? result.score
+      : null;
+  const depth = Number.isFinite(result.depth)
+    ? Math.max(0, Math.floor(result.depth))
+    : 0;
+  return { ...result, depth, pv, score };
+}
+
+function quality(
+  depth: number,
+  target: number,
+  minimum: number,
+  measured: boolean,
+): AnalysisQuality {
+  if (!measured || depth < minimum) return "unmeasured";
+  return depth >= target ? "complete" : "limited";
+}
+
+function scoreText(score: EngineScore): string {
+  if (score.type === "mate") {
+    return score.value > 0
+      ? `${score.value} hamlede zorunlu mat`
+      : `${Math.abs(score.value)} hamlede mat tehdidi (rakip lehine)`;
+  }
+  return `${score.value >= 0 ? "+" : ""}${(score.value / 100).toFixed(2)} piyon`;
+}
 function lineMoves(fen: string, pv: string[]): Move[] {
   const game = new Chess(fen);
   const moves: Move[] = [];
@@ -370,10 +261,10 @@ function suggestionExplanation(
     line.at(-1)!.san.endsWith("#") &&
     line.at(-1)!.color === move.color
   ) {
-    return `${move.san} ile başlayan ${line.map((item) => item.san).join(" → ")} devamı mat ile bitiyor. Bu, kısa aramada bulunan mat devamıdır.`;
+    return `${move.san} ile başlayan ${line.map((item) => item.san).join(" → ")} devamı mat ile bitiyor. Stockfish bu devamda zorunlu mat buluyor.`;
   }
   if (move.promotion)
-    return `${move.san}, son sıraya ulaşan piyonunu ${NAMES[move.promotion]} yapıyor ve taş gücünü artırıyor.`;
+    return `${move.san}, son sıraya ulaşan piyonu ${NAMES[move.promotion]} yapıyor ve taş gücünü artırıyor.`;
   if (move.captured) {
     const reply = line[1];
     const recapture =
@@ -383,7 +274,7 @@ function suggestionExplanation(
     return `${move.san}, ${move.to} karesindeki ${NAMES[move.captured]} taşını alıyor.${recapture} İncelenen hamleler arasında en yüksek değerlendirmeyi veriyor.`;
   }
   if (move.isKingsideCastle() || move.isQueensideCastle()) {
-    return `${move.san} rok yapıyor: şahını ${move.to} karesine taşırken kaleni de oyuna sokuyor. Tek hamlede iki taşın yerini düzenliyor.`;
+    return `${move.san} rok yapıyor: şahı ${move.to} karesine taşırken kaleyi de oyuna sokuyor. Tek hamlede iki taşın yerini düzenliyor.`;
   }
   const after = new Chess(move.after);
   const controlled = CENTER.filter((square) =>
@@ -394,7 +285,7 @@ function suggestionExplanation(
     return `${move.san}, ${NAMES[move.piece]} taşını başlangıç karesinden çıkarıp geliştiriyor.${controlled.length ? ` ${controlled.join(", ")} merkez karelerini kontrol ediyor.` : " Daha etkin bir kareden oyuna katılmasını sağlıyor."}`;
   }
   if (controlled.length)
-    return `${move.san}, ${NAMES[move.piece]} ile ${controlled.join(", ")} merkez karelerini kontrol ediyor. Kısa aramada incelenen diğer hamlelere göre daha iyi bir konum bırakıyor.`;
+    return `${move.san}, ${NAMES[move.piece]} ile ${controlled.join(", ")} merkez karelerini kontrol ediyor. Stockfish, rakibin yanıtlarını da inceleyerek bu devamı öneriyor.`;
   if (move.san.includes("+"))
     return `${move.san} şah çekiyor; rakibin bir sonraki hamlede bu tehdide yanıt vermesi gerekiyor. İncelenen devam bu zorunlu yanıtları hesaba katıyor.`;
   const before = new Chess(fen);
@@ -405,7 +296,7 @@ function suggestionExplanation(
       ? ` İncelenen devam: ${displayedLine.map((item) => item.san).join(" → ")}.`
       : "";
   if (before.isCheck())
-    return `${move.san}, şah çekişine yasal bir yanıt vererek şahını tehditten kurtarıyor.${continuation}`;
+    return `${move.san}, şah çekişine yasal bir yanıt vererek şahı tehditten kurtarıyor.${continuation}`;
   if (
     before.isAttacked(move.from, opponent) &&
     !after.isAttacked(move.to, opponent)
@@ -428,110 +319,239 @@ function suggestionExplanation(
   const materialChange = material(finalPosition) - material(before);
   const materialReason =
     materialChange > 0
-      ? `Gösterilen devamda maddi denge senin lehine yaklaşık ${(materialChange / 100).toFixed(1)} piyon değişiyor.`
+      ? `Gösterilen devamda maddi denge hamleyi yapan taraf lehine yaklaşık ${(materialChange / 100).toFixed(1)} piyon değişiyor.`
       : materialChange < 0
-        ? `Gösterilen devamda maddi denge rakibin lehine yaklaşık ${(-materialChange / 100).toFixed(1)} piyon değişiyor; bu, incelenen diğer seçeneklerden daha yüksek puan alan devam.`
+        ? `Gösterilen devamda maddi denge hamleyi yapan tarafın rakibi lehine yaklaşık ${(-materialChange / 100).toFixed(1)} piyon değişiyor; bu, incelenen diğer seçeneklerden daha yüksek puan alan devam.`
         : "Gösterilen devamın sonunda iki tarafın toplam taş değeri farkı değişmiyor.";
   return `${move.san}, ${NAMES[move.piece]} taşını ${move.from} karesinden ${move.to} karesine taşıyor. ${materialReason}${continuation}`;
 }
 
-export function analyzePosition(
+export async function analyzePosition(
   fen: string,
-  options: AnalysisOptions = {},
-): PositionAdvice {
-  const result = searchPosition(fen, undefined, options);
+  options: AnalysisOptions,
+): Promise<PositionAdvice> {
+  const { game, positionCommand } = context(fen, options);
+  if (game.isGameOver()) {
+    return {
+      fen,
+      bestMove: null,
+      bestSan: null,
+      scoreCp: null,
+      scoreMate: game.isCheckmate() ? 0 : null,
+      depth: 0,
+      quality: "unmeasured",
+      pv: [],
+      explanation: suggestionExplanation(fen, null, []),
+    };
+  }
+  const target = bounded(options.maxDepth, 18, 1, 30);
+  const minimum = bounded(options.minDepth, 12, 1, 30);
+  const result = validResult(
+    fen,
+    await options.engine.analyze({
+      fen,
+      positionCommand,
+      depth: target,
+      movetime: bounded(options.timeMs, 3_000, 100, 10_000),
+    }),
+  );
+  const move = playAnalysisMove(new Chess(fen), result.bestMove!);
+  const analysisQuality = quality(
+    result.depth,
+    target,
+    minimum,
+    Boolean(result.score),
+  );
+  const evidence =
+    analysisQuality === "unmeasured"
+      ? ` Stockfish yalnızca ${result.depth}. derinliğe ulaştı; bu öneri henüz yeterli derinlikte doğrulanmadı.`
+      : ` Stockfish ${result.depth}. derinlik değerlendirmesi: ${scoreText(result.score!)}.${analysisQuality === "limited" ? " Süre sınırı nedeniyle hedef derinliğe ulaşılamadı." : ""}`;
   return {
     fen,
-    bestMove: result.move ? moveToUci(result.move) : null,
-    bestSan: result.move?.san ?? null,
-    scoreCp: result.score,
+    bestMove: result.bestMove,
+    bestSan: move.san,
+    scoreCp: result.score?.type === "cp" ? result.score.value : null,
+    scoreMate: result.score?.type === "mate" ? result.score.value : null,
     depth: result.depth,
+    quality: analysisQuality,
     pv: result.pv,
-    explanation: suggestionExplanation(fen, result.move, result.pv),
+    explanation: suggestionExplanation(fen, move, result.pv) + evidence,
   };
 }
 
-function classify(
-  lossCp: number,
+function judgmentFor(
   played: string,
-  best: string | null,
-): MoveJudgment {
-  if (played === best) return "best";
-  if (lossCp <= 50) return "good";
-  if (lossCp <= 120) return "inaccuracy";
-  if (lossCp <= 250) return "mistake";
-  return "blunder";
+  bestMove: string,
+  best: EngineScore,
+  actual: EngineScore,
+): {
+  judgment: Exclude<MoveJudgment, "unmeasured">;
+  lossCp: number | null;
+  reason: string;
+} {
+  if (played === bestMove)
+    return {
+      judgment: "best",
+      lossCp: best.type === "cp" ? 0 : null,
+      reason:
+        "Oynanan hamle, Stockfish’in aynı derinlikte seçtiği en iyi hamleyle aynı.",
+    };
+  if (best.type === "cp" && actual.type === "cp") {
+    const lossCp = Math.max(0, Math.round(best.value - actual.value));
+    const judgment =
+      lossCp <= 25
+        ? "good"
+        : lossCp <= 75
+          ? "inaccuracy"
+          : lossCp <= 175
+            ? "mistake"
+            : "blunder";
+    return {
+      judgment,
+      lossCp,
+      reason: `En iyi devam ${scoreText(best)}, oynanan hamle ${scoreText(actual)}: kayıp ${(lossCp / 100).toFixed(2)} piyon.`,
+    };
+  }
+  if (best.type === "mate" && best.value > 0) {
+    if (actual.type !== "mate" || actual.value <= 0) {
+      return {
+        judgment: "blunder",
+        lossCp: null,
+        reason: `${best.value} hamlede zorunlu mat fırsatı kaçırılıyor.${actual.type === "mate" ? ` Üstelik rakip ${Math.abs(actual.value)} hamlede mat edebiliyor.` : " Oynanan devamda Stockfish artık zorunlu mat bulmuyor."}`,
+      };
+    }
+    const slower = actual.value - best.value;
+    return {
+      judgment: slower > 2 ? "inaccuracy" : "good",
+      lossCp: null,
+      reason: `Zorunlu mat korunuyor; önerilen devam ${best.value}, oynanan devam ${actual.value} hamlede mat ediyor.`,
+    };
+  }
+  if (actual.type === "mate" && actual.value <= 0) {
+    if (best.type !== "mate" || best.value > 0) {
+      return {
+        judgment: "blunder",
+        lossCp: null,
+        reason: `Bu hamle rakibe ${Math.abs(actual.value)} hamlede zorunlu mat veriyor; önerilen hamlede bu zorunlu mat yok.`,
+      };
+    }
+    const sooner = Math.abs(best.value) - Math.abs(actual.value);
+    return {
+      judgment: sooner > 1 ? "mistake" : sooner > 0 ? "inaccuracy" : "good",
+      lossCp: null,
+      reason: `Konum zaten zorunlu mat ile kayıp. En iyi savunma matı ${Math.abs(best.value)} hamleye erteliyor; oynanan devamda mat ${Math.abs(actual.value)} hamlede geliyor.`,
+    };
+  }
+  // The restricted root search can discover a winning mate or a defense absent
+  // from the unrestricted PV. Do not manufacture a negative loss from this.
+  return {
+    judgment: "good",
+    lossCp: null,
+    reason: `Oynanan devam ${scoreText(actual)}; bu derinlikte önerilen devamdan daha kötü bir sonuç ölçülmedi.`,
+  };
 }
 
-export function analyzePlayedMove(
+export async function analyzePlayedMove(
   fen: string,
   notation: string,
-  options: AnalysisOptions = {},
-): MoveReview {
-  const game = new Chess(fen);
+  options: AnalysisOptions,
+): Promise<MoveReview> {
+  const { game, positionCommand } = context(fen, options);
   if (game.isGameOver()) throw new Error("Bitmiş konumda hamle incelenemez.");
   const played = playAnalysisMove(game, notation);
   const playedUci = moveToUci(played);
-  const result = searchPosition(fen, playedUci, options);
-  const bestUci = result.move ? moveToUci(result.move) : null;
-  const lossCp = Math.max(0, Math.round(result.score - result.playedScore));
-  const judgment = classify(lossCp, playedUci, bestUci);
-  const line = lineMoves(fen, result.playedPv);
-  const reply = line[1];
-  let explanation: string;
-  if (judgment === "best")
-    explanation = `${played.san}, bu kısa aramada bulunan en iyi hamleyle aynı. ${suggestionExplanation(fen, played, result.playedPv)}`;
-  else if (judgment === "good")
-    explanation = `${played.san} iyi bir hamle. Önerilen hamleyle arasındaki fark bu kısa aramada en fazla yarım piyon değerinde; belirgin bir hata bulunmadı.`;
-  else if (reply?.san.endsWith("#"))
-    explanation = `${played.san} sonrasında rakip ${reply.san} ile şah mat yapabiliyor. Hamleden önce rakibin şah çekişlerini ve mat tehditlerini kontrol et.`;
-  else if (reply?.captured)
-    explanation = `${played.san} sonrasında rakip ${reply.san} ile ${reply.to} karesindeki ${NAMES[reply.captured]} taşını alabiliyor. Bu karşılığı da hesaba katan kısa arama, önerilen hamleyi daha iyi buluyor.`;
-  else if (result.move?.san.endsWith("#"))
-    explanation = `${played.san}, ${result.move.san} ile hemen mat yapma fırsatını kaçırıyor.`;
-  else if (result.move?.captured)
-    explanation = `${played.san}, ${result.move.san} ile ${result.move.to} karesindeki ${NAMES[result.move.captured]} taşını alma fırsatına göre daha düşük değerlendiriliyor. Önce zorlayıcı hamleleri ve taş alışlarını karşılaştır.`;
-  else if (
-    line.at(-1)?.san.endsWith("#") &&
-    line.at(-1)?.color !== played.color
-  )
-    explanation = `${played.san} sonrasında incelenen ${line
-      .slice(1)
-      .map((item) => item.san)
-      .join(
-        " → ",
-      )} devamında rakip mat yapıyor. Bu tehdidi durduran hamleleri ara.`;
-  else
-    explanation = `${played.san}, kısa aramanın önerdiği ${result.move?.san ?? "alternatif hamle"} hamlesinden yaklaşık ${(lossCp / 100).toFixed(1)} piyon değerinde daha düşük değerlendiriliyor. Taş dengesini, rakibin yanıtlarını ve taşlarının etkinliğini birlikte kontrol et.`;
-  let betterExplanation = suggestionExplanation(fen, result.move, result.pv);
-  if (judgment !== "best" && judgment !== "good" && result.move && reply) {
-    const alternatives = new Chess(result.move.after).moves({ verbose: true });
-    const sameReply = alternatives.find(
-      (move) => moveToUci(move) === moveToUci(reply),
+  const target = bounded(options.maxDepth, 16, 1, 30);
+  const minimum = bounded(options.minDepth, 12, 1, 30);
+  const movetime = bounded(options.timeMs, 2_500, 100, 10_000);
+  const search = async (depth: number, searchMoves?: string[]) =>
+    validResult(
+      fen,
+      await options.engine.analyze({
+        fen,
+        positionCommand,
+        depth,
+        movetime,
+        searchMoves,
+      }),
     );
-    if (reply.san.endsWith("#") && !sameReply?.san.endsWith("#")) {
-      betterExplanation += ` Ayrıca gösterilen ${reply.san} matına izin vermiyor.`;
-    } else if (
-      reply.captured &&
-      (!sameReply || sameReply.captured !== reply.captured)
+  let best = await search(target);
+  let actual: CoachSearchResult;
+  if (best.bestMove === playedUci) {
+    actual = best;
+  } else {
+    actual = await search(best.depth || target, [playedUci]);
+    if (actual.bestMove !== playedUci)
+      throw new Error("Stockfish oynanan hamleyi inceleyemedi.");
+    // movetime may interrupt either search. Compare only a common completed
+    // depth, rerunning the shallower target rather than mixing horizon lengths.
+    for (
+      let attempt = 0;
+      best.depth !== actual.depth && attempt < 3;
+      attempt += 1
     ) {
-      betterExplanation += ` Ayrıca gösterilen ${reply.san} ile ${NAMES[reply.captured]} kaybını önlüyor.`;
+      const common = Math.min(best.depth, actual.depth);
+      if (common < minimum) break;
+      if (best.depth > common) best = await search(common);
+      else actual = await search(common, [playedUci]);
+      if (best.bestMove === playedUci) actual = best;
+      else if (actual.bestMove !== playedUci)
+        throw new Error("Stockfish oynanan hamleyi inceleyemedi.");
     }
   }
+  const equalDepth = best.depth === actual.depth;
+  const measured = equalDepth && Boolean(best.score && actual.score);
+  const analysisQuality = quality(
+    Math.min(best.depth, actual.depth),
+    target,
+    minimum,
+    measured,
+  );
+  const bestMove = playAnalysisMove(new Chess(fen), best.bestMove!);
+  const verdict =
+    analysisQuality === "unmeasured"
+      ? null
+      : judgmentFor(playedUci, best.bestMove!, best.score!, actual.score!);
+  const line = lineMoves(fen, actual.pv);
+  const reply = line[1];
+  let explanation = verdict
+    ? `${played.san}: ${verdict.reason}`
+    : `${played.san} için güvenilir bir hüküm verilemiyor. En iyi hamle araması ${best.depth}, oynanan hamle araması ${actual.depth}. derinliğe ulaştı; eşit derinlikte en az ${minimum} katman gerekli. Bu hamle “iyi” olarak sayılmadı.`;
+  if (verdict && verdict.judgment !== "best" && verdict.judgment !== "good") {
+    if (reply?.san.endsWith("#"))
+      explanation += ` Rakibin ${reply.san} yanıtı şah mat yapıyor.`;
+    else if (reply?.captured)
+      explanation += ` Rakip ${reply.san} ile ${reply.to} karesindeki ${NAMES[reply.captured]} taşını alabiliyor.`;
+    const continuation = line
+      .slice(1, 5)
+      .map((move) => move.san)
+      .join(" → ");
+    if (continuation)
+      explanation += ` Oynanan hamleden sonra incelenen devam: ${continuation}.`;
+  }
+  let betterExplanation = suggestionExplanation(fen, bestMove, best.pv);
+  if (analysisQuality !== "unmeasured" && best.score)
+    betterExplanation += ` Aynı ${best.depth}. derinlikte değerlendirme: ${scoreText(best.score)}.`;
+  else
+    betterExplanation +=
+      " Bu öneri yeterli ve eşit derinlikte doğrulanamadı; kesin bir üstünlük iddiası değildir.";
   return {
     fen,
     afterFen: game.fen(),
     playedMove: playedUci,
     playedSan: played.san,
-    bestMove: bestUci,
-    bestSan: result.move?.san ?? null,
-    scoreBefore: result.score,
-    scoreAfter: result.playedScore,
-    lossCp,
-    judgment,
+    bestMove: best.bestMove,
+    bestSan: bestMove.san,
+    scoreBefore: best.score?.type === "cp" ? best.score.value : null,
+    scoreAfter: actual.score?.type === "cp" ? actual.score.value : null,
+    scoreBeforeMate: best.score?.type === "mate" ? best.score.value : null,
+    scoreAfterMate: actual.score?.type === "mate" ? actual.score.value : null,
+    lossCp: verdict?.lossCp ?? null,
+    judgment: verdict?.judgment ?? "unmeasured",
     explanation,
     betterExplanation,
-    depth: result.depth,
-    pv: result.pv,
+    depth: best.depth,
+    playedDepth: actual.depth,
+    quality: analysisQuality,
+    pv: best.pv,
   };
 }

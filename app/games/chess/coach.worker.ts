@@ -1,43 +1,44 @@
-import { Chess } from "chess.js";
 import {
   analyzePlayedMove,
   analyzePosition,
-  playAnalysisMove,
+  reviewPositions,
   type CoachRequest,
   type CoachResponse,
 } from "./coach";
+import { StockfishClient } from "./stockfish-client";
 
 const worker = self as unknown as {
   onmessage: ((event: MessageEvent<CoachRequest>) => void) | null;
   postMessage: (message: CoachResponse) => void;
 };
 
-worker.onmessage = ({ data }) => {
+let engine: StockfishClient | undefined;
+worker.onmessage = async ({ data }) => {
   try {
+    engine ??= new StockfishClient();
+    await engine.ready;
     if (data.kind === "hint") {
       worker.postMessage({
         kind: "hint",
         requestId: data.requestId,
-        advice: analyzePosition(data.fen),
+        advice: await analyzePosition(data.fen, {
+          engine,
+          startFen: data.startFen,
+          moves: data.moves,
+        }),
       });
       return;
     }
-    // Validate the complete replay before emitting partial results. Ply remains
-    // the absolute zero-based index even when only one player's moves are analyzed.
-    const game = data.startFen ? new Chess(data.startFen) : new Chess();
-    const positions = data.moves
-      .map((notation, ply) => {
-        const fen = game.fen();
-        const color = game.turn();
-        playAnalysisMove(game, notation);
-        return { fen, notation, ply, color };
-      })
-      .filter(
-        (position) => !data.playerColor || position.color === data.playerColor,
-      );
+    // Replay every ply before emitting results, then reuse one strong engine for
+    // both players. Hosting an online room never determines who gets reviewed.
+    const positions = reviewPositions(data.moves, data.startFen);
     for (let index = 0; index < positions.length; index += 1) {
       const position = positions[index];
-      const review = analyzePlayedMove(position.fen, position.notation);
+      const review = await analyzePlayedMove(position.fen, position.notation, {
+        engine,
+        startFen: data.startFen,
+        moves: position.moves,
+      });
       worker.postMessage({
         kind: "progress",
         requestId: data.requestId,
@@ -48,11 +49,18 @@ worker.onmessage = ({ data }) => {
     }
     worker.postMessage({ kind: "complete", requestId: data.requestId });
   } catch {
+    engine?.terminate();
+    engine = undefined;
     worker.postMessage({
       kind: "error",
       requestId: data.requestId,
       error:
-        "Analiz tamamlanamadı. Konum veya hamle geçmişi geçersiz olabilir; yeniden dene.",
+        "Stockfish analizi tamamlanamadı. Motor veya hamle geçmişi doğrulanamadı; yeniden dene.",
     });
+  } finally {
+    if (data.kind === "review") {
+      engine?.terminate();
+      engine = undefined;
+    }
   }
 };

@@ -1,18 +1,31 @@
-import { chooseBotMove, type BotRequest, type BotResponse } from "./bot";
+import { searchBotMove, type BotRequest, type BotResponse } from "./bot";
+import { StockfishClient } from "./stockfish-client";
 
-// Keep the worker typed without adding webworker globals to the Next.js app.
 const worker = self as unknown as {
   onmessage: ((event: MessageEvent<BotRequest>) => void) | null;
   postMessage: (message: BotResponse) => void;
 };
-
-worker.onmessage = ({ data }) => {
-  const response: BotResponse = { requestId: data.requestId, move: null };
+let engine: StockfishClient | undefined;
+worker.onmessage = async ({ data }) => {
   try {
-    response.move = chooseBotMove(data.fen, data.difficulty);
+    engine ??= new StockfishClient();
+    const result = await searchBotMove(data.fen, data.difficulty, {
+      engine,
+      positionCommand: data.positionCommand,
+    });
+    worker.postMessage({
+      requestId: data.requestId,
+      move: result.move,
+      depth: result.depth,
+      engine: "Stockfish 17.1",
+    });
   } catch {
-    response.error =
-      "Bot hamlesi hesaplanamadı. Lütfen oyunu yeniden başlatın.";
+    engine?.terminate();
+    engine = undefined;
+    worker.postMessage({
+      requestId: data.requestId,
+      move: null,
+      error: "Stockfish yüklenemedi veya hamle hesaplanamadı. Tekrar dene.",
+    });
   }
-  worker.postMessage(response);
 };

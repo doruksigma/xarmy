@@ -92,12 +92,13 @@ export default function ChessArena() {
   const [mode, setMode] = useState<GameMode>("bot");
   const [game, setGame] = useState(() => new Chess());
   const gameRef = useRef(game);
-  const [difficulty, setDifficulty] = useState<BotDifficulty>("medium");
+  const [difficulty, setDifficulty] = useState<BotDifficulty>("hard");
   const [preferredColor, setPreferredColor] = useState<Color>("w");
   const [botStarted, setBotStarted] = useState(false);
   const [botColor, setBotColor] = useState<Color>("w");
   const [botResigned, setBotResigned] = useState(false);
   const [botThinking, setBotThinking] = useState(false);
+  const [botDepth, setBotDepth] = useState<number | null>(null);
   const [botError, setBotError] = useState(false);
   const [botRetry, setBotRetry] = useState(0);
   const [room, setRoom] = useState<RoomView | null>(null);
@@ -189,32 +190,41 @@ export default function ChessArena() {
     };
   }, [session, applyRoom]);
 
+  useEffect(
+    () => () => {
+      workerRef.current?.terminate();
+      workerRef.current = null;
+    },
+    [],
+  );
+
   useEffect(() => {
-    workerRef.current?.terminate();
-    workerRef.current = null;
     setBotThinking(false);
-    if (
-      mode === "online" ||
-      !botStarted ||
-      botResigned ||
-      game.isGameOver() ||
-      game.turn() === botColor
-    )
+    if (mode === "online" || !botStarted || botResigned || game.isGameOver()) {
+      workerRef.current?.terminate();
+      workerRef.current = null;
       return;
+    }
+    if (game.turn() === botColor) return;
     const requestId = ++botRequest.current;
     let finished = false;
+    let worker: Worker | null = null;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
     const fail = () => {
-      if (!finished) {
-        finished = true;
-        workerRef.current?.terminate();
-        setBotThinking(false);
-        setBotError(true);
-      }
+      if (finished) return;
+      finished = true;
+      clearTimeout(timeout);
+      worker?.terminate();
+      if (workerRef.current === worker) workerRef.current = null;
+      setBotThinking(false);
+      setBotError(true);
     };
     try {
-      const worker = new Worker(new URL("./bot.worker.ts", import.meta.url), {
-        type: "module",
-      });
+      worker =
+        workerRef.current ??
+        new Worker(new URL("./bot.worker.ts", import.meta.url), {
+          type: "module",
+        });
       workerRef.current = worker;
       setBotThinking(true);
       setBotError(false);
@@ -238,23 +248,37 @@ export default function ChessArena() {
             promotion: data.move[4],
           });
           finished = true;
+          clearTimeout(timeout);
           setBotThinking(false);
+          setBotDepth(data.depth ?? null);
           saveGame(next);
         } catch {
           fail();
         }
-        worker.terminate();
       };
       worker.onerror = fail;
-      worker.postMessage({ fen: game.fen(), difficulty, requestId });
+      const moves = game
+        .history({ verbose: true })
+        .map((move) => `${move.from}${move.to}${move.promotion ?? ""}`)
+        .join(" ");
+      worker.postMessage({
+        fen: game.fen(),
+        difficulty: mode === "coach" ? "hard" : difficulty,
+        requestId,
+        positionCommand: `position startpos${moves ? ` moves ${moves}` : ""}`,
+      });
+      timeout = setTimeout(fail, 75_000);
     } catch {
       fail();
     }
-    const timeout = setTimeout(fail, 15000);
     return () => {
-      finished = true;
       clearTimeout(timeout);
-      workerRef.current?.terminate();
+      if (!finished) {
+        worker?.terminate();
+        if (workerRef.current === worker) workerRef.current = null;
+      }
+      finished = true;
+      if (worker) worker.onmessage = null;
     };
   }, [
     mode,
@@ -301,7 +325,7 @@ export default function ChessArena() {
       const review = coach.reviews.find(
         (move) => move.ply === coach.selectedPly,
       );
-      if (!review) return [];
+      if (!review || review.quality === "unmeasured") return [];
       const arrows: Arrow[] = [];
       if (review.bestMove)
         arrows.push({
@@ -325,7 +349,8 @@ export default function ChessArena() {
       mode === "coach" &&
       isActive &&
       game.turn() === playerColor &&
-      coach.advice?.bestMove
+      coach.advice?.bestMove &&
+      coach.advice.quality !== "unmeasured"
     )
       return [
         {
@@ -471,6 +496,9 @@ export default function ChessArena() {
   }
 
   function startBot() {
+    workerRef.current?.terminate();
+    workerRef.current = null;
+    setBotDepth(null);
     setBotColor(preferredColor);
     setBotStarted(true);
     setBotResigned(false);
@@ -600,7 +628,7 @@ export default function ChessArena() {
                 {mode === "coach"
                   ? "Yapay zekâ eğitmenin"
                   : mode === "bot"
-                    ? "XARMY Bot"
+                    ? "Stockfish 17.1"
                     : room?.status === "waiting"
                       ? "Rakip bekleniyor"
                       : "Arkadaşın"}
@@ -700,6 +728,26 @@ export default function ChessArena() {
               ? "Geçmiş konumu inceliyorsun. Sağdaki hamlelerle tahtayı geri sarabilirsin."
               : "Taşı sürükle veya önce taşa, sonra gideceği kareye dokun."}
           </p>
+          <p className="mt-2 text-center text-[10px] text-slate-500">
+            Stockfish 17.1 ·{" "}
+            <a
+              href="/stockfish/SOURCE.md"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline"
+            >
+              Kaynak
+            </a>{" "}
+            ·{" "}
+            <a
+              href="/stockfish/LICENSE.txt"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline"
+            >
+              GPLv3 lisansı
+            </a>
+          </p>
         </section>
         <aside className="space-y-4">
           {mode === "coach" && isActive && !isFinished && (
@@ -711,7 +759,10 @@ export default function ChessArena() {
               onRetry={coach.retryHint}
               canPlay={canMove}
               onPlay={() => {
-                const move = coach.advice?.bestMove;
+                const move =
+                  coach.advice?.quality === "unmeasured"
+                    ? null
+                    : coach.advice?.bestMove;
                 if (move)
                   void makeMove(move.slice(0, 2), move.slice(2, 4), move[4]);
               }}
@@ -766,17 +817,25 @@ export default function ChessArena() {
                   </label>
                   <select
                     id="difficulty"
-                    disabled={botStarted && !isFinished}
-                    value={difficulty}
+                    disabled={mode === "coach" || (botStarted && !isFinished)}
+                    value={mode === "coach" ? "hard" : difficulty}
                     onChange={(event) =>
                       setDifficulty(event.target.value as BotDifficulty)
                     }
                     className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-sm disabled:opacity-50"
                   >
-                    <option value="easy">Kolay · Isınma turu</option>
-                    <option value="medium">Orta · Dengeli rakip</option>
-                    <option value="hard">Zor · Bir adım ötesi</option>
+                    <option value="easy">Güçlü · Kısa düşünme</option>
+                    <option value="medium">Çok güçlü · Dengeli süre</option>
+                    <option value="hard">Usta · Uzun düşünme</option>
                   </select>
+                  <p className="mt-2 text-xs leading-5 text-slate-400">
+                    {mode === "coach"
+                      ? "Eğitmen her zaman tam güçte Stockfish 17.1 ile oynar."
+                      : "Tüm seviyeler tam güçte Stockfish 17.1 kullanır; düşünme süresi değişir."}
+                    {botDepth !== null
+                      ? ` Son hamle derinliği: ${botDepth}.`
+                      : ""}
+                  </p>
                   <div className="mb-2 mt-4 text-xs font-semibold text-slate-300">
                     Taş rengin
                   </div>
@@ -812,7 +871,7 @@ export default function ChessArena() {
                   )}
                   {botError && (
                     <div className="mt-3 text-sm text-amber-300" role="alert">
-                      Bot yanıt veremedi.{" "}
+                      Stockfish yüklenemedi veya yanıt veremedi.{" "}
                       <button
                         className="underline"
                         onClick={() => {

@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Reproducibly copied from the lockfile-installed Stockfish package before builds
+/public/stockfish/engine/

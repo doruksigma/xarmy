@@ -28,11 +28,32 @@ classification, an explanation, and the reason for the suggested alternative.
 Resigning also preserves the finished game for review before leaving the room.
 
 Hints are available during training only. Normal bot and online games reveal
-their analysis after the game ends. The analysis runs in a browser worker using
-a bounded local chess search, so no Gemini or Lichess credentials are required.
-Results arrive progressively; the UI stays usable while the remaining moves are
-analyzed. Recommendations reflect the searched continuations rather than an
-exhaustive evaluation of every possible continuation.
+their analysis after the game ends. Bots, training recommendations, and game
+reviews run **Stockfish 17.1 lite NNUE** in a browser WebAssembly worker, so no
+Gemini or Lichess credentials are required. The single-threaded engine needs no
+SharedArrayBuffer or cross-origin isolation. Reviews arrive progressively while
+the UI remains usable. Search depth and evaluation are measured by Stockfish;
+device speed and the allotted thinking time still limit how deeply it searches.
+Every bot preset uses full engine skill; the settings change thinking time and
+target depth. Training always uses the strongest preset. Reviews compare the
+best move and the played move from the same position and history at equal
+completed depth. They show actual centipawn loss or a separate forced-mate
+result; insufficient searches remain unmeasured. Both players receive the full
+review and can select their own, white's, or black's lessons.
+
+### Stockfish assets and license
+
+`npm ci` installs Stockfish 17.1.0 from the existing lockfile. Both `npm run dev`
+and `npm run build` automatically run `npm run prepare:stockfish`, copying the
+matching lite single-threaded JavaScript and WASM files into the ignored
+`public/stockfish/engine/` directory. Vercel therefore prepares the engine during
+its normal build; no manual file upload or additional service is needed. If
+running Next.js directly instead of the npm scripts, prepare these assets first.
+
+Stockfish is distributed under GPLv3. The full license and exact corresponding
+source links are served at `/stockfish/LICENSE.txt` and `/stockfish/SOURCE.md`;
+the latter records the upstream release commit and build instructions. The
+copied distribution retains its original license header and author list.
 
 ### Vercel setup
 

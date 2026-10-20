@@ -9,6 +9,7 @@ const sources = [
   "lib/chess-room-store.test.ts",
   "app/games/chess/bot.test.ts",
   "app/games/chess/coach.test.ts",
+  "app/games/chess/stockfish-client.test.ts",
 ];
 try {
   const compilation = spawnSync(

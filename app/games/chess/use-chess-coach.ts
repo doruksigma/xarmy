@@ -35,31 +35,50 @@ export function useChessCoach({
   const [selectedPly, setSelectedPly] = useState(-1);
   const [showPlayed, setShowPlayed] = useState(false);
   const requestCounter = useRef(0);
+  const hintWorker = useRef<Worker | null>(null);
   const manuallySelected = useRef(false);
+
+  useEffect(
+    () => () => {
+      hintWorker.current?.terminate();
+      hintWorker.current = null;
+    },
+    [],
+  );
 
   useEffect(() => {
     setAdvice(null);
     setHintError(null);
     setHintLoading(false);
-    if (mode !== "coach" || !active || finished || !playerTurn) return;
+    if (mode !== "coach" || !active || finished) {
+      hintWorker.current?.terminate();
+      hintWorker.current = null;
+      return;
+    }
+    if (!playerTurn) return;
     let alive = true;
-    let worker: Worker | undefined;
+    let completed = false;
+    let worker: Worker | null = null;
     const requestId = ++requestCounter.current;
     const fail = () => {
       if (!alive) return;
       alive = false;
       worker?.terminate();
+      if (hintWorker.current === worker) hintWorker.current = null;
       setHintLoading(false);
       setHintError(
-        "Öneri hazırlanamadı. Yeniden deneyebilir veya hamleni yapabilirsin.",
+        "Stockfish önerisi hazırlanamadı. Güvenilir bir ölçüm için yeniden deneyebilir veya hamleni yapabilirsin.",
       );
     };
-    const timeout = setTimeout(fail, 20_000);
+    const timeout = setTimeout(fail, 75_000);
     setHintLoading(true);
     try {
-      worker = new Worker(new URL("./coach.worker.ts", import.meta.url), {
-        type: "module",
-      });
+      worker =
+        hintWorker.current ??
+        new Worker(new URL("./coach.worker.ts", import.meta.url), {
+          type: "module",
+        });
+      hintWorker.current = worker;
       worker.onmessage = ({ data }: MessageEvent<CoachResponse>) => {
         if (!alive || data.requestId !== requestId) return;
         if (data.kind === "error") {
@@ -67,23 +86,32 @@ export function useChessCoach({
           return;
         }
         if (data.kind !== "hint") return;
+        completed = true;
         alive = false;
         clearTimeout(timeout);
         setAdvice(data.advice);
         setHintLoading(false);
-        worker?.terminate();
       };
       worker.onerror = fail;
-      worker.postMessage({ kind: "hint", requestId, fen });
+      worker.postMessage({
+        kind: "hint",
+        requestId,
+        fen,
+        moves: movesKey ? movesKey.split(" ") : [],
+      });
     } catch {
       fail();
     }
     return () => {
       alive = false;
       clearTimeout(timeout);
-      worker?.terminate();
+      if (!completed) {
+        worker?.terminate();
+        if (hintWorker.current === worker) hintWorker.current = null;
+      }
+      if (worker) worker.onmessage = null;
     };
-  }, [mode, active, finished, playerTurn, fen, hintRetry]);
+  }, [mode, active, finished, playerTurn, fen, movesKey, hintRetry]);
 
   useEffect(() => {
     setReviews([]);
@@ -118,7 +146,7 @@ export function useChessCoach({
     };
     const watch = () => {
       clearTimeout(watchdog);
-      watchdog = setTimeout(fail, 30_000);
+      watchdog = setTimeout(fail, accumulated.length === 0 ? 90_000 : 45_000);
     };
     watch();
     try {
@@ -145,9 +173,24 @@ export function useChessCoach({
             const own = accumulated.filter(
               (move) => move.ply % 2 === (playerColor === "w" ? 0 : 1),
             );
+            const severity = {
+              unmeasured: -1,
+              best: 0,
+              good: 1,
+              inaccuracy: 2,
+              mistake: 3,
+              blunder: 4,
+            };
             const largestLesson = own.reduce<ReviewedMove | null>(
-              (best, move) =>
-                !best || move.lossCp > best.lossCp ? move : best,
+              (best, move) => {
+                if (!best) return move;
+                const difference =
+                  severity[move.judgment] - severity[best.judgment];
+                return difference > 0 ||
+                  (difference === 0 && (move.lossCp ?? 0) > (best.lossCp ?? 0))
+                  ? move
+                  : best;
+              },
               null,
             );
             if (largestLesson) setSelectedPly(largestLesson.ply);

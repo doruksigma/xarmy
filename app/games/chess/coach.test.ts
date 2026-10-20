@@ -5,106 +5,386 @@ import {
   analyzePlayedMove,
   analyzePosition,
   playAnalysisMove,
-  type AnalysisOptions,
+  reviewPositions,
+  type CoachEngine,
+  type CoachSearch,
+  type CoachSearchResult,
+  type EngineScore,
 } from "./coach";
 
-const SHALLOW: AnalysisOptions = {
-  maxDepth: 1,
-  timeMs: 1_500,
-  maxNodes: 60_000,
-};
+const opening = new Chess().fen();
+const cp = (value: number): EngineScore => ({ type: "cp", value });
+const mate = (value: number): EngineScore => ({ type: "mate", value });
+function result(
+  bestMove: string,
+  score: EngineScore | null,
+  depth = 16,
+  pv = [bestMove],
+): CoachSearchResult {
+  return { bestMove, score, depth, pv };
+}
+function engineWith(...responses: CoachSearchResult[]) {
+  const calls: CoachSearch[] = [];
+  const engine: CoachEngine = {
+    async analyze(request) {
+      calls.push(request);
+      const response = responses.shift();
+      assert.ok(response, "an unexpected engine search was requested");
+      return response;
+    },
+  };
+  return { engine, calls };
+}
 
-test("coach gives a legal bounded opening hint and a legal principal variation", () => {
+test("hint uses the engine's searched move, legal PV, depth and mate/CP score", async () => {
+  const { engine, calls } = engineWith(
+    result("e2e4", cp(31), 18, ["e2e4", "e7e5", "g1f3"]),
+  );
+  const advice = await analyzePosition(opening, { engine });
+  assert.equal(advice.bestMove, "e2e4");
+  assert.equal(advice.scoreCp, 31);
+  assert.equal(advice.scoreMate, null);
+  assert.equal(advice.depth, 18);
+  assert.equal(advice.quality, "complete");
+  assert.equal(calls[0].depth, 18);
+  assert.equal(calls[0].movetime, 3_000);
   const game = new Chess();
-  const start = Date.now();
-  const advice = analyzePosition(game.fen(), { timeMs: 100 });
-  assert.ok(advice.bestMove);
-  assert.equal(advice.pv[0], advice.bestMove);
-  for (const notation of advice.pv) playAnalysisMove(game, notation);
-  assert.ok(Date.now() - start < 3_000);
-  assert.ok(advice.explanation.length > 20);
+  for (const move of advice.pv) playAnalysisMove(game, move);
+  assert.match(advice.explanation, /18.*derinlik.*\+0.31/);
 });
 
-test("coach preserves immediate mate even with a tiny node budget", () => {
-  const game = new Chess("7k/5K2/6Q1/8/8/8/8/8 w - - 0 1");
-  const advice = analyzePosition(game.fen(), { maxNodes: 100, timeMs: 25 });
-  assert.ok(advice.bestMove);
-  playAnalysisMove(game, advice.bestMove);
-  assert.equal(game.isCheckmate(), true);
-  assert.match(advice.explanation, /şah mat/);
+test("best and played are searched from the SAME root, mover perspective, and depth", async () => {
+  const { engine, calls } = engineWith(
+    result("e2e4", cp(40)),
+    result("d2d4", cp(-260)),
+  );
+  const review = await analyzePlayedMove(opening, "d4", { engine });
+  assert.equal(review.lossCp, 300);
+  assert.equal(review.judgment, "blunder");
+  assert.equal(review.scoreBefore, 40);
+  assert.equal(review.scoreAfter, -260);
+  assert.equal(review.depth, review.playedDepth);
+  assert.equal(calls[0].fen, calls[1].fen);
+  assert.equal(calls[0].positionCommand, calls[1].positionCommand);
+  assert.equal(calls[1].depth, calls[0].depth);
+  assert.deepEqual(calls[1].searchMoves, ["d2d4"]);
+  assert.match(review.explanation, /3.00 piyon/);
 });
 
-for (const [color, fen, move] of [
-  ["white", "4k3/8/8/3q4/4P3/8/8/4K3 w - - 0 1", "e4d5"],
-  ["black", "4k3/8/8/4p3/3Q4/8/8/4K3 b - - 0 1", "e5d4"],
+test("black's score is not inverted or treated as the room host's score", async () => {
+  const game = new Chess();
+  game.move("e4");
+  const { engine, calls } = engineWith(
+    result("e7e5", cp(20)),
+    result("c7c5", cp(-190)),
+  );
+  const review = await analyzePlayedMove(game.fen(), "c5", {
+    engine,
+    moves: ["e4"],
+  });
+  assert.equal(review.lossCp, 210);
+  assert.equal(review.judgment, "blunder");
+  assert.equal(review.scoreBefore, 20);
+  assert.equal(review.scoreAfter, -190);
+  assert.equal(calls[0].positionCommand, "position startpos moves e2e4");
+  assert.equal(calls[1].positionCommand, calls[0].positionCommand);
+});
+
+for (const [loss, expected] of [
+  [25, "good"],
+  [26, "inaccuracy"],
+  [75, "inaccuracy"],
+  [76, "mistake"],
+  [175, "mistake"],
+  [176, "blunder"],
 ] as const) {
-  test(`${color}: captures an available queen and keeps review scores in the mover's perspective`, () => {
-    const advice = analyzePosition(fen, SHALLOW);
-    assert.equal(advice.bestMove, move);
-    const review = analyzePlayedMove(fen, move, SHALLOW);
-    assert.equal(review.bestMove, move);
-    assert.equal(review.judgment, "best");
-    assert.equal(review.lossCp, 0);
-    assert.equal(review.scoreBefore, review.scoreAfter);
-    assert.ok(review.scoreAfter > 0, "the capturer keeps a pawn advantage");
-    assert.match(review.betterExplanation, /vezir/);
+  test(`${loss} centipawn loss is classified as ${expected}, not generic praise`, async () => {
+    const { engine } = engineWith(
+      result("e2e4", cp(50)),
+      result("d2d4", cp(50 - loss)),
+    );
+    const review = await analyzePlayedMove(opening, "d4", { engine });
+    assert.equal(review.judgment, expected);
+    assert.equal(review.lossCp, loss);
   });
 }
 
-test("coach identifies a mate blunder and explains the actual mating reply", () => {
-  const game = new Chess();
-  game.move("f3");
-  game.move("e5");
-  const review = analyzePlayedMove(game.fen(), "g4", SHALLOW);
-  assert.equal(review.judgment, "blunder");
-  assert.ok(review.scoreAfter < -90_000);
-  assert.match(review.explanation, /Qh4#.*şah mat/);
-  assert.match(review.betterExplanation, /Qh4# matına izin vermiyor/);
-  assert.notEqual(review.bestMove, review.playedMove);
+test("a selected best move uses one measured search and has no invented loss", async () => {
+  const { engine, calls } = engineWith(result("e2e4", cp(32)));
+  const review = await analyzePlayedMove(opening, "e4", { engine });
+  assert.equal(calls.length, 1);
+  assert.equal(review.judgment, "best");
+  assert.equal(review.lossCp, 0);
+  assert.equal(review.scoreBefore, review.scoreAfter);
 });
 
-test("coach explains the legal reply that captures a hanging queen", () => {
-  const fen = "4k3/8/8/8/8/8/r7/3QK3 w - - 0 1";
-  const review = analyzePlayedMove(fen, "d1a4", SHALLOW);
-  assert.equal(review.judgment, "blunder");
-  assert.ok(review.lossCp > 800);
-  assert.match(review.explanation, /Rxa4.*a4.*vezir/);
-  assert.match(review.betterExplanation, /vezir kaybını önlüyor/);
-  const game = new Chess(review.afterFen);
-  assert.equal(game.move("Rxa4").captured, "q");
+test("a shallower played search reruns unrestricted best at the SAME completed depth", async () => {
+  const { engine, calls } = engineWith(
+    result("e2e4", cp(50), 16),
+    result("d2d4", cp(-200), 14),
+    result("e2e4", cp(20), 14),
+  );
+  const review = await analyzePlayedMove(opening, "d4", { engine });
+  assert.equal(calls[2].depth, 14);
+  assert.equal(calls[2].searchMoves, undefined);
+  assert.equal(review.depth, 14);
+  assert.equal(review.playedDepth, 14);
+  assert.equal(review.quality, "limited");
+  assert.equal(review.lossCp, 220);
 });
 
-test("a completed comparison never calls its selected best move a mistake", () => {
-  const fen = "4k3/8/8/3q4/4P3/8/8/4K3 w - - 0 1";
-  for (const maxNodes of [100, 1_000]) {
-    const review = analyzePlayedMove(fen, "e4d5", {
-      maxNodes,
-      maxDepth: 5,
-      timeMs: 80,
-    });
-    assert.equal(review.playedMove, review.bestMove);
-    assert.equal(review.lossCp, 0);
-    assert.equal(review.judgment, "best");
+test("failure to reach a comparable deep score produces unmeasured, never good", async () => {
+  const { engine } = engineWith(
+    result("e2e4", cp(10), 16),
+    result("d2d4", cp(10), 5),
+  );
+  const review = await analyzePlayedMove(opening, "d4", { engine });
+  assert.equal(review.judgment, "unmeasured");
+  assert.equal(review.quality, "unmeasured");
+  assert.equal(review.lossCp, null);
+  assert.match(review.explanation, /güvenilir bir hüküm verilemiyor/);
+});
+
+test("an unscored or depth-zero best move is not labeled best or good", async () => {
+  for (const response of [result("e2e4", null), result("e2e4", cp(0), 0)]) {
+    const { engine } = engineWith(response);
+    const review = await analyzePlayedMove(opening, "e4", { engine });
+    assert.equal(review.judgment, "unmeasured");
+    assert.equal(review.lossCp, null);
   }
 });
 
-test("promotion notation survives hints, replay, and move reviews", () => {
+test("allowing forced mate is a blunder with mate distance, not fake centipawns", async () => {
+  const game = new Chess();
+  game.move("f3");
+  game.move("e5");
+  const { engine } = engineWith(
+    result("e2e4", cp(-40)),
+    result("g2g4", mate(-1), 16, ["g2g4", "d8h4"]),
+  );
+  const review = await analyzePlayedMove(game.fen(), "g4", {
+    engine,
+    moves: ["f3", "e5"],
+  });
+  assert.equal(review.judgment, "blunder");
+  assert.equal(review.scoreAfter, null);
+  assert.equal(review.scoreAfterMate, -1);
+  assert.equal(review.lossCp, null);
+  assert.match(review.explanation, /1 hamlede zorunlu mat/);
+  assert.match(review.explanation, /Qh4#.*şah mat/);
+});
+
+test("missing a forced win is measured separately from material evaluation", async () => {
+  const fen = "7k/5K2/6Q1/8/8/8/8/8 w - - 0 1";
+  const { engine } = engineWith(
+    result("g6g7", mate(1)),
+    result("g6g5", cp(900)),
+  );
+  const review = await analyzePlayedMove(fen, "Qg5", { engine });
+  assert.equal(review.judgment, "blunder");
+  assert.equal(review.scoreBeforeMate, 1);
+  assert.equal(review.scoreBefore, null);
+  assert.equal(review.lossCp, null);
+  assert.match(review.explanation, /zorunlu mat fırsatı kaçırılıyor/);
+  assert.match(review.betterExplanation, /şah mat/);
+});
+
+test("a slower forced mate is distinguished from throwing the win away", async () => {
+  const fen = "7k/5K2/6Q1/8/8/8/8/8 w - - 0 1";
+  const { engine } = engineWith(
+    result("g6g7", mate(1)),
+    result("g6g5", mate(5)),
+  );
+  const review = await analyzePlayedMove(fen, "Qg5", { engine });
+  assert.equal(review.judgment, "inaccuracy");
+  assert.equal(review.lossCp, null);
+  assert.match(review.explanation, /Zorunlu mat korunuyor/);
+});
+
+test("a discovered better played line does not become a negative CP loss", async () => {
+  const { engine } = engineWith(result("e2e4", cp(20)), result("d2d4", cp(30)));
+  const review = await analyzePlayedMove(opening, "d4", { engine });
+  assert.equal(review.lossCp, 0);
+  assert.equal(review.judgment, "good");
+});
+
+test("hanging queen explanation names the verified capture and continuation", async () => {
+  const fen = "4k3/8/8/8/8/8/r7/3QK3 w - - 0 1";
+  const { engine } = engineWith(
+    result("d1a1", cp(400)),
+    result("d1a4", cp(-480), 16, ["d1a4", "a2a4"]),
+  );
+  const review = await analyzePlayedMove(fen, "Qa4", { engine });
+  assert.equal(review.lossCp, 880);
+  assert.match(review.explanation, /Rxa4.*a4.*vezir/);
+});
+
+test("promotion survives engine output, PV, SAN and review replay", async () => {
   const fen = "8/P6k/8/8/8/8/8/7K w - - 0 1";
-  const advice = analyzePosition(fen, SHALLOW);
-  assert.equal(advice.bestMove, "a7a8q");
-  const review = analyzePlayedMove(fen, "a7a8q", SHALLOW);
+  const { engine } = engineWith(result("a7a8q", cp(900)));
+  const review = await analyzePlayedMove(fen, "a7a8q", { engine });
   assert.equal(review.playedMove, "a7a8q");
   assert.equal(new Chess(review.afterFen).get("a8")?.type, "q");
   assert.match(review.betterExplanation, /vezir/);
 });
 
-test("finished positions give no suggestion; invalid input does not invent analysis", () => {
-  for (const fen of [
-    "7k/6Q1/5K2/8/8/8/8/8 b - - 0 1",
-    "7k/5K2/6Q1/8/8/8/8/8 b - - 0 1",
-    "7k/8/8/8/8/8/8/K7 w - - 0 1",
-  ])
-    assert.equal(analyzePosition(fen).bestMove, null);
-  assert.throws(() => analyzePosition("invalid"));
-  assert.throws(() => analyzePlayedMove(new Chess().fen(), "e2e5"));
+test("review positions keep BOTH colors, absolute ply and complete UCI history", () => {
+  const positions = reviewPositions(["f3", "e5", "g4", "Qh4#"]);
+  assert.deepEqual(
+    positions.map((p) => p.color),
+    ["w", "b", "w", "b"],
+  );
+  assert.deepEqual(
+    positions.map((p) => p.ply),
+    [0, 1, 2, 3],
+  );
+  assert.deepEqual(positions[3].moves, ["f2f3", "e7e5", "g2g4"]);
+  assert.throws(() => reviewPositions(["e4", "e4"]));
+});
+
+test("custom starting FEN and history are sent intact to the engine", async () => {
+  const startFen = "4k3/8/8/3q4/4P3/8/8/4K3 w - - 0 1";
+  const game = new Chess(startFen);
+  game.move("exd5");
+  const { engine, calls } = engineWith(result("e8f8", cp(-100), 18));
+  await analyzePosition(game.fen(), { engine, startFen, moves: ["e4d5"] });
+  assert.equal(calls[0].positionCommand, `position fen ${startFen} moves e4d5`);
+});
+
+test("known repeated/drawn and checkmated positions never request invented analysis", async () => {
+  const { engine, calls } = engineWith();
+  const moves = ["Nf3", "Nf6", "Ng1", "Ng8", "Nf3", "Nf6", "Ng1", "Ng8"];
+  const game = new Chess();
+  moves.forEach((move) => game.move(move));
+  assert.equal(game.isThreefoldRepetition(), true);
+  assert.equal(
+    (await analyzePosition(game.fen(), { engine, moves })).bestMove,
+    null,
+  );
+  assert.equal(
+    (await analyzePosition("7k/6Q1/5K2/8/8/8/8/8 b - - 0 1", { engine }))
+      .bestMove,
+    null,
+  );
+  assert.equal(calls.length, 0);
+});
+
+test("invalid input, inconsistent history and illegal engine results surface errors", async () => {
+  const { engine } = engineWith(result("e2e5", cp(0)));
+  await assert.rejects(analyzePosition("invalid", { engine }));
+  await assert.rejects(
+    analyzePosition(opening, { engine, moves: ["e4"] }),
+    /geçmişi/,
+  );
+  await assert.rejects(analyzePlayedMove(opening, "e5", { engine }));
+  await assert.rejects(analyzePosition(opening, { engine }));
+});
+
+test("a shallower unrestricted search reruns the forced played move at its completed depth", async () => {
+  const { engine, calls } = engineWith(
+    result("e2e4", cp(50), 14),
+    result("d2d4", cp(-200), 16),
+    result("d2d4", cp(-180), 14),
+  );
+  const review = await analyzePlayedMove(opening, "d4", { engine });
+  assert.equal(calls[2].depth, 14);
+  assert.deepEqual(calls[2].searchMoves, ["d2d4"]);
+  assert.equal(review.depth, review.playedDepth);
+  assert.equal(review.lossCp, 230);
+  assert.equal(review.quality, "limited");
+});
+
+test("a changing search horizon that never aligns remains unmeasured", async () => {
+  const { engine } = engineWith(
+    result("e2e4", cp(50), 16),
+    result("d2d4", cp(50), 15),
+    result("e2e4", cp(50), 14),
+    result("d2d4", cp(50), 13),
+    result("e2e4", cp(50), 12),
+  );
+  const review = await analyzePlayedMove(opening, "d4", { engine });
+  assert.notEqual(review.depth, review.playedDepth);
+  assert.equal(review.judgment, "unmeasured");
+  assert.equal(review.lossCp, null);
+});
+
+test("nonfinite engine metadata never receives a measured hint or positive verdict", async () => {
+  for (const response of [
+    result("e2e4", cp(Number.NaN)),
+    result("e2e4", cp(0), Number.NaN),
+  ]) {
+    const hintEngine = engineWith(response);
+    const advice = await analyzePosition(opening, {
+      engine: hintEngine.engine,
+    });
+    assert.equal(advice.quality, "unmeasured");
+    assert.ok(Number.isFinite(advice.depth));
+    const reviewEngine = engineWith(response);
+    const review = await analyzePlayedMove(opening, "e4", {
+      engine: reviewEngine.engine,
+    });
+    assert.equal(review.judgment, "unmeasured");
+    assert.equal(review.lossCp, null);
+  }
+});
+
+test("black allowing a forced mate is judged from black's own position", async () => {
+  const game = new Chess();
+  game.move("e4");
+  const { engine, calls } = engineWith(
+    result("e7e5", cp(-30)),
+    result("f7f6", mate(-3), 16, ["f7f6", "d1h5"]),
+  );
+  const review = await analyzePlayedMove(game.fen(), "f6", {
+    engine,
+    moves: ["e4"],
+  });
+  assert.equal(review.judgment, "blunder");
+  assert.equal(review.scoreBefore, -30);
+  assert.equal(review.scoreAfterMate, -3);
+  assert.equal(review.scoreAfter, null);
+  assert.equal(review.lossCp, null);
+  assert.match(review.explanation, /rakibe 3 hamlede zorunlu mat/);
+  assert.equal(calls[1].positionCommand, "position startpos moves e2e4");
+});
+
+test("already lost mates distinguish faster defeat from losing a non-mated position", async () => {
+  const { engine } = engineWith(
+    result("e2e4", mate(-6)),
+    result("d2d4", mate(-2)),
+  );
+  const review = await analyzePlayedMove(opening, "d4", { engine });
+  assert.equal(review.judgment, "mistake");
+  assert.equal(review.lossCp, null);
+  assert.match(review.explanation, /Konum zaten zorunlu mat ile kayıp/);
+});
+
+test("a best move discovered during horizon alignment receives one consistent result", async () => {
+  const { engine } = engineWith(
+    result("e2e4", cp(50), 16),
+    result("d2d4", cp(30), 14),
+    result("d2d4", cp(40), 14),
+  );
+  const review = await analyzePlayedMove(opening, "d4", { engine });
+  assert.equal(review.bestMove, "d2d4");
+  assert.equal(review.judgment, "best");
+  assert.equal(review.lossCp, 0);
+  assert.equal(review.scoreBefore, review.scoreAfter);
+  assert.equal(review.depth, review.playedDepth);
+});
+
+test("engine failures surface errors without reverting to a weak local evaluator", async () => {
+  const engine: CoachEngine = {
+    analyze: async () => {
+      throw new Error("Stockfish unavailable");
+    },
+  };
+  await assert.rejects(
+    analyzePosition(opening, { engine }),
+    /Stockfish unavailable/,
+  );
+  await assert.rejects(
+    analyzePlayedMove(opening, "e4", { engine }),
+    /Stockfish unavailable/,
+  );
 });

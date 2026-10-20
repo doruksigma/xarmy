@@ -1,64 +1,103 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { Chess, type Square } from "chess.js";
-import { chooseBotMove, type BotDifficulty } from "./bot";
+import { Chess } from "chess.js";
+import {
+  BOT_LEVELS,
+  chooseBotMove,
+  searchBotMove,
+  type BotDifficulty,
+  type BotEngine,
+} from "./bot";
+import type { StockfishSearch } from "./stockfish-client";
 
-function applyUci(game: Chess, move: string | null) {
-  assert.ok(move, "Expected a legal move");
-  return game.move({
-    from: move.slice(0, 2) as Square,
-    to: move.slice(2, 4) as Square,
-    promotion: move[4],
-  });
+function engine(move: string, seen?: StockfishSearch[]): BotEngine {
+  return {
+    analyze: async (options) => {
+      seen?.push(options);
+      return {
+        bestMove: move,
+        depth: options.depth,
+        nodes: 123456,
+        score: { type: "cp", value: 34 },
+        pv: [move],
+      };
+    },
+  };
 }
-
 for (const difficulty of ["easy", "medium", "hard"] satisfies BotDifficulty[]) {
-  test(`${difficulty}: returns a legal opening move within a bounded search`, () => {
-    const game = new Chess();
-    const start = Date.now();
-    applyUci(game, chooseBotMove(game.fen(), difficulty));
-    assert.equal(game.turn(), "b");
-    assert.ok(Date.now() - start < 5_000);
-  });
-
-  test(`${difficulty}: takes an available checkmate`, () => {
-    const game = new Chess("7k/5K2/6Q1/8/8/8/8/8 w - - 0 1");
-    applyUci(game, chooseBotMove(game.fen(), difficulty));
-    assert.equal(game.isCheckmate(), true);
-  });
-
-  test(`${difficulty}: captures a hanging queen`, () => {
-    const game = new Chess("4k3/8/8/3q4/4P3/8/8/4K3 w - - 0 1");
-    const move = chooseBotMove(game.fen(), difficulty);
-    assert.equal(move, "e4d5");
-    assert.equal(applyUci(game, move).captured, "q");
-  });
-
-  test(`${difficulty}: evaluates captures from black's perspective`, () => {
-    const game = new Chess("4k3/8/8/4p3/3Q4/8/8/4K3 b - - 0 1");
-    const move = chooseBotMove(game.fen(), difficulty);
-    assert.equal(move, "e5d4");
-    assert.equal(applyUci(game, move).captured, "q");
+  test(`${difficulty}: delegates to full Stockfish at its real depth and time budget`, async () => {
+    const seen: StockfishSearch[] = [];
+    const result = await searchBotMove(new Chess().fen(), difficulty, {
+      engine: engine("e2e4", seen),
+      positionCommand: "position startpos",
+    });
+    assert.equal(result.move, "e2e4");
+    assert.equal(result.depth, BOT_LEVELS[difficulty].depth);
+    assert.equal(result.nodes, 123456);
+    assert.equal(seen[0].positionCommand, "position startpos");
+    assert.ok(seen[0].depth >= 14);
+    assert.ok(seen[0].movetime! >= 1200);
   });
 }
-
-test("returns null for checkmate, stalemate, and insufficient material", () => {
-  for (const fen of [
-    "7k/6Q1/5K2/8/8/8/8/8 b - - 0 1",
-    "7k/5K2/6Q1/8/8/8/8/8 b - - 0 1",
-    "7k/8/8/8/8/8/8/K7 w - - 0 1",
-  ]) {
-    assert.equal(chooseBotMove(fen), null);
-  }
+test("stronger presets give more search time and depth", () => {
+  assert.ok(BOT_LEVELS.easy.depth < BOT_LEVELS.medium.depth);
+  assert.ok(BOT_LEVELS.medium.depth < BOT_LEVELS.hard.depth);
+  assert.ok(BOT_LEVELS.easy.movetime < BOT_LEVELS.hard.movetime);
 });
-
-test("includes promotion in UCI output", () => {
-  const game = new Chess("8/P6k/8/8/8/8/8/7K w - - 0 1");
-  const move = chooseBotMove(game.fen(), "easy");
-  assert.equal(move, "a7a8q");
-  assert.equal(applyUci(game, move).promotion, "q");
+test("black preserves the complete position history for repetition and legality", async () => {
+  const game = new Chess();
+  game.move("e4");
+  const seen: StockfishSearch[] = [];
+  const move = await chooseBotMove(game.fen(), "hard", {
+    engine: engine("e7e5", seen),
+    positionCommand: "position startpos moves e2e4",
+  });
+  assert.equal(move, "e7e5");
+  assert.equal(seen[0].fen, game.fen());
+  assert.equal(seen[0].positionCommand, "position startpos moves e2e4");
 });
-
-test("rejects invalid FEN instead of inventing a move", () => {
-  assert.throws(() => chooseBotMove("invalid"));
+test("promotions are preserved and invalid engine moves never silently fall back", async () => {
+  const fen = "7k/P7/8/8/8/8/8/7K w - - 0 1";
+  assert.equal(
+    await chooseBotMove(fen, "hard", { engine: engine("a7a8q") }),
+    "a7a8q",
+  );
+  await assert.rejects(
+    chooseBotMove(new Chess().fen(), "hard", { engine: engine("e2e5") }),
+  );
+  await assert.rejects(
+    chooseBotMove(new Chess().fen(), "hard", { engine: engine("badmove") }),
+  );
+});
+test("finished games do not request a bot move, invalid FEN still fails", async () => {
+  const noSearch: BotEngine = {
+    analyze: async () => {
+      throw new Error("unexpected search");
+    },
+  };
+  assert.equal(
+    await chooseBotMove("7k/6Q1/5K2/8/8/8/8/8 b - - 0 1", "hard", {
+      engine: noSearch,
+    }),
+    null,
+  );
+  assert.equal(
+    await chooseBotMove("7k/8/8/8/8/8/8/K7 w - - 0 1", "hard", {
+      engine: noSearch,
+    }),
+    null,
+  );
+  await assert.rejects(chooseBotMove("invalid", "hard", { engine: noSearch }));
+});
+test("engine failures stay visible instead of using a weak substitute", async () => {
+  await assert.rejects(
+    chooseBotMove(new Chess().fen(), "hard", {
+      engine: {
+        analyze: async () => {
+          throw new Error("offline");
+        },
+      },
+    }),
+    /offline/,
+  );
 });
