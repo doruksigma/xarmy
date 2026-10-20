@@ -12,7 +12,7 @@ export type EngineScore = { type: "cp" | "mate"; value: number };
 export interface CoachSearch {
   fen: string;
   positionCommand?: string;
-  depth: number;
+  depth?: number;
   movetime?: number;
   searchMoves?: string[];
 }
@@ -49,6 +49,7 @@ export interface PositionAdvice {
   quality: AnalysisQuality;
   pv: string[];
   explanation: string;
+  alternativeStatus?: "found" | "unavailable";
 }
 export type MoveJudgment =
   | "best"
@@ -88,6 +89,7 @@ export type CoachRequest =
       fen: string;
       startFen?: string;
       moves?: string[];
+      vary?: boolean;
       excludeMove?: string;
     }
   | {
@@ -392,17 +394,25 @@ export async function analyzePosition(
       explanation: suggestionExplanation(fen, null, []),
     };
   }
-  const target = bounded(options.maxDepth, 18, 1, 30);
+  // Coaching never inherits the opponent's handicap. By default, use the
+  // engine's full timed search without cutting it off at an artificial depth.
+  const target =
+    options.maxDepth === undefined
+      ? undefined
+      : bounded(options.maxDepth, 18, 1, 30);
   const minimum = bounded(options.minDepth, 12, 1, 30);
   let result = validResult(
     fen,
     await options.engine.analyze({
       fen,
       positionCommand,
-      depth: target,
-      movetime: bounded(options.timeMs, 3_000, 100, 10_000),
+      ...(target === undefined ? {} : { depth: target }),
+      movetime: bounded(options.timeMs, 8_000, 100, 30_000),
     }),
   );
+  let alternativeStatus: PositionAdvice["alternativeStatus"] = options.vary
+    ? "unavailable"
+    : undefined;
   if (options.vary && result.score?.type === "cp" && result.depth >= minimum) {
     const book = openingCandidates(fen);
     const candidates =
@@ -422,18 +432,20 @@ export async function analyzePosition(
           fen,
           positionCommand,
           depth: result.depth,
-          movetime: 1_000,
+          movetime: 3_000,
           searchMoves: [candidate],
         }),
       );
-      // Variety is permitted only among independently verified good moves.
+      // Offer alternatives only when explicitly requested and verified to be
+      // at least as strong at the same depth. Never trade strength for variety.
       if (
         alternative.bestMove === candidate &&
         alternative.depth === result.depth &&
         alternative.score?.type === "cp" &&
-        alternative.score.value >= result.score!.value - 25
+        alternative.score.value >= result.score!.value
       ) {
         result = alternative;
+        alternativeStatus = "found";
         break;
       }
     }
@@ -441,7 +453,7 @@ export async function analyzePosition(
   const move = playAnalysisMove(new Chess(fen), result.bestMove!);
   const analysisQuality = quality(
     result.depth,
-    target,
+    target ?? result.depth,
     minimum,
     Boolean(result.score),
   );
@@ -458,6 +470,7 @@ export async function analyzePosition(
       analysisQuality === "unmeasured"
         ? "Bu öneri henüz doğrulanamadı; yeniden analiz edebilirsin."
         : suggestionExplanation(fen, move, result.pv),
+    alternativeStatus,
   };
 }
 

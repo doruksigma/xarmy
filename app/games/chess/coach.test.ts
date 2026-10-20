@@ -36,14 +36,14 @@ function engineWith(...responses: CoachSearchResult[]) {
   return { engine, calls };
 }
 
-test("varied hints choose a different verified good move at the same depth", async () => {
+test("explicit alternatives use their own equal-or-better evaluation at the same depth", async () => {
   const calls: CoachSearch[] = [];
   const engine: CoachEngine = {
     analyze: async (request) => {
       calls.push(request);
       return result(
         request.searchMoves?.[0] ?? "e2e4",
-        cp(request.searchMoves ? 30 : 40),
+        cp(request.searchMoves ? 45 : 40),
         18,
       );
     },
@@ -54,21 +54,27 @@ test("varied hints choose a different verified good move at the same depth", asy
     random: () => 0,
   });
   assert.notEqual(advice.bestMove, "e2e4");
-  assert.equal(advice.scoreCp, 30);
+  assert.equal(advice.scoreCp, 45);
   assert.equal(advice.depth, 18);
-  assert.equal(calls[1].depth, calls[0].depth);
+  assert.equal(calls[0].depth, undefined);
+  assert.equal(calls[1].depth, 18);
+  assert.equal(advice.alternativeStatus, "found");
   assert.equal(advice.pv[0], advice.bestMove);
   assert.ok(advice.explanation.includes(advice.bestSan!));
 });
 
-test("variety never recommends a losing or shallower alternative", async () => {
-  for (const shallow of [false, true]) {
+test("variety never recommends even a slightly worse or shallower alternative", async () => {
+  for (const alternative of [
+    { score: -300, depth: 18 },
+    { score: 39, depth: 18 },
+    { score: 40, depth: 10 },
+  ]) {
     const engine: CoachEngine = {
       analyze: async (request) =>
         result(
           request.searchMoves?.[0] ?? "e2e4",
-          cp(request.searchMoves && !shallow ? -300 : 40),
-          request.searchMoves && shallow ? 10 : 18,
+          cp(request.searchMoves ? alternative.score : 40),
+          request.searchMoves ? alternative.depth : 18,
         ),
     };
     const advice = await analyzePosition(opening, {
@@ -77,6 +83,7 @@ test("variety never recommends a losing or shallower alternative", async () => {
       random: () => 0,
     });
     assert.equal(advice.bestMove, "e2e4");
+    assert.equal(advice.alternativeStatus, "unavailable");
   }
 });
 
@@ -98,18 +105,48 @@ test("hint uses the engine's searched move, legal PV, depth and mate/CP score", 
   const { engine, calls } = engineWith(
     result("e2e4", cp(31), 18, ["e2e4", "e7e5", "g1f3"]),
   );
-  const advice = await analyzePosition(opening, { engine });
+  const advice = await analyzePosition(opening, {
+    engine,
+    random: () => {
+      throw new Error("A normal hint must never replace the strongest move.");
+    },
+  });
   assert.equal(advice.bestMove, "e2e4");
   assert.equal(advice.scoreCp, 31);
   assert.equal(advice.scoreMate, null);
   assert.equal(advice.depth, 18);
   assert.equal(advice.quality, "complete");
-  assert.equal(calls[0].depth, 18);
-  assert.equal(calls[0].movetime, 3_000);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].depth, undefined);
+  assert.equal(calls[0].movetime, 8_000);
+  assert.equal(calls[0].searchMoves, undefined);
+  assert.equal(advice.alternativeStatus, undefined);
   const game = new Chess();
   for (const move of advice.pv) playAnalysisMove(game, move);
   assert.match(advice.explanation, /e4.*d5.*merkez/);
   assert.doesNotMatch(advice.explanation, /Stockfish|derinlik|puan|0\.31/);
+});
+
+test("an explicitly requested analysis depth is respected without changing the default full-strength search", async () => {
+  const { engine, calls } = engineWith(result("e2e4", cp(31), 22));
+  const advice = await analyzePosition(opening, {
+    engine,
+    maxDepth: 22,
+    timeMs: 12_000,
+  });
+  assert.equal(calls[0].depth, 22);
+  assert.equal(calls[0].movetime, 12_000);
+  assert.equal(advice.quality, "complete");
+});
+
+test("an alternative request never replaces a forced mate with an ordinary move", async () => {
+  const fen = "7k/8/5KQ1/8/8/8/8/8 w - - 0 1";
+  const { engine, calls } = engineWith(result("g6g7", mate(1), 20));
+  const advice = await analyzePosition(fen, { engine, vary: true });
+  assert.equal(advice.bestMove, "g6g7");
+  assert.equal(advice.scoreMate, 1);
+  assert.equal(calls.length, 1);
+  assert.equal(advice.alternativeStatus, "unavailable");
 });
 
 test("best and played are searched from the SAME root, mover perspective, and depth", async () => {

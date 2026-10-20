@@ -13,6 +13,7 @@ import { Chessboard, type Arrow } from "react-chessboard";
 import { useChessCoach } from "./use-chess-coach";
 import ChessReviewPanel from "./review-panel";
 import TrainerAdvice from "./trainer-advice";
+import ColorDraw from "./color-draw";
 import { createMateLine } from "./review-playback";
 import styles from "./chess-arena.module.css";
 import type { BotDifficulty, BotResponse } from "./bot";
@@ -95,6 +96,7 @@ export default function ChessArena() {
   const [game, setGame] = useState(() => new Chess());
   const gameRef = useRef(game);
   const [difficulty, setDifficulty] = useState<BotDifficulty>("hard");
+  const playingDifficulty = mode === "coach" ? "hard" : difficulty;
   const [preferredColor, setPreferredColor] = useState<Color>("w");
   const [botStarted, setBotStarted] = useState(false);
   const [botColor, setBotColor] = useState<Color>("w");
@@ -267,7 +269,7 @@ export default function ChessArena() {
         .join(" ");
       worker.postMessage({
         fen: game.fen(),
-        difficulty,
+        difficulty: playingDifficulty,
         requestId,
         positionCommand: `position startpos${moves ? ` moves ${moves}` : ""}`,
       });
@@ -290,7 +292,7 @@ export default function ChessArena() {
     botColor,
     botResigned,
     game,
-    difficulty,
+    playingDifficulty,
     botRetry,
     saveGame,
   ]);
@@ -735,6 +737,9 @@ export default function ChessArena() {
               </div>
             </div>
           )}
+          {mode === "online" && room && !showReview && (
+            <ColorDraw room={room} />
+          )}
           <div
             data-testid="chess-board"
             data-fen={displayedGame.fen()}
@@ -859,6 +864,7 @@ export default function ChessArena() {
               error={coach.hintError}
               playerTurn={game.turn() === playerColor}
               onRetry={coach.retryHint}
+              onAlternative={coach.requestAlternative}
               canPlay={canMove}
               onPlay={() => {
                 const move =
@@ -911,30 +917,38 @@ export default function ChessArena() {
                       ? "Sıra sendeyken iyi hamleyi yeşil okla ve nedenleriyle gör. Maç sonunda hatalarını birlikte inceleyelim."
                       : "Bir seviye seç ve ilk hamleni yap. Maçın bitince tüm hamlelerini inceleyebilirsin."}
                   </p>
-                  <label
-                    className="mb-2 mt-5 block text-xs font-semibold text-slate-300"
-                    htmlFor="difficulty"
-                  >
-                    Bot seviyesi
-                  </label>
-                  <select
-                    id="difficulty"
-                    disabled={botStarted && !isFinished}
-                    value={difficulty}
-                    onChange={(event) =>
-                      setDifficulty(event.target.value as BotDifficulty)
-                    }
-                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-sm disabled:opacity-50"
-                  >
-                    <option value="hard">Güçlü</option>
-                    <option value="medium">Orta</option>
-                    <option value="easy">Kötü</option>
-                  </select>
-                  <p className="mt-2 text-xs leading-5 text-slate-400">
-                    {mode === "coach"
-                      ? "Rakibinin seviyesini seç. Eğitmenin her seviyede en iyi hamleyi önerir."
-                      : "Güçlü zorlu oynar, orta dengeli oynar, kötü daha sık hata yapar."}
-                  </p>
+                  {mode === "coach" ? (
+                    <p className="mt-4 rounded-xl border border-emerald-400/20 bg-emerald-400/5 p-3 text-xs leading-5 text-emerald-200">
+                      Eğitmenin her zaman en güçlü seviyede oynar ve en iyi
+                      hamleyi bulmak için düşünür.
+                    </p>
+                  ) : (
+                    <>
+                      <label
+                        className="mb-2 mt-5 block text-xs font-semibold text-slate-300"
+                        htmlFor="difficulty"
+                      >
+                        Bot seviyesi
+                      </label>
+                      <select
+                        id="difficulty"
+                        disabled={botStarted && !isFinished}
+                        value={difficulty}
+                        onChange={(event) =>
+                          setDifficulty(event.target.value as BotDifficulty)
+                        }
+                        className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-sm disabled:opacity-50"
+                      >
+                        <option value="hard">Güçlü</option>
+                        <option value="medium">Orta</option>
+                        <option value="easy">Kötü</option>
+                      </select>
+                      <p className="mt-2 text-xs leading-5 text-slate-400">
+                        Kötü kısa düşünür, orta daha ileriyi hesaplar, güçlü tüm
+                        gücüyle oynar.
+                      </p>
+                    </>
+                  )}
                   <div className="mb-2 mt-4 text-xs font-semibold text-slate-300">
                     Taş rengin
                   </div>
@@ -1027,17 +1041,10 @@ export default function ChessArena() {
                   >
                     {copied ? "✓ Numara kopyalandı" : "Oda numarasını kopyala"}
                   </button>
-                  <p
-                    data-testid="color-draw"
-                    className="mt-4 text-xs text-slate-400"
-                  >
-                    <span className={room?.colorsDrawn ? styles.dice : ""}>
-                      🎲
-                    </span>{" "}
-                    {room?.colorsDrawn
-                      ? `Kura sonucu: ${colorName(room.color)} taşlarla oynuyorsun.`
-                      : "Arkadaşın katılınca renk kurası çekilecek."}{" "}
-                    Odaya yalnızca iki kişi katılabilir.
+                  <p className="mt-4 text-xs leading-5 text-slate-400">
+                    Arkadaşın katılınca ikiniz için zar atılır. Büyük zarı atan
+                    beyaz olur; eşitlikte zarlar yeniden atılır. Odaya yalnızca
+                    iki kişi katılabilir.
                   </p>
                   {connection === "offline" && (
                     <p

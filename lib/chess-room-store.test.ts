@@ -22,15 +22,28 @@ const previousEnvironment = new Map(
 );
 const originalFetch = globalThis.fetch;
 const originalConsoleError = console.error;
-const joinRoom = (code: unknown) => joinRoomRandom(code, () => "w");
+const joinRoom = (code: unknown) =>
+  joinRoomRandom(code, () => ({ host: 6, guest: 1 }));
 
 test("Redis preserves the random black-host assignment across reads and moves", async () => {
   const host = await createRoom();
-  const guest = await joinRoomRandom(host.room.code, () => "b");
+  const guest = await joinRoomRandom(host.room.code, () => ({
+    host: 2,
+    guest: 5,
+  }));
   assert.equal(guest.room.color, "w");
-  assert.equal((await getRoom(host.room.code, host.token)).color, "b");
+  const hostView = await getRoom(host.room.code, host.token);
+  assert.equal(hostView.color, "b");
+  assert.deepEqual(hostView.colorDraw, { yourRoll: 2, opponentRoll: 5 });
+  assert.deepEqual(guest.room.colorDraw, { yourRoll: 5, opponentRoll: 2 });
   await moveInRoom(host.room.code, guest.token, { from: "e2", to: "e4" });
-  assert.equal((await getRoom(host.room.code, host.token)).color, "b");
+  const afterMove = await getRoom(host.room.code, host.token);
+  assert.equal(afterMove.color, "b");
+  assert.deepEqual(afterMove.colorDraw, hostView.colorDraw);
+  assert.deepEqual(JSON.parse(redis.entry(host.room.code).raw).colorDraw, {
+    host: 2,
+    guest: 5,
+  });
 });
 
 const statusIs = (status: number) => (error: unknown) =>

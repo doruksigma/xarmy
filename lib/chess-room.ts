@@ -29,6 +29,7 @@ export type RoomView = {
   moves: string[];
   color: "w" | "b";
   colorsDrawn: boolean;
+  colorDraw: { yourRoll: number; opponentRoll: number } | null;
   turn: "w" | "b";
   result: RoomResult | null;
   lastMove: {
@@ -46,8 +47,9 @@ type RoomRecord = {
   code: string;
   hostHash: string;
   guestHash: string | null;
-  /** null: new room awaiting its draw; undefined: legacy host-white room. */
+  /** Missing colors are kept only for legacy games that already started. */
   hostColor?: "w" | "b" | null;
+  colorDraw?: { host: number; guest: number };
   moves: string[];
   result: RoomResult | null;
   version: number;
@@ -68,6 +70,20 @@ function validateCode(code: unknown): asserts code is string {
 const hashToken = (token: string) =>
   createHash("sha256").update(token).digest("hex");
 const newToken = () => randomBytes(32).toString("base64url");
+
+/** Ties are rerolled; neither player controls the server's cryptographic dice. */
+export function drawRoomDice(rollDie: () => number = () => randomInt(1, 7)): {
+  host: number;
+  guest: number;
+} {
+  let host: number;
+  let guest: number;
+  do {
+    host = rollDie();
+    guest = rollDie();
+  } while (host === guest);
+  return { host, guest };
+}
 
 function playerColor(room: RoomRecord, token: string): "w" | "b" {
   if (!TOKEN_PATTERN.test(token))
@@ -102,7 +118,19 @@ function viewFor(
     fen: board.fen(),
     moves: [...room.moves],
     color,
-    colorsDrawn: room.hostColor !== null,
+    colorsDrawn: Boolean(room.guestHash),
+    colorDraw: room.colorDraw
+      ? {
+          yourRoll:
+            color === room.hostColor
+              ? room.colorDraw.host
+              : room.colorDraw.guest,
+          opponentRoll:
+            color === room.hostColor
+              ? room.colorDraw.guest
+              : room.colorDraw.host,
+        }
+      : null,
     turn: board.turn(),
     result: room.result,
     lastMove: last
@@ -171,7 +199,7 @@ export async function createRoom(): Promise<{ room: RoomView; token: string }> {
 
 export async function joinRoom(
   code: unknown,
-  drawColor: () => "w" | "b" = () => (randomInt(2) === 0 ? "w" : "b"),
+  drawDice: () => { host: number; guest: number } = drawRoomDice,
 ): Promise<{ room: RoomView; token: string }> {
   validateCode(code);
   const token = newToken();
@@ -181,10 +209,14 @@ export async function joinRoom(
       const room = requireRoom(current);
       if (room.guestHash || room.result)
         throw new RoomError(409, "Bu oda dolu veya oyun sona erdi.");
+      // An accepted join starts a game, including a legacy waiting room.
+      // Store the actual dice with the assignment in the same transaction.
+      const dice = drawDice();
+      room.colorDraw = dice;
+      room.hostColor = dice.host > dice.guest ? "w" : "b";
       room.guestHash = hashToken(token);
-      if (room.hostColor === null) room.hostColor = drawColor();
       room.version++;
-      const guestColor = (room.hostColor ?? "w") === "w" ? "b" : "w";
+      const guestColor = room.hostColor === "w" ? "b" : "w";
       return {
         record: room,
         result: { room: viewFor(room, guestColor), token },

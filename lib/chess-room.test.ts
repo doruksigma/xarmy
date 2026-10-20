@@ -9,6 +9,7 @@ import {
   RoomError,
   checkRoomOrigin,
   createRoom,
+  drawRoomDice,
   getRoom,
   joinRoom as joinRoomRandom,
   moveInRoom,
@@ -44,7 +45,8 @@ after(async () => {
   else process.env.XARMY_CHESS_ROOM_DIR = previousDirectory;
   await rm(directory, { recursive: true, force: true });
 });
-const joinRoom = (code: unknown) => joinRoomRandom(code, () => "w");
+const joinRoom = (code: unknown) =>
+  joinRoomRandom(code, () => ({ host: 6, guest: 1 }));
 
 const statusIs = (status: number) => (error: unknown) =>
   error instanceof RoomError && error.status === status;
@@ -87,28 +89,74 @@ test("simultaneous joins allow exactly one guest", async () => {
   await assert.rejects(joinRoom(host.room.code), statusIs(409));
 });
 
-test("existing host-white rooms keep their original color mapping after the update", async () => {
+test("legacy waiting rooms receive a real draw when the guest arrives", async () => {
   const host = await createRoom();
   const path = join(directory, `${host.room.code}.json`);
   const legacy = JSON.parse(await readFile(path, "utf8"));
   delete legacy.hostColor;
   await writeFile(path, JSON.stringify(legacy));
-  const guest = await joinRoomRandom(host.room.code, () => {
-    throw new Error("legacy rooms must not be redrawn");
-  });
-  assert.equal(guest.room.color, "b");
-  assert.equal((await getRoom(host.room.code, host.token)).color, "w");
+  assert.equal((await getRoom(host.room.code, host.token)).colorsDrawn, false);
+  const guest = await joinRoomRandom(host.room.code, () => ({
+    host: 2,
+    guest: 5,
+  }));
+  assert.equal(guest.room.color, "w");
+  assert.deepEqual(guest.room.colorDraw, { yourRoll: 5, opponentRoll: 2 });
+  assert.equal((await getRoom(host.room.code, host.token)).color, "b");
+});
+
+test("legacy games that have already started keep their original color mapping", async () => {
+  const { host, guest, code } = await pair();
+  const path = join(directory, `${code}.json`);
+  const legacy = JSON.parse(await readFile(path, "utf8"));
+  delete legacy.hostColor;
+  delete legacy.colorDraw;
+  await writeFile(path, JSON.stringify(legacy));
+  const hostView = await getRoom(code, host.token);
+  assert.equal(hostView.color, "w");
+  assert.equal(hostView.colorsDrawn, true);
+  assert.equal(hostView.colorDraw, null);
+  assert.equal((await getRoom(code, guest.token)).color, "b");
+  await assert.rejects(
+    joinRoomRandom(code, () => {
+      throw new Error("active games must not be redrawn");
+    }),
+    statusIs(409),
+  );
+  await moveInRoom(code, host.token, { from: "e2", to: "e4" });
+});
+
+test("dice reroll ties and retain the first distinct rolls", () => {
+  const rolls = [3, 3, 1, 1, 2, 6];
+  assert.deepEqual(
+    drawRoomDice(() => rolls.shift()!),
+    {
+      host: 2,
+      guest: 6,
+    },
+  );
+  assert.equal(rolls.length, 0);
 });
 
 test("the join draw assigns either color, persists it, and enforces the drawn turn", async () => {
   for (const drawn of ["w", "b"] as const) {
     const host = await createRoom();
     assert.equal(host.room.colorsDrawn, false);
-    const guest = await joinRoomRandom(host.room.code, () => drawn);
+    assert.equal(host.room.colorDraw, null);
+    const dice = drawn === "w" ? { host: 6, guest: 1 } : { host: 1, guest: 6 };
+    const guest = await joinRoomRandom(host.room.code, () => dice);
     const currentHost = await getRoom(host.room.code, host.token);
     assert.equal(currentHost.colorsDrawn, true);
     assert.equal(currentHost.color, drawn);
     assert.notEqual(guest.room.color, drawn);
+    assert.deepEqual(currentHost.colorDraw, {
+      yourRoll: dice.host,
+      opponentRoll: dice.guest,
+    });
+    assert.deepEqual(guest.room.colorDraw, {
+      yourRoll: dice.guest,
+      opponentRoll: dice.host,
+    });
     const white = drawn === "w" ? host : guest;
     const black = drawn === "w" ? guest : host;
     await assert.rejects(
@@ -116,10 +164,37 @@ test("the join draw assigns either color, persists it, and enforces the drawn tu
       statusIs(409),
     );
     await moveInRoom(host.room.code, white.token, { from: "e2", to: "e4" });
-    assert.equal((await getRoom(host.room.code, host.token)).color, drawn);
+    const persisted = await getRoom(host.room.code, host.token);
+    assert.equal(persisted.color, drawn);
+    assert.deepEqual(persisted.colorDraw, currentHost.colorDraw);
+    const raw = JSON.parse(
+      await readFile(join(directory, `${host.room.code}.json`), "utf8"),
+    );
+    assert.deepEqual(raw.colorDraw, dice);
     const resigned = await resignRoom(host.room.code, host.token);
     assert.equal(resigned.result?.winner, drawn === "w" ? "b" : "w");
   }
+});
+
+test("all distinct dice outcomes give each player equal chances of white", async () => {
+  let whiteHosts = 0;
+  let blackHosts = 0;
+  for (let hostDie = 1; hostDie <= 6; hostDie++) {
+    for (let guestDie = 1; guestDie <= 6; guestDie++) {
+      if (hostDie === guestDie) continue;
+      const host = await createRoom();
+      await joinRoomRandom(host.room.code, () => ({
+        host: hostDie,
+        guest: guestDie,
+      }));
+      const view = await getRoom(host.room.code, host.token);
+      assert.equal(view.color, hostDie > guestDie ? "w" : "b");
+      if (view.color === "w") whiteHosts++;
+      else blackHosts++;
+    }
+  }
+  assert.equal(whiteHosts, 15);
+  assert.equal(blackHosts, 15);
 });
 
 test("waiting, illegal, out-of-turn, and duplicate stale moves cannot change the board", async () => {

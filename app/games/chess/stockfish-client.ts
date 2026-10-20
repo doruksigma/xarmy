@@ -14,7 +14,8 @@ export type StockfishSearch = {
   fen: string;
   /** Include the game's UCI move history to preserve repetition detection. */
   positionCommand?: string;
-  depth: number;
+  /** Omit for a timed search without an artificial depth cap. */
+  depth?: number;
   movetime?: number;
   searchMoves?: string[];
 };
@@ -146,8 +147,11 @@ export class StockfishClient {
     skillLevel: number,
     requireEvaluation: boolean,
   ): Promise<SearchResult> {
-    const depth = Math.min(40, Math.max(1, Math.floor(options.depth)));
-    if (!Number.isFinite(depth) || /[\r\n]/.test(options.fen)) {
+    const depth = options.depth;
+    if (
+      (depth !== undefined && (!Number.isInteger(depth) || depth < 1)) ||
+      /[\r\n]/.test(options.fen)
+    ) {
       return Promise.reject(
         new Error("Invalid Stockfish search position or depth"),
       );
@@ -173,6 +177,11 @@ export class StockfishClient {
     if (movetime !== undefined && !Number.isFinite(movetime)) {
       return Promise.reject(new Error("Invalid Stockfish search time"));
     }
+    if (depth === undefined && movetime === undefined) {
+      return Promise.reject(
+        new Error("Stockfish search needs a depth or time limit"),
+      );
+    }
     return new Promise<SearchResult>((resolve, reject) => {
       this.active = {
         result: null,
@@ -196,9 +205,10 @@ export class StockfishClient {
         `setoption name UCI_AnalyseMode value ${requireEvaluation ? "true" : "false"}`,
       );
       this.worker.postMessage(position);
-      const limit = movetime === undefined ? "" : ` movetime ${movetime}`;
+      const depthLimit = depth === undefined ? "" : ` depth ${depth}`;
+      const timeLimit = movetime === undefined ? "" : ` movetime ${movetime}`;
       const restricted = moves.length ? ` searchmoves ${moves.join(" ")}` : "";
-      this.worker.postMessage(`go depth ${depth}${limit}${restricted}`);
+      this.worker.postMessage(`go${depthLimit}${timeLimit}${restricted}`);
     });
   }
 
@@ -260,7 +270,9 @@ export class StockfishClient {
           bestMove !== "0000" &&
           !/^[a-h][1-8][a-h][1-8][qrbn]?$/.test(bestMove)
         ) {
-          search.reject(new Error("Stockfish returned an invalid selected move"));
+          search.reject(
+            new Error("Stockfish returned an invalid selected move"),
+          );
           return;
         }
         if (
@@ -270,7 +282,9 @@ export class StockfishClient {
           search.result!.pv[0] !== bestMove
         ) {
           search.reject(
-            new Error("Stockfish's exact evaluation does not match its selected move"),
+            new Error(
+              "Stockfish's exact evaluation does not match its selected move",
+            ),
           );
           return;
         }

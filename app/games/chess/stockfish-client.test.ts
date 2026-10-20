@@ -62,12 +62,68 @@ test("single-threaded NNUE engine is initialized with full skill and no Elo hand
     assert.ok(worker.messages.includes(required), required);
 });
 
+test("full-strength timed play and analysis impose no depth cap", async () => {
+  const { client, worker } = await readyClient();
+  for (const analyzing of [false, true]) {
+    worker.messages.length = 0;
+    const search = analyzing
+      ? client.analyze({ fen, movetime: 8000 })
+      : client.playMove({ fen, movetime: 8000, skillLevel: 20 });
+    await tick();
+    assert.ok(worker.messages.includes("setoption name Skill Level value 20"));
+    assert.ok(
+      worker.messages.includes("setoption name UCI_LimitStrength value false"),
+    );
+    assert.equal(worker.messages.at(-1), "go movetime 8000");
+    worker.emit("info depth 42 score cp 30 nodes 4000000 pv e2e4 e7e5");
+    worker.emit("bestmove e2e4");
+    const result = await search;
+    assert.equal(result.depth, 42);
+    assert.equal(result.bestMove, "e2e4");
+  }
+});
+
+test("depth-only searches reach the requested 1 and 10 without a time cutoff", async () => {
+  const { client, worker } = await readyClient();
+  for (const depth of [1, 10]) {
+    const search = client.playMove({ fen, depth, skillLevel: 20 });
+    await tick();
+    assert.equal(worker.messages.at(-1), `go depth ${depth}`);
+    worker.emit(`info depth ${depth} score cp 30 nodes 1000 pv e2e4`);
+    worker.emit("bestmove e2e4");
+    assert.equal((await search).depth, depth);
+  }
+});
+
+test("missing or invalid search limits never start an infinite engine search", async () => {
+  const { client, worker } = await readyClient();
+  await assert.rejects(client.analyze({ fen }), /depth or time limit/);
+  for (const depth of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+    await assert.rejects(client.analyze({ fen, depth }), /Invalid/);
+  }
+  await assert.rejects(
+    client.analyze({ fen, movetime: Number.NaN }),
+    /Invalid/,
+  );
+  assert.equal(
+    worker.messages.some((message) => message.startsWith("go ")),
+    false,
+  );
+});
+
 test("weaker play accepts its selected legal UCI move without borrowing another move's score", async () => {
   const { client, worker } = await readyClient();
-  const search = client.playMove({ fen, depth: 5, movetime: 400, skillLevel: 0 });
+  const search = client.playMove({
+    fen,
+    depth: 5,
+    movetime: 400,
+    skillLevel: 0,
+  });
   await tick();
   assert.ok(worker.messages.includes("setoption name Skill Level value 0"));
-  assert.ok(worker.messages.includes("setoption name UCI_AnalyseMode value false"));
+  assert.ok(
+    worker.messages.includes("setoption name UCI_AnalyseMode value false"),
+  );
   worker.emit("info depth 5 multipv 1 score cp 40 nodes 1200 pv e2e4 e7e5");
   worker.emit("bestmove a2a3");
   assert.deepEqual(await search, { bestMove: "a2a3", depth: 5, nodes: 1200 });

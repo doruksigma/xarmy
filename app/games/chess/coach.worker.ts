@@ -25,7 +25,7 @@ worker.onmessage = async ({ data }) => {
           engine,
           startFen: data.startFen,
           moves: data.moves,
-          vary: true,
+          vary: data.vary === true,
           excludeMove: data.excludeMove,
         }),
       });

@@ -4,7 +4,6 @@ import {
   type StockfishMoveResult,
   type StockfishPlaySearch,
 } from "./stockfish-client";
-import { openingCandidates, randomChoice } from "./openings";
 
 export type BotDifficulty = "easy" | "medium" | "hard";
 export interface BotRequest {
@@ -17,22 +16,23 @@ export interface BotResponse {
   move: string | null;
   requestId: number;
   depth?: number;
-  engine?: "Stockfish 17.1" | "Başlangıç botu";
+  engine?: "Stockfish 17.1";
   error?: string;
 }
 export interface BotEngine {
   playMove(options: StockfishPlaySearch): Promise<StockfishMoveResult>;
 }
 
-// Beginner play is random; medium mixes mistakes with a very short search.
-// Deep searches are reserved for hard play and independent coach analysis.
+// Every level uses the same unhandicapped engine. Only the two lower levels
+// cap search depth. Hard searches freely until its per-move thinking time ends,
+// rather than returning a move from an artificially restricted opening book.
 export const BOT_LEVELS = {
-  easy: { skillLevel: 0, depth: 1, movetime: 50 },
-  medium: { skillLevel: 0, depth: 2, movetime: 150 },
-  hard: { skillLevel: 20, depth: 20, movetime: 3_500 },
+  easy: { skillLevel: 20, depth: 1 },
+  medium: { skillLevel: 20, depth: 10 },
+  hard: { skillLevel: 20, movetime: 8_000 },
 } satisfies Record<
   BotDifficulty,
-  { skillLevel: number; depth: number; movetime: number }
+  Pick<StockfishPlaySearch, "skillLevel" | "depth" | "movetime">
 >;
 
 export async function searchBotMove(
@@ -41,33 +41,12 @@ export async function searchBotMove(
   options: {
     engine?: BotEngine;
     positionCommand?: string;
-    random?: () => number;
   } = {},
 ): Promise<{ move: string | null; depth: number; nodes: number }> {
   const game = new Chess(fen);
   if (game.isGameOver()) return { move: null, depth: 0, nodes: 0 };
   const limits = BOT_LEVELS[difficulty];
   if (!limits) throw new Error("Geçersiz bot seviyesi.");
-  const random = options.random ?? Math.random;
-  const legal = game.moves({ verbose: true });
-  // Beginner play intentionally misses tactics. It must not secretly ask a
-  // master engine to choose the best move from almost the entire game tree.
-  if (difficulty === "easy" || (difficulty === "medium" && random() < 0.3)) {
-    const safe =
-      difficulty === "medium"
-        ? legal.filter((move) => {
-            const after = new Chess(move.after);
-            return !after.isAttacked(move.to, after.turn());
-          })
-        : legal;
-    const move = randomChoice(safe.length ? safe : legal, random);
-    return {
-      move: `${move.from}${move.to}${move.promotion ?? ""}`,
-      depth: 0,
-      nodes: 0,
-    };
-  }
-  const openings = difficulty === "hard" ? openingCandidates(fen) : [];
   const owned = options.engine ? null : new StockfishClient();
   const engine = options.engine ?? owned!;
   try {
@@ -75,9 +54,6 @@ export async function searchBotMove(
       fen,
       positionCommand: options.positionCommand,
       ...limits,
-      ...(openings.length > 1
-        ? { searchMoves: [randomChoice(openings, random)] }
-        : {}),
     });
     const move = result.bestMove;
     if (!move || !/^[a-h][1-8][a-h][1-8][qrbn]?$/.test(move))
@@ -93,14 +69,13 @@ export async function searchBotMove(
   }
 }
 
-/** Stockfish at the selected skill, never a fallback to the old local bot. */
+/** Stockfish at the selected thinking depth, with no random-move fallback. */
 export async function chooseBotMove(
   fen: string,
   difficulty: BotDifficulty = "hard",
   options: {
     engine?: BotEngine;
     positionCommand?: string;
-    random?: () => number;
   } = {},
 ): Promise<string | null> {
   return (await searchBotMove(fen, difficulty, options)).move;

@@ -37,12 +37,17 @@ export function useChessCoach({
   const requestCounter = useRef(0);
   const hintWorker = useRef<Worker | null>(null);
   const lastHint = useRef<PositionAdvice | null>(null);
+  const alternativeRequest = useRef<{
+    fen: string;
+    excludeMove: string;
+  } | null>(null);
   const manuallySelected = useRef(false);
 
   useEffect(
     () => () => {
       hintWorker.current?.terminate();
       hintWorker.current = null;
+      alternativeRequest.current = null;
     },
     [],
   );
@@ -95,15 +100,18 @@ export function useChessCoach({
         setHintLoading(false);
       };
       worker.onerror = fail;
+      const alternative =
+        alternativeRequest.current?.fen === fen
+          ? alternativeRequest.current
+          : null;
+      alternativeRequest.current = null;
       worker.postMessage({
         kind: "hint",
         requestId,
         fen,
         moves: movesKey ? movesKey.split(" ") : [],
-        excludeMove:
-          hintRetry > 0 && lastHint.current?.fen === fen
-            ? (lastHint.current.bestMove ?? undefined)
-            : undefined,
+        vary: Boolean(alternative),
+        excludeMove: alternative?.excludeMove,
       });
     } catch {
       fail();
@@ -226,7 +234,18 @@ export function useChessCoach({
     advice: advice?.fen === fen ? advice : null,
     hintLoading,
     hintError,
-    retryHint: () => setHintRetry((value) => value + 1),
+    retryHint: () => {
+      alternativeRequest.current = null;
+      setHintRetry((value) => value + 1);
+    },
+    requestAlternative: () => {
+      if (lastHint.current?.fen !== fen || !lastHint.current.bestMove) return;
+      alternativeRequest.current = {
+        fen,
+        excludeMove: lastHint.current.bestMove,
+      };
+      setHintRetry((value) => value + 1);
+    },
     reviews,
     progress,
     analyzing,

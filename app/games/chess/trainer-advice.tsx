@@ -31,6 +31,7 @@ export default function TrainerAdvice({
   canPlay,
   onPlay,
   onRetry,
+  onAlternative,
 }: {
   advice: PositionAdvice | null;
   loading: boolean;
@@ -39,6 +40,7 @@ export default function TrainerAdvice({
   canPlay: boolean;
   onPlay: () => void;
   onRetry: () => void;
+  onAlternative: () => void;
 }) {
   const mateMoves = useMemo(() => matingLine(advice), [advice]);
   return (
@@ -131,11 +133,17 @@ export default function TrainerAdvice({
           </button>
           <button
             disabled={!canPlay}
-            onClick={onRetry}
+            onClick={onAlternative}
             className="mt-2 w-full rounded-lg py-2 text-xs text-emerald-300 underline disabled:opacity-40"
           >
             Başka iyi hamle göster
           </button>
+          {advice.alternativeStatus === "unavailable" && (
+            <p className="mt-2 text-xs leading-5 text-slate-400">
+              Aynı güçte başka bir hamle doğrulanamadı. En iyi öneriyi
+              koruyorum.
+            </p>
+          )}
           <p className="mt-3 text-xs leading-5 text-slate-500">
             Başka bir hamle de seçebilirsin; maç sonunda birlikte inceleriz.
           </p>

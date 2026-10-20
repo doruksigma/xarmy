@@ -4,9 +4,12 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 Open `/games/chess` to play against the local bot or create a room and share its
 six-digit code with a friend. When the friend joins, the server draws the colors
-once; either player can receive white. The saved draw survives refreshes, and
+once by rolling a die for each player (ties are rerolled); the higher roll gets
+white. Both dice are displayed above the board. Either player can receive white.
+The saved draw survives refreshes, and
 both browsers receive the same server-validated board. Existing games keep their
-original colors. No external
+original colors, while old waiting rooms also receive a fresh draw on joining.
+No external
 chess API key or signaling service is required. Each room lasts 24 hours; the
 browser keeps its private player token so refreshing can resume the game.
 
@@ -36,19 +39,22 @@ Gemini or Lichess credentials are required. The single-threaded engine needs no
 SharedArrayBuffer or cross-origin isolation. Reviews arrive progressively while
 the UI remains usable. Search depth and evaluation are measured by Stockfish;
 device speed and the allotted thinking time still limit how deeply it searches.
-Choose **Güçlü**, **Orta**, or **Kötü** for different opponent behavior, including
-in training. Kötü chooses random legal moves and misses tactics; Orta mixes
-shallow searches with imperfect choices. Güçlü uses deep Stockfish search and a
-varied repertoire of established openings. Recommendations and reviews use full
-analysis strength, independently of the opponent's level. Reviews compare the
+Normal bot games offer **Güçlü**, **Orta**, or **Kötü**. All use Stockfish at
+Skill Level 20 with `UCI_LimitStrength=false`: Kötü searches to depth 1, Orta
+to depth 10, and Güçlü searches without a depth cap for 8 seconds per move.
+There are no random replacement moves or forced opening candidates. Training
+always uses Güçlü and has no difficulty selector. Its default recommendation
+is the engine's best move from an independent full-strength, uncapped-depth
+8-second search. A finite turn budget lets the engine return a move instead
+of thinking forever. Reviews compare the
 best and played moves from the same position and history at equal completed
 depth; insufficient searches remain unmeasured. The interface gives short,
 concrete reasons instead of scores or engine statistics. **Matı göster** replays
 a verified mating continuation on the board. Both players can select their own,
 white's, or black's lessons. Replay uses instant position changes and a bounded
-layout to keep the board visible while scrolling through explanations. Training
-can suggest a different good move after verifying its quality against the best
-move at the same depth. **Başka iyi hamle göster** requests another option;
+layout to keep the board visible while scrolling through explanations.
+**Başka iyi hamle göster** explicitly requests another option, accepted only
+after verifying that it scores at least as well at the same completed depth;
 forced mates and positions with only one sound defense keep their best move.
 **Maçı terk et** resigns the running game for review. **Analizden çık** clears
 the finished game and stored room session so a new game starts with a clean board.
@@ -99,13 +105,13 @@ the reverse proxy before exposing room creation to untrusted public traffic.
 
 The room API is:
 
-| Method and path | Request | Response |
-| --- | --- | --- |
-| `POST /api/chess/rooms` | Empty | `{ room, token }` (host; colors pending) |
-| `POST /api/chess/rooms/join` | `{ "code": "123456" }` | `{ room, token }` (guest; colors drawn) |
-| `GET /api/chess/rooms/:code` | Bearer token | `{ room }` |
-| `POST /api/chess/rooms/:code/move` | Bearer token and `{ "from": "e2", "to": "e4", "expectedVersion": 2 }` | `{ room }` |
-| `POST /api/chess/rooms/:code/resign` | Bearer token | `{ room }` |
+| Method and path                      | Request                                                               | Response                                 |
+| ------------------------------------ | --------------------------------------------------------------------- | ---------------------------------------- |
+| `POST /api/chess/rooms`              | Empty                                                                 | `{ room, token }` (host; colors pending) |
+| `POST /api/chess/rooms/join`         | `{ "code": "123456" }`                                                | `{ room, token }` (guest; colors drawn)  |
+| `GET /api/chess/rooms/:code`         | Bearer token                                                          | `{ room }`                               |
+| `POST /api/chess/rooms/:code/move`   | Bearer token and `{ "from": "e2", "to": "e4", "expectedVersion": 2 }` | `{ room }`                               |
+| `POST /api/chess/rooms/:code/resign` | Bearer token                                                          | `{ room }`                               |
 
 Send JSON bodies with `Content-Type: application/json`, and player credentials
 only as `Authorization: Bearer <token>`. A promotion move also supplies
