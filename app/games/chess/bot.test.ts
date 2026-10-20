@@ -8,25 +8,23 @@ import {
   type BotDifficulty,
   type BotEngine,
 } from "./bot";
-import type { StockfishSearch } from "./stockfish-client";
+import type { StockfishPlaySearch } from "./stockfish-client";
 
-function engine(move: string, seen?: StockfishSearch[]): BotEngine {
+function engine(move: string, seen?: StockfishPlaySearch[]): BotEngine {
   return {
-    analyze: async (options) => {
+    playMove: async (options) => {
       seen?.push(options);
       return {
         bestMove: move,
         depth: options.depth,
         nodes: 123456,
-        score: { type: "cp", value: 34 },
-        pv: [move],
       };
     },
   };
 }
 for (const difficulty of ["easy", "medium", "hard"] satisfies BotDifficulty[]) {
-  test(`${difficulty}: delegates to full Stockfish at its real depth and time budget`, async () => {
-    const seen: StockfishSearch[] = [];
+  test(`${difficulty}: delegates the selected Stockfish skill and search budget`, async () => {
+    const seen: StockfishPlaySearch[] = [];
     const result = await searchBotMove(new Chess().fen(), difficulty, {
       engine: engine("e2e4", seen),
       positionCommand: "position startpos",
@@ -35,11 +33,18 @@ for (const difficulty of ["easy", "medium", "hard"] satisfies BotDifficulty[]) {
     assert.equal(result.depth, BOT_LEVELS[difficulty].depth);
     assert.equal(result.nodes, 123456);
     assert.equal(seen[0].positionCommand, "position startpos");
-    assert.ok(seen[0].depth >= 14);
-    assert.ok(seen[0].movetime! >= 1200);
+    assert.deepEqual(seen[0], {
+      fen: new Chess().fen(),
+      positionCommand: "position startpos",
+      ...BOT_LEVELS[difficulty],
+    });
   });
 }
 test("stronger presets give more search time and depth", () => {
+  assert.deepEqual(
+    [BOT_LEVELS.easy.skillLevel, BOT_LEVELS.medium.skillLevel, BOT_LEVELS.hard.skillLevel],
+    [0, 8, 20],
+  );
   assert.ok(BOT_LEVELS.easy.depth < BOT_LEVELS.medium.depth);
   assert.ok(BOT_LEVELS.medium.depth < BOT_LEVELS.hard.depth);
   assert.ok(BOT_LEVELS.easy.movetime < BOT_LEVELS.hard.movetime);
@@ -47,7 +52,7 @@ test("stronger presets give more search time and depth", () => {
 test("black preserves the complete position history for repetition and legality", async () => {
   const game = new Chess();
   game.move("e4");
-  const seen: StockfishSearch[] = [];
+  const seen: StockfishPlaySearch[] = [];
   const move = await chooseBotMove(game.fen(), "hard", {
     engine: engine("e7e5", seen),
     positionCommand: "position startpos moves e2e4",
@@ -71,7 +76,7 @@ test("promotions are preserved and invalid engine moves never silently fall back
 });
 test("finished games do not request a bot move, invalid FEN still fails", async () => {
   const noSearch: BotEngine = {
-    analyze: async () => {
+    playMove: async () => {
       throw new Error("unexpected search");
     },
   };
@@ -93,7 +98,7 @@ test("engine failures stay visible instead of using a weak substitute", async ()
   await assert.rejects(
     chooseBotMove(new Chess().fen(), "hard", {
       engine: {
-        analyze: async () => {
+        playMove: async () => {
           throw new Error("offline");
         },
       },

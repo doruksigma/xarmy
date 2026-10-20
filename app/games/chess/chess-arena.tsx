@@ -13,6 +13,8 @@ import { Chessboard, type Arrow } from "react-chessboard";
 import { useChessCoach } from "./use-chess-coach";
 import ChessReviewPanel from "./review-panel";
 import TrainerAdvice from "./trainer-advice";
+import { createMateLine } from "./review-playback";
+import styles from "./chess-arena.module.css";
 import type { BotDifficulty, BotResponse } from "./bot";
 import type { RoomView } from "@/lib/chess-room";
 
@@ -98,7 +100,10 @@ export default function ChessArena() {
   const [botColor, setBotColor] = useState<Color>("w");
   const [botResigned, setBotResigned] = useState(false);
   const [botThinking, setBotThinking] = useState(false);
-  const [botDepth, setBotDepth] = useState<number | null>(null);
+  const [matePlayback, setMatePlayback] = useState<{
+    key: string;
+    step: number;
+  } | null>(null);
   const [botError, setBotError] = useState(false);
   const [botRetry, setBotRetry] = useState(0);
   const [room, setRoom] = useState<RoomView | null>(null);
@@ -250,7 +255,6 @@ export default function ChessArena() {
           finished = true;
           clearTimeout(timeout);
           setBotThinking(false);
-          setBotDepth(data.depth ?? null);
           saveGame(next);
         } catch {
           fail();
@@ -263,7 +267,7 @@ export default function ChessArena() {
         .join(" ");
       worker.postMessage({
         fen: game.fen(),
-        difficulty: mode === "coach" ? "hard" : difficulty,
+        difficulty,
         requestId,
         positionCommand: `position startpos${moves ? ` moves ${moves}` : ""}`,
       });
@@ -306,8 +310,21 @@ export default function ChessArena() {
     playerColor,
   });
   const showReview = coach.reviewOpen;
+  const selectedReview = coach.reviews.find(
+    (move) => move.ply === coach.selectedPly,
+  );
+  const mateLine = useMemo(
+    () => createMateLine(selectedReview),
+    [selectedReview],
+  );
+  const mateStep =
+    showReview && mateLine && matePlayback?.key === mateLine.key
+      ? matePlayback.step
+      : -1;
   const displayedGame = useMemo(() => {
     if (!showReview) return game;
+    if (mateLine && mateStep >= 0)
+      return new Chess(mateLine.positions[mateStep]);
     const board = new Chess();
     const count =
       coach.selectedPly < 0
@@ -318,9 +335,28 @@ export default function ChessArena() {
       .slice(0, count)
       .forEach((move) => board.move(move));
     return board;
-  }, [showReview, game, coach.selectedPly, coach.showPlayed]);
+  }, [
+    showReview,
+    game,
+    coach.selectedPly,
+    coach.showPlayed,
+    mateLine,
+    mateStep,
+  ]);
   const boardArrows = useMemo<Arrow[]>(() => {
     if (showReview) {
+      if (mateLine && mateStep >= 0) {
+        const move = mateLine.uci[mateStep];
+        return move
+          ? [
+              {
+                startSquare: move.slice(0, 2),
+                endSquare: move.slice(2, 4),
+                color: "#34d399",
+              },
+            ]
+          : [];
+      }
       if (coach.showPlayed || coach.selectedPly < 0) return [];
       const review = coach.reviews.find(
         (move) => move.ply === coach.selectedPly,
@@ -366,6 +402,8 @@ export default function ChessArena() {
     coach.selectedPly,
     coach.reviews,
     coach.advice,
+    mateLine,
+    mateStep,
     mode,
     isActive,
     game,
@@ -498,7 +536,7 @@ export default function ChessArena() {
   function startBot() {
     workerRef.current?.terminate();
     workerRef.current = null;
-    setBotDepth(null);
+    setMatePlayback(null);
     setBotColor(preferredColor);
     setBotStarted(true);
     setBotResigned(false);
@@ -598,57 +636,77 @@ export default function ChessArena() {
 
   return (
     <div className="mx-auto max-w-6xl pb-8">
-      <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <div className="mb-2 text-xs font-bold uppercase tracking-[.25em] text-emerald-400">
-            XARMY · Satranç kulübü
+      {showReview ? (
+        <h1 className="mb-3 text-lg font-bold">Maç analizi</h1>
+      ) : (
+        <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <div className="mb-2 text-xs font-bold uppercase tracking-[.25em] text-emerald-400">
+              XARMY · Satranç kulübü
+            </div>
+            <h1 className="text-3xl font-black tracking-tight sm:text-4xl">
+              Bir hamle öne geç.
+            </h1>
+            <p className="mt-2 text-sm text-slate-400">
+              Botla oyna, arkadaşına meydan oku veya eğitmeninle öğren.
+            </p>
           </div>
-          <h1 className="text-3xl font-black tracking-tight sm:text-4xl">
-            Bir hamle öne geç.
-          </h1>
-          <p className="mt-2 text-sm text-slate-400">
-            Botla oyna, arkadaşına meydan oku veya eğitmeninle öğren.
-          </p>
+          <span className="rounded-full border border-emerald-400/20 bg-emerald-400/5 px-3 py-1.5 text-xs text-emerald-300">
+            ♟ 2 oyuncu · Sonsuz olasılık
+          </span>
         </div>
-        <span className="rounded-full border border-emerald-400/20 bg-emerald-400/5 px-3 py-1.5 text-xs text-emerald-300">
-          ♟ 2 oyuncu · Sonsuz olasılık
-        </span>
-      </div>
-      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+      )}
+      <div
+        className={`${styles.layout} ${showReview ? styles.reviewLayout : ""} grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px]`}
+      >
         <section
           aria-label="Satranç tahtası"
-          className="min-w-0 rounded-2xl border border-slate-800 bg-slate-900/40 p-3 sm:p-5 lg:sticky lg:top-20"
+          className={`${showReview ? styles.reviewBoard : ""} min-w-0 rounded-2xl border border-slate-800 bg-slate-900/40 p-3 sm:p-5 lg:sticky lg:top-20`}
         >
-          <div className="mb-3 flex items-center justify-between gap-2 text-sm">
-            <div className="flex items-center gap-2">
-              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-800 text-xl">
-                {mode === "online" ? "♚" : "♟"}
-              </span>
-              <div className="font-semibold">
-                {mode === "coach"
-                  ? "Yapay zekâ eğitmenin"
-                  : mode === "bot"
-                    ? "Stockfish 17.1"
-                    : room?.status === "waiting"
-                      ? "Rakip bekleniyor"
-                      : "Arkadaşın"}
-                <div className="text-xs font-normal text-slate-500">
-                  {colorName(playerColor === "w" ? "b" : "w")} taşlar
+          {showReview ? (
+            <div className="mb-2 flex items-center justify-between gap-2 text-xs text-slate-400">
+              <span>{mateStep >= 0 ? "Mat yolu" : "Hamleyi incele"}</span>
+              <button
+                type="button"
+                onClick={() => setFlipped((value) => !value)}
+                className="rounded px-2 py-1 hover:text-white"
+              >
+                ↻ Tahtayı çevir
+              </button>
+            </div>
+          ) : (
+            <div className="mb-3 flex items-center justify-between gap-2 text-sm">
+              <div className="flex items-center gap-2">
+                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-800 text-xl">
+                  {mode === "online" ? "♚" : "♟"}
+                </span>
+                <div className="font-semibold">
+                  {mode === "coach"
+                    ? "Yapay zekâ eğitmenin"
+                    : mode === "bot"
+                      ? "Stockfish 17.1"
+                      : room?.status === "waiting"
+                        ? "Rakip bekleniyor"
+                        : "Arkadaşın"}
+                  <div className="text-xs font-normal text-slate-500">
+                    {colorName(playerColor === "w" ? "b" : "w")} taşlar
+                  </div>
                 </div>
               </div>
+              {botThinking && (
+                <span className="animate-pulse text-xs text-emerald-300">
+                  Düşünüyor…
+                </span>
+              )}
             </div>
-            {botThinking && (
-              <span className="animate-pulse text-xs text-emerald-300">
-                Düşünüyor…
-              </span>
-            )}
-          </div>
+          )}
           <div
             data-testid="chess-board"
             data-fen={displayedGame.fen()}
-            className="overflow-hidden rounded-lg border border-slate-700 shadow-xl"
+            className={`${styles.boardFrame} overflow-hidden rounded-lg border border-slate-700 shadow-xl`}
           >
             <Chessboard
+              key={showReview ? "review" : "live"}
               options={{
                 id: "arena",
                 position: displayedGame.fen(),
@@ -660,7 +718,8 @@ export default function ChessArena() {
                   (playerColor === "w") !== flipped ? "white" : "black",
                 darkSquareStyle: { backgroundColor: "#6b8a79" },
                 lightSquareStyle: { backgroundColor: "#e3e8db" },
-                animationDurationInMs: 180,
+                showAnimations: !showReview,
+                animationDurationInMs: showReview ? 0 : 180,
                 allowDragging: canMove && !promotion,
                 allowDragOffBoard: false,
                 canDragPiece: ({ piece }) =>
@@ -703,53 +762,59 @@ export default function ChessArena() {
               }}
             />
           </div>
-          <div className="mt-3 flex items-center justify-between text-sm">
-            <div className="flex items-center gap-2">
-              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-400/10 text-xl text-emerald-300">
-                ♔
-              </span>
-              <div className="font-semibold">
-                Sen
-                <div className="text-xs font-normal text-slate-500">
-                  {colorName(playerColor)} taşlar
+          {!showReview && (
+            <>
+              <div className="mt-3 flex items-center justify-between text-sm">
+                <div className="flex items-center gap-2">
+                  <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-400/10 text-xl text-emerald-300">
+                    ♔
+                  </span>
+                  <div className="font-semibold">
+                    Sen
+                    <div className="text-xs font-normal text-slate-500">
+                      {colorName(playerColor)} taşlar
+                    </div>
+                  </div>
                 </div>
+                <button
+                  type="button"
+                  className="rounded-lg px-3 py-2 text-xs text-slate-400 hover:bg-slate-800 hover:text-white"
+                  onClick={() => setFlipped((value) => !value)}
+                >
+                  ↻ Tahtayı çevir
+                </button>
               </div>
-            </div>
-            <button
-              type="button"
-              className="rounded-lg px-3 py-2 text-xs text-slate-400 hover:bg-slate-800 hover:text-white"
-              onClick={() => setFlipped((value) => !value)}
-            >
-              ↻ Tahtayı çevir
-            </button>
-          </div>
-          <p className="mt-4 text-center text-xs text-slate-500">
-            {showReview
-              ? "Geçmiş konumu inceliyorsun. Sağdaki hamlelerle tahtayı geri sarabilirsin."
-              : "Taşı sürükle veya önce taşa, sonra gideceği kareye dokun."}
-          </p>
-          <p className="mt-2 text-center text-[10px] text-slate-500">
-            Stockfish 17.1 ·{" "}
-            <a
-              href="/stockfish/SOURCE.md"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline"
-            >
-              Kaynak
-            </a>{" "}
-            ·{" "}
-            <a
-              href="/stockfish/LICENSE.txt"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline"
-            >
-              GPLv3 lisansı
-            </a>
-          </p>
+              <p className="mt-4 text-center text-xs text-slate-500">
+                {showReview
+                  ? "Geçmiş konumu inceliyorsun. Sağdaki hamlelerle tahtayı geri sarabilirsin."
+                  : "Taşı sürükle veya önce taşa, sonra gideceği kareye dokun."}
+              </p>
+              <p className="mt-2 text-center text-[10px] text-slate-500">
+                Stockfish 17.1 ·{" "}
+                <a
+                  href="/stockfish/SOURCE.md"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline"
+                >
+                  Kaynak
+                </a>{" "}
+                ·{" "}
+                <a
+                  href="/stockfish/LICENSE.txt"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline"
+                >
+                  GPLv3 lisansı
+                </a>
+              </p>
+            </>
+          )}
         </section>
-        <aside className="space-y-4">
+        <aside
+          className={`${showReview ? styles.reviewSidebar : ""} space-y-4`}
+        >
           {mode === "coach" && isActive && !isFinished && (
             <TrainerAdvice
               advice={coach.advice}
@@ -817,24 +882,21 @@ export default function ChessArena() {
                   </label>
                   <select
                     id="difficulty"
-                    disabled={mode === "coach" || (botStarted && !isFinished)}
-                    value={mode === "coach" ? "hard" : difficulty}
+                    disabled={botStarted && !isFinished}
+                    value={difficulty}
                     onChange={(event) =>
                       setDifficulty(event.target.value as BotDifficulty)
                     }
                     className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-sm disabled:opacity-50"
                   >
-                    <option value="easy">Güçlü · Kısa düşünme</option>
-                    <option value="medium">Çok güçlü · Dengeli süre</option>
-                    <option value="hard">Usta · Uzun düşünme</option>
+                    <option value="hard">Güçlü</option>
+                    <option value="medium">Orta</option>
+                    <option value="easy">Kötü</option>
                   </select>
                   <p className="mt-2 text-xs leading-5 text-slate-400">
                     {mode === "coach"
-                      ? "Eğitmen her zaman tam güçte Stockfish 17.1 ile oynar."
-                      : "Tüm seviyeler tam güçte Stockfish 17.1 kullanır; düşünme süresi değişir."}
-                    {botDepth !== null
-                      ? ` Son hamle derinliği: ${botDepth}.`
-                      : ""}
+                      ? "Rakibinin seviyesini seç. Eğitmenin her seviyede en iyi hamleyi önerir."
+                      : "Güçlü zorlu oynar, orta dengeli oynar, kötü daha sık hata yapar."}
                   </p>
                   <div className="mb-2 mt-4 text-xs font-semibold text-slate-300">
                     Taş rengin
@@ -1066,14 +1128,43 @@ export default function ChessArena() {
               playerColor={playerColor}
               reviews={coach.reviews}
               selectedPly={coach.selectedPly}
-              onSelectPly={coach.selectPly}
+              onSelectPly={(ply) => {
+                setMatePlayback(null);
+                coach.selectPly(ply);
+              }}
               showPlayed={coach.showPlayed}
-              onShowPlayed={coach.setShowPlayed}
+              onShowPlayed={(after) => {
+                setMatePlayback(null);
+                coach.setShowPlayed(after);
+              }}
               progress={coach.progress}
               analyzing={coach.analyzing}
               error={coach.reviewError}
               onRetry={coach.retryReview}
-              onClose={coach.closeReview}
+              onClose={() => {
+                setMatePlayback(null);
+                coach.closeReview();
+              }}
+              mateLine={
+                mateLine
+                  ? {
+                      moves: mateLine.moves,
+                      selectedStep: mateStep,
+                      onStep: (step) =>
+                        setMatePlayback(
+                          step < 0
+                            ? null
+                            : {
+                                key: mateLine.key,
+                                step: Math.max(
+                                  0,
+                                  Math.min(mateLine.moves.length, step),
+                                ),
+                              },
+                        ),
+                    }
+                  : null
+              }
             />
           ) : (
             <section className="rounded-2xl border border-slate-800 bg-slate-900/40 p-4">

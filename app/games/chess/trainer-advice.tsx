@@ -1,6 +1,26 @@
 "use client";
 
+import { useMemo } from "react";
+import { Chess } from "chess.js";
 import type { PositionAdvice } from "./coach";
+
+function matingLine(advice: PositionAdvice | null): string[] {
+  if (!advice || advice.quality === "unmeasured" || advice.scoreMate === null)
+    return [];
+  try {
+    const game = new Chess(advice.fen);
+    const moves = advice.pv.map((move) =>
+      game.move({
+        from: move.slice(0, 2),
+        to: move.slice(2, 4),
+        promotion: move[4],
+      }).san,
+    );
+    return game.isCheckmate() ? moves : [];
+  } catch {
+    return [];
+  }
+}
 
 export default function TrainerAdvice({
   advice,
@@ -19,6 +39,7 @@ export default function TrainerAdvice({
   onPlay: () => void;
   onRetry: () => void;
 }) {
+  const mateMoves = useMemo(() => matingLine(advice), [advice]);
   return (
     <section
       data-testid="trainer-advice"
@@ -36,13 +57,11 @@ export default function TrainerAdvice({
       </div>
       {!playerTurn ? (
         <p className="text-sm leading-6 text-slate-300">
-          Şimdi eğitmenin oynuyor. Sıra sana gelince sonraki hamleni birlikte
-          düşünelim.
+          Eğitmenin düşünüyor. Sıra sana gelince önerini göstereceğim.
         </p>
       ) : loading ? (
         <p className="animate-pulse text-sm leading-6 text-slate-300">
-          Stockfish yükleniyor ve konumu derinlemesine inceliyor. Öneriyi ve
-          nedenini birazdan göstereceğim…
+          En iyi hamleyi ve nedenini inceliyorum…
         </p>
       ) : error ? (
         <div role="alert">
@@ -57,14 +76,13 @@ export default function TrainerAdvice({
       ) : advice?.quality === "unmeasured" ? (
         <div role="status">
           <p className="text-sm leading-6 text-amber-300">
-            Yeterli arama derinliğine ulaşılamadı. Ölçülmemiş bir öneri
-            göstermiyorum.
+            Bu konum için henüz net bir öneri yok. Tekrar deneyebilirsin.
           </p>
           <button
             onClick={onRetry}
             className="mt-2 text-sm text-emerald-300 underline"
           >
-            Stockfish analizini yeniden dene
+            Öneriyi yeniden hazırla
           </button>
         </div>
       ) : advice?.bestMove ? (
@@ -85,27 +103,24 @@ export default function TrainerAdvice({
             </p>
           </div>
           <p
-            data-testid="trainer-measurement"
-            className="mb-3 text-xs leading-5 text-slate-400"
-          >
-            Stockfish 17.1 · Derinlik {advice.depth}
-            <br />
-            Senin açısından:{" "}
-            {advice.scoreMate !== null
-              ? advice.scoreMate > 0
-                ? `${advice.scoreMate} hamlede mat`
-                : `${Math.abs(advice.scoreMate)} hamlede mat tehdidi`
-              : advice.scoreCp !== null
-                ? `${advice.scoreCp >= 0 ? "+" : ""}${(advice.scoreCp / 100).toFixed(2)} piyon`
-                : "Puan ölçülemedi"}
-            {advice.quality === "limited" ? " · Süre sınırındaki ölçüm" : ""}
-          </p>
-          <p
             data-testid="trainer-explanation"
             className="text-sm leading-6 text-slate-200"
           >
             {advice.explanation}
           </p>
+          {mateMoves.length > 0 && (
+            <div
+              className="mt-3 rounded-lg border border-amber-300/30 bg-amber-300/5 p-3"
+              data-testid="trainer-mate-line"
+            >
+              <p className="text-xs font-semibold text-amber-200">
+                {advice.scoreMate! > 0 ? "Mat fırsatı" : "Rakibin mat tehdidi"}
+              </p>
+              <p className="mt-1 max-h-20 overflow-y-auto break-words font-mono text-xs leading-5 text-amber-100">
+                {mateMoves.join(" → ")}
+              </p>
+            </div>
+          )}
           <button
             disabled={!canPlay}
             onClick={onPlay}
@@ -114,8 +129,7 @@ export default function TrainerAdvice({
             Önerilen hamleyi oyna
           </button>
           <p className="mt-3 text-xs leading-5 text-slate-500">
-            İstersen başka bir hamle dene. Maç sonunda seçimlerini yeniden
-            inceleyebilirsin.
+            Başka bir hamle de seçebilirsin; maç sonunda birlikte inceleriz.
           </p>
         </>
       ) : (

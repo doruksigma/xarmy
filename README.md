@@ -34,12 +34,15 @@ Gemini or Lichess credentials are required. The single-threaded engine needs no
 SharedArrayBuffer or cross-origin isolation. Reviews arrive progressively while
 the UI remains usable. Search depth and evaluation are measured by Stockfish;
 device speed and the allotted thinking time still limit how deeply it searches.
-Every bot preset uses full engine skill; the settings change thinking time and
-target depth. Training always uses the strongest preset. Reviews compare the
-best move and the played move from the same position and history at equal
-completed depth. They show actual centipawn loss or a separate forced-mate
-result; insufficient searches remain unmeasured. Both players receive the full
-review and can select their own, white's, or black's lessons.
+Choose **Güçlü**, **Orta**, or **Kötü** for genuinely different opponent skill
+levels, including in training. Recommendations and reviews always use full
+analysis strength, independently of the opponent's level. Reviews compare the
+best and played moves from the same position and history at equal completed
+depth; insufficient searches remain unmeasured. The interface gives short,
+concrete reasons instead of scores or engine statistics. **Matı göster** replays
+a verified mating continuation on the board. Both players can select their own,
+white's, or black's lessons. Replay uses instant position changes and a bounded
+layout to keep the board visible while scrolling through explanations.
 
 ### Stockfish assets and license
 

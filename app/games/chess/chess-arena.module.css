@@ -1,0 +1,56 @@
+.layout {
+  overflow-anchor: none;
+}
+
+.boardFrame {
+  width: 100%;
+  aspect-ratio: 1;
+  margin-inline: auto;
+}
+
+.reviewSidebar {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.reviewLayout {
+  height: calc(100svh - 9rem);
+}
+
+@media (min-width: 1024px) {
+  .boardFrame {
+    max-width: min(100%, calc(100svh - 17rem));
+  }
+
+  .reviewLayout .boardFrame {
+    max-width: min(100%, calc(100svh - 14rem));
+  }
+
+  .reviewSidebar {
+    height: 100%;
+  }
+}
+
+@media (max-width: 1023px) {
+  .reviewLayout {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .reviewBoard {
+    flex: none;
+    padding: 0.5rem;
+  }
+
+  .reviewLayout .boardFrame {
+    max-width: min(100%, calc(46svh - 3rem));
+  }
+
+  .reviewSidebar {
+    flex: 1;
+    min-width: 0;
+  }
+}

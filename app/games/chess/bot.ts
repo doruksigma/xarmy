@@ -1,8 +1,8 @@
 import { Chess } from "chess.js";
 import {
   StockfishClient,
-  type StockfishResult,
-  type StockfishSearch,
+  type StockfishMoveResult,
+  type StockfishPlaySearch,
 } from "./stockfish-client";
 
 export type BotDifficulty = "easy" | "medium" | "hard";
@@ -20,16 +20,19 @@ export interface BotResponse {
   error?: string;
 }
 export interface BotEngine {
-  analyze(options: StockfishSearch): Promise<StockfishResult>;
+  playMove(options: StockfishPlaySearch): Promise<StockfishMoveResult>;
 }
 
-// Every preset uses Stockfish's full skill. These limits change thinking time,
-// not deliberate mistakes, randomized moves, or a reduced playing strength.
+// Stockfish's supported skill setting deliberately selects weaker continuations
+// for the two learning opponents. Coach analysis separately always uses skill 20.
 export const BOT_LEVELS = {
-  easy: { depth: 14, movetime: 1_200 },
-  medium: { depth: 18, movetime: 2_200 },
-  hard: { depth: 20, movetime: 3_500 },
-} satisfies Record<BotDifficulty, { depth: number; movetime: number }>;
+  easy: { skillLevel: 0, depth: 5, movetime: 400 },
+  medium: { skillLevel: 8, depth: 12, movetime: 1_000 },
+  hard: { skillLevel: 20, depth: 20, movetime: 3_500 },
+} satisfies Record<
+  BotDifficulty,
+  { skillLevel: number; depth: number; movetime: number }
+>;
 
 export async function searchBotMove(
   fen: string,
@@ -43,7 +46,7 @@ export async function searchBotMove(
   const owned = options.engine ? null : new StockfishClient();
   const engine = options.engine ?? owned!;
   try {
-    const result = await engine.analyze({
+    const result = await engine.playMove({
       fen,
       positionCommand: options.positionCommand,
       ...limits,
@@ -62,7 +65,7 @@ export async function searchBotMove(
   }
 }
 
-/** Full-strength Stockfish move, never a fallback to the old shallow search. */
+/** Stockfish at the selected skill, never a fallback to the old local bot. */
 export async function chooseBotMove(
   fen: string,
   difficulty: BotDifficulty = "hard",

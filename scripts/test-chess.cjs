@@ -10,6 +10,7 @@ const sources = [
   "app/games/chess/bot.test.ts",
   "app/games/chess/coach.test.ts",
   "app/games/chess/stockfish-client.test.ts",
+  "app/games/chess/review-playback.test.ts",
 ];
 try {
   const compilation = spawnSync(

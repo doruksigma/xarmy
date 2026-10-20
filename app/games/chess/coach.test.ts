@@ -50,7 +50,8 @@ test("hint uses the engine's searched move, legal PV, depth and mate/CP score", 
   assert.equal(calls[0].movetime, 3_000);
   const game = new Chess();
   for (const move of advice.pv) playAnalysisMove(game, move);
-  assert.match(advice.explanation, /18.*derinlik.*\+0.31/);
+  assert.match(advice.explanation, /e4.*d5.*merkez/);
+  assert.doesNotMatch(advice.explanation, /Stockfish|derinlik|puan|0\.31/);
 });
 
 test("best and played are searched from the SAME root, mover perspective, and depth", async () => {
@@ -68,7 +69,7 @@ test("best and played are searched from the SAME root, mover perspective, and de
   assert.equal(calls[0].positionCommand, calls[1].positionCommand);
   assert.equal(calls[1].depth, calls[0].depth);
   assert.deepEqual(calls[1].searchMoves, ["d2d4"]);
-  assert.match(review.explanation, /3.00 piyon/);
+  assert.doesNotMatch(review.explanation + review.betterExplanation, /derinlik|puan|3\.00|0\.40|2\.60/);
 });
 
 test("black's score is not inverted or treated as the room host's score", async () => {
@@ -170,7 +171,8 @@ test("allowing forced mate is a blunder with mate distance, not fake centipawns"
   assert.equal(review.scoreAfter, null);
   assert.equal(review.scoreAfterMate, -1);
   assert.equal(review.lossCp, null);
-  assert.match(review.explanation, /1 hamlede zorunlu mat/);
+  assert.match(review.explanation, /şahı savunmasız/);
+  assert.deepEqual(review.playedPv, ["g2g4", "d8h4"]);
   assert.match(review.explanation, /Qh4#.*şah mat/);
 });
 
@@ -185,7 +187,8 @@ test("missing a forced win is measured separately from material evaluation", asy
   assert.equal(review.scoreBeforeMate, 1);
   assert.equal(review.scoreBefore, null);
   assert.equal(review.lossCp, null);
-  assert.match(review.explanation, /zorunlu mat fırsatı kaçırılıyor/);
+  assert.match(review.explanation, /zorunlu mat fırsatını kaçırıyor/);
+  assert.match(review.explanation, /Qg7#.*hemen şah mat/);
   assert.match(review.betterExplanation, /şah mat/);
 });
 
@@ -198,7 +201,7 @@ test("a slower forced mate is distinguished from throwing the win away", async (
   const review = await analyzePlayedMove(fen, "Qg5", { engine });
   assert.equal(review.judgment, "inaccuracy");
   assert.equal(review.lossCp, null);
-  assert.match(review.explanation, /Zorunlu mat korunuyor/);
+  assert.match(review.explanation, /matı gereksiz yere uzatıyor/);
 });
 
 test("a discovered better played line does not become a negative CP loss", async () => {
@@ -344,7 +347,8 @@ test("black allowing a forced mate is judged from black's own position", async (
   assert.equal(review.scoreAfterMate, -3);
   assert.equal(review.scoreAfter, null);
   assert.equal(review.lossCp, null);
-  assert.match(review.explanation, /rakibe 3 hamlede zorunlu mat/);
+  assert.match(review.explanation, /rakibe zorunlu mat yolu/);
+  assert.match(review.explanation, /Qh5\+.*mat saldırısını/);
   assert.equal(calls[1].positionCommand, "position startpos moves e2e4");
 });
 
@@ -356,7 +360,7 @@ test("already lost mates distinguish faster defeat from losing a non-mated posit
   const review = await analyzePlayedMove(opening, "d4", { engine });
   assert.equal(review.judgment, "mistake");
   assert.equal(review.lossCp, null);
-  assert.match(review.explanation, /Konum zaten zorunlu mat ile kayıp/);
+  assert.match(review.explanation, /zaten mat ağı.*daha erken mat/);
 });
 
 test("a best move discovered during horizon alignment receives one consistent result", async () => {
@@ -387,4 +391,43 @@ test("engine failures surface errors without reverting to a weak local evaluator
     analyzePlayedMove(opening, "e4", { engine }),
     /Stockfish unavailable/,
   );
+});
+
+
+test("short explanations name the queen blunder and retain both legal continuation branches", async () => {
+  const game = new Chess();
+  ["e4", "e5", "Nf3"].forEach((move) => game.move(move));
+  const { engine } = engineWith(
+    result("b8c6", cp(-39), 16, ["b8c6", "f1b5"]),
+    result("d8h4", cp(-644), 16, ["d8h4", "f3h4", "d7d5"]),
+  );
+  const review = await analyzePlayedMove(game.fen(), "Qh4", { engine });
+  assert.equal(review.judgment, "blunder");
+  assert.equal(review.lossCp, 605);
+  assert.match(review.explanation, /Qh4.*vezir.*saldırısına/);
+  assert.match(review.explanation, /Nxh4.*h4.*vezir/);
+  assert.match(review.betterExplanation, /Nc6.*atı? taşını geliştiriyor/);
+  assert.deepEqual(review.playedPv, ["d8h4", "f3h4", "d7d5"]);
+  assert.deepEqual(review.pv, ["b8c6", "f1b5"]);
+  for (const explanation of [review.explanation, review.betterExplanation]) {
+    assert.ok(explanation.length < 230, explanation);
+    assert.doesNotMatch(explanation, /Stockfish|derinlik|puan|centipawn|\d[,.]\d/);
+  }
+});
+
+test("unmeasured guidance stays short and never displays search internals", async () => {
+  const { engine } = engineWith(result("e2e4", cp(10), 16), result("d2d4", cp(10), 5));
+  const review = await analyzePlayedMove(opening, "d4", { engine });
+  assert.equal(review.judgment, "unmeasured");
+  assert.match(review.explanation, /iyi veya kötü diye etiketlemiyorum/);
+  assert.doesNotMatch(review.explanation + review.betterExplanation, /Stockfish|derinlik|puan|katman|16|5/);
+});
+
+test("best-move and hint explanations teach the idea without score and depth text", async () => {
+  const { engine } = engineWith(result("g1f3", cp(30), 18, ["g1f3", "d7d5"]));
+  const review = await analyzePlayedMove(opening, "Nf3", { engine });
+  assert.equal(review.judgment, "best");
+  assert.match(review.explanation, /en iyi seçenek/);
+  assert.match(review.betterExplanation, /geliştiriyor.*merkez/);
+  assert.doesNotMatch(review.explanation + review.betterExplanation, /Stockfish|derinlik|puan|0\.30/);
 });

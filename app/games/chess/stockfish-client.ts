@@ -19,9 +19,21 @@ export type StockfishSearch = {
   searchMoves?: string[];
 };
 
+/** Playing at reduced skill does not provide an evaluation of the selected move. */
+export type StockfishPlaySearch = StockfishSearch & { skillLevel: number };
+export type StockfishMoveResult = {
+  bestMove: string | null;
+  depth: number;
+  nodes: number;
+};
+type SearchResult = {
+  bestMove: string | null;
+  evaluation: Omit<StockfishResult, "bestMove"> | null;
+};
 type Search = {
   result: Omit<StockfishResult, "bestMove"> | null;
-  resolve: (result: StockfishResult) => void;
+  requireEvaluation: boolean;
+  resolve: (result: SearchResult) => void;
   reject: (error: Error) => void;
   timer: ReturnType<typeof setTimeout>;
   cancelled: boolean;
@@ -77,13 +89,31 @@ export class StockfishClient {
     this.worker.postMessage("uci");
   }
 
-  analyze(options: StockfishSearch): Promise<StockfishResult> {
+  async analyze(options: StockfishSearch): Promise<StockfishResult> {
+    const result = await this.enqueue(options, 20, true);
+    return { bestMove: result.bestMove, ...result.evaluation! };
+  }
+
+  async playMove(options: StockfishPlaySearch): Promise<StockfishMoveResult> {
+    const result = await this.enqueue(options, options.skillLevel, false);
+    return {
+      bestMove: result.bestMove,
+      depth: result.evaluation?.depth ?? 0,
+      nodes: result.evaluation?.nodes ?? 0,
+    };
+  }
+
+  private enqueue(
+    options: StockfishSearch,
+    skillLevel: number,
+    requireEvaluation: boolean,
+  ): Promise<SearchResult> {
     const generation = this.generation;
     const result = this.queue.then(async () => {
       await this.ready;
       if (this.failure) throw this.failure;
       if (generation !== this.generation) throw abortError();
-      return this.search(options);
+      return this.search(options, skillLevel, requireEvaluation);
     });
     this.queue = result.then(
       () => undefined,
@@ -111,13 +141,19 @@ export class StockfishClient {
     this.fail(abortError());
   }
 
-  private search(options: StockfishSearch): Promise<StockfishResult> {
+  private search(
+    options: StockfishSearch,
+    skillLevel: number,
+    requireEvaluation: boolean,
+  ): Promise<SearchResult> {
     const depth = Math.min(40, Math.max(1, Math.floor(options.depth)));
     if (!Number.isFinite(depth) || /[\r\n]/.test(options.fen)) {
       return Promise.reject(
         new Error("Invalid Stockfish search position or depth"),
       );
     }
+    if (!Number.isInteger(skillLevel) || skillLevel < 0 || skillLevel > 20)
+      return Promise.reject(new Error("Invalid Stockfish skill level"));
     const position = options.positionCommand ?? `position fen ${options.fen}`;
     if (
       !/^position (startpos(?: moves [a-h1-8qrbn ]+)?|fen [^\r\n]+)$/.test(
@@ -137,9 +173,10 @@ export class StockfishClient {
     if (movetime !== undefined && !Number.isFinite(movetime)) {
       return Promise.reject(new Error("Invalid Stockfish search time"));
     }
-    return new Promise<StockfishResult>((resolve, reject) => {
+    return new Promise<SearchResult>((resolve, reject) => {
       this.active = {
         result: null,
+        requireEvaluation,
         resolve,
         reject,
         cancelled: false,
@@ -150,6 +187,14 @@ export class StockfishClient {
           Math.max(30_000, (movetime ?? 45_000) + 15_000),
         ),
       };
+      // Searches are serialized. Reset strength before EACH search so a weak
+      // playing preset can never contaminate a later coach measurement.
+      this.worker.postMessage(`setoption name Skill Level value ${skillLevel}`);
+      this.worker.postMessage("setoption name UCI_LimitStrength value false");
+      this.worker.postMessage("setoption name MultiPV value 1");
+      this.worker.postMessage(
+        `setoption name UCI_AnalyseMode value ${requireEvaluation ? "true" : "false"}`,
+      );
       this.worker.postMessage(position);
       const limit = movetime === undefined ? "" : ` movetime ${movetime}`;
       const restricted = moves.length ? ` searchmoves ${moves.join(" ")}` : "";
@@ -204,7 +249,7 @@ export class StockfishClient {
       clearTimeout(search.timer);
       if (search.cancelled) {
         search.reject(abortError());
-      } else if (!search.result) {
+      } else if (search.requireEvaluation && !search.result) {
         search.reject(
           new Error("Stockfish did not return an exact evaluation"),
         );
@@ -213,18 +258,24 @@ export class StockfishClient {
         if (
           bestMove !== "(none)" &&
           bestMove !== "0000" &&
-          (!/^[a-h][1-8][a-h][1-8][qrbn]?$/.test(bestMove) ||
-            search.result.pv[0] !== bestMove)
+          !/^[a-h][1-8][a-h][1-8][qrbn]?$/.test(bestMove)
+        ) {
+          search.reject(new Error("Stockfish returned an invalid selected move"));
+          return;
+        }
+        if (
+          search.requireEvaluation &&
+          bestMove !== "(none)" &&
+          bestMove !== "0000" &&
+          search.result!.pv[0] !== bestMove
         ) {
           search.reject(
-            new Error(
-              "Stockfish's exact evaluation does not match its selected move",
-            ),
+            new Error("Stockfish's exact evaluation does not match its selected move"),
           );
           return;
         }
         search.resolve({
-          ...search.result,
+          evaluation: search.result,
           bestMove:
             bestMove === "(none)" || bestMove === "0000" ? null : bestMove,
         });

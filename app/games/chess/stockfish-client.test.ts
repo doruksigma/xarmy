@@ -62,6 +62,78 @@ test("single-threaded NNUE engine is initialized with full skill and no Elo hand
     assert.ok(worker.messages.includes(required), required);
 });
 
+test("weaker play accepts its selected legal UCI move without borrowing another move's score", async () => {
+  const { client, worker } = await readyClient();
+  const search = client.playMove({ fen, depth: 5, movetime: 400, skillLevel: 0 });
+  await tick();
+  assert.ok(worker.messages.includes("setoption name Skill Level value 0"));
+  assert.ok(worker.messages.includes("setoption name UCI_AnalyseMode value false"));
+  worker.emit("info depth 5 multipv 1 score cp 40 nodes 1200 pv e2e4 e7e5");
+  worker.emit("bestmove a2a3");
+  assert.deepEqual(await search, { bestMove: "a2a3", depth: 5, nodes: 1200 });
+});
+
+test("queued analysis restores full skill after weak play and retains exact-score checks", async () => {
+  const { client, worker } = await readyClient();
+  const weak = client.playMove({ fen, depth: 5, skillLevel: 0 });
+  const analysis = client.analyze({ fen, depth: 16 });
+  await tick();
+  const firstGo = worker.messages.findIndex((message) =>
+    message.startsWith("go "),
+  );
+  assert.equal(worker.messages.at(-1), "go depth 5");
+  worker.emit("info depth 5 score cp 40 pv e2e4");
+  worker.emit("bestmove a2a3");
+  await weak;
+  await tick();
+  const reset = worker.messages.slice(firstGo + 1);
+  assert.deepEqual(reset, [
+    "setoption name Skill Level value 20",
+    "setoption name UCI_LimitStrength value false",
+    "setoption name MultiPV value 1",
+    "setoption name UCI_AnalyseMode value true",
+    `position fen ${fen}`,
+    "go depth 16",
+  ]);
+  worker.emit("info depth 16 score cp 33 pv e2e4 e7e5");
+  worker.emit("bestmove e2e4");
+  assert.equal((await analysis).score.value, 33);
+});
+
+test("each playing search applies its own skill rather than keeping the previous preset", async () => {
+  const { client, worker } = await readyClient();
+  for (const skillLevel of [0, 8, 20]) {
+    worker.messages.length = 0;
+    const search = client.playMove({ fen, depth: 5, skillLevel });
+    await tick();
+    assert.equal(
+      worker.messages[0],
+      `setoption name Skill Level value ${skillLevel}`,
+    );
+    worker.emit("info depth 5 score cp 40 nodes 20 pv e2e4");
+    worker.emit("bestmove e2e4");
+    await search;
+  }
+});
+
+test("unmeasured play never exposes a score and invalid skills never reach the worker", async () => {
+  const { client, worker } = await readyClient();
+  for (const skillLevel of [-1, 21, 0.5, Number.NaN])
+    await assert.rejects(
+      client.playMove({ fen, depth: 5, skillLevel }),
+      /skill level/,
+    );
+  assert.equal(
+    worker.messages.some((message) => message.startsWith("go ")),
+    false,
+  );
+  const search = client.playMove({ fen, depth: 5, skillLevel: 0 });
+  await tick();
+  worker.emit("info depth 5 score cp 40 lowerbound pv e2e4");
+  worker.emit("bestmove a2a3");
+  assert.deepEqual(await search, { bestMove: "a2a3", depth: 0, nodes: 0 });
+});
+
 test("only exact primary-variation scores become measured evaluations", async () => {
   const { client, worker } = await readyClient();
   const search = client.analyze({ fen, depth: 16, movetime: 2200 });

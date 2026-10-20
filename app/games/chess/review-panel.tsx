@@ -16,12 +16,19 @@ export type ChessReviewPanelProps = {
   error: string | null;
   onRetry: () => void;
   onClose: () => void;
+  mateLine?: {
+    /** SAN moves from the reviewed position to the verified mating position. */
+    moves: string[];
+    /** -1: normal review; 0: line start; n: n continuation plies played. */
+    selectedStep: number;
+    onStep: (step: number) => void;
+  } | null;
 };
 
 const judgments = {
   unmeasured: {
-    label: "Güvenilir ölçüm yok",
-    short: "Ölçülemedi",
+    label: "Henüz değerlendirilemedi",
+    short: "Bekliyor",
     symbol: "…",
     color: "border-slate-600 bg-slate-800/50 text-slate-400",
   },
@@ -57,21 +64,6 @@ const judgments = {
   },
 } as const;
 
-function formatEvaluation(scoreCp: number | null, mate: number | null): string {
-  if (mate !== null) {
-    if (mate === 0) return "Mat";
-    return mate > 0
-      ? `${mate} hamlede mat bulur`
-      : `${Math.abs(mate)} hamlede mat olur`;
-  }
-  if (scoreCp === null) return "Ölçülemedi";
-  const amount = Math.abs(scoreCp / 100).toLocaleString("tr-TR", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-  return `${scoreCp > 0 ? "+" : scoreCp < 0 ? "−" : ""}${amount}`;
-}
-
 const control =
   "rounded-lg border border-slate-700 bg-slate-950 px-2 py-2 text-xs font-semibold text-slate-200 transition hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400";
 
@@ -88,6 +80,7 @@ export default function ChessReviewPanel({
   error,
   onRetry,
   onClose,
+  mateLine,
 }: ChessReviewPanelProps) {
   const byPly = useMemo(
     () => new Map(reviews.map((review) => [review.ply, review])),
@@ -97,44 +90,9 @@ export default function ChessReviewPanel({
   const reviewColor = perspective === "mine" ? playerColor : perspective;
   const colorName = reviewColor === "w" ? "Beyaz" : "Siyah";
   const playerColorName = playerColor === "w" ? "Beyaz" : "Siyah";
-  const sideReviews = reviews.filter(
-    (review) => (review.ply % 2 === 0 ? "w" : "b") === reviewColor,
-  );
-  const sideTotal = moves.filter(
-    (_, ply) => (ply % 2 === 0 ? "w" : "b") === reviewColor,
-  ).length;
-  const measuredLosses = sideReviews.flatMap((review) =>
-    review.quality !== "unmeasured" && review.lossCp !== null
-      ? [review.lossCp]
-      : [],
-  );
-  const meanLoss = measuredLosses.length
-    ? measuredLosses.reduce((total, loss) => total + loss, 0) /
-      measuredLosses.length /
-      100
-    : null;
-  const severity = {
-    unmeasured: -1,
-    best: 0,
-    good: 1,
-    inaccuracy: 2,
-    mistake: 3,
-    blunder: 4,
-  };
-  const learningMove = sideReviews
-    .filter((review) =>
-      ["inaccuracy", "mistake", "blunder"].includes(review.judgment),
-    )
-    .sort(
-      (left, right) =>
-        severity[right.judgment] - severity[left.judgment] ||
-        (right.lossCp ?? 0) - (left.lossCp ?? 0) ||
-        left.ply - right.ply,
-    )[0];
   const selectedReview = byPly.get(selectedPly);
   const ownSelected = (selectedPly % 2 === 0 ? "w" : "b") === playerColor;
   const judgment = selectedReview ? judgments[selectedReview.judgment] : null;
-  const selectedColorName = selectedPly % 2 === 0 ? "Beyaz" : "Siyah";
   const measured = selectedReview && selectedReview.quality !== "unmeasured";
   const hasBetterMove = Boolean(
     selectedReview && selectedReview.bestMove !== selectedReview.playedMove,
@@ -163,7 +121,7 @@ export default function ChessReviewPanel({
   return (
     <section
       aria-labelledby="chess-review-title"
-      className="space-y-4 rounded-2xl border border-emerald-400/30 bg-slate-900/70 p-4 sm:p-5"
+      className="min-w-0 space-y-4 rounded-2xl border border-emerald-400/30 bg-slate-900/70 p-4 sm:p-5 [overflow-anchor:none]"
       data-testid="chess-review-panel"
     >
       <div className="flex items-start justify-between gap-3">
@@ -189,10 +147,8 @@ export default function ChessReviewPanel({
       </div>
 
       <p className="text-xs leading-5 text-slate-400">
-        İki oyuncunun da hamleleri incelenir. Sen{" "}
-        {playerColorName.toLocaleLowerCase("tr-TR")} taşlarla oynadın; kendi
-        derslerini veya diğer tarafın analizini seçip
-        hamleleri geri sarabilirsin.
+        Sen {playerColorName.toLocaleLowerCase("tr-TR")} taşlarla oynadın. İki
+        tarafın hamlelerini de inceleyebilirsin.
       </p>
 
       {(analyzing || progress.total > 0) && (
@@ -265,56 +221,11 @@ export default function ChessReviewPanel({
           ))}
         </div>
         <p className="mb-2 text-xs text-slate-400" aria-live="polite">
-          {colorName}{reviewColor === playerColor ? " · Senin hamlelerin" : " · Rakibinin hamleleri"}
-          {" · "}{sideReviews.length}/{sideTotal} incelendi
+          {colorName}
+          {reviewColor === playerColor
+            ? " · Senin hamlelerin"
+            : " · Rakibinin hamleleri"}
         </p>
-        <div
-          className="grid grid-cols-3 gap-1.5 sm:grid-cols-6"
-          aria-label={`${colorName} hamlelerinin özeti`}
-        >
-          {(Object.keys(judgments) as Array<keyof typeof judgments>).map(
-            (key) => {
-              const item = judgments[key];
-              const count = sideReviews.filter(
-                (review) => review.judgment === key,
-              ).length;
-              return (
-                <div
-                  key={key}
-                  className={`rounded-lg border px-1 py-2 text-center ${item.color}`}
-                  aria-label={`${item.label}: ${count}`}
-                >
-                  <div className="text-base font-bold">{count}</div>
-                  <div className="mt-0.5 text-[9px] leading-3">
-                    {item.short}
-                  </div>
-                </div>
-              );
-            },
-          )}
-        </div>
-        {meanLoss !== null && (
-          <p className="mt-2 text-[11px] leading-5 text-slate-400">
-            Ölçülen {measuredLosses.length} hamlede ortalama kayıp:{" "}
-            <span className="font-mono text-slate-200">
-              {meanLoss.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </span>{" "}
-            piyon. Mat değerlendirmeleri bu ortalamaya dahil edilmez.
-          </p>
-        )}
-        {learningMove && (
-          <button
-            type="button"
-            onClick={() => {
-              onSelectPly(learningMove.ply);
-              onShowPlayed(false);
-            }}
-            className="mt-2 rounded text-left text-xs leading-5 text-amber-300 underline underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-300"
-          >
-            {colorName} için en önemli düzeltmeye git:{" "}
-            {Math.floor(learningMove.ply / 2) + 1}. {learningMove.playedSan}
-          </button>
-        )}
       </div>
 
       <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-3">
@@ -388,12 +299,11 @@ export default function ChessReviewPanel({
       </div>
 
       {selectedPly < 0 ? (
-        <p className="rounded-xl border border-slate-800 p-3 text-xs leading-5 text-slate-400">
-          İlk hamleye ilerle veya aşağıdaki listeden incelemek istediğin hamleyi
-          seç.
+        <p className="min-h-64 rounded-xl border border-slate-800 p-3 text-xs leading-5 text-slate-400">
+          Aşağıdan bir hamle seç veya sonraki hamleye ilerle.
         </p>
       ) : selectedReview && judgment ? (
-        <div className="space-y-3" data-testid="move-review">
+        <div className="min-h-64 space-y-3 break-words" data-testid="move-review">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-sm text-slate-300">
               {ownSelected ? "Senin hamlen" : "Rakibinin hamlesi"}{" "}
@@ -408,64 +318,116 @@ export default function ChessReviewPanel({
               {judgment.symbol} {judgment.label}
             </span>
           </div>
-          <div className="rounded-lg border border-slate-800 bg-slate-950/40 p-3 text-xs">
-            <p className="text-[10px] leading-4 text-slate-400">
-              Stockfish 17.1 · {selectedReview.depth > 0
-                ? `Tamamlanan derinlik: ${selectedReview.depth}`
-                : "Derinlik ölçümü yok"}
-              {selectedReview.quality === "limited" && " · Sınırlı analiz"}
-              {selectedReview.quality === "unmeasured" && " · Güvenilir karşılaştırma yapılamadı"}
-            </p>
-            {measured ? (
-              <>
-                <p className="mt-2 text-[11px] leading-5 text-slate-400">
-                  {selectedColorName} açısından; pozitif puan {selectedColorName.toLocaleLowerCase("tr-TR")} için avantaj.
-                  Puanlar piyon cinsindendir.
-                </p>
-                <div className="mt-2 grid grid-cols-2 gap-2">
-                  <div>
-                    <p className="text-[10px] text-slate-400">En iyi devamla</p>
-                    <p className="mt-1 font-mono text-sm font-semibold text-emerald-300" data-testid="review-best-evaluation">
-                      {formatEvaluation(selectedReview.scoreBefore, selectedReview.scoreBeforeMate)}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] text-slate-400">Oynanan hamleyle</p>
-                    <p className="mt-1 font-mono text-sm font-semibold text-slate-200" data-testid="review-played-evaluation">
-                      {formatEvaluation(selectedReview.scoreAfter, selectedReview.scoreAfterMate)}
-                    </p>
-                  </div>
-                </div>
-                {selectedReview.lossCp !== null && (
-                  <p className="mt-2 text-[11px] text-slate-300">
-                    Hamlenin kaybı:{" "}
-                    <span className="font-mono font-semibold">
-                      {(selectedReview.lossCp / 100).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </span>{" "}
-                    piyon.
-                  </p>
-                )}
-              </>
-            ) : (
-              <p className="mt-2 leading-5 text-slate-400">
-                Yeterli derinlikte karşılaştırılmadığı için bu hamleye iyi veya kötü etiketi verilmiyor.
-              </p>
-            )}
-          </div>
-          <p className="text-sm leading-6 text-slate-300">
-            {selectedReview.explanation}
-          </p>
-          <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/5 p-3">
-            <h3 className="text-xs font-bold text-emerald-300">
-              {!measured ? "Motorun incelediği aday" : hasBetterMove ? isError ? "Daha iyi seçenek" : "Motorun alternatifi" : "Bu hamle neden iyi?"}
-              {" · "}
-              <span className="font-mono">{selectedReview.bestSan}</span>
+          <div>
+            <h3 className="mb-1 text-xs font-semibold text-slate-200">
+              {!measured
+                ? "Analiz henüz net değil"
+                : isError
+                  ? "Neden hatalı?"
+                  : "Neden iyi?"}
             </h3>
-            <p className="mt-2 text-xs leading-5 text-slate-300">
-              {selectedReview.betterExplanation}
+            <p
+              className="text-sm leading-6 text-slate-300"
+              data-testid="review-explanation"
+            >
+              {selectedReview.explanation}
             </p>
           </div>
-          {!measured ? null : showPlayed ? (
+          {measured && selectedReview.bestSan && (
+            <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/5 p-3">
+              <h3 className="text-xs font-bold text-emerald-300">
+                {hasBetterMove
+                  ? isError
+                    ? "Daha iyi hamle"
+                    : "Başka bir seçenek"
+                  : "Bu hamleyi neden oynamalısın?"}
+                {" · "}
+                <span className="font-mono">{selectedReview.bestSan}</span>
+              </h3>
+              <p
+                className="mt-2 text-xs leading-5 text-slate-300"
+                data-testid="review-better-explanation"
+              >
+                {selectedReview.betterExplanation}
+              </p>
+            </div>
+          )}
+          {measured && mateLine && mateLine.moves.length > 0 && (
+            <div
+              className="space-y-2 rounded-xl border border-amber-300/30 bg-amber-300/5 p-3"
+              data-testid="review-mate-line"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-xs font-bold text-amber-200">Mat devamı</h3>
+                {mateLine.selectedStep < 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => mateLine.onStep(1)}
+                    className="rounded-lg bg-amber-200 px-3 py-2 text-xs font-bold text-slate-950 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-200"
+                  >
+                    Matı göster
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => mateLine.onStep(-1)}
+                    className="min-h-8 rounded px-2 text-xs text-amber-200 underline underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-200"
+                  >
+                    Maç analizine dön
+                  </button>
+                )}
+              </div>
+              <div
+                className="flex max-h-24 flex-wrap items-center gap-1 overflow-y-auto"
+                aria-label="Mat devamındaki hamleler"
+              >
+                {mateLine.moves.map((move, index) => (
+                  <button
+                    key={`${index}-${move}`}
+                    type="button"
+                    onClick={() => mateLine.onStep(index + 1)}
+                    aria-current={
+                      mateLine.selectedStep === index + 1 ? "step" : undefined
+                    }
+                    aria-label={`Mat devamı ${index + 1}. hamle: ${move}`}
+                    className={`rounded px-2 py-1 font-mono text-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-200 ${mateLine.selectedStep === index + 1 ? "bg-amber-200 font-bold text-slate-950" : "bg-slate-900 text-amber-100 hover:bg-slate-700"}`}
+                  >
+                    {move}
+                  </button>
+                ))}
+              </div>
+              <div className="min-h-9">
+                {mateLine.selectedStep >= 0 && (
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => mateLine.onStep(mateLine.selectedStep - 1)}
+                      disabled={mateLine.selectedStep === 0}
+                      className={`${control} flex-1`}
+                      aria-label="Mat devamında önceki hamle"
+                    >
+                      ← Önceki
+                    </button>
+                    <span className="text-[11px] text-amber-100" aria-live="polite">
+                      {mateLine.selectedStep === mateLine.moves.length
+                        ? "Şah mat"
+                        : `${mateLine.selectedStep}/${mateLine.moves.length}`}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => mateLine.onStep(mateLine.selectedStep + 1)}
+                      disabled={mateLine.selectedStep === mateLine.moves.length}
+                      className={`${control} flex-1`}
+                      aria-label="Mat devamında sonraki hamle"
+                    >
+                      Sonraki →
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+          {!measured || (mateLine && mateLine.selectedStep >= 0) ? null : showPlayed ? (
             <button
               type="button"
               onClick={() => onShowPlayed(false)}
@@ -497,7 +459,7 @@ export default function ChessReviewPanel({
         </div>
       ) : (
         <div
-          className="rounded-xl border border-slate-800 bg-slate-950/40 p-3 text-xs leading-5 text-slate-400"
+          className="min-h-64 rounded-xl border border-slate-800 bg-slate-950/40 p-3 text-xs leading-5 text-slate-400"
           role="status"
         >
           <p className="font-semibold text-slate-300">
@@ -506,9 +468,9 @@ export default function ChessReviewPanel({
           </p>
           <p className="mt-1">
             {analyzing
-              ? "Bu hamlenin analizi hazırlanıyor. Beklerken diğer konumları inceleyebilirsin."
+              ? "Bu hamle inceleniyor…"
               : error
-                ? "Bu hamle henüz incelenemedi. Analizi tekrar deneyebilirsin."
+                ? "Bu hamle incelenemedi. Tekrar deneyebilirsin."
                 : "Bu hamle için analiz bekleniyor."}
           </p>
         </div>
