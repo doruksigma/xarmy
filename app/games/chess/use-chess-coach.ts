@@ -36,6 +36,7 @@ export function useChessCoach({
   const [showPlayed, setShowPlayed] = useState(false);
   const requestCounter = useRef(0);
   const hintWorker = useRef<Worker | null>(null);
+  const lastHint = useRef<PositionAdvice | null>(null);
   const manuallySelected = useRef(false);
 
   useEffect(
@@ -90,6 +91,7 @@ export function useChessCoach({
         alive = false;
         clearTimeout(timeout);
         setAdvice(data.advice);
+        lastHint.current = data.advice;
         setHintLoading(false);
       };
       worker.onerror = fail;
@@ -98,6 +100,10 @@ export function useChessCoach({
         requestId,
         fen,
         moves: movesKey ? movesKey.split(" ") : [],
+        excludeMove:
+          hintRetry > 0 && lastHint.current?.fen === fen
+            ? (lastHint.current.bestMove ?? undefined)
+            : undefined,
       });
     } catch {
       fail();

@@ -36,6 +36,64 @@ function engineWith(...responses: CoachSearchResult[]) {
   return { engine, calls };
 }
 
+test("varied hints choose a different verified good move at the same depth", async () => {
+  const calls: CoachSearch[] = [];
+  const engine: CoachEngine = {
+    analyze: async (request) => {
+      calls.push(request);
+      return result(
+        request.searchMoves?.[0] ?? "e2e4",
+        cp(request.searchMoves ? 30 : 40),
+        18,
+      );
+    },
+  };
+  const advice = await analyzePosition(opening, {
+    engine,
+    vary: true,
+    random: () => 0,
+  });
+  assert.notEqual(advice.bestMove, "e2e4");
+  assert.equal(advice.scoreCp, 30);
+  assert.equal(advice.depth, 18);
+  assert.equal(calls[1].depth, calls[0].depth);
+  assert.equal(advice.pv[0], advice.bestMove);
+  assert.ok(advice.explanation.includes(advice.bestSan!));
+});
+
+test("variety never recommends a losing or shallower alternative", async () => {
+  for (const shallow of [false, true]) {
+    const engine: CoachEngine = {
+      analyze: async (request) =>
+        result(
+          request.searchMoves?.[0] ?? "e2e4",
+          cp(request.searchMoves && !shallow ? -300 : 40),
+          request.searchMoves && shallow ? 10 : 18,
+        ),
+    };
+    const advice = await analyzePosition(opening, {
+      engine,
+      vary: true,
+      random: () => 0,
+    });
+    assert.equal(advice.bestMove, "e2e4");
+  }
+});
+
+test("requesting another hint excludes the previously recommended alternative", async () => {
+  const engine: CoachEngine = {
+    analyze: async (request) =>
+      result(request.searchMoves?.[0] ?? "e2e4", cp(40), 18),
+  };
+  const advice = await analyzePosition(opening, {
+    engine,
+    vary: true,
+    excludeMove: "c2c4",
+    random: () => 0,
+  });
+  assert.notEqual(advice.bestMove, "c2c4");
+});
+
 test("hint uses the engine's searched move, legal PV, depth and mate/CP score", async () => {
   const { engine, calls } = engineWith(
     result("e2e4", cp(31), 18, ["e2e4", "e7e5", "g1f3"]),
@@ -69,7 +127,10 @@ test("best and played are searched from the SAME root, mover perspective, and de
   assert.equal(calls[0].positionCommand, calls[1].positionCommand);
   assert.equal(calls[1].depth, calls[0].depth);
   assert.deepEqual(calls[1].searchMoves, ["d2d4"]);
-  assert.doesNotMatch(review.explanation + review.betterExplanation, /derinlik|puan|3\.00|0\.40|2\.60/);
+  assert.doesNotMatch(
+    review.explanation + review.betterExplanation,
+    /derinlik|puan|3\.00|0\.40|2\.60/,
+  );
 });
 
 test("black's score is not inverted or treated as the room host's score", async () => {
@@ -393,7 +454,6 @@ test("engine failures surface errors without reverting to a weak local evaluator
   );
 });
 
-
 test("short explanations name the queen blunder and retain both legal continuation branches", async () => {
   const game = new Chess();
   ["e4", "e5", "Nf3"].forEach((move) => game.move(move));
@@ -411,16 +471,25 @@ test("short explanations name the queen blunder and retain both legal continuati
   assert.deepEqual(review.pv, ["b8c6", "f1b5"]);
   for (const explanation of [review.explanation, review.betterExplanation]) {
     assert.ok(explanation.length < 230, explanation);
-    assert.doesNotMatch(explanation, /Stockfish|derinlik|puan|centipawn|\d[,.]\d/);
+    assert.doesNotMatch(
+      explanation,
+      /Stockfish|derinlik|puan|centipawn|\d[,.]\d/,
+    );
   }
 });
 
 test("unmeasured guidance stays short and never displays search internals", async () => {
-  const { engine } = engineWith(result("e2e4", cp(10), 16), result("d2d4", cp(10), 5));
+  const { engine } = engineWith(
+    result("e2e4", cp(10), 16),
+    result("d2d4", cp(10), 5),
+  );
   const review = await analyzePlayedMove(opening, "d4", { engine });
   assert.equal(review.judgment, "unmeasured");
   assert.match(review.explanation, /iyi veya kötü diye etiketlemiyorum/);
-  assert.doesNotMatch(review.explanation + review.betterExplanation, /Stockfish|derinlik|puan|katman|16|5/);
+  assert.doesNotMatch(
+    review.explanation + review.betterExplanation,
+    /Stockfish|derinlik|puan|katman|16|5/,
+  );
 });
 
 test("best-move and hint explanations teach the idea without score and depth text", async () => {
@@ -429,5 +498,8 @@ test("best-move and hint explanations teach the idea without score and depth tex
   assert.equal(review.judgment, "best");
   assert.match(review.explanation, /en iyi seçenek/);
   assert.match(review.betterExplanation, /geliştiriyor.*merkez/);
-  assert.doesNotMatch(review.explanation + review.betterExplanation, /Stockfish|derinlik|puan|0\.30/);
+  assert.doesNotMatch(
+    review.explanation + review.betterExplanation,
+    /Stockfish|derinlik|puan|0\.30/,
+  );
 });

@@ -9,12 +9,13 @@ function matingLine(advice: PositionAdvice | null): string[] {
     return [];
   try {
     const game = new Chess(advice.fen);
-    const moves = advice.pv.map((move) =>
-      game.move({
-        from: move.slice(0, 2),
-        to: move.slice(2, 4),
-        promotion: move[4],
-      }).san,
+    const moves = advice.pv.map(
+      (move) =>
+        game.move({
+          from: move.slice(0, 2),
+          to: move.slice(2, 4),
+          promotion: move[4],
+        }).san,
     );
     return game.isCheckmate() ? moves : [];
   } catch {
@@ -127,6 +128,13 @@ export default function TrainerAdvice({
             className="mt-4 w-full rounded-xl bg-emerald-400 px-3 py-3 text-sm font-bold text-slate-950 hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-40"
           >
             Önerilen hamleyi oyna
+          </button>
+          <button
+            disabled={!canPlay}
+            onClick={onRetry}
+            className="mt-2 w-full rounded-lg py-2 text-xs text-emerald-300 underline disabled:opacity-40"
+          >
+            Başka iyi hamle göster
           </button>
           <p className="mt-3 text-xs leading-5 text-slate-500">
             Başka bir hamle de seçebilirsin; maç sonunda birlikte inceleriz.

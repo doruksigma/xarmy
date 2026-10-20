@@ -28,6 +28,7 @@ export type RoomView = {
   fen: string;
   moves: string[];
   color: "w" | "b";
+  colorsDrawn: boolean;
   turn: "w" | "b";
   result: RoomResult | null;
   lastMove: {
@@ -45,6 +46,8 @@ type RoomRecord = {
   code: string;
   hostHash: string;
   guestHash: string | null;
+  /** null: new room awaiting its draw; undefined: legacy host-white room. */
+  hostColor?: "w" | "b" | null;
   moves: string[];
   result: RoomResult | null;
   version: number;
@@ -70,12 +73,14 @@ function playerColor(room: RoomRecord, token: string): "w" | "b" {
   if (!TOKEN_PATTERN.test(token))
     throw new RoomError(401, "Oda oturumunuz geçersiz. Odaya tekrar bağlanın.");
   const hash = Buffer.from(hashToken(token), "hex");
-  if (timingSafeEqual(hash, Buffer.from(room.hostHash, "hex"))) return "w";
+  const hostColor = room.hostColor ?? "w";
+  if (timingSafeEqual(hash, Buffer.from(room.hostHash, "hex")))
+    return hostColor;
   if (
     room.guestHash &&
     timingSafeEqual(hash, Buffer.from(room.guestHash, "hex"))
   )
-    return "b";
+    return hostColor === "w" ? "b" : "w";
   throw new RoomError(401, "Bu odaya erişim yetkiniz yok.");
 }
 
@@ -97,6 +102,7 @@ function viewFor(
     fen: board.fen(),
     moves: [...room.moves],
     color,
+    colorsDrawn: room.hostColor !== null,
     turn: board.turn(),
     result: room.result,
     lastMove: last
@@ -144,6 +150,7 @@ export async function createRoom(): Promise<{ room: RoomView; token: string }> {
       code,
       hostHash: hashToken(token),
       guestHash: null,
+      hostColor: null,
       moves: [],
       result: null,
       version: 1,
@@ -164,6 +171,7 @@ export async function createRoom(): Promise<{ room: RoomView; token: string }> {
 
 export async function joinRoom(
   code: unknown,
+  drawColor: () => "w" | "b" = () => (randomInt(2) === 0 ? "w" : "b"),
 ): Promise<{ room: RoomView; token: string }> {
   validateCode(code);
   const token = newToken();
@@ -174,8 +182,13 @@ export async function joinRoom(
       if (room.guestHash || room.result)
         throw new RoomError(409, "Bu oda dolu veya oyun sona erdi.");
       room.guestHash = hashToken(token);
+      if (room.hostColor === null) room.hostColor = drawColor();
       room.version++;
-      return { record: room, result: { room: viewFor(room, "b"), token } };
+      const guestColor = (room.hostColor ?? "w") === "w" ? "b" : "w";
+      return {
+        record: room,
+        result: { room: viewFor(room, guestColor), token },
+      };
     },
   );
 }

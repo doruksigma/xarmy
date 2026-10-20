@@ -140,9 +140,9 @@ export default function ChessReviewPanel({
           type="button"
           onClick={onClose}
           className="rounded-lg px-2 py-2 text-xs text-slate-400 hover:bg-slate-800 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-400"
-          aria-label="Maç analizini kapat ve son konuma dön"
+          aria-label="Analizi kapat ve oyun menüsüne dön"
         >
-          Kapat ×
+          Çık ×
         </button>
       </div>
 
@@ -204,11 +204,13 @@ export default function ChessReviewPanel({
           role="group"
           aria-label="Analiz edilecek oyuncu"
         >
-          {([
-            ["mine", "Benim hamlelerim"],
-            ["w", "Beyaz"],
-            ["b", "Siyah"],
-          ] as const).map(([value, label]) => (
+          {(
+            [
+              ["mine", "Benim hamlelerim"],
+              ["w", "Beyaz"],
+              ["b", "Siyah"],
+            ] as const
+          ).map(([value, label]) => (
             <button
               key={value}
               type="button"
@@ -303,7 +305,10 @@ export default function ChessReviewPanel({
           Aşağıdan bir hamle seç veya sonraki hamleye ilerle.
         </p>
       ) : selectedReview && judgment ? (
-        <div className="min-h-64 space-y-3 break-words" data-testid="move-review">
+        <div
+          className="min-h-64 space-y-3 break-words"
+          data-testid="move-review"
+        >
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-sm text-slate-300">
               {ownSelected ? "Senin hamlen" : "Rakibinin hamlesi"}{" "}
@@ -408,7 +413,10 @@ export default function ChessReviewPanel({
                     >
                       ← Önceki
                     </button>
-                    <span className="text-[11px] text-amber-100" aria-live="polite">
+                    <span
+                      className="text-[11px] text-amber-100"
+                      aria-live="polite"
+                    >
                       {mateLine.selectedStep === mateLine.moves.length
                         ? "Şah mat"
                         : `${mateLine.selectedStep}/${mateLine.moves.length}`}
@@ -427,7 +435,8 @@ export default function ChessReviewPanel({
               </div>
             </div>
           )}
-          {!measured || (mateLine && mateLine.selectedStep >= 0) ? null : showPlayed ? (
+          {!measured ||
+          (mateLine && mateLine.selectedStep >= 0) ? null : showPlayed ? (
             <button
               type="button"
               onClick={() => onShowPlayed(false)}

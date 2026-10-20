@@ -22,11 +22,12 @@ function engine(move: string, seen?: StockfishPlaySearch[]): BotEngine {
     },
   };
 }
-for (const difficulty of ["easy", "medium", "hard"] satisfies BotDifficulty[]) {
+for (const difficulty of ["medium", "hard"] satisfies BotDifficulty[]) {
   test(`${difficulty}: delegates the selected Stockfish skill and search budget`, async () => {
     const seen: StockfishPlaySearch[] = [];
     const result = await searchBotMove(new Chess().fen(), difficulty, {
       engine: engine("e2e4", seen),
+      random: () => 0.99,
       positionCommand: "position startpos",
     });
     assert.equal(result.move, "e2e4");
@@ -37,13 +38,18 @@ for (const difficulty of ["easy", "medium", "hard"] satisfies BotDifficulty[]) {
       fen: new Chess().fen(),
       positionCommand: "position startpos",
       ...BOT_LEVELS[difficulty],
+      ...(difficulty === "hard" ? { searchMoves: ["g1f3"] } : {}),
     });
   });
 }
 test("stronger presets give more search time and depth", () => {
   assert.deepEqual(
-    [BOT_LEVELS.easy.skillLevel, BOT_LEVELS.medium.skillLevel, BOT_LEVELS.hard.skillLevel],
-    [0, 8, 20],
+    [
+      BOT_LEVELS.easy.skillLevel,
+      BOT_LEVELS.medium.skillLevel,
+      BOT_LEVELS.hard.skillLevel,
+    ],
+    [0, 0, 20],
   );
   assert.ok(BOT_LEVELS.easy.depth < BOT_LEVELS.medium.depth);
   assert.ok(BOT_LEVELS.medium.depth < BOT_LEVELS.hard.depth);
@@ -105,4 +111,50 @@ test("engine failures stay visible instead of using a weak substitute", async ()
     }),
     /offline/,
   );
+});
+
+test("the bad opponent misses an obvious queen win and never calls the master engine", async () => {
+  const game = new Chess();
+  ["e4", "e5", "Nf3", "Qh4"].forEach((move) => game.move(move));
+  const result = await searchBotMove(game.fen(), "easy", {
+    engine: {
+      playMove: async () => {
+        throw new Error("beginner must not search");
+      },
+    },
+    random: () => 0,
+  });
+  assert.notEqual(result.move, "f3h4");
+  assert.equal(result.depth, 0);
+  game.move({ from: result.move!.slice(0, 2), to: result.move!.slice(2, 4) });
+});
+
+test("medium intentionally makes imperfect legal choices but also uses its shallow search", async () => {
+  const seen: StockfishPlaySearch[] = [];
+  const options = { engine: engine("e2e4", seen), random: () => 0 };
+  const imperfect = await searchBotMove(new Chess().fen(), "medium", options);
+  assert.equal(imperfect.depth, 0);
+  assert.equal(seen.length, 0);
+  await searchBotMove(new Chess().fen(), "medium", {
+    ...options,
+    random: () => 0.8,
+  });
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0].depth, 2);
+  assert.equal(seen[0].skillLevel, 0);
+});
+
+test("strong opponent varies among legal established opening lines", async () => {
+  const choices: string[] = [];
+  for (const random of [() => 0, () => 0.99]) {
+    const seen: StockfishPlaySearch[] = [];
+    await searchBotMove(new Chess().fen(), "hard", {
+      engine: engine("e2e4", seen),
+      random,
+    });
+    choices.push(seen[0].searchMoves![0]);
+  }
+  assert.notEqual(choices[0], choices[1]);
+  for (const move of choices)
+    new Chess().move({ from: move.slice(0, 2), to: move.slice(2, 4) });
 });

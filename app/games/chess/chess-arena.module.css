@@ -2,6 +2,24 @@
   overflow-anchor: none;
 }
 
+.dice {
+  display: inline-block;
+  animation: dice-roll 0.8s ease-out;
+}
+@keyframes dice-roll {
+  from {
+    transform: rotate(-540deg) scale(1.5);
+  }
+  to {
+    transform: rotate(0) scale(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dice {
+    animation: none;
+  }
+}
+
 .boardFrame {
   width: 100%;
   aspect-ratio: 1;

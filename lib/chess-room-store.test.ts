@@ -4,7 +4,7 @@ import {
   RoomError,
   createRoom,
   getRoom,
-  joinRoom,
+  joinRoom as joinRoomRandom,
   moveInRoom,
   resignRoom,
   roomResponse,
@@ -22,6 +22,17 @@ const previousEnvironment = new Map(
 );
 const originalFetch = globalThis.fetch;
 const originalConsoleError = console.error;
+const joinRoom = (code: unknown) => joinRoomRandom(code, () => "w");
+
+test("Redis preserves the random black-host assignment across reads and moves", async () => {
+  const host = await createRoom();
+  const guest = await joinRoomRandom(host.room.code, () => "b");
+  assert.equal(guest.room.color, "w");
+  assert.equal((await getRoom(host.room.code, host.token)).color, "b");
+  await moveInRoom(host.room.code, guest.token, { from: "e2", to: "e4" });
+  assert.equal((await getRoom(host.room.code, host.token)).color, "b");
+});
+
 const statusIs = (status: number) => (error: unknown) =>
   error instanceof RoomError && error.status === status;
 

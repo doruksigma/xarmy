@@ -10,7 +10,7 @@ import {
   checkRoomOrigin,
   createRoom,
   getRoom,
-  joinRoom,
+  joinRoom as joinRoomRandom,
   moveInRoom,
   resignRoom,
   roomJson,
@@ -21,10 +21,15 @@ import {
 let directory: string;
 const previousDirectory = process.env.XARMY_CHESS_ROOM_DIR;
 const storeEnvironmentNames = [
-  "VERCEL", "UPSTASH_REDIS_REST_URL", "UPSTASH_REDIS_REST_TOKEN",
-  "KV_REST_API_URL", "KV_REST_API_TOKEN",
+  "VERCEL",
+  "UPSTASH_REDIS_REST_URL",
+  "UPSTASH_REDIS_REST_TOKEN",
+  "KV_REST_API_URL",
+  "KV_REST_API_TOKEN",
 ];
-const previousStoreEnvironment = new Map(storeEnvironmentNames.map(name => [name, process.env[name]]));
+const previousStoreEnvironment = new Map(
+  storeEnvironmentNames.map((name) => [name, process.env[name]]),
+);
 before(async () => {
   for (const name of storeEnvironmentNames) delete process.env[name];
   directory = await mkdtemp(join(tmpdir(), "xarmy-room-tests-"));
@@ -39,6 +44,8 @@ after(async () => {
   else process.env.XARMY_CHESS_ROOM_DIR = previousDirectory;
   await rm(directory, { recursive: true, force: true });
 });
+const joinRoom = (code: unknown) => joinRoomRandom(code, () => "w");
+
 const statusIs = (status: number) => (error: unknown) =>
   error instanceof RoomError && error.status === status;
 async function pair() {
@@ -78,6 +85,41 @@ test("simultaneous joins allow exactly one guest", async () => {
   const rejected = attempts.find((item) => item.status === "rejected");
   assert.ok(rejected?.status === "rejected" && statusIs(409)(rejected.reason));
   await assert.rejects(joinRoom(host.room.code), statusIs(409));
+});
+
+test("existing host-white rooms keep their original color mapping after the update", async () => {
+  const host = await createRoom();
+  const path = join(directory, `${host.room.code}.json`);
+  const legacy = JSON.parse(await readFile(path, "utf8"));
+  delete legacy.hostColor;
+  await writeFile(path, JSON.stringify(legacy));
+  const guest = await joinRoomRandom(host.room.code, () => {
+    throw new Error("legacy rooms must not be redrawn");
+  });
+  assert.equal(guest.room.color, "b");
+  assert.equal((await getRoom(host.room.code, host.token)).color, "w");
+});
+
+test("the join draw assigns either color, persists it, and enforces the drawn turn", async () => {
+  for (const drawn of ["w", "b"] as const) {
+    const host = await createRoom();
+    assert.equal(host.room.colorsDrawn, false);
+    const guest = await joinRoomRandom(host.room.code, () => drawn);
+    const currentHost = await getRoom(host.room.code, host.token);
+    assert.equal(currentHost.colorsDrawn, true);
+    assert.equal(currentHost.color, drawn);
+    assert.notEqual(guest.room.color, drawn);
+    const white = drawn === "w" ? host : guest;
+    const black = drawn === "w" ? guest : host;
+    await assert.rejects(
+      moveInRoom(host.room.code, black.token, { from: "e7", to: "e5" }),
+      statusIs(409),
+    );
+    await moveInRoom(host.room.code, white.token, { from: "e2", to: "e4" });
+    assert.equal((await getRoom(host.room.code, host.token)).color, drawn);
+    const resigned = await resignRoom(host.room.code, host.token);
+    assert.equal(resigned.result?.winner, drawn === "w" ? "b" : "w");
+  }
 });
 
 test("waiting, illegal, out-of-turn, and duplicate stale moves cannot change the board", async () => {
@@ -239,7 +281,10 @@ test("concurrent stale-lock reclamation commits only one versioned move", async 
       }),
     ),
   );
-  assert.equal(attempts.filter(item => item.status === "fulfilled").length, 1);
+  assert.equal(
+    attempts.filter((item) => item.status === "fulfilled").length,
+    1,
+  );
   for (const attempt of attempts) {
     if (attempt.status === "rejected") assert.ok(statusIs(409)(attempt.reason));
   }
@@ -257,7 +302,11 @@ test("an old lock owned by a live process is never reclaimed", async () => {
   await utimes(lock, old, old);
   try {
     await assert.rejects(
-      moveInRoom(code, host.token, { from: "e2", to: "e4", expectedVersion: 2 }),
+      moveInRoom(code, host.token, {
+        from: "e2",
+        to: "e4",
+        expectedVersion: 2,
+      }),
       statusIs(503),
     );
     assert.equal(await readFile(lock, "utf8"), owner);

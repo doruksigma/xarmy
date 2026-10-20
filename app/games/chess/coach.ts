@@ -5,6 +5,7 @@ import {
   type PieceSymbol,
   type Square,
 } from "chess.js";
+import { openingCandidates } from "./openings";
 
 /** Scores always belong to the player who is about to move at the root. */
 export type EngineScore = { type: "cp" | "mate"; value: number };
@@ -33,6 +34,9 @@ export interface AnalysisOptions {
   /** Complete history preserves repetition and the fifty-move rule in UCI. */
   startFen?: string;
   moves?: string[];
+  vary?: boolean;
+  excludeMove?: string;
+  random?: () => number;
 }
 export type AnalysisQuality = "complete" | "limited" | "unmeasured";
 export interface PositionAdvice {
@@ -84,6 +88,7 @@ export type CoachRequest =
       fen: string;
       startFen?: string;
       moves?: string[];
+      excludeMove?: string;
     }
   | {
       requestId: number;
@@ -296,7 +301,9 @@ function suggestionExplanation(
     return `${move.san} şah çekiyor; rakip önce şahını korumak zorunda kalıyor.`;
   const final = new Chess(last?.after ?? move.after);
   if (material(final, move.color) > material(before, move.color)) {
-    const capture = line.find((item) => item.color === move.color && item.captured);
+    const capture = line.find(
+      (item) => item.color === move.color && item.captured,
+    );
     if (capture)
       return `${move.san} ile başlayan devamda ${capture.san}, rakibin ${NAMES[capture.captured!]} taşını alıyor.`;
   }
@@ -347,7 +354,8 @@ function playedExplanation(
   }
   const before = new Chess(fen);
   const final = new Chess(line.at(-1)?.after ?? played.after);
-  const lostMaterial = material(final, played.color) < material(before, played.color);
+  const lostMaterial =
+    material(final, played.color) < material(before, played.color);
   const capture = line
     .slice(1)
     .find((move) => move.color !== played.color && move.captured);
@@ -386,7 +394,7 @@ export async function analyzePosition(
   }
   const target = bounded(options.maxDepth, 18, 1, 30);
   const minimum = bounded(options.minDepth, 12, 1, 30);
-  const result = validResult(
+  let result = validResult(
     fen,
     await options.engine.analyze({
       fen,
@@ -395,6 +403,41 @@ export async function analyzePosition(
       movetime: bounded(options.timeMs, 3_000, 100, 10_000),
     }),
   );
+  if (options.vary && result.score?.type === "cp" && result.depth >= minimum) {
+    const book = openingCandidates(fen);
+    const candidates =
+      book.length > 1 ? book : game.moves({ verbose: true }).map(moveToUci);
+    const random = options.random ?? Math.random;
+    const shuffled = candidates.filter(
+      (move) => move !== result.bestMove && move !== options.excludeMove,
+    );
+    for (let index = shuffled.length - 1; index > 0; index--) {
+      const other = Math.floor(random() * (index + 1));
+      [shuffled[index], shuffled[other]] = [shuffled[other], shuffled[index]];
+    }
+    for (const candidate of shuffled.slice(0, 3)) {
+      const alternative = validResult(
+        fen,
+        await options.engine.analyze({
+          fen,
+          positionCommand,
+          depth: result.depth,
+          movetime: 1_000,
+          searchMoves: [candidate],
+        }),
+      );
+      // Variety is permitted only among independently verified good moves.
+      if (
+        alternative.bestMove === candidate &&
+        alternative.depth === result.depth &&
+        alternative.score?.type === "cp" &&
+        alternative.score.value >= result.score!.value - 25
+      ) {
+        result = alternative;
+        break;
+      }
+    }
+  }
   const move = playAnalysisMove(new Chess(fen), result.bestMove!);
   const analysisQuality = quality(
     result.depth,

@@ -8,7 +8,7 @@ const worker = self as unknown as {
 let engine: StockfishClient | undefined;
 worker.onmessage = async ({ data }) => {
   try {
-    engine ??= new StockfishClient();
+    if (data.difficulty !== "easy") engine ??= new StockfishClient();
     const result = await searchBotMove(data.fen, data.difficulty, {
       engine,
       positionCommand: data.positionCommand,
@@ -17,7 +17,7 @@ worker.onmessage = async ({ data }) => {
       requestId: data.requestId,
       move: result.move,
       depth: result.depth,
-      engine: "Stockfish 17.1",
+      engine: result.depth === 0 ? "Başlangıç botu" : "Stockfish 17.1",
     });
   } catch {
     engine?.terminate();

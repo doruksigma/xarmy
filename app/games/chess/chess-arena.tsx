@@ -546,6 +546,31 @@ export default function ChessArena() {
     saveGame(new Chess());
   }
 
+  function resetToMenu() {
+    workerRef.current?.terminate();
+    workerRef.current = null;
+    ++botRequest.current;
+    sessionRef.current = null;
+    setSession(null);
+    setRoom(null);
+    setRoomCode("");
+    setBotStarted(false);
+    setBotResigned(false);
+    setBotThinking(false);
+    setBotError(false);
+    setMatePlayback(null);
+    setConfirmLeave(false);
+    setError("");
+    setFlipped(false);
+    coach.closeReview();
+    try {
+      sessionStorage.removeItem(SESSION_KEY);
+    } catch {
+      /* Storage may be disabled. */
+    }
+    saveGame(new Chess());
+  }
+
   async function enterRoom(join: boolean) {
     if (busyRef.current) return;
     busyRef.current = true;
@@ -606,17 +631,7 @@ export default function ChessArena() {
         return;
       }
     }
-    sessionRef.current = null;
-    setSession(null);
-    setRoom(null);
-    setError("");
-    setConfirmLeave(false);
-    try {
-      sessionStorage.removeItem(SESSION_KEY);
-    } catch {
-      /* No stored session. */
-    }
-    saveGame(new Chess());
+    resetToMenu();
   }
 
   function changeMode(next: GameMode) {
@@ -637,7 +652,15 @@ export default function ChessArena() {
   return (
     <div className="mx-auto max-w-6xl pb-8">
       {showReview ? (
-        <h1 className="mb-3 text-lg font-bold">Maç analizi</h1>
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <h1 className="text-lg font-bold">Maç analizi</h1>
+          <button
+            onClick={resetToMenu}
+            className="rounded-lg border border-slate-600 px-3 py-1 text-xs font-semibold"
+          >
+            Analizden çık
+          </button>
+        </div>
       ) : (
         <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
           <div>
@@ -676,7 +699,7 @@ export default function ChessArena() {
             </div>
           ) : (
             <div className="mb-3 flex items-center justify-between gap-2 text-sm">
-              <div className="flex items-center gap-2">
+              <div className="flex min-w-0 items-center gap-2">
                 <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-800 text-xl">
                   {mode === "online" ? "♚" : "♟"}
                 </span>
@@ -684,20 +707,32 @@ export default function ChessArena() {
                   {mode === "coach"
                     ? "Yapay zekâ eğitmenin"
                     : mode === "bot"
-                      ? "Stockfish 17.1"
+                      ? `${difficulty === "hard" ? "Güçlü" : difficulty === "medium" ? "Orta" : "Kötü"} bot`
                       : room?.status === "waiting"
                         ? "Rakip bekleniyor"
                         : "Arkadaşın"}
                   <div className="text-xs font-normal text-slate-500">
-                    {colorName(playerColor === "w" ? "b" : "w")} taşlar
+                    {mode === "online" && room && !room.colorsDrawn
+                      ? "Renkler kura ile belirlenecek"
+                      : `${colorName(playerColor === "w" ? "b" : "w")} taşlar`}
                   </div>
                 </div>
               </div>
-              {botThinking && (
-                <span className="animate-pulse text-xs text-emerald-300">
-                  Düşünüyor…
-                </span>
-              )}
+              <div className="ml-auto flex shrink-0 flex-col items-end gap-1">
+                {botThinking && (
+                  <span className="animate-pulse text-xs text-emerald-300">
+                    Düşünüyor…
+                  </span>
+                )}
+                {isActive && (
+                  <button
+                    className="rounded-lg border border-slate-600 px-2 py-2 text-xs"
+                    onClick={() => setConfirmLeave(true)}
+                  >
+                    Maçı terk et
+                  </button>
+                )}
+              </div>
             </div>
           )}
           <div
@@ -772,7 +807,9 @@ export default function ChessArena() {
                   <div className="font-semibold">
                     Sen
                     <div className="text-xs font-normal text-slate-500">
-                      {colorName(playerColor)} taşlar
+                      {mode === "online" && room && !room.colorsDrawn
+                        ? "Renk kurası bekleniyor"
+                        : `${colorName(playerColor)} taşlar`}
                     </div>
                   </div>
                 </div>
@@ -990,9 +1027,17 @@ export default function ChessArena() {
                   >
                     {copied ? "✓ Numara kopyalandı" : "Oda numarasını kopyala"}
                   </button>
-                  <p className="mt-4 text-xs text-slate-400">
-                    {colorName(room?.color ?? "w")} taşlarla oynuyorsun. Odaya
-                    yalnızca iki kişi katılabilir. Oda 24 saat geçerlidir.
+                  <p
+                    data-testid="color-draw"
+                    className="mt-4 text-xs text-slate-400"
+                  >
+                    <span className={room?.colorsDrawn ? styles.dice : ""}>
+                      🎲
+                    </span>{" "}
+                    {room?.colorsDrawn
+                      ? `Kura sonucu: ${colorName(room.color)} taşlarla oynuyorsun.`
+                      : "Arkadaşın katılınca renk kurası çekilecek."}{" "}
+                    Odaya yalnızca iki kişi katılabilir.
                   </p>
                   {connection === "offline" && (
                     <p
@@ -1113,6 +1158,14 @@ export default function ChessArena() {
             <p data-testid="game-status" className="text-sm font-semibold">
               {status}
             </p>
+            {isFinished && !showReview && (
+              <button
+                className={`${secondary} mt-3 w-full`}
+                onClick={resetToMenu}
+              >
+                Oyundan çık
+              </button>
+            )}
             {isFinished && history.length > 0 && !showReview && (
               <button
                 className={`${primary} mt-3 w-full`}
@@ -1142,8 +1195,7 @@ export default function ChessArena() {
               error={coach.reviewError}
               onRetry={coach.retryReview}
               onClose={() => {
-                setMatePlayback(null);
-                coach.closeReview();
+                resetToMenu();
               }}
               mateLine={
                 mateLine
