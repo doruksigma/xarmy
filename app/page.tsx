@@ -1,5 +1,5 @@
 import Link from "next/link";
- 
+
 export default function HomePage() {
   return (
     <div className="min-h-[calc(100vh-120px)] flex flex-col justify-center">
@@ -12,8 +12,8 @@ export default function HomePage() {
         </h1>
 
         <p className="max-w-2xl mx-auto text-slate-400 text-lg">
-          Hız, zeka ve refleks odaklı mini oyunlar.
-          Skorunu yükselt, sıralamaya gir, lider ol.
+          Hız, zeka ve refleks odaklı mini oyunlar. Skorunu yükselt, sıralamaya
+          gir, lider ol.
         </p>
 
         {/* CTA BUTTONS */}
@@ -22,7 +22,7 @@ export default function HomePage() {
             href="/play"
             className="px-7 py-3 rounded-xl bg-indigo-500 text-white font-semibold hover:bg-indigo-600 transition"
           >
-            🚀 3D Arena’ya Gir
+            🪂 Battle Royale’a Atla
           </Link>
 
           <Link
@@ -44,18 +44,18 @@ export default function HomePage() {
           </Link>
 
           <Link
+            href="/games/europa-war"
+            className="px-7 py-3 rounded-xl bg-rose-500 text-white font-semibold hover:bg-rose-600 transition flex items-center gap-2"
+          >
+            🌍 Europa War
+            <span className="text-[10px] bg-black/20 px-2 py-1 rounded-lg">
+              Strategy
+            </span>
+          </Link>
+          <Link
             href="/leaderboard"
             className="px-6 py-3 rounded-xl border border-slate-700 text-slate-200 hover:bg-slate-800 transition"
           >
-           <Link
-  href="/games/europa-war"
-  className="px-7 py-3 rounded-xl bg-rose-500 text-white font-semibold hover:bg-rose-600 transition flex items-center gap-2"
->
-  🌍 Europa War
-  <span className="text-[10px] bg-black/20 px-2 py-1 rounded-lg">
-    Strategy
-  </span>
-</Link>
             🏆 Skor Tablosu
           </Link>
         </div>

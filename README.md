@@ -161,3 +161,10 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 Use `npm run build` and `npm start` on a Node.js 24 host, or deploy the Next.js
 project to Vercel. Vercel online chess rooms require the Redis REST connection
 and redeployment described above. The bot does not require external services.
+
+## Single-player Battle Royale
+
+Open `/play` for the rebuilt solo Battle Royale. Controls, implemented systems,
+quality settings, validation, and remaining graphics work are documented in
+[Battle Royale](docs/battle-royale.md). Run `npm run test:battle` for its simulation
+and traversal regression tests.
