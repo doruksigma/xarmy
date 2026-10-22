@@ -1,19 +1,19 @@
-import { EQUIPMENT, focusTree, TECHNOLOGIES, UNITS } from "./catalog";
+import { manage } from "./management";
+import { seaEdgeOpen } from "./military-assets";
+import { focusTree, TECHNOLOGIES } from "./catalog";
 import { diplomaticAcceptance, diplomaticAction } from "./diplomacy";
 import { economyAction } from "./economy";
 import { combatPower, routeTo } from "./land";
 import { politicsAction, researchSlots } from "./politics";
 import {
   atWar,
-  capacity,
   controlled,
   friendly,
   GEOGRAPHY,
   localSupply,
   militaryPower,
-  navalPower,
 } from "./world";
-import type { Country, Equipment, World } from "./types";
+import type { World } from "./types";
 
 /** AI decisions use stocks, local force ratios, supply, diplomatic threats and
  * research prerequisites. No hidden resources or random auto-capture. */
@@ -101,32 +101,10 @@ export function aiDay(w: World) {
               };
       attempt(() => economyAction(w, c, { type: "build", ...choice }));
     }
-    const mills = Math.floor(capacity(w, c.id, "military"));
-    // Reallocate a finite factory pool to replenish the most urgent equipment.
-    if (mills > 0) {
-      const needs: Equipment[] = [
-        "rifle",
-        ...(c.tech.includes("armor2")
-          ? ["mediumTank" as const]
-          : c.tech.includes("armor1")
-            ? ["lightTank" as const]
-            : []),
-        "artillery",
-        ...(c.tech.includes("aviation1") ? ["fighter" as const] : []),
-      ];
-      const want = needs.sort(
-        (a, b) =>
-          c.equipment[a] / (a === "rifle" ? 200 : 40) -
-          c.equipment[b] / (b === "rifle" ? 200 : 40),
-      )[0];
-      const existing = c.production.find((p) => p.equipment === want);
-      c.production = c.production.filter((p) => EQUIPMENT[p.equipment].naval);
-      c.production.push({
-        equipment: want,
-        factories: mills,
-        efficiency: existing?.efficiency ?? 0.25,
-      });
-    }
+    // Share the finite-pool allocation with the player's optional assistant.
+    // Deployed aircraft and ships count toward goals, so commissioning assets
+    // cannot trigger endless replacement production and starve the land army.
+    manage(w, c, "economy");
     if (threat && c.economy !== "war")
       attempt(() => economyAction(w, c, { type: "economy", law: "war" }));
     if (c.manpower < 12000 && c.conscription !== "extensive")
@@ -182,21 +160,6 @@ export function aiDay(w: World) {
             }),
           );
       }
-    for (const defeated of Object.values(w.countries).filter(
-      (t) => t.capitulated && t.victor === c.id,
-    ))
-      attempt(() =>
-        diplomaticAction(
-          w,
-          c,
-          defeated.id,
-          c.ideology === "democracy"
-            ? "liberate"
-            : c.ideology === "communism"
-              ? "puppet"
-              : "annex",
-        ),
-      );
     if (c.wars.length) {
       const strongest = [...c.wars].sort(
         (a, b) => militaryPower(w, b) - militaryPower(w, a),
@@ -216,16 +179,6 @@ export function aiDay(w: World) {
           diplomaticAcceptance(w, c.id, t.id) >= 55,
       );
       if (ally) attempt(() => diplomaticAction(w, c, ally.id, "alliance"));
-      if (c.wars.includes(strongest) && c.equipment.fighter >= 1)
-        c.air = {
-          mission: c.equipment.bomber > 10 ? "support" : "superiority",
-          target: strongest,
-        };
-      if (c.wars.includes(strongest) && navalPower(c) > 0)
-        c.navy = {
-          mission: c.equipment.submarine > 2 ? "raid" : "patrol",
-          target: strongest,
-        };
     } else if (
       w.mode === "alternative" &&
       !c.subjectOf &&
@@ -255,7 +208,9 @@ export function aiDay(w: World) {
           militaryPower(w, target.id) +
           target.allies.reduce((n, id) => n + militaryPower(w, id) * 0.65, 0);
         if (
-          militaryPower(w, c.id) > enemyPower * 1.4 &&
+          militaryPower(w, c.id) >
+            enemyPower *
+              (target.id === w.player && w.difficulty === "easy" ? 2.2 : 1.4) &&
           armies.every((a) => a.supply > 0.6)
         )
           attempt(() =>
@@ -268,10 +223,15 @@ export function aiDay(w: World) {
           );
       }
     }
+    manage(w, c, "operations");
     for (const a of armies) {
       if (a.move || a.route.length) continue;
       if (!a.general) a.general = c.generals[a.type === "infantry" ? 0 : 1].id;
-      const adjacent = GEOGRAPHY[a.province].neighbors.filter((e) => !e.sea),
+      const adjacent = GEOGRAPHY[a.province].neighbors.filter(
+          (e) =>
+            !e.sea ||
+            (a.organization >= 70 && seaEdgeOpen(w, c.id, a.province, e.id)),
+        ),
         enemies = adjacent.filter((e) =>
           atWar(w, c.id, w.provinces[e.id].controller),
         );
@@ -304,7 +264,14 @@ export function aiDay(w: World) {
               value: GEOGRAPHY[e.id].vp,
             };
           })
-          .filter((e) => e.ratio > 1.05)
+          .filter(
+            (e) =>
+              e.ratio >
+              (w.provinces[e.id].controller === w.player &&
+              w.difficulty === "easy"
+                ? 1.4
+                : 1.05),
+          )
           .sort((l, r) => r.ratio * r.value - l.ratio * l.value);
         if (ranked[0]) {
           a.route = [ranked[0].id];

@@ -6,8 +6,10 @@ import {
   supplyNetwork,
   dateLabel,
   localSupply,
+  capacity,
 } from "./world";
 import { combatPower, resolveLandDay, routeTo } from "./land";
+import { manage } from "./management";
 
 test("1936 senaryosu: geçerli başkentler, simetrik komşuluk ve sonlu insan gücü", () => {
   const w = createWorld("turkey");
@@ -29,6 +31,8 @@ test("Tarafsız topraklardan geçilemez; deniz geçişinde donanma gerekir", () 
     army = w.armies.find((a) => a.country === "uk")!;
   army.province = "uk-0";
   assert.equal(routeTo(w, army, "france-1")?.at(-1), "france-1");
+  w.countries.uk.navy.ships = [];
+  w.countries.france.navy.ships = [];
   w.countries.uk.equipment.ship = 0;
   w.countries.uk.equipment.submarine = 0;
   w.countries.uk.equipment.carrier = 0;
@@ -159,6 +163,18 @@ test("İç savaş ayrı ülke ve topraklar oluşturur; yalnızca bildirim değil
   );
   assert.ok(w.countries.spain.wars.includes("spain-rebels"));
 });
+test("İsyancı ülke tekrar bölünüp sınırsız ülke ve bozuk kayıt oluşturamaz", () => {
+  const w = createWorld("turkey");
+  startCivilWar(w, "spain", true);
+  const count = Object.keys(w.countries).length;
+  w.countries["spain-rebels"].stability = 0;
+  startCivilWar(w, "spain-rebels");
+  w.day = 30;
+  politicsDay(w);
+  assert.equal(Object.keys(w.countries).length, count);
+  assert.equal(w.countries["spain-rebels-rebels"], undefined);
+  assert.ok(validateWorld(w));
+});
 test("Aynı kayıt ve aynı gün adımı deterministiktir, girdi değişmez", () => {
   const w = createWorld("turkey");
   const json = JSON.stringify(w);
@@ -272,7 +288,13 @@ test("Sabotaj gerçek tesis hasarı verir; ajan görevden döner", () => {
 test("Bombardıman yakıt tüketir ve düşmanın üretim tesislerini hasara uğratır", () => {
   const w = createWorld("germany");
   declareWar(w, "germany", "poland");
-  w.countries.germany.air = { mission: "strategic", target: "poland" };
+  const order = applyAction(w, {
+    type: "air",
+    mission: "strategic",
+    target: "poland",
+  });
+  assert.equal(order.error, null);
+  w.countries.germany.air = order.world.countries.germany.air;
   const fuel = w.countries.germany.stock.fuel;
   operationsDay(w);
   assert.ok(w.countries.germany.stock.fuel < fuel);
@@ -292,9 +314,35 @@ test("Askerî danışman ve lojistik komutanı savaş / ikmal değerlerini deği
   resolveLandDay(w);
   assert.ok(a.supply > supply);
 });
-test("Tarihsel simülasyon 1941 yılına ulaşır; krizler ve kayıt şeması tutarlı kalır", () => {
+test("Büyük sanayide otomatik üretim hat sınırına uyar ve kayıt yüklenebilir kalır", () => {
+  const w = createWorld("germany"),
+    c = w.countries.germany;
+  const provinces = Object.values(w.provinces).filter(
+    (p) => p.controller === c.id,
+  );
+  for (const p of provinces) p.buildings.military = 0;
+  for (const p of provinces.slice(0, 6)) p.buildings.military = 20;
+  for (const key of Object.keys(c.equipment) as (keyof typeof c.equipment)[])
+    c.equipment[key] = 100000;
+  c.equipment.rifle = 0;
+  c.treasury = 0;
+  manage(w, c, "economy");
+  assert.equal(
+    c.production.find((p) => p.equipment === "rifle")?.factories,
+    100,
+  );
+  assert.ok(c.production.every((p) => p.factories <= 100));
+  assert.ok(
+    c.production.reduce((n, p) => n + p.factories, 0) <=
+      capacity(w, c.id, "military") + capacity(w, c.id, "dock"),
+  );
+  assert.ok(validateWorld(w));
+  assert.ok(validateWorld(decodeSave(encodeSave(w))));
+});
+
+test("Tarihsel simülasyon 1945 yılı sonuna ulaşır; krizler ve kayıt şeması tutarlı kalır", () => {
   let w = createWorld("turkey", "historical", 1936);
-  for (let i = 0; i < 2050; i++) {
+  for (let i = 0; i < 3653; i++) {
     w = advanceDay(w);
     if (i % 120 === 0)
       assert.ok(
@@ -324,12 +372,18 @@ test("Tarihsel simülasyon 1941 yılına ulaşır; krizler ve kayıt şeması tu
 
 test("Çizilen savunma hattı birlikleri dağıtır; tekil emir birliği hattan ayırır", () => {
   let w = createWorld("turkey");
+  for (const a of w.armies) if (a.country === "turkey") a.province = "turkey-0";
   const armies = w.armies
     .filter((a) => a.country === "turkey")
     .map((a) => a.id);
   const result = applyAction(w, {
     type: "front",
-    provinces: ["turkey-0", "turkey-4"],
+    provinces: [
+      "turkey-0",
+      GEOGRAPHY["turkey-0"].neighbors.find(
+        (e) => !e.sea && GEOGRAPHY[e.id].country === "turkey",
+      )!.id,
+    ],
     armies,
   });
   assert.equal(result.error, null);

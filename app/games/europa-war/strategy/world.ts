@@ -1,4 +1,5 @@
 import data from "./map-data.json";
+import { initializeAssets, seaEdgeOpen, shipPower } from "./military-assets";
 import { UNITS } from "./catalog";
 import type { Army, Country, GameEvent, Terrain, World } from "./types";
 
@@ -70,14 +71,7 @@ export function friendly(w: World, a: string, b: string) {
   );
 }
 export function navalPower(c: Country) {
-  return (
-    (c.equipment.ship * 12 +
-      c.equipment.submarine * 5 +
-      c.equipment.carrier * (18 + Math.min(c.equipment.fighter, 30) * 0.25)) *
-    (c.tech.includes("naval2") ? 1.25 : 1) *
-    (c.tech.includes("navalDoctrine") ? 1.2 : 1) *
-    (c.stock.fuel > 0 ? 1 : 0.2)
-  );
+  return shipPower(c);
 }
 export function seaOpen(w: World, country: string) {
   const c = w.countries[country];
@@ -98,13 +92,12 @@ export function supplyNetwork(w: World, country: string) {
     return visited;
   const queue = [c.capital];
   visited.add(c.capital);
-  const sea = seaOpen(w, country);
   for (let i = 0; i < queue.length; i++)
     for (const edge of GEOGRAPHY[queue[i]].neighbors) {
       if (
         visited.has(edge.id) ||
         !friendly(w, country, w.provinces[edge.id].controller) ||
-        (edge.sea && !sea)
+        (edge.sea && !seaEdgeOpen(w, country, queue[i], edge.id))
       )
         continue;
       visited.add(edge.id);
@@ -190,6 +183,7 @@ export function addArmy(
     stance: "hold",
     route: [],
     move: null,
+    support: [],
   };
   w.armies.push(army);
   return army;
@@ -198,15 +192,17 @@ export function createWorld(
   player: string,
   mode: World["mode"] = "historical",
   seed = 1936,
+  difficulty: World["difficulty"] = "easy",
 ): World {
   requireRule(
     data.countries.some((c) => c.id === player),
     "Geçerli bir ülke seç.",
   );
   const w: World = {
-    version: 1,
+    version: 2,
     player,
     mode,
+    difficulty,
     day: 0,
     seed: seed >>> 0,
     serial: 0,
@@ -217,6 +213,9 @@ export function createWorld(
     battles: [],
     trades: [],
     fronts: [],
+    plans: [],
+    conferences: [],
+    warScore: {},
     events: [],
     firedEvents: [],
   };
@@ -235,11 +234,14 @@ export function createWorld(
         dock: p.dock,
         infra: p.infra,
         rail: 1,
-        hub: p.id.endsWith("-0") ? 1 : 0,
-        refinery: p.id.endsWith("-0") ? 1 : 0,
+        hub: p.id === `${p.country}-0` ? 1 : 0,
+        refinery: p.id === `${p.country}-0` ? 1 : 0,
         synthetic: 0,
         fort: 0,
         radar: 0,
+        mine: 0,
+        airfield: p.id === `${p.country}-0` ? 1 : 0,
+        antiAir: 0,
       },
     };
   for (const d of data.countries) {
@@ -282,6 +284,12 @@ export function createWorld(
         heavyTank: 0,
         fighter: major ? 35 : 8,
         bomber: major ? 12 : 0,
+        strategicBomber: 0,
+        reconPlane: 0,
+        transport: 0,
+        carrierFighter: 0,
+        destroyer: ["uk", "france", "italy"].includes(d.id) ? 4 : 0,
+        battleship: ["uk", "france", "italy"].includes(d.id) ? 2 : 0,
         ship: ["uk", "france", "italy"].includes(d.id)
           ? 8
           : data.provinces.some((p) => p.country === d.id && p.port)
@@ -338,6 +346,18 @@ export function createWorld(
         },
       ],
       advisor: "industry",
+      automation: {
+        economy: false,
+        research: false,
+        recruitment: false,
+        operations: false,
+      },
+      cabinet: {
+        economy: "builder",
+        military: "defender",
+        science: "institute",
+      },
+      decisions: {},
       parties: {
         democracy: 8,
         republic: 8,
@@ -351,12 +371,13 @@ export function createWorld(
       counterIntel: false,
       missions: [],
       intel: {},
-      air: { mission: "idle", target: d.id },
-      navy: { mission: "idle", target: d.id },
+      air: { mission: "idle", target: d.id, wings: [] },
+      navy: { mission: "idle", target: d.id, ships: [], zone: "atlantic" },
       history: [],
     };
     c.parties[ideology] = 68;
     w.countries[c.id] = c;
+    initializeAssets(w, c);
   }
   for (const c of Object.values(w.countries)) {
     for (const other of Object.values(w.countries))

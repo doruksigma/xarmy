@@ -1,3 +1,4 @@
+import { tradeRoute } from "./trade-routes";
 import { BUILDINGS, EQUIPMENT, UNITS } from "./catalog";
 import {
   addArmy,
@@ -241,7 +242,7 @@ export function economyDay(w: World) {
       law = ECONOMIES[c.economy];
     const upkeep =
       w.armies.filter((a) => a.country === c.id).length * 0.35 +
-      c.equipment.ship * 0.1 +
+      c.navy.ships.length * 0.1 +
       c.agents * 0.2;
     c.treasury = clamp(
       c.treasury + civil * 0.75 * law.tax * (0.6 + c.stability / 250) - upkeep,
@@ -253,6 +254,7 @@ export function economyDay(w: World) {
     for (const p of provinces) {
       const yieldRate =
         (0.7 + p.buildings.infra * 0.1) *
+        (1 + p.buildings.mine * 0.25) *
         (1 - p.damage / 150) *
         (p.owner === c.id ? 1 : 0.35 + p.compliance / 200);
       for (const r of ["iron", "oil", "aluminum"] as const)
@@ -289,6 +291,7 @@ export function economyDay(w: World) {
           line.efficiency *
           law.output *
           (c.advisor === "industry" ? 1.1 : 1) *
+          (c.cabinet.economy === "producer" ? 1.12 : 1) *
           (1 +
             (c.tech.includes("industry1") ? 0.15 : 0) +
             (c.tech.includes("industry2") ? 0.2 : 0))) /
@@ -308,7 +311,10 @@ export function economyDay(w: World) {
     if (build && w.provinces[build.province].controller === c.id) {
       build.progress += Math.max(
         0.1,
-        civil * law.construction * (c.advisor === "industry" ? 1.15 : 1),
+        civil *
+          law.construction *
+          (c.advisor === "industry" ? 1.15 : 1) *
+          (c.cabinet.economy === "builder" ? 1.15 : 1),
       );
       if (build.progress >= build.total) {
         const p = w.provinces[build.province];
@@ -358,22 +364,18 @@ export function economyDay(w: World) {
       buyer.embargoes.includes(t.from)
     )
       continue;
-    // Convoy raiding reduces deliveries, but money is paid only for resources received.
-    const raided = buyer.wars.some(
-      (id) =>
-        w.countries[id].navy.mission === "raid" &&
-        w.countries[id].navy.target === buyer.id &&
-        w.countries[id].equipment.submarine >= 1,
-    );
+    const route = tradeRoute(w, t.from, t.to);
+    if (!route) continue;
+    const price = buyer.cabinet.economy === "trader" ? 1.7 : 2;
     const amount = Math.min(
-      t.amount * (raided ? 0.5 : 1),
+      t.amount * route.delivery,
       seller.stock[t.resource],
-      buyer.treasury / 2,
+      buyer.treasury / price,
       100000 - buyer.stock[t.resource],
     );
     seller.stock[t.resource] -= amount;
     buyer.stock[t.resource] += amount;
-    buyer.treasury -= amount * 2;
-    seller.treasury += amount * 2;
+    buyer.treasury -= amount * price;
+    seller.treasury += amount * price;
   }
 }

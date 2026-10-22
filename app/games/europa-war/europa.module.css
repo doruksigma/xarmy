@@ -1570,3 +1570,240 @@
     padding: 0 7px;
   }
 }
+
+/* Command view keeps advanced systems available without crowding the first screen. */
+.commandStats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  padding: 16px 0;
+  border-block: 1px solid var(--line);
+  margin: 18px 0;
+}
+.commandStats div {
+  display: grid;
+  text-align: center;
+  border-right: 1px solid var(--line);
+}
+.commandStats div:last-child {
+  border: 0;
+}
+.commandStats strong {
+  font-size: 24px;
+  color: var(--gold);
+  font-weight: 500;
+}
+.commandStats span {
+  font-size: 11px;
+  color: var(--muted);
+}
+.priorities {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0 20px;
+}
+.priority {
+  display: flex;
+  align-items: flex-start;
+  gap: 13px;
+  padding: 15px;
+  background: linear-gradient(120deg, #29372d, #1c2a23);
+  border: 1px solid #3b4b3d;
+  border-radius: 5px;
+}
+.priorityNumber {
+  color: #c6af7d;
+  font:
+    italic 22px Georgia,
+    serif;
+  padding-top: 2px;
+}
+.priority > div {
+  min-width: 0;
+}
+.priority h4 {
+  color: #eee5cd;
+  font-size: 14px;
+}
+.priority p {
+  margin: 7px 0 12px;
+  font-size: 12px;
+}
+.priority .buttonRow {
+  gap: 6px;
+}
+.priority button {
+  font-size: 11px;
+}
+.fold {
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  margin: 14px 0;
+  background: #15221c;
+  padding: 0 13px;
+}
+.fold > summary {
+  padding: 15px 0;
+  color: #e8dfc8;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+}
+.fold > summary::marker {
+  color: #b9a26e;
+}
+.fold > summary > span {
+  float: right;
+  color: var(--gold);
+}
+.fold[open] {
+  padding-bottom: 14px;
+}
+.fold[open] > summary {
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 12px;
+}
+.fold .fold {
+  background: #1b2a20;
+}
+.fold .card {
+  padding: 12px;
+}
+.toggleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 13px 0;
+  border-bottom: 1px solid #2d3d32;
+  cursor: pointer;
+}
+.toggleRow small {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  padding-top: 3px;
+}
+.toggleRow input {
+  appearance: none;
+  width: 38px;
+  height: 22px;
+  background: #34443a;
+  border: 1px solid #566b57;
+  border-radius: 15px;
+  flex-shrink: 0;
+  cursor: pointer;
+  position: relative;
+}
+.toggleRow input::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  background: #adb7a5;
+  border-radius: 100%;
+  transition: transform 0.15s;
+}
+.toggleRow input:checked {
+  background: #8c9f6b;
+}
+.toggleRow input:checked::after {
+  transform: translateX(16px);
+  background: #15231c;
+}
+.helpSteps {
+  margin: 12px 0 0;
+  padding-left: 18px;
+  color: #b6c2b4;
+}
+.helpSteps li {
+  padding: 4px 0;
+}
+.unitChoices {
+  max-height: 220px;
+  overflow: auto;
+  margin: 12px 0;
+  border-block: 1px solid var(--line);
+}
+.unitChoices label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 2px;
+  cursor: pointer;
+}
+.unitChoices small {
+  margin-left: auto;
+  color: var(--muted);
+}
+.unitChoices input {
+  accent-color: #b6c58d;
+}
+.seaStatus {
+  display: grid;
+  gap: 5px;
+}
+.seaStatus > div {
+  display: flex;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--line);
+  padding: 8px 0;
+}
+.seaStatus strong {
+  color: var(--gold);
+}
+.peaceRegions {
+  display: grid;
+  gap: 5px;
+  margin: 12px 0;
+}
+.peaceRegions button {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+.peaceRegions b {
+  font-weight: 500;
+  color: var(--gold);
+  white-space: nowrap;
+}
+.cabinetOption {
+  display: grid;
+  width: 100%;
+  text-align: left;
+  gap: 5px;
+  margin: 7px 0;
+}
+.cabinetOption small {
+  font-size: 11px;
+  color: var(--muted);
+}
+.app input[type="number"] {
+  width: 100%;
+  border: 1px solid #445248;
+  border-radius: 3px;
+  background: #111e1b;
+  padding: 9px;
+  color: var(--ink);
+  font: inherit;
+}
+.app input:focus-visible,
+.app summary:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 3px;
+}
+.app progress {
+  accent-color: #aab98c;
+  width: 100%;
+  height: 7px;
+}
+@media (max-height: 850px) and (min-width: 701px) {
+  .rail {
+    overflow-y: auto;
+  }
+  .rail button {
+    min-height: 52px;
+    padding-block: 6px;
+  }
+}

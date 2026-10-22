@@ -1,115 +1,155 @@
-# XARMY Europa War — 1936 seferi
+# XARMY Europa War — 1936 seferi, ikinci sürüm
 
-Bu değişiklik, eski 2025 ülke ele geçirme oyununu, 1 Ocak 1936 başlangıçlı,
-bağlantılı büyük strateji mekanikleri olan bir sürümle değiştirir. Rota:
-`/games/europa-war`. Oyun tek oyunculu; bütün ülkeleri yerel simülasyon yönetir.
+Rota: `/games/europa-war`. Tek oyunculu II. Dünya Savaşı dönemi stratejisi;
+ülkeler, üretim, savaşlar ve kayıtlar cihazda çalışır. Bu sürüm, ayrıntıları
+koruyarak yönetimi kolaylaştırır ve haritayı yeniler. HOI4 dosyaları veya
+arayüzü kullanılmamıştır. İstenen 100 maddenin tamamının HOI4 derinliğinde
+bittiği iddia edilmez; aşağıda çalışan karşılıklar ve sınırlar açıklanmıştır.
 
-**100 maddelik isteğin tamamı HOI4 derinliğinde bitmiş değildir.** Aşağıdaki
-sistemler çalışan kod ve arayüzle uygulanmıştır; tarihsel veri doğruluğu ve
-özellikle hava/deniz modelinin ayrıntısı için kalan iş açıkça ayrılmıştır.
+## Kolay oynama
 
-## Oynama
+1. Ülkeni, tarihsel/alternatif yönelimi ve zorluğu seç. Varsayılan **Kolay**.
+2. **Komuta** ekranındaki önceliklerden birini uygula. Sanayi, araştırma/odak,
+   eğitim ve hava/deniz için yardımcıları ayrı ayrı açabilirsin. Her biri gerçek
+   kaynak harcar; istediğin anda kapatıp bütün ayarları elle yapabilirsin.
+3. Üstteki ▶ ile zamanı ilerlet; boşlukla duraklat. 1–5× hızlar gerçek günlük
+   hesapları çalıştırır. Sekme arka plana geçince zaman durur.
+4. Haritadaki askerî sembolü seç, **Haritada hedef seç** düğmesine bas ve hedef
+   bölgeyi seç. Savaş ilanı olmadan tarafsız toprağa saldırılamaz. Duraklatılmış
+   oyunda emir bekler; bunu bildiren mesaj gösterilir.
+5. Birçok tümeni yönetmek için Ordu bölümünden savunma hattı veya taarruz
+   hedefleri çiz. Hazırlık %30'a ulaşınca planı başlat. Tekil dur/hareket emri
+   o birliği otomatik plandan çıkarır.
 
-Ülke ve tarihsel/alternatif yönelim seç, seferi başlat. Başlangıç duraklatılmıştır.
-Bir araştırma, ulusal odak, inşaat ve üretim planı seç; üst çubuktaki ▶ ile zamanı
-ilerlet. Boşluk duraklatır/devam ettirir; 1–5× hızlar gerçek günlük hesapları çalıştırır.
-Sekme arka plana geçtiğinde sefer durur; duvar saatiyle kaçırılan günler hesaplanmaz.
+Kolay mod oyuncunun kara muharebe gücüne %50 destek verir; AI oyuncuya karşı
+savaş açmak ve saldırmak için daha yüksek üstünlük arar. Normal eşit koşuldur.
+Zor modda oyuncunun kara muharebe gücü %15 azalır. AI kendi kaynaklarını kullanır;
+zorluk bir kaynak hilesi değildir. Komuta ekranından mevcut seferde değiştirilebilir.
+Yardımcı savaş ilanı, barış koşulları veya ideoloji değişikliği kararı vermez.
 
-Haritayı sürükle ve tekerlekle yakınlaştır. Bölgeye tıkla: nüfus, arazi, tesis,
-kaynak, ikmal ve işgal bilgisi. Askerî sembole tıkla: birlik yönetimi. Hedef seç
-emri, erişilebilir topraklarda rota hesaplar. Shift ile mevcut rotaya hedef eklenir.
-Savaş ilanı olmadan tarafsız sınıra girilemez. Savunma hattı, komşu kendi
-eyaletlerine sırayla tıklanarak çizilir; atanmış tümenler hat boyunca dağılır.
-Tekil hareket/dur emri o birliği otomatik hat yönetiminden çıkarır.
+## Harita ve şehirler
 
-Savaş gerekçesi 45 gün sürer. Saldırmazlık paktı yürürlükteyken savaş açılamaz.
-Başkent kaybı ve kaybedilen zafer puanları teslimiyete etki eder. Zaferden sonra
-ilhak, bağlı devlet veya bağımsızlık kararı gerçek mülkiyet/ittifak durumunu değiştirir.
+- Natural Earth **1:50m** kıyı/sınır ayrıntısı; 29 başlangıç ülkesi ve **447 ayrı şehir bölgesi**;
+  303 yeni şehir, kendi sınırı, komşulukları ve bağımsız kontrol durumuyla oynanır.
+- Şehir ele geçirmek yalnızca o şehri değiştirir; komşuları ayrıca alınmalıdır.
+  1.111 bağlantı gerçek bölge komşuluklarını ve açıkça belirtilen deniz yollarını izler.
+  Başlangıç nüfusu, kaynaklar ve sanayi eski bölgelerden bölüştürülür; çoğaltılmaz.
+- Siyasi, arazi, kara harekâtı, ikmal, hava ve deniz haritaları; arazi taramaları,
+  dağ kabartıları, işgal deseni, şehir işaretleri, bağlantılar, birlik sayaçları,
+  savaş işaretleri, savunma hatları ve taarruz okları.
+- Şehir araması, tekerlek yakınlaştırması, sürükleme, dokunarak yakınlaştırma,
+  ülkeye odaklanma, bütün haritayı gösterme ve tıklanabilir küçük harita.
+- Eski 144 bölgenin kimlikleri korunur. Yeni şehir sınırları yolları değiştirir;
+  eski kayıt yüklenirken mülkiyet ve tesisler taşınır, artık bitişik olmayan
+  hareket/cephe emirleri temizlenir ve oyuncuya bildirilir.
+- Modern coğrafya üzerine yaklaşık 1936 düzeltmeleri uygulanır. Tam tarihsel
+  sınır/idarî eyalet doğruluğu, bütün mikrodevletler ve koloniler yoktur. Şehir
+  koordinatları seçilmiş referans noktalarıdır. Kaynaklar ve yeniden üretim:
+  [MAP-SOURCES.md](../scripts/europa-war/MAP-SOURCES.md).
 
-## Uygulanan sistemler ve sınırları
+## Savaşın düzeltilen davranışı
 
-| İstek maddeleri | Çalışan karşılık                                                                                                                                                                                                           | Kalan ayrıntı / sınır                                                                                                                                                                        |
-| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1–4             | 29 ülke, 144 bölge, yerel siyasi harita, şehirler, renkler, ülke seçimi, zoom/pan                                                                                                                                          | Sınırlar yaklaşık; tüm tarihsel idarî eyaletler, mikrodevletler ve koloniler yok. Ülke işaretlerinin tümü 1936 bayrakları değildir.                                                          |
-| 5–7             | Bölge kontrolü, başkent bonuslu zafer puanları, %80 eşiğinde teslimiyet                                                                                                                                                    | Şehir, stratejik bölgenin merkezi; şehir içinde ayrı taktik savaş yok.                                                                                                                       |
-| 8–11            | Ova, şehir, dağ, orman, bataklık, kurak arazi; hareket/savaş etkileri; nüfus, kanunla sınırlı insan gücü; altyapı/sanayi                                                                                                   | Nüfus ve asker sayıları oyun ölçeğinde yaklaşık. Gerçek 1936 askerî düzeni yeniden oluşturulmuş değil.                                                                                       |
-| 12–15           | Demir, petrol, çelik, alüminyum, kauçuk, yakıt; liman/deniz geçişi; direniş, garnizon, ayaklanma; ayrıntılı panel                                                                                                          | Bağımsız boğaz denetimi, küresel ticaret güzergâhları ve gerçek nehir ağı henüz yok.                                                                                                         |
-| 16–23           | Piyade, üç tank sınıfı, topçulu piyade, motorize/mekanize, özel kuvvet, dağcı, paraşütçü; teknoloji ve ekipman gereksinimleri                                                                                              | Topçu ayrı destek bölüğü şablonu değil. Ayrıntılı tabur/tümen tasarımcısı yok.                                                                                                               |
-| 24–28           | Avcı kayıpları, hava üstünlüğü/yakın destek/stratejik bombardıman; muharebe filosu, denizaltı, uçak gemisi; baskın ve deniz üstünlüğü                                                                                      | Taktik/stratejik bombardıman ortak uçak stoğu kullanır. Ayrı muhrip/zırhlı sınıfları, uçak kanatları, deniz bölgesi haritası ve tekil gemi hasarı henüz yok.                                 |
-| 29–35           | Birlik tecrübesi, komutan beceri/tecrübe/özellikleri, savunma hattı çizimi, rota okları, kuşatma, organizasyon, moral, yakıt ve yıpranma                                                                                   | Birlik ekipmanı tümen kurulumunda tüketilir; savaş takviyesi şu anda tüfek/insan gücüyle modellenir. Tam tank/top takviye lojistiği ve çok ordulu taarruz planı editörü kalan iş.            |
-| 36–49           | İlişki puanları, savunma ittifakı, süreli gerekçe, savaş, ateşkes, pakt, ticaret, geçiş izni, bağlı devlet/ilhak/bağımsızlık, ambargo, yardım, gerilim                                                                     | Barış, ateşkes ve galibin üç sonucu arasında seçimdir; çok taraflı, puan harcayarak bölge dağıtılan konferans yok. İlhak edilmiş ülkeyi sonradan yeniden kurma henüz yok.                    |
-| 50, 94–98       | Kaynak, kuvvet oranı, tehdit, ikmal ve cephe boşluklarını değerlendiren AI; inşaat/üretim/araştırma/ticaret/ordu; diğer AI ülkeleriyle savaş/ittifak/ateşkes; iki yönelim                                                  | AI sınırlı planlama ufkuna sahip. Çok yıllı küresel plan, kapsamlı deniz istilası AI'sı ve tarihsel denge incelemesi tamamlanmadı.                                                           |
-| 51–65           | Sivil/askerî fabrika/tersane; demir çıkarma, demir→çelik, petrol→yakıt, alüminyum, sentetik kauçuk; ithalat/ihracat; maliyetli üretim, verimlilik; inşaat kuyruğu; yol/demiryolu/ikmal merkezi; ekonomi kanunları          | Madenler bölge verisinden üretir; ayrı maden inşaatı yok. Ekipman modeli seçimi sınıf/teknoloji düzeyinde; üretim tasarımcısı yok.                                                           |
-| 66–75           | 28 teknoloji: silah/zırh/motor, avcı/bombardıman/keşif, denizaltı/uçak gemisi, radar/şifreleme/şifre çözme, üç doktrin; önkoşullar, tarih cezası, ülke bilim bonusu, araştırma yuvaları                                    | Radar aynı yapıda hava savunmasını da soyutlar. Ayrı keşif uçağı modeli ve isimli bilim insanı kadrosu yok.                                                                                  |
-| 76–85           | Beş siyasi yönelim, destek oranları, maliyetli kampanya/reform, yıllık demokratik seçim hesabı, istikrar/yorgunluk, liderler, danışman etkileri; 13 dallanan ulusal odak; Türkiye'ye özgü adlar; düşük istikrarda iç savaş | Büyük ülkelerin odak adları farklı; birçok etki ortak. Her ülkeye özgü kapsamlı tarihsel odak ağacı, tam seçim takvimi, ayrı darbe/kriz karar zinciri ve isimli kabine sistemi tamamlanmadı. |
-| 86–93           | Teşkilat, ajan eğitimi, keşif, sabotaj, propaganda, karşı casusluk, plan çalma, direniş desteği, gizli diplomasi; gerçek başarı/başarısızlık ve ajan kaybı                                                                 | Bölge bazlı ajan ağları ve operasyon hazırlık ekipmanı soyutlanmıştır.                                                                                                                       |
-| 99–100          | 3 manuel + 2 dönüşümlü otomatik kayıt, JSON içe/dışa aktarım, şema kontrolü; duraklat/1–5×/tarih/olay günlüğü                                                                                                              | Eski 2025 kayıtları silinmez, yeni senaryoya dönüştürülmez.                                                                                                                                  |
+Komşu düşman bölgesine saldırı, sınırda çatışma başlatır; uzun yürüyüş süresinin
+bitmesi beklenmez. Bölgeyi ele geçirmek için savunmayı kırmak ve ilerlemeyi
+bitirmek gerekir. Saldıran ve savunan aynı günlük işlemde asker ve organizasyon
+kaybeder. Çatışan birlikler aynı anda takviye/organizasyon yenileyerek bu kaybı
+silemez. Ordu ekranında devam eden muharebeler, güç payı, asker sayısı,
+organizasyon, ikmal ve ülkenin toplam kaybı görülebilir.
+
+Donanma gerektiren deniz taşıması ile hava indirme ayrıdır. Yakıtı uçuşa yetmeyen
+kanat üstünlük sağlayamaz; limanını/ikmal yolunu kaybeden filo deniz kontrolü
+veremez. Tam ilhak, yenilen ülkenin yabancı topraklardaki işgallerini de bitirir.
+
+## Çalışan sistemler ve sınırları
+
+| İstek     | Çalışan karşılık                                                                                                                                                                                                                                   | Kalan ayrıntı / sınır                                                                                                                                                                        |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1–15      | Siyasi/askerî haritalar, şehir/bölge bilgisi, başkent ve zafer puanlı teslimiyet; arazi etkileri, nüfus/insan gücü, sanayi, kaynak, işgal/direniş                                                                                                  | Tam tarihsel sınırlar ve gerçek nehir geometrisi yok; şehir sınırları oyun için geometrik bölümlerdir, tarihsel idarî sınırlar değildir. Nüfus/başlangıç kuvvetleri yaklaşık oyun ölçeğinde. |
+| 16–23     | Piyade, hafif/orta/ağır tank, topçulu piyade, motorize/mekanize, özel kuvvet, dağcı, paraşütçü; ekipman/teknoloji gerekleri                                                                                                                        | Tabur düzeyinde serbest tümen tasarımcısı yok.                                                                                                                                               |
+| 24–28     | Altı uçak modeli, üs/menzil/yoğunluk/yakıtlı kanatlar; üstünlük, destek, stratejik bombardıman, keşif, nakliye, deniz saldırısı; kruvazör, muhrip, zırhlı, denizaltı, uçak gemisi; ayrı gemi hasarı, onarım, intikal, taşıyıcı uçakları            | Havacılık/deniz savaşı günlük bölgesel modeldir; gerçek mermi veya uçuş fiziği yok.                                                                                                          |
+| 29–35     | Tecrübe, generaller, savunma hattı, çok tümenli hazırlanabilen taarruz planları; kuşatma/ikmal, moral, organizasyon, yakıt/yıpranma; topçu/istihkâm/lojistik/hastane/keşif desteği; tank ve destek ekipmanını da tüketen takviye                   | Çok katmanlı küresel cephe/ordu grubu editörü yok.                                                                                                                                           |
+| 36–49     | İttifak, gerekçe, savaş, ateşkes, pakt, ticaret/geçiş, ilişki, yardım, ambargo, gerilim; katkı puanlı/sıralı çok taraflı barış konferansı, bölge talebi, ilhak/kukla/bağımsızlık; ilhak sonrası ülke kurma                                         | Barışın ayrıntılı tazminat/donanmaya el koyma ve küresel diplomasi seçenekleri yok.                                                                                                          |
+| 50, 94–98 | Tehdit, kuvvet, ikmal, sınır boşluğu, ekonomik ihtiyaçla karar veren AI; diğer AI'larla savaş/barış/ittifak; dengeli üretim, araştırma, inşaat, ticaret, eğitim, hava/deniz görevleri; tarihsel/alternatif yönelim; üç zorluk                      | Planlama ufku sınırlı; bütün ülkelerin kapsamlı tarihsel denge ve küresel deniz istilası planları tamamlanmış değil.                                                                         |
+| 51–65     | Sivil/askerî fabrika, tersane, maden, rafineri, sentetik tesis; demir/çelik/petrol/yakıt/alüminyum/kauçuk; üretim hattı/verimlilik, konvoy baskını/eskorttan etkilenen gerçek ticaret rotaları, demiryolu/ikmal/altyapı, ekonomi kanunları         | Küresel kaynak pazarı, serbest ekipman tasarımcısı ve denizaşırı koloniler yok.                                                                                                              |
+| 66–75     | Önkoşullu, tarih ve ülke bonuslu araştırmalar; silah, tank, uçak, gemi, motor, radar/hava savunması, şifreleme/çözme ve üç doktrin; teknolojiyle yeni modeller; kabine araştırma bonusları                                                         | Her tarihsel ekipman modelinin ayrı adı/istatistiği ve tüm bilim kadrosu yok.                                                                                                                |
+| 76–85     | Beş ideoloji, destek, kampanya/reform, seçim hesabı, istikrar/savaş desteği/yorgunluk, iç savaş; ortak odak ağacı ve Türkiye/Almanya/Fransa/Britanya/İtalya/SSCB için farklı etkili ek odaklar; üç kabine görevi; süreli maliyetli ulusal kararlar | Her ülkenin bütün tarihsel olay/parti/seçim takvimi yok. Odak ağaçları HOI4 ölçeğinde değil.                                                                                                 |
+| 86–93     | Teşkilat, ajan eğitimi, keşif/sabotaj/propaganda/karşı casusluk/plan çalma/direniş/gizli diplomasi; koşullu darbe girişimi, yakalanma/kayıp olasılığı                                                                                              | Bölgesel ajan ağları ve ekipmanlı hazırlık aşamaları soyutlanır.                                                                                                                             |
+| 99–100    | Üç manuel ve iki dönüşümlü otomatik kayıt; JSON içe/dışa aktarım; katı şema/referans denetimi; v1 1936 kayıt geçişi; duraklatma/hız/tarih/olay günlüğü                                                                                             | Eski 2025 senaryo kayıtları ayrı kalır; dönüştürülmez veya silinmez.                                                                                                                         |
+
+Deniz havzaları: Atlantik, Kuzey/Arktik, Baltık, Akdeniz, Karadeniz. Düşmanın
+İstanbul veya Danimarka geçidini tutması ilgili geçişi kapatır. Hazar'daki Bakü
+okyanusa çıkış sayılmaz. Cebelitarık bu bölgesel haritada temsil edilmediği için
+Atlantik–Akdeniz geçişi açık kabul edilir.
 
 ## Tarihsel yönelim
 
-Tarih 1936'da başlar. Seçilmiş olaylar İspanya iç savaşı, Atatürk'ün vefatı ve
-İnönü'ye geçiş, Avusturya krizi; Almanya–Polonya, Sovyetler–Finlandiya,
-Almanya–Danimarka/Fransa/Sovyetler savaş tarihlerini kapsar. Oyuncunun yönettiği
-ülkeye otomatik saldırı emri verilmez; AI'da pakt, ittifak, bağlılık ve teslimiyet
-kontrol edilir. Oyuncuya karşı başka bir AI'nın tarihsel saldırısı gerçekleşebilir.
-İspanya yüksek istikrarla iç savaşı önleyebilir. Tarihsel mod sonuçları garanti etmez.
-Alternatif mod, güce ve çıkarlara göre AI savaş gerekçesi ve savaş kararı kullanır.
-Bu, II. Dünya Savaşı'nın tüm tarihsel olaylarını simüle ettiği iddiası değildir.
+1936 başlangıcı; seçilmiş olaylar İspanya iç savaşı, Atatürk'ün vefatı ve İnönü'ye
+geçiş, Avusturya krizi; Almanya–Polonya, Sovyetler–Finlandiya ve Almanya'nın
+Danimarka/Fransa/SSCB savaş takvimlerini kapsar. Oyuncu adına otomatik savaş
+ilan edilmez; başka bir AI oyuncuya saldırabilir. Sonuçlar garanti edilmez.
+Türkiye'nin ek odakları Montrö, devletçilik, Karabük, Kayseri, Balkan diplomasisi,
+tarafsızlık, millî savunma ve kooperatif yollarında farklı etkiler üretir.
 
-## Çevrimdışı çalışma
+## Çevrimdışı ve kayıt uyumluluğu
 
-Oyun sunucu/API anahtarı, Upstash veya ağ bağlantısı kullanarak hesap yapmaz.
-Üretim sürümünde ilk çevrimiçi açılış, service worker ile bu sayfanın HTML'ini ve
-aynı origin altındaki sabit Next.js JS/CSS/font paketlerini cihaza indirir.
-“Çevrimdışı kullanıma hazır” yazısı geldikten sonra internet kapalıyken sayfa yeniden
-açılabilir. İlk kez hiç indirilmemiş bir web sitesi çevrimdışı açılamaz. Tarayıcı
-site verilerini silerse paket ve yerel kayıtlar da silinir; JSON yedeği taşınabilirdir.
+Sunucu, API anahtarı veya Upstash oyun hesabı yapmaz. Üretim sürümünde ilk
+çevrimiçi açılışta service worker bu rotanın HTML/JS/CSS/font paketlerini cihaza
+indirir. “Çevrimdışı kullanıma hazır” bildirimi geldikten sonra internet kapalıyken
+yeniden açılabilir. İlk kez indirilmemiş site çevrimdışı açılamaz; tarayıcı verileri
+silinirse yerel kayıtlar da silinir, bu nedenle JSON dışa aktarımı sunulur.
 
-İndirme tamamlanmadan çalışan HTML kopyası değiştirilmez. Diğer oyunlar, hesaplar,
-API yanıtları ve harici kaynaklar önbelleğe alınmaz. Eski paket dosyaları güncelleme
-geçişlerinde çalışan eski HTML'in bağımlılıklarını korumak için tutulur.
+Yeni şema v2'dir. Önceki 1936 v1 seferleri kontrollü taşınır; eski stoklar gerçek
+hava kanatlarına/gemilere aktarılırken çoğaltılmaz. 144 bölgeli kayıtlar 447
+şehir bölgesine genişletilir; işgaller ve toplam tesis sayıları korunur. Hava ve
+deniz üsleri eski şehirlerinde kalır. Eksik şehir içeren bozuk yeni kayıtlar
+otomatik doldurulmaz. Eski yuva anahtarları korunur.
+Bozuk dosya mevcut seferin yerini almaz. Diğer oyunların/API yanıtlarının önbelleği
+alınmaz. Oyun tüm coğrafyasını yerel paketten yükler.
 
-## Mimari ve test
+## Mimari ve doğrulama
 
-- `world.ts`: yerel senaryo, coğrafya, ikmal ağı, kapasite, ilişkiler.
-- `engine.ts`: atomik emirler; tek günlük deterministik dünya işlemi.
-- `land.ts`, `economy.ts`, `diplomacy.ts`, `politics.ts`, `operations.ts`, `ai.ts`: bağlı sistemler.
-- `storage.ts`: şema, sınırlar, kimlik/referans denetimi; bozuk kayıt mevcut seferin yerini almaz.
-- `WarMap.tsx`: SVG harita ve gerçek birlik/hat/rota/muharebe durumları.
-- `WarPanels.tsx`: Türkçe yönetim panelleri; bütün eylemler engine emirlerini kullanır.
+`engine.ts` günlük deterministik simülasyonu ve atomik emirleri birleştirir.
+`land`, `economy`, `diplomacy`, `politics`, `operations` yanında `airnaval`,
+`military-assets`, `planning`, `conference`, `decisions`, `management` ve
+`trade-routes` ayrı sistemlerdir. `CommandCenter` ayrıntılı `WarPanels` ve
+`AdvancedPanels` üzerindeki kolay yönetim katmanıdır; ayrı/sahte oyun hesabı yoktur.
 
 ```sh
 npm run test:europa
 npm run test:chess
 npm run test:battle
 npm run build
-```
-
-Europa testi 1936–1941 günlük simülasyonunu; kaynak ve insan gücü hesaplarını,
-tarafsızlık/deniz sınırlarını, ikmal kesilmesini, eşzamanlı ele geçirmeyi, inşaatı,
-araştırmayı, iç savaşı, sabotajı, bombardımanı, teslimiyet/barışı, savunma hattını
-ve bozuk kayıt reddini denetler. Tarayıcı testi aşağıdaki script ile yerel üretim
-sunucusunda çalışır. Playwright ve Chromium geliştirme ortamında bulunmalıdır.
-
-```sh
 npm start
-# Ayrı terminalde, Playwright node çözümleme yolunda iken:
+# Playwright/Chromium bulunan geliştirme ortamında:
 node scripts/test-europa-browser.cjs
 ```
 
-Bu sürüm için masaüstü/mobil görsel kontrol ve çevrimdışı yeniden açılış sonucu
-çalışma raporunda belirtilir. Sabit FPS veya HOI4 düzeyinde denge garantisi verilmez.
+Regresyonlar; sınır saldırısında iki taraflı hasar ve toparlanmanın durması,
+hava indirmesi, yakıtsız hava/deniz, menzil/üs yoğunluğu, gemi intikali/onarımı,
+konvoy/eskort, destek ve tank takviyesi, taarruz hazırlığı, katkılı barış ve yabancı
+işgallerin iadesi, yardımcı/manuel yönetim, zorluk ve kayıt geçişini kapsar.
+Uzun test 1936–1945 günlük seferini çalıştırır. Şehirlerin ayrı ele geçirilmesi,
+447 bölgenin komşulukları ve eski harita kayıtlarının geçişi de sınanır. Tarayıcı testi masaüstü/mobil,
+komuta yardımcıları, araştırma/odak, gerçek destek ekleme, uçak kurma/görevlendirme,
+donanma emri, harita modları/arama/yakınlaştırma, cephe çizimi, kayıt/yükleme
+ve ağ kapalıyken yeniden açılışı sınar.
 
-## Bu sürümde doğrulananlar (21 Ekim 2026)
+Yerel doğrulama sonucu teslim raporunda belirtilir. Vercel'in canlı üretim durumu,
+bütün cihazlarda performans veya HOI4 düzeyinde denge garantisi değildir.
 
-- Node.js 24.19.0 üzerinde `npm run build` başarılı.
-- `npm run test:europa`: **23/23**; 1936–1941 simülasyonu dahil.
-- Mevcut satranç testleri **95/95**, Battle Royale testleri **18/18** geçti.
-- Chromium + Playwright ile yerel üretim sürümünde 1440×1000 ve 390×844 görünüm kontrol edildi.
-- Ülke seçimi, araştırma ve ulusal odak başlatma; haritaya cephe çizip tümen atama;
-  zamanı ilerletme; manuel kayıt/yükleme; mobil panel kapatma ve harita yakınlaştırma geçti.
-- Tarayıcı ağı kapatılıp sayfa yeniden yüklendi; yerel kayıt açıldı ve simülasyon
-  çevrimdışı devam etti. Tarayıcı `pageerror` sayısı: **0**.
-- Görsel incelemede mobil üst çubuk çakışması giderildi. Bu kontrol fiziksel bir
-  telefonda performans veya bütün donanımlarda kare hızı garantisi değildir.
-- Bu yerel doğrulamalar Vercel üretim dağıtımının canlı durumunu doğrulamaz.
+## Bu sürümde doğrulananlar — 22 Ekim 2026
+
+- `npm run test:europa`: **56/56**; 1936–1945 sonuna kadar 3.653 günlük sefer,
+  şehirlerin ayrı ele geçirilmesi, iki taraflı çatışma kaybı, iç savaş ve eski
+  kayıtların şehir haritasına geçişi dahil.
+- `npm run test:chess`: **95/95**, `npm run test:battle`: **18/18**.
+- `npm run build`: başarılı (Node 24). Eski tarayıcı uyumluluk verisi hakkında
+  derlemeyi engellemeyen Browserslist uyarısı mevcut.
+- Üretim sunucusunda Chromium: **18 kontrol**, sıfır sayfa hatası; gerçek
+  Eskişehir bölgesini seçme, cephe çizme, destek/kanat/gemi emirleri, savunulan
+  sınırda asker kaybı, mobil ekran ve çevrimdışı yeniden açılış dahil.
+- Eski ve yeni haritanın her ana bölgesinde nüfus, fabrika, tersane ve tüm
+  kaynak toplamları karşılaştırıldı; toplamlar aynı kaldı.
+
+Şehir sınırları ve masaüstü/mobil ekran görüntüleri gerçek çalışan oyunda
+incelendi. Bunlar yerel doğrulamalardır; Vercel üretim yayını ayrıca doğrulanmadı.

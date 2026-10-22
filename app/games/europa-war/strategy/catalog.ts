@@ -245,13 +245,51 @@ export const EQUIPMENT: Record<
     tech: "aviation1",
   },
   bomber: {
-    name: "Bombardıman uçağı",
+    name: "Taktik bombardıman uçağı",
     cost: 12,
     inputs: { aluminum: 3, steel: 1, rubber: 0.4 },
     tech: "aviation2",
   },
+  strategicBomber: {
+    name: "Stratejik bombardıman",
+    cost: 22,
+    inputs: { aluminum: 5, steel: 2, rubber: 0.8 },
+    tech: "aviation3",
+  },
+  reconPlane: {
+    name: "Keşif uçağı",
+    cost: 6,
+    inputs: { aluminum: 1.5, rubber: 0.2 },
+    tech: "recon",
+  },
+  transport: {
+    name: "Nakliye uçağı",
+    cost: 14,
+    inputs: { aluminum: 3, steel: 1 },
+    tech: "airborne",
+  },
+  carrierFighter: {
+    name: "Deniz avcısı",
+    cost: 9,
+    inputs: { aluminum: 2, rubber: 0.4 },
+    tech: "carriers",
+  },
+  destroyer: {
+    name: "Muhrip",
+    cost: 90,
+    inputs: { steel: 15 },
+    tech: "naval1",
+    naval: true,
+  },
+  battleship: {
+    name: "Zırhlı",
+    cost: 400,
+    inputs: { steel: 70, aluminum: 5 },
+    tech: "naval2",
+    naval: true,
+  },
   ship: {
-    name: "Muharebe filosu",
+    name: "Kruvazör",
     cost: 180,
     inputs: { steel: 30 },
     tech: "naval1",
@@ -339,8 +377,32 @@ export const BUILDINGS: Record<
     max: 5,
     description: "Eyaletin savunmasını seviye başına %15 artırır.",
   },
+  mine: {
+    name: "Maden işletmesi",
+    cost: 100,
+    work: 220,
+    max: 5,
+    description:
+      "Bölgedeki demir, petrol ve alüminyum çıkarımını seviye başına %25 artırır.",
+  },
+  airfield: {
+    name: "Hava üssü",
+    cost: 100,
+    work: 200,
+    max: 5,
+    description:
+      "Seviye başına 100 uçak kapasitesi. Üs aşırı dolarsa görev etkinliği düşer.",
+  },
+  antiAir: {
+    name: "Uçaksavar bataryası",
+    cost: 75,
+    work: 180,
+    max: 5,
+    description:
+      "Bombardıman hasarını azaltır ve saldıran uçaklara kayıp verdirir.",
+  },
   radar: {
-    name: "Radar / hava savunması",
+    name: "Radar istasyonu",
     cost: 100,
     work: 240,
     max: 3,
@@ -633,6 +695,7 @@ export interface Focus {
     | "diplomacy"
     | "stability"
     | "fuel"
+    | "national"
     | Ideology;
   description: string;
 }
@@ -650,7 +713,7 @@ export function focusTree(country: string): Focus[] {
     "Ordu Reformu",
     "Bölgesel Güvenlik",
   ];
-  return [
+  const common: Focus[] = [
     {
       id: "industry",
       name: t[0],
@@ -782,11 +845,213 @@ export function focusTree(country: string): Focus[] {
       description: "Merkezî cumhuriyet yönetimi; siyasi destek artar.",
     },
   ];
+  const national: Record<string, [string, string, string, string, string][]> = {
+    turkey: [
+      [
+        "montreux",
+        "Montrö ve Boğazların Güvenliği",
+        "Diplomasi",
+        "diplomacy",
+        "İstanbul'a +2 tahkimat; komşularla +15 ilişki.",
+      ],
+      [
+        "etatism",
+        "Devletçilik ve Sümerbank",
+        "Sanayi",
+        "industry",
+        "Ankara ve İzmir'e birer sivil fabrika; +150 hazine.",
+      ],
+      [
+        "karabuk",
+        "Karabük Demir Çelik",
+        "Sanayi",
+        "industry2",
+        "Samsun'a +2 maden; +200 çelik.",
+      ],
+      [
+        "kayseri",
+        "Kayseri Tayyare Fabrikası",
+        "Ordu",
+        "arsenal",
+        "Ankara'ya +1 hava üssü; 20 avcı ve havacılık araştırma temeli.",
+      ],
+      [
+        "balkanPact",
+        "Balkan Güvenlik Hattı",
+        "Diplomasi",
+        "regional",
+        "Yunanistan, Romanya ve Yugoslavya ile +35 ilişki ve karşılıklı bir yıllık pakt.",
+      ],
+      [
+        "neutrality",
+        "Silahlı Tarafsızlık",
+        "Diplomasi",
+        "montreux",
+        "+15 istikrar; ordunun organizasyonu toparlanır; sınır eyaletlerine tahkimat.",
+      ],
+      [
+        "nationalDefense",
+        "Millî Müdafaa Sanayisi",
+        "Ordu",
+        "mobilize",
+        "Ankara'ya askerî fabrika, 30 top ve 30 kamyon.",
+      ],
+      [
+        "cooperatives",
+        "Köy Kalkınma Hamlesi",
+        "Sanayi",
+        "railway",
+        "Bütün kendi eyaletlerinde +1 altyapı ve +10 istikrar.",
+      ],
+    ],
+    germany: [
+      [
+        "autobahn",
+        "Reichsautobahn",
+        "Sanayi",
+        "railway",
+        "Kendi eyaletlerinde +1 altyapı; motorlu birlikler için 50 kamyon.",
+      ],
+      [
+        "panzer",
+        "Panzer Doktrini",
+        "Ordu",
+        "arsenal",
+        "Hafif zırh ve kara doktrini; 45 hafif tank.",
+      ],
+      [
+        "syntheticProgram",
+        "Sentetik Yakıt Programı",
+        "Sanayi",
+        "industry2",
+        "Başkentte +2 sentetik tesis, +1 rafineri.",
+      ],
+      [
+        "submarineProgram",
+        "Denizaltı Programı",
+        "Ordu",
+        "mobilize",
+        "Denizaltı teknolojisi; limanda +2 tersane; 2 tamamlanmış denizaltı.",
+      ],
+    ],
+    france: [
+      [
+        "maginot",
+        "Doğu Tahkimatları",
+        "Ordu",
+        "army",
+        "Almanya sınırındaki eyaletlere +3 tahkimat.",
+      ],
+      [
+        "popularFront",
+        "Toplumsal Uzlaşma",
+        "Siyaset",
+        "stability",
+        "+20 istikrar; +150 hazine.",
+      ],
+      [
+        "airModernization",
+        "Hava Kuvvetlerini Yenile",
+        "Ordu",
+        "arsenal",
+        "20 avcı; başkentte +2 uçaksavar ve hava üssü.",
+      ],
+    ],
+    uk: [
+      [
+        "chainHome",
+        "Kıyı Radar Ağı",
+        "Ordu",
+        "officers",
+        "Radar teknolojisi ve kıyılarda +1 radar.",
+      ],
+      [
+        "convoyProgram",
+        "Atlantik Konvoyları",
+        "Ordu",
+        "army",
+        "3 muhrip; limanda +2 tersane.",
+      ],
+      [
+        "royalAir",
+        "Hava Savunma Seferberliği",
+        "Ordu",
+        "arsenal",
+        "30 avcı ve 10 taktik bombardıman uçağı.",
+      ],
+    ],
+    italy: [
+      [
+        "mareNostrum",
+        "Akdeniz Donanması",
+        "Ordu",
+        "army",
+        "Limanlarda +1 tersane ve 2 kruvazör.",
+      ],
+      [
+        "alpine",
+        "Alp Savunması",
+        "Ordu",
+        "officers",
+        "Özel kuvvet teknolojisi; dağ bölgelerinde +2 tahkimat.",
+      ],
+      [
+        "autarky",
+        "Kaynak Bağımsızlığı",
+        "Sanayi",
+        "industry2",
+        "Başkentte +2 sentetik tesis ve +2 maden.",
+      ],
+    ],
+    ussr: [
+      [
+        "industrialRelocation",
+        "Sanayiyi Doğuya Taşı",
+        "Sanayi",
+        "industry2",
+        "Doğudaki iki eyalette +2 askerî fabrika.",
+      ],
+      [
+        "redArmor",
+        "Kızıl Ordu Zırhlı Reformu",
+        "Ordu",
+        "arsenal",
+        "Hafif zırh ve kara doktrini; 60 hafif tank.",
+      ],
+      [
+        "deepBattle",
+        "Derin Harekât Hazırlığı",
+        "Ordu",
+        "officers",
+        "Lojistik ve motorize teknoloji; 60 kamyon; generallere tecrübe.",
+      ],
+    ],
+  };
+  return [
+    ...common,
+    ...(national[country] ?? []).map(
+      ([id, name, branch, prerequisite, description]): Focus => ({
+        id,
+        name,
+        branch,
+        requires: [prerequisite],
+        days: 70,
+        effect: "national",
+        description,
+      }),
+    ),
+  ];
 }
 export const MISSIONS: Record<
   MissionType,
   { name: string; days: number; description: string }
 > = {
+  coup: {
+    name: "Darbe hazırlığı",
+    days: 90,
+    description:
+      "İstikrarı %40 altında, siyasi hareketinin desteği %25 üstünde olan hedefte iç savaş başlatmayı dener. İki boş ajan gerekir.",
+  },
   intel: {
     name: "Askerî ve sanayi keşfi",
     days: 28,

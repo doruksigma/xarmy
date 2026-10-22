@@ -1,3 +1,7 @@
+import { airSupport } from "./airnaval";
+import { addWarScore, openConference } from "./conference";
+import { equipmentNeeds } from "./planning";
+import { seaEdgeOpen } from "./military-assets";
 import { TERRAINS, UNITS } from "./catalog";
 import {
   addArmy,
@@ -24,10 +28,13 @@ export function routeTo(
   const previous: Record<string, string> = {};
   const seen = new Set([from]),
     queue = [from];
-  const sea = seaOpen(w, army.country);
   for (let i = 0; i < queue.length; i++)
     for (const edge of GEOGRAPHY[queue[i]].neighbors) {
-      if (seen.has(edge.id) || (edge.sea && !sea)) continue;
+      if (
+        seen.has(edge.id) ||
+        (edge.sea && !seaEdgeOpen(w, army.country, queue[i], edge.id))
+      )
+        continue;
       const controller = w.provinces[edge.id].controller;
       if (
         !friendly(w, army.country, controller) &&
@@ -75,13 +82,15 @@ export function combatPower(
         )
       : 0);
   const intel = c.intel[p.controller];
-  const air =
-    c.air.mission === "support" &&
-    c.air.target === p.controller &&
-    c.stock.fuel > 0
-      ? Math.min(0.25, c.equipment.bomber * 0.005) *
-        (c.tech.includes("airDoctrine") ? 1.2 : 1)
-      : 0;
+  const air = airSupport(w, a.country, province);
+  const plan = w.plans.find((p) => p.active && p.armies.includes(a.id));
+  const support =
+    1 +
+    (attacking && a.support.includes("artillery") ? 0.18 : 0) +
+    (!attacking && a.support.includes("engineers") ? 0.15 : 0) +
+    (attacking && a.support.includes("recon") ? 0.08 : 0) +
+    (!attacking && c.cabinet.military === "defender" ? 0.1 : 0) +
+    (attacking && plan ? plan.preparation * 0.003 : 0);
   return (
     (attacking ? d.attack : d.defense) *
     (a.strength / 100) *
@@ -89,6 +98,10 @@ export function combatPower(
     (0.35 + 0.65 * a.supply) *
     (0.6 + (0.4 * a.morale) / 100) *
     terrainFactor *
+    (a.country === w.player
+      ? { easy: 1.5, normal: 1, hard: 0.85 }[w.difficulty]
+      : 1) *
+    support *
     tech *
     (1 +
       a.experience * 0.003 +
@@ -103,7 +116,9 @@ export function combatPower(
     (d.fuel && c.stock.fuel <= 0 ? 0.4 : 1) *
     (attacking
       ? geo.river
-        ? 0.8
+        ? a.support.includes("engineers")
+          ? 0.9
+          : 0.8
         : 1
       : 1 + p.buildings.fort * 0.15 + a.entrenchment * 0.003)
   );
@@ -116,6 +131,8 @@ function casualty(w: World, a: Army, strength: number, org: number) {
   a.experience = clamp(a.experience + 0.3);
   const c = w.countries[a.country];
   c.casualties += Math.round((UNITS[a.type].men * actual) / 100);
+  if (a.support.includes("hospital"))
+    c.manpower += Math.round(((UNITS[a.type].men * actual) / 100) * 0.2);
   c.exhaustion = clamp(c.exhaustion + actual * 0.015);
   const g = c.generals.find((g) => g.id === a.general);
   if (g) {
@@ -152,43 +169,89 @@ function retreat(w: World, a: Army) {
     a.strength = 0;
   }
 }
+export function inLandContact(w: World, a: Army) {
+  const to = a.move?.to ?? a.route[0];
+  return (
+    !!to &&
+    a.move?.kind !== "paradrop" &&
+    atWar(w, a.country, w.provinces[to].controller) &&
+    GEOGRAPHY[a.province].neighbors.some((e) => e.id === to && !e.sea)
+  );
+}
 export function resolveLandDay(w: World) {
   const networks = Object.fromEntries(
     Object.keys(w.countries).map((c) => [c, supplyNetwork(w, c)]),
   );
+  const previousBattles = w.battles;
+  const engagements = w.armies.filter(
+    (a) =>
+      a.strength > 0 &&
+      (inLandContact(w, a) ||
+        (a.move &&
+          a.move.progress >= a.move.days &&
+          atWar(w, a.country, w.provinces[a.move.to].controller))),
+  );
+  const engagedIds = new Set(engagements.map((a) => a.id));
+  const attacked = new Map<string, Set<string>>();
+  for (const a of engagements) {
+    const to = a.move?.to ?? a.route[0];
+    if (!attacked.has(to)) attacked.set(to, new Set());
+    attacked.get(to)!.add(a.country);
+  }
   w.battles = [];
   for (const a of w.armies) {
+    if (a.strength <= 0) continue;
+    const engaged =
+      engagedIds.has(a.id) ||
+      [...(attacked.get(a.province) ?? [])].some((id) =>
+        atWar(w, id, a.country),
+      );
     const c = w.countries[a.country],
       d = UNITS[a.type];
     const general = c.generals.find((g) => g.id === a.general);
     a.supply = clamp(
       localSupply(w, a.country, a.province, networks[a.country]) *
-        (general?.trait === "logistics" ? 1.15 : 1),
+        (general?.trait === "logistics" ? 1.15 : 1) *
+        (a.support.includes("logistics") ? 1.2 : 1) *
+        (c.cabinet.military === "quartermaster" ? 1.1 : 1),
       0,
       1,
     );
     if (a.supply < 0.25) {
       casualty(w, a, 0.25, 2);
       a.move && (a.move.progress = Math.max(0, a.move.progress - 0.1));
-    } else {
+    } else if (!engaged) {
       a.organization = clamp(a.organization + (a.move ? 1 : 3) * a.supply);
       a.morale = clamp(a.morale + 0.5 * a.supply);
-      if (a.strength < 100 && c.manpower > 0 && c.equipment.rifle > 0) {
-        const men = Math.min(
-          c.manpower,
-          d.men * 0.004,
-          ((100 - a.strength) / 100) * d.men,
-          c.equipment.rifle * 100,
+      if (a.strength < 100 && c.manpower > 0) {
+        const needs = equipmentNeeds(a);
+        let fraction = Math.min(
+          0.004 * a.supply,
+          (100 - a.strength) / 100,
+          c.manpower / d.men,
         );
-        c.manpower = Math.max(0, c.manpower - men);
-        c.equipment.rifle = Math.max(0, c.equipment.rifle - men / 100);
-        a.strength += (100 * men) / d.men;
+        for (const [key, count] of Object.entries(needs))
+          fraction = Math.min(
+            fraction,
+            c.equipment[key as keyof typeof c.equipment] / count,
+          );
+        fraction = Math.max(0, fraction);
+        c.manpower = Math.max(0, c.manpower - d.men * fraction);
+        for (const [key, count] of Object.entries(needs))
+          c.equipment[key as keyof typeof c.equipment] = Math.max(
+            0,
+            c.equipment[key as keyof typeof c.equipment] - count * fraction,
+          );
+        a.strength = clamp(a.strength + fraction * 100);
       }
     }
     if (d.fuel && a.move)
       c.stock.fuel = Math.max(
         0,
-        c.stock.fuel - d.fuel * (c.tech.includes("engines") ? 0.85 : 1),
+        c.stock.fuel -
+          d.fuel *
+            (c.tech.includes("engines") ? 0.85 : 1) *
+            (a.support.includes("logistics") ? 0.8 : 1),
       );
     if (!a.move && a.route.length) {
       const next = a.route[0],
@@ -197,7 +260,7 @@ export function resolveLandDay(w: World) {
         !edge ||
         (!friendly(w, a.country, w.provinces[next].controller) &&
           !atWar(w, a.country, w.provinces[next].controller)) ||
-        (edge.sea && !seaOpen(w, a.country))
+        (edge.sea && !seaEdgeOpen(w, a.country, a.province, next))
       )
         a.route = [];
       else {
@@ -212,6 +275,7 @@ export function resolveLandDay(w: World) {
           days:
             Math.max(2, distance / 18) /
             (d.speed *
+              (a.support.includes("recon") ? 1.1 : 1) *
               TERRAINS[GEOGRAPHY[next].terrain].speed *
               (edge.sea ? 0.5 : 1) *
               (d.fuel && c.tech.includes("engines") ? 1.2 : 1)),
@@ -227,7 +291,9 @@ export function resolveLandDay(w: World) {
       if (
         (!friendly(w, a.country, controller) &&
           !atWar(w, a.country, controller)) ||
-        (seaEdge && !seaOpen(w, a.country))
+        (a.move.kind !== "paradrop" &&
+          seaEdge &&
+          !seaEdgeOpen(w, a.country, a.province, a.move.to))
       ) {
         a.move = null;
         a.route = [];
@@ -240,7 +306,10 @@ export function resolveLandDay(w: World) {
   // Apply casualties to the same world transaction; simultaneous battles cannot overwrite each other.
   const groups = new Map<string, Army[]>();
   for (const a of w.armies.filter(
-    (a) => a.strength > 0 && a.move && a.move.progress >= a.move.days,
+    (a) =>
+      a.strength > 0 &&
+      a.move &&
+      (a.move.progress >= a.move.days || inLandContact(w, a)),
   )) {
     const to = a.move!.to;
     if (!atWar(w, a.country, w.provinces[to].controller)) {
@@ -274,12 +343,16 @@ export function resolveLandDay(w: World) {
         province: to,
         attacker: first.country,
         defender,
-        started: w.day,
+        started:
+          previousBattles.find((b) => b.id === `${first.country}:${to}`)
+            ?.started ?? w.day,
         attack,
         defense,
       });
       const attackLoss = clamp((defense / Math.max(1, attack)) * 1.3, 0.15, 6),
         defenseLoss = clamp((attack / Math.max(1, defense)) * 1.5, 0.15, 7);
+      addWarScore(w, first.country, defender, defenseLoss * defenders.length);
+      addWarScore(w, defender, first.country, attackLoss * attackers.length);
       attackers.forEach((a) => casualty(w, a, attackLoss, attackLoss * 2.8));
       defenders.forEach((a) => casualty(w, a, defenseLoss, defenseLoss * 3));
       for (const a of attackers)
@@ -297,14 +370,17 @@ export function resolveLandDay(w: World) {
           a.strength > 0 &&
           atWar(w, first.country, a.country),
       ) &&
-      attackers.some((a) => a.move && a.strength > 15)
+      attackers.some(
+        (a) => a.move && a.move.progress >= a.move.days && a.strength > 15,
+      )
     ) {
+      addWarScore(w, first.country, defender, GEOGRAPHY[to].vp * 2);
       p.controller = first.country;
       p.resistance = p.owner === first.country ? 0 : 20;
       p.compliance = 0;
       p.damage = clamp(p.damage + 10);
       for (const a of attackers)
-        if (a.move && a.strength > 0) {
+        if (a.move && a.move.progress >= a.move.days && a.strength > 0) {
           a.province = to;
           a.move = null;
         }
@@ -337,6 +413,7 @@ export function resolveLandDay(w: World) {
           p.controller = victor;
           p.resistance = 25;
         }
+      openConference(w, c.id);
       event(
         w,
         `${c.name} teslim oldu. ${w.countries[victor].name} barış koşullarını belirleyebilir.`,

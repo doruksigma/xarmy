@@ -14,7 +14,7 @@ import {
   type SaveSlot,
 } from "./strategy/storage";
 import { useOfflinePack } from "./strategy/useOfflinePack";
-import type { Action, World } from "./strategy/types";
+import type { Action, OffensivePlan, World } from "./strategy/types";
 import styles from "./europa.module.css";
 
 function Saves({
@@ -118,19 +118,25 @@ export default function EuropaWarClient() {
   const [world, setWorld] = useState<World | null>(null),
     [setup, setSetup] = useState(true),
     [choice, setChoice] = useState("turkey"),
-    [scenario, setScenario] = useState<World["mode"]>("historical");
+    [scenario, setScenario] = useState<World["mode"]>("historical"),
+    [difficulty, setDifficulty] = useState<World["difficulty"]>("easy");
   const [paused, setPaused] = useState(true),
     [speed, setSpeed] = useState(1),
-    [tab, setTab] = useState<Tab>("province"),
+    [tab, setTab] = useState<Tab>("command"),
     [selected, setSelected] = useState("turkey-0"),
     [armyId, setArmyId] = useState<string | null>(null),
     [target, setTarget] = useState("germany");
   const [mode, setMode] = useState<MapMode>("political"),
-    [order, setOrder] = useState<"move" | "paradrop" | "front" | null>(null),
+    [order, setOrder] = useState<
+      "move" | "paradrop" | "front" | "offensive" | null
+    >(null),
     [message, setMessage] = useState(""),
     [panel, setPanel] = useState(true),
     [log, setLog] = useState(false),
     [saved, setSaved] = useState<ReturnType<typeof listSaves>>([]);
+  const [attackArmies, setAttackArmies] = useState<string[]>([]),
+    [attackStance, setAttackStance] =
+      useState<OffensivePlan["stance"]>("balanced");
   const [frontPoints, setFrontPoints] = useState<string[]>([]);
   const offline = useOfflinePack();
   const current = useRef(world),
@@ -138,8 +144,8 @@ export default function EuropaWarClient() {
     lastHiddenSave = useRef(-1);
   current.current = world;
   const preview = useMemo(
-    () => createWorld(choice, scenario),
-    [choice, scenario],
+    () => createWorld(choice, scenario, 1936, difficulty),
+    [choice, scenario, difficulty],
   );
   const shown = world && !setup ? world : preview,
     c = shown.countries[shown.player],
@@ -209,24 +215,39 @@ export default function EuropaWarClient() {
     setArmyId(null);
     setOrder(null);
     setTarget(Object.keys(w.countries).find((id) => id !== w.player)!);
-    setTab("province");
+    setTab("command");
     lastAuto.current = w.day;
   }
   function start() {
-    restore(createWorld(choice, scenario, Math.floor(Date.now() % 4294967296)));
+    restore(
+      createWorld(
+        choice,
+        scenario,
+        Math.floor(Date.now() % 4294967296),
+        difficulty,
+      ),
+    );
     say(
-      "Sefer hazır. Önce bir araştırma ve ulusal odak seç; ardından zamanı başlat.",
+      "Sefer hazır. Komuta merkezi önceliklerini gösteriyor. Planını seç, sonra ▶ ile zamanı ilerlet.",
     );
   }
   function command(a: Action) {
     const w = current.current;
-    if (!w) return;
+    if (!w) return false;
     const result = applyAction(w, a);
-    if (result.error) say(result.error);
-    else {
+    if (result.error) {
+      say(result.error);
+      setPanel(true);
+      return false;
+    } else {
       setWorld(result.world);
       current.current = result.world;
-      setMessage("Emir uygulandı.");
+      setMessage(
+        paused && ["move", "paradrop", "plan"].includes(a.type)
+          ? "Emir hazır. Zaman duraklatıldı; ▶ ile ilerlettiğinde birlikler harekete geçer."
+          : "Emir uygulandı.",
+      );
+      return true;
     }
   }
   function onArmy(id: string) {
@@ -243,7 +264,7 @@ export default function EuropaWarClient() {
       setSelected(id);
       return;
     }
-    if (order === "front") {
+    if (order === "front" || order === "offensive") {
       setFrontPoints((points) =>
         points.includes(id)
           ? points.slice(0, points.indexOf(id) + 1)
@@ -252,13 +273,13 @@ export default function EuropaWarClient() {
       setSelected(id);
       return;
     }
-    if (order && armyId) {
-      command(
+    if ((order === "move" || order === "paradrop") && armyId) {
+      const accepted = command(
         order === "move"
           ? { type: "move", army: armyId, to: id, append }
           : { type: "paradrop", army: armyId, to: id },
       );
-      setOrder(null);
+      if (accepted) setOrder(null);
       setSelected(id);
       return;
     }
@@ -268,7 +289,7 @@ export default function EuropaWarClient() {
     const country = shown.provinces[id].controller;
     if (country !== shown.player) setTarget(country);
   }
-  function beginOrder(value: "move" | "paradrop" | "front") {
+  function beginOrder(value: "move" | "paradrop" | "front" | "offensive") {
     setOrder(value);
     setFrontPoints([]);
     if (window.matchMedia("(max-width:700px)").matches) setPanel(false);
@@ -411,6 +432,8 @@ export default function EuropaWarClient() {
                 <option value="military">Askerî</option>
                 <option value="terrain">Arazi</option>
                 <option value="supply">İkmal</option>
+                <option value="air">Hava harekâtı</option>
+                <option value="naval">Deniz harekâtı</option>
               </select>
             </label>
           </div>
@@ -426,26 +449,41 @@ export default function EuropaWarClient() {
           />
           {order && (
             <div className={styles.orderBanner}>
-              {order === "front"
-                ? `${frontPoints.length} eyalet · Komşu bölgeleri sırayla seç.`
+              {order === "front" || order === "offensive"
+                ? `${frontPoints.length} eyalet · ${order === "front" ? "Komşu savunma bölgelerini" : "Düşman hedeflerini"} sırayla seç.`
                 : "Haritada hedef eyalete tıkla."}
-              {order === "front" && (
+              {(order === "front" || order === "offensive") && (
                 <button
-                  disabled={frontPoints.length < 2}
+                  disabled={
+                    frontPoints.length < (order === "offensive" ? 1 : 2)
+                  }
                   onClick={() => {
-                    command({
-                      type: "front",
-                      provinces: frontPoints,
-                      armies: shown.armies
-                        .filter((a) => a.country === c.id)
-                        .map((a) => a.id),
-                    });
-                    setOrder(null);
-                    setFrontPoints([]);
-                    setPanel(true);
+                    const success = command(
+                      order === "offensive"
+                        ? {
+                            type: "offensive",
+                            armies: attackArmies,
+                            objectives: frontPoints,
+                            stance: attackStance,
+                          }
+                        : {
+                            type: "front",
+                            provinces: frontPoints,
+                            armies: shown.armies
+                              .filter((a) => a.country === c.id)
+                              .map((a) => a.id),
+                          },
+                    );
+                    if (success) {
+                      setOrder(null);
+                      setFrontPoints([]);
+                      setPanel(true);
+                    }
                   }}
                 >
-                  Hattı kaydet ve dağıt
+                  {order === "offensive"
+                    ? "Taarruz planını hazırla"
+                    : "Hattı kaydet ve dağıt"}
                 </button>
               )}
               <button
@@ -535,6 +573,12 @@ export default function EuropaWarClient() {
                   onOrder={() => beginOrder("move")}
                   onParadrop={() => beginOrder("paradrop")}
                   onFront={() => beginOrder("front")}
+                  onTab={setTab}
+                  onOffensive={(armies, stance) => {
+                    setAttackArmies(armies);
+                    setAttackStance(stance);
+                    beginOrder("offensive");
+                  }}
                 />
               )}
               {!setup && (
@@ -639,6 +683,24 @@ export default function EuropaWarClient() {
                 </small>
               </button>
             </div>
+            <label className={styles.field}>
+              Zorluk
+              <select
+                aria-label="Sefer zorluğu"
+                value={difficulty}
+                onChange={(e) =>
+                  setDifficulty(e.target.value as World["difficulty"])
+                }
+              >
+                <option value="easy">Kolay · ilk sefer için önerilir</option>
+                <option value="normal">Normal · eşit koşullar</option>
+                <option value="hard">Zor · deneyimli komutan</option>
+              </select>
+              <small>
+                Kolayda birliklerin daha güçlü, rakiplerin daha temkinli. Sefer
+                sırasında da değiştirebilirsin.
+              </small>
+            </label>
             <button className={styles.launch} onClick={start}>
               SEFERİ BAŞLAT <span>→</span>
             </button>

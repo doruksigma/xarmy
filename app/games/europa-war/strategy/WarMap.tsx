@@ -1,11 +1,155 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { PointerEvent as ReactPointerEvent } from "react";
 import { TERRAINS, UNITS } from "./catalog";
+import { AIRCRAFT, AIR_MISSIONS, SEA_ZONES } from "./advanced-catalog";
+import { seaControl } from "./military-assets";
 import { GEOGRAPHY, localSupply, MAP, supplyNetwork } from "./world";
-import type { World } from "./types";
+import type { SeaZone, World } from "./types";
 import styles from "../europa.module.css";
+import atlas from "./map.module.css";
 
-export type MapMode = "political" | "terrain" | "military" | "supply";
+export type MapMode =
+  | "political"
+  | "terrain"
+  | "military"
+  | "supply"
+  | "air"
+  | "naval";
+const MODE_NAMES: Record<MapMode, string> = {
+  political: "Siyasi harita",
+  terrain: "Arazi ve coğrafya",
+  military: "Kara harekâtı",
+  supply: "İkmal ağı",
+  air: "Hava harekâtı",
+  naval: "Deniz harekâtı",
+};
+const URBAN_PLACES = MAP.provinces.map((p) => ({
+  id: p.id,
+  name: p.name,
+  province: p.id,
+  x: p.x,
+  y: p.y,
+}));
+const searchName = (s: string) =>
+  s
+    .toLocaleLowerCase("tr-TR")
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .replace(/ı/g, "i");
+type Camera = { x: number; y: number; w: number; h: number };
+type PointerPosition = { x: number; y: number };
+const fitCamera = (ratio: number): Camera => {
+  const w = Math.max(MAP.width, MAP.height * ratio),
+    h = w / ratio;
+  return { x: (MAP.width - w) / 2, y: (MAP.height - h) / 2, w, h };
+};
+const constrainCamera = (view: Camera): Camera => {
+  const constrain = (position: number, size: number, extent: number) => {
+    const margin = Math.min(80, size * 0.12);
+    if (size >= extent + margin * 2) return (extent - size) / 2;
+    return Math.max(-margin, Math.min(extent - size + margin, position));
+  };
+  return {
+    ...view,
+    x: constrain(view.x, view.w, MAP.width),
+    y: constrain(view.y, view.h, MAP.height),
+  };
+};
+const zoomWidth = (width: number, ratio: number) =>
+  Math.max(Math.min(260, 260 * ratio), Math.min(fitCamera(ratio).w, width));
+const TINY_COUNTRIES = new Set([
+  "luxembourg",
+  "belgium",
+  "netherlands",
+  "albania",
+  "estonia",
+  "latvia",
+  "lithuania",
+  "switzerland",
+  "denmark",
+]);
+const links = MAP.provinces.flatMap((p) =>
+  p.neighbors
+    .filter((n) => !n.sea && p.id < n.id)
+    .map((n) => ({ a: p, b: GEOGRAPHY[n.id] })),
+);
+const pointList = (ids: string[]) =>
+  ids
+    .filter((id) => GEOGRAPHY[id])
+    .map((id) => `${GEOGRAPHY[id].x},${GEOGRAPHY[id].y}`)
+    .join(" ");
+const curvedPath = (ax: number, ay: number, bx: number, by: number) =>
+  `M${ax} ${ay} Q${(ax + bx) / 2 + (by - ay) * 0.12} ${(ay + by) / 2 - (bx - ax) * 0.12} ${bx} ${by}`;
+function TerrainTexture({
+  terrain,
+  id,
+  path,
+  x,
+  y,
+}: {
+  terrain: string;
+  id: string;
+  path: string;
+  x: number;
+  y: number;
+}) {
+  return (
+    <g pointerEvents="none" clipPath={`url(#province-clip-${id})`}>
+      <path d={path} fill={`url(#texture-${terrain})`} />
+      {terrain === "mountain" && (
+        <g transform={`translate(${x - 65} ${y - 55}) rotate(-15 60 60)`}>
+          {[0, 1, 2, 3].map((n) => (
+            <g key={n} transform={`translate(${n * 26} ${(n % 2) * 16})`}>
+              <path
+                d="M-12 100 Q2 48 28 0 Q30 27 68 96Z"
+                fill="url(#mountain-relief)"
+              />
+              <path
+                d="M28 0Q22 31 13 46M28 0Q38 35 48 49M21 26L26 27 29 18 34 30"
+                fill="none"
+                stroke="#f8eed1"
+                strokeWidth="1.1"
+                opacity=".35"
+              />
+              {[28, 44, 60, 76].map((h) => (
+                <path
+                  key={h}
+                  d={`M${22 - h * 0.25} ${h}Q23 ${h - 10} ${32 + h * 0.3} ${h + 4}`}
+                  fill="none"
+                  stroke="#372f25"
+                  strokeWidth=".6"
+                  opacity=".16"
+                />
+              ))}
+            </g>
+          ))}
+        </g>
+      )}
+      {terrain === "urban" && (
+        <g
+          transform={`translate(${x - 18} ${y - 15}) rotate(-14 18 15)`}
+          opacity=".3"
+        >
+          {Array.from({ length: 16 }, (_, i) => (
+            <rect
+              key={i}
+              x={(i % 4) * 10}
+              y={Math.floor(i / 4) * 9}
+              width={5 + (i % 3)}
+              height={4 + (i % 2)}
+              fill="#4a483c"
+              stroke="#eadbbe"
+              strokeWidth=".5"
+            />
+          ))}
+        </g>
+      )}
+      <path d={path} fill="url(#land-light)" opacity=".32" />
+    </g>
+  );
+}
+
 export default function WarMap({
   world,
   selected,
@@ -26,60 +170,257 @@ export default function WarMap({
   draft?: string[];
 }) {
   const svg = useRef<SVGSVGElement>(null),
-    drag = useRef({ id: -1, x: 0, y: 0, vx: 0, vy: 0, moved: false });
-  const [view, setView] = useState({ x: 0, y: 0, w: 1320, h: 880 });
-  const [hover, setHover] = useState("");
+    drag = useRef({ id: -1, x: 0, y: 0, vx: 0, vy: 0, scale: 1, moved: false }),
+    pointers = useRef(new Map<number, PointerPosition>()),
+    pinch = useRef<{
+      distance: number;
+      view: Camera;
+      anchor: PointerPosition;
+    } | null>(null);
+  const [view, setView] = useState<Camera>(() =>
+    fitCamera(MAP.width / MAP.height),
+  );
+  const [search, setSearch] = useState("");
+  const [viewportWidth, setViewportWidth] = useState(1000);
+  const [hover, setHover] = useState(""),
+    [wingId, setWingId] = useState<string | null>(null),
+    [seaZone, setSeaZone] = useState<SeaZone | null>(null);
+  const player = world.countries[world.player];
+  const capitalRef = useRef(player.capital);
+  capitalRef.current = player.capital;
+  const counterScale = Math.max(0.22, Math.min(1.6, view.w / viewportWidth));
   const network = useMemo(() => supplyNetwork(world, world.player), [world]);
   const selectedArmy = world.armies.find((a) => a.id === armyId);
+  const detailed = view.w < 1000,
+    close = view.w < 650;
+  const visible = (id: string) =>
+    id === world.player ||
+    player.allies.includes(id) ||
+    player.intel[id]?.expires > world.day;
   const formations = useMemo(() => {
     const out = new Map<string, typeof world.armies>();
     for (const a of world.armies) {
-      const visible =
+      const known =
         a.country === world.player ||
-        world.countries[world.player].allies.includes(a.country) ||
-        world.countries[world.player].intel[a.country]?.expires > world.day ||
+        player.allies.includes(a.country) ||
+        player.intel[a.country]?.expires > world.day ||
         world.battles.some((b) => b.province === a.province) ||
         GEOGRAPHY[a.province].neighbors.some(
           (n) => world.provinces[n.id].controller === world.player,
         );
-      if (!visible) continue;
+      if (!known) continue;
       const key = `${a.province}:${a.country}`;
       out.set(key, [...(out.get(key) ?? []), a]);
     }
     return [...out.values()];
-  }, [world]);
-  function zoom(factor: number, fx = 0.5, fy = 0.5, point?: DOMPoint) {
+  }, [world, player]);
+  const countryLabels = useMemo(
+    () =>
+      Object.values(world.countries)
+        .map((c) => {
+          const lands = MAP.provinces.filter(
+            (p) => world.provinces[p.id].controller === c.id,
+          );
+          if (!lands.length) return null;
+          const x = lands.reduce((n, p) => n + p.x, 0) / lands.length;
+          const y = lands.reduce((n, p) => n + p.y, 0) / lands.length;
+          const anchor = lands.reduce(
+            (best, p) =>
+              Math.hypot(p.x - x, p.y - y) < Math.hypot(best.x - x, best.y - y)
+                ? p
+                : best,
+            lands[0],
+          );
+          return {
+            country: c,
+            lands: lands.length,
+            x: anchor.x + (c.id === "uk" ? 22 : c.id === "ireland" ? -12 : 0),
+            y: anchor.y - (detailed ? 25 : 19) + (c.id === "ireland" ? 17 : 0),
+          };
+        })
+        .filter((x) => x !== null),
+    [world, detailed],
+  );
+  const cityLabels = useMemo(() => {
+    // Every city is a selectable territory. Prioritize its name when selected,
+    // then capitals and victory points; zoom reveals the smaller settlements.
+    type Box = { x: number; y: number; w: number; h: number };
+    const boxes: Box[] = [];
+    for (const l of countryLabels)
+      boxes.push({
+        x: l.x - l.country.name.length * 3.5,
+        y: l.y - 9,
+        w: l.country.name.length * 7,
+        h: 12,
+      });
+    for (const f of formations) {
+      const p = GEOGRAPHY[f[0].province];
+      boxes.push({
+        x: p.x - 14 * counterScale,
+        y: p.y + 3 * counterScale,
+        w: 39 * counterScale,
+        h: 25 * counterScale,
+      });
+    }
+    const placed = new Map<string, { x: number; y: number; end: boolean }>();
+    const size = 11 * counterScale;
+    const overlap = (b: Box) =>
+      boxes.some(
+        (a) =>
+          a.x < b.x + b.w &&
+          a.x + a.w > b.x &&
+          a.y < b.y + b.h &&
+          a.y + a.h > b.y,
+      );
+    for (const p of [...MAP.provinces].sort(
+      (a, b) =>
+        Number(b.id === selected) - Number(a.id === selected) ||
+        Number(
+          world.countries[world.provinces[b.id].controller].capital === b.id,
+        ) -
+          Number(
+            world.countries[world.provinces[a.id].controller].capital === a.id,
+          ) ||
+        b.vp - a.vp,
+    )) {
+      const capital =
+        world.countries[world.provinces[p.id].controller].capital === p.id;
+      if (
+        p.x < view.x - 20 ||
+        p.x > view.x + view.w + 20 ||
+        p.y < view.y - 20 ||
+        p.y > view.y + view.h + 20 ||
+        (!detailed && p.id !== selected && !(capital && mode === "air"))
+      )
+        continue;
+      const width = p.name.length * size * 0.57 + 3 * counterScale;
+      const candidates = [
+        { x: p.x + 7 * counterScale, y: p.y - 5 * counterScale, end: false },
+        { x: p.x - 7 * counterScale, y: p.y - 5 * counterScale, end: true },
+        { x: p.x + 7 * counterScale, y: p.y + 14 * counterScale, end: false },
+      ];
+      for (const label of candidates) {
+        const box = {
+          x: label.end ? label.x - width : label.x,
+          y: label.y - size,
+          w: width,
+          h: size + 3 * counterScale,
+        };
+        if (overlap(box) && p.id !== selected) continue;
+        boxes.push(box);
+        placed.set(p.id, label);
+        break;
+      }
+    }
+    return placed;
+  }, [
+    countryLabels,
+    formations,
+    counterScale,
+    selected,
+    view,
+    detailed,
+    mode,
+    world,
+  ]);
+  const selectedWing = Object.values(world.countries)
+    .filter((country) => visible(country.id))
+    .flatMap((country) => country.air.wings.map((wing) => ({ wing, country })))
+    .find(({ wing }) => wing.id === wingId);
+  function zoom(factor: number, point?: DOMPoint) {
     setView((v) => {
-      const w = Math.max(260, Math.min(1800, v.w * factor)),
-        h = (w * 2) / 3;
-      return {
-        x: point ? point.x - ((point.x - v.x) * w) / v.w : v.x + (v.w - w) * fx,
-        y: point ? point.y - ((point.y - v.y) * h) / v.h : v.y + (v.h - h) * fy,
+      const w = zoomWidth(v.w * factor, v.w / v.h),
+        h = (w * v.h) / v.w;
+      return constrainCamera({
+        x: point ? point.x - ((point.x - v.x) * w) / v.w : v.x + (v.w - w) / 2,
+        y: point ? point.y - ((point.y - v.y) * h) / v.h : v.y + (v.h - h) / 2,
         w,
         h,
-      };
+      });
     });
   }
   useEffect(() => {
     const el = svg.current;
     if (!el) return;
+    let initialized = false;
+    const observer = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect;
+      if (!width || !height) return;
+      setViewportWidth(width);
+      const ratio = width / height,
+        initial = !initialized;
+      initialized = true;
+      setView((v) => {
+        if (initial || Math.abs(v.w - fitCamera(v.w / v.h).w) < 1) {
+          if (ratio < 0.75) {
+            const p = GEOGRAPHY[capitalRef.current],
+              w = 520 * ratio,
+              h = 520;
+            return constrainCamera({ x: p.x - w / 2, y: p.y - h / 2, w, h });
+          }
+          return fitCamera(ratio);
+        }
+        const w = zoomWidth(v.h * ratio, ratio),
+          h = w / ratio;
+        return constrainCamera({
+          x: v.x + (v.w - w) / 2,
+          y: v.y + (v.h - h) / 2,
+          w,
+          h,
+        });
+      });
+    });
+    observer.observe(el);
     const wheel = (e: WheelEvent) => {
       e.preventDefault();
       const matrix = el.getScreenCTM();
       if (matrix)
         zoom(
-          e.deltaY > 0 ? 1.12 : 0.89,
-          0.5,
-          0.5,
+          Math.exp(
+            Math.max(
+              -0.3,
+              Math.min(0.3, e.deltaY * (e.deltaMode === 1 ? 0.035 : 0.0018)),
+            ),
+          ),
           new DOMPoint(e.clientX, e.clientY).matrixTransform(matrix.inverse()),
         );
     };
     el.addEventListener("wheel", wheel, { passive: false });
-    return () => el.removeEventListener("wheel", wheel);
+    return () => {
+      observer.disconnect();
+      el.removeEventListener("wheel", wheel);
+    };
   }, []);
   function focusPlayer() {
-    const p = GEOGRAPHY[world.countries[world.player].capital];
-    setView({ x: p.x - 350, y: p.y - 235, w: 700, h: 466.67 });
+    const p = GEOGRAPHY[player.capital];
+    setView((v) => {
+      const ratio = v.w / v.h,
+        w = Math.min(700, 470 * ratio),
+        h = w / ratio;
+      return constrainCamera({ x: p.x - w / 2, y: p.y - h / 2, w, h });
+    });
+  }
+  function resetView() {
+    setView((v) => fitCamera(v.w / v.h));
+  }
+  function endPointer(e: ReactPointerEvent<SVGSVGElement>) {
+    pointers.current.delete(e.pointerId);
+    pinch.current = null;
+    const next = pointers.current.entries().next().value;
+    if (next) {
+      const [id, point] = next;
+      drag.current = {
+        id,
+        x: point.x,
+        y: point.y,
+        vx: view.x,
+        vy: view.y,
+        scale: view.w / e.currentTarget.getBoundingClientRect().width,
+        moved: true,
+      };
+    } else drag.current.id = -1;
+    if (e.currentTarget.hasPointerCapture(e.pointerId))
+      e.currentTarget.releasePointerCapture(e.pointerId);
   }
   const route = selectedArmy
     ? [
@@ -88,74 +429,291 @@ export default function WarMap({
         ...selectedArmy.route,
       ]
     : [];
+  const hovered = hover && world.provinces[hover] ? GEOGRAPHY[hover] : null;
+  const infoProvince = hovered ? world.provinces[hover] : null;
+  const friendlyPlans = world.plans.filter((p) => p.country === world.player);
   return (
-    <div className={`${styles.map} ${ordering ? styles.ordering : ""}`}>
+    <div
+      className={`${styles.map} ${atlas.atlas} ${ordering ? styles.ordering : ""}`}
+    >
       <svg
         ref={svg}
+        className={atlas.canvas}
         viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`}
-        preserveAspectRatio="xMidYMid slice"
-        aria-label="Avrupa strateji haritası"
+        preserveAspectRatio="xMidYMid meet"
+        aria-label="Avrupa strateji haritası. Ok tuşlarıyla gezin, artı ve eksi ile yakınlaştırın, Home ile tüm haritayı gösterin."
+        tabIndex={0}
         data-testid="war-map"
+        onKeyDown={(e) => {
+          if (e.target !== e.currentTarget) return;
+          if (
+            ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)
+          ) {
+            e.preventDefault();
+            const key = e.key;
+            setView((v) =>
+              constrainCamera({
+                ...v,
+                x:
+                  v.x +
+                  (key === "ArrowLeft"
+                    ? -v.w * 0.12
+                    : key === "ArrowRight"
+                      ? v.w * 0.12
+                      : 0),
+                y:
+                  v.y +
+                  (key === "ArrowUp"
+                    ? -v.h * 0.12
+                    : key === "ArrowDown"
+                      ? v.h * 0.12
+                      : 0),
+              }),
+            );
+          } else if (["+", "=", "-", "Home"].includes(e.key)) {
+            e.preventDefault();
+            if (e.key === "Home") resetView();
+            else zoom(e.key === "-" ? 1.25 : 0.8);
+          }
+        }}
         onPointerDown={(e) => {
           if (e.button !== 0) return;
-          drag.current = {
-            id: e.pointerId,
-            x: e.clientX,
-            y: e.clientY,
-            vx: view.x,
-            vy: view.y,
-            moved: false,
-          };
+          pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+          if (pointers.current.size === 2) {
+            const [a, b] = [...pointers.current.values()],
+              matrix = e.currentTarget.getScreenCTM();
+            if (!matrix) return;
+            const anchor = new DOMPoint(
+              (a.x + b.x) / 2,
+              (a.y + b.y) / 2,
+            ).matrixTransform(matrix.inverse());
+            pinch.current = {
+              distance: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)),
+              view,
+              anchor,
+            };
+            drag.current.moved = true;
+            setHover("");
+            for (const id of pointers.current.keys())
+              e.currentTarget.setPointerCapture(id);
+          } else if (pointers.current.size === 1) {
+            drag.current = {
+              id: e.pointerId,
+              x: e.clientX,
+              y: e.clientY,
+              vx: view.x,
+              vy: view.y,
+              scale: view.w / e.currentTarget.getBoundingClientRect().width,
+              moved: false,
+            };
+          }
         }}
         onPointerMove={(e) => {
+          if (!pointers.current.has(e.pointerId)) return;
+          pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+          const gesture = pinch.current;
+          if (gesture && pointers.current.size >= 2) {
+            const [a, b] = [...pointers.current.values()],
+              rect = e.currentTarget.getBoundingClientRect();
+            const w = zoomWidth(
+              (gesture.view.w * gesture.distance) /
+                Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)),
+              gesture.view.w / gesture.view.h,
+            );
+            const h = (w * gesture.view.h) / gesture.view.w;
+            setView(
+              constrainCamera({
+                x:
+                  gesture.anchor.x -
+                  (((a.x + b.x) / 2 - rect.left) / rect.width) * w,
+                y:
+                  gesture.anchor.y -
+                  (((a.y + b.y) / 2 - rect.top) / rect.height) * h,
+                w,
+                h,
+              }),
+            );
+            return;
+          }
           const d = drag.current;
           if (d.id !== e.pointerId) return;
           const dx = e.clientX - d.x,
             dy = e.clientY - d.y;
-          if (Math.hypot(dx, dy) > 5) {
+          if (d.moved || Math.hypot(dx, dy) > 5) {
             d.moved = true;
-            svg.current?.setPointerCapture(e.pointerId);
-            const rect = e.currentTarget.getBoundingClientRect();
-            const scale = Math.min(view.w / rect.width, view.h / rect.height);
-            setView((v) => ({
-              ...v,
-              x: Math.max(-500, Math.min(1450, d.vx - dx * scale)),
-              y: Math.max(-350, Math.min(950, d.vy - dy * scale)),
-            }));
+            setHover("");
+            e.currentTarget.setPointerCapture(e.pointerId);
+            setView((v) =>
+              constrainCamera({
+                ...v,
+                x: d.vx - dx * d.scale,
+                y: d.vy - dy * d.scale,
+              }),
+            );
           }
         }}
-        onPointerUp={(e) => {
-          drag.current.id = -1;
-          if (e.currentTarget.hasPointerCapture(e.pointerId))
-            e.currentTarget.releasePointerCapture(e.pointerId);
-        }}
-        onPointerCancel={() => {
-          drag.current.id = -1;
-        }}
+        onPointerUp={endPointer}
+        onPointerCancel={endPointer}
       >
         <defs>
+          <radialGradient id="sea-glow">
+            <stop stopColor="#476268" />
+            <stop offset=".65" stopColor="#233f48" />
+            <stop offset="1" stopColor="#10262e" />
+          </radialGradient>
+          <linearGradient id="land-light" x1="0" y1="0" x2="1" y2="1">
+            <stop stopColor="#fcf0cf" stopOpacity=".5" />
+            <stop offset=".5" stopColor="#e8dab4" stopOpacity="0" />
+            <stop offset="1" stopColor="#17271c" stopOpacity=".5" />
+          </linearGradient>
+          <linearGradient id="mountain-relief" x1="0" y1="0" x2="1" y2=".5">
+            <stop stopColor="#eadfbd" stopOpacity=".4" />
+            <stop offset=".47" stopColor="#e4d7b2" stopOpacity=".36" />
+            <stop offset=".51" stopColor="#262d23" stopOpacity=".4" />
+            <stop offset="1" stopColor="#343b29" stopOpacity="0" />
+          </linearGradient>
           <pattern
             id="sea-grid"
-            width="60"
-            height="60"
+            width="80"
+            height="80"
             patternUnits="userSpaceOnUse"
           >
             <path
-              d="M60 0H0V60"
+              d="M80 0H0V80"
               fill="none"
-              stroke="#abc5be"
-              strokeWidth=".3"
+              stroke="#b2c7bf"
+              strokeWidth=".5"
               opacity=".12"
+            />
+            <path d="M39 40H41M40 39V41" stroke="#bbd0c9" opacity=".35" />
+          </pattern>
+          <pattern
+            id="sea-lines"
+            width="190"
+            height="150"
+            patternUnits="userSpaceOnUse"
+          >
+            <path
+              d="M-20 35Q50 5 120 40T230 40M-20 41Q50 11 120 46T230 46M-20 47Q50 17 120 52T230 52M-25 120Q50 85 120 112T230 112M-25 126Q50 91 120 118T230 118"
+              stroke="#89a6a2"
+              strokeWidth=".5"
+              fill="none"
+              opacity=".08"
+            />
+          </pattern>
+          <pattern
+            id="paper-grain"
+            width="19"
+            height="17"
+            patternUnits="userSpaceOnUse"
+          >
+            <path
+              d="M2 3h1m8 3h1M5 14h1M17 12h1"
+              stroke="#eadfbd"
+              strokeWidth=".7"
+              opacity=".15"
+            />
+            <path
+              d="M15 3h1M2 9h1M10 15h1"
+              stroke="#273c2d"
+              strokeWidth=".9"
+              opacity=".14"
+            />
+          </pattern>
+          <pattern
+            id="texture-plains"
+            width="44"
+            height="34"
+            patternUnits="userSpaceOnUse"
+          >
+            <path
+              d="M0 13Q11 4 25 13T51 14M-3 18Q11 9 25 18T51 19"
+              stroke="#a2ac7e"
+              fill="none"
+              strokeWidth=".7"
+              opacity=".21"
+            />
+          </pattern>
+          <pattern
+            id="texture-forest"
+            width="23"
+            height="21"
+            patternUnits="userSpaceOnUse"
+          >
+            <g fill="#243f2c" opacity=".23">
+              <path d="M4 1L.5 9H2L0 13H8L6 9H8Z" />
+              <path d="M16 9L12 18H20Z" />
+            </g>
+            <path
+              d="M4 6V15M16 14V20"
+              stroke="#e1d9b1"
+              opacity=".12"
+              strokeWidth=".6"
+            />
+          </pattern>
+          <pattern
+            id="texture-mountain"
+            width="54"
+            height="40"
+            patternUnits="userSpaceOnUse"
+          >
+            <path
+              d="M-5 35Q12 0 29 32T62 30M-5 40Q12 5 29 37T62 35M-5 45Q12 10 29 42T62 40"
+              fill="none"
+              stroke="#374334"
+              opacity=".24"
+              strokeWidth=".8"
+            />
+          </pattern>
+          <pattern
+            id="texture-marsh"
+            width="28"
+            height="25"
+            patternUnits="userSpaceOnUse"
+          >
+            <path
+              d="M2 15H15M6 18H18M12 4H26M10 15V8M8 13L6 10M10 12L13 8"
+              stroke="#1f4b45"
+              opacity=".3"
+              strokeWidth=".8"
+              fill="none"
+            />
+          </pattern>
+          <pattern
+            id="texture-desert"
+            width="40"
+            height="25"
+            patternUnits="userSpaceOnUse"
+          >
+            <path
+              d="M0 15Q15 0 28 14M4 19Q15 4 28 18"
+              stroke="#dbc291"
+              fill="none"
+              opacity=".35"
+            />
+            <circle cx="32" cy="7" r=".6" fill="#584a32" opacity=".4" />
+          </pattern>
+          <pattern
+            id="texture-urban"
+            width="43"
+            height="41"
+            patternUnits="userSpaceOnUse"
+          >
+            <path
+              d="M0 20H43M21 0V41"
+              stroke="#b6a984"
+              opacity=".12"
+              strokeWidth=".5"
             />
           </pattern>
           <pattern
             id="occupied"
-            width="6"
-            height="6"
+            width="7"
+            height="7"
             patternUnits="userSpaceOnUse"
             patternTransform="rotate(30)"
           >
-            <path d="M0 0V6" stroke="#f7e6c6" strokeWidth="2" opacity=".3" />
+            <path d="M0 0V7" stroke="#f7e6c6" strokeWidth="2" opacity=".3" />
           </pattern>
           <marker
             id="order-arrow"
@@ -167,10 +725,60 @@ export default function WarMap({
           >
             <path d="M0 0L6 3L0 6Z" fill="#f2c779" />
           </marker>
-          <radialGradient id="sea-glow">
-            <stop stopColor="#263d43" />
-            <stop offset="1" stopColor="#14282e" />
-          </radialGradient>
+          <marker
+            id="offensive-arrow"
+            markerWidth="5"
+            markerHeight="5"
+            refX="3.7"
+            refY="2"
+            orient="auto"
+          >
+            <path d="M0 0L4 2L0 4L1 2Z" fill="#eac484" />
+          </marker>
+          <marker
+            id="air-arrow"
+            markerWidth="5"
+            markerHeight="5"
+            refX="4"
+            refY="2"
+            orient="auto"
+          >
+            <path d="M0 0L4 2L0 4Z" fill="#a2d4dd" />
+          </marker>
+          <clipPath id="land-clip">
+            {MAP.countries.map((c) => (
+              <path key={c.id} d={c.path} />
+            ))}
+          </clipPath>
+          <mask id="ocean-mask">
+            <rect x="-1000" y="-1000" width="4000" height="4000" fill="white" />
+            {MAP.countries.map((c) => (
+              <path key={c.id} d={c.path} fill="black" />
+            ))}
+          </mask>
+          {MAP.provinces.map((p) => (
+            <clipPath key={p.id} id={`province-clip-${p.id}`}>
+              <path d={p.path} fillRule="evenodd" />
+            </clipPath>
+          ))}
+          <symbol id="aircraft-symbol" viewBox="-9 -9 18 18">
+            <path d="M0-8L2-1 8 3V5L2 3 2 7 0 6-2 7-2 3-8 5V3L-2-1Z" />
+          </symbol>
+          <symbol id="anchor-symbol" viewBox="-9 -9 18 18">
+            <path
+              d="M0-4V7M-4-2H4M-7 2Q-7 7 0 7Q7 7 7 2M-8 4L-7 2-5 3M5 3L7 2 8 4"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.3"
+            />
+            <circle
+              cy="-6"
+              r="2"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.2"
+            />
+          </symbol>
         </defs>
         <rect
           x="-1000"
@@ -184,18 +792,28 @@ export default function WarMap({
           y="-1000"
           width="4000"
           height="4000"
+          fill="url(#sea-lines)"
+        />
+        <rect
+          x="-1000"
+          y="-1000"
+          width="4000"
+          height="4000"
           fill="url(#sea-grid)"
         />
-        {[
-          [245, 130, "KUZEY ATLANTİK"],
-          [525, 260, "KUZEY DENİZİ"],
-          [555, 845, "AKDENİZ"],
-          [990, 625, "KARADENİZ"],
-        ].map(([x, y, name]) => (
-          <text key={name} x={x} y={y} className={styles.seaLabel}>
-            {name}
-          </text>
-        ))}
+        <g pointerEvents="none">
+          {MAP.countries.map((c) => (
+            <path
+              key={c.id}
+              d={c.path}
+              fill="#98b7b2"
+              stroke="#a0b8ac"
+              strokeWidth="6"
+              strokeLinejoin="round"
+              opacity=".13"
+            />
+          ))}
+        </g>
         {MAP.provinces.map((g) => {
           const p = world.provinces[g.id],
             country = world.countries[p.controller];
@@ -205,25 +823,33 @@ export default function WarMap({
           if (mode === "supply")
             fill =
               p.controller === world.player
-                ? `hsl(${localSupply(world, world.player, p.id, network) * 110} 30% 40%)`
-                : "#3d494c";
+                ? `hsl(${localSupply(world, world.player, p.id, network) * 110} 29% 42%)`
+                : "#53615b";
           if (mode === "military")
             fill =
               p.controller === world.player
-                ? "#678879"
-                : world.countries[world.player].wars.includes(p.controller)
-                  ? "#955d58"
-                  : world.countries[world.player].allies.includes(p.controller)
-                    ? "#618594"
-                    : "#535b59";
+                ? "#79937a"
+                : player.wars.includes(p.controller)
+                  ? "#a46d60"
+                  : player.allies.includes(p.controller)
+                    ? "#79979d"
+                    : "#71756a";
+          if (mode === "air" || mode === "naval")
+            fill =
+              p.controller === world.player
+                ? "#708d83"
+                : player.wars.includes(p.controller)
+                  ? "#916f62"
+                  : "#59695f";
           return (
             <g key={g.id}>
               <path
                 d={g.path}
                 fill={fill}
                 fillRule="evenodd"
-                stroke="#24312f"
-                strokeWidth=".85"
+                stroke={close ? "#b1b99a" : "#2c3c33"}
+                strokeWidth={close ? 1 : detailed ? 0.7 : 0.45}
+                vectorEffect="non-scaling-stroke"
                 className={styles.province}
                 role="button"
                 aria-label={`${g.name}, ${country.name}`}
@@ -243,6 +869,13 @@ export default function WarMap({
               >
                 <title>{`${g.name} · ${country.name} · ${TERRAINS[GEOGRAPHY[g.id].terrain].name} · ${g.vp} zafer puanı`}</title>
               </path>
+              <TerrainTexture
+                terrain={g.terrain}
+                id={g.id}
+                path={g.path}
+                x={g.x}
+                y={g.y}
+              />
               {p.owner !== p.controller && (
                 <path
                   d={g.path}
@@ -254,83 +887,219 @@ export default function WarMap({
             </g>
           );
         })}
-        {MAP.countries.map((c) => (
-          <path
-            key={c.id}
-            d={c.path}
-            fill="none"
-            stroke="#101f21"
-            strokeWidth="1.6"
-            opacity=".65"
-            pointerEvents="none"
-          />
-        ))}
+        <path
+          d="M0 0H1320V880H0Z"
+          clipPath="url(#land-clip)"
+          fill="url(#paper-grain)"
+          pointerEvents="none"
+        />
+        <g pointerEvents="none" className={atlas.borders}>
+          {MAP.countries.map((c) => (
+            <path
+              key={c.id}
+              d={c.path}
+              fill="none"
+              stroke="#26362e"
+              strokeWidth={close ? 1.8 : 1.6}
+              vectorEffect="non-scaling-stroke"
+              opacity=".85"
+            />
+          ))}
+          {MAP.countries.map((c) => (
+            <path
+              key={c.id}
+              d={c.path}
+              fill="none"
+              stroke="#e9dfbf"
+              strokeWidth=".55"
+              vectorEffect="non-scaling-stroke"
+              opacity=".35"
+            />
+          ))}
+        </g>
+        {(detailed || mode === "supply") && (
+          <g pointerEvents="none" clipPath="url(#land-clip)">
+            {links
+              .filter(
+                ({ a, b }) =>
+                  world.provinces[a.id].buildings.rail > 0 &&
+                  world.provinces[b.id].buildings.rail > 0 &&
+                  (mode === "supply" ||
+                    a.id === selected ||
+                    b.id === selected ||
+                    (a.id === a.legacyRegion && b.id === b.legacyRegion)) &&
+                  (mode !== "supply" ||
+                    (network.has(a.id) && network.has(b.id))),
+              )
+              .map(({ a, b }) => (
+                <g key={`${a.id}-${b.id}`}>
+                  <path
+                    d={curvedPath(a.x, a.y, b.x, b.y)}
+                    fill="none"
+                    stroke={mode === "supply" ? "#bad59c" : "#343d2e"}
+                    strokeWidth={mode === "supply" ? 2 : 0.9}
+                    vectorEffect="non-scaling-stroke"
+                    opacity={mode === "supply" ? 0.7 : 0.4}
+                  />
+                  <path
+                    d={curvedPath(a.x, a.y, b.x, b.y)}
+                    fill="none"
+                    stroke={mode === "supply" ? "#182c28" : "#eadfbd"}
+                    strokeWidth=".65"
+                    vectorEffect="non-scaling-stroke"
+                    strokeDasharray="2 4"
+                    opacity=".65"
+                  />
+                </g>
+              ))}
+          </g>
+        )}
         {[hover, selected].filter(Boolean).map((id, i) => (
           <path
             key={`${id}-${i}`}
             d={GEOGRAPHY[id].path}
-            fill={i === 1 ? "#f2cb8c12" : "#ffffff12"}
-            stroke={i === 1 ? "#f2cb8c" : "#e7e6ce"}
-            strokeWidth={i === 1 ? 2.2 : 1.2}
+            fill={id === selected ? "#f2cb8c16" : "#ffffff13"}
+            stroke={id === selected ? "#ffe0a3" : "#f4ecd1"}
+            strokeWidth={id === selected ? 2.3 : 1.4}
+            vectorEffect="non-scaling-stroke"
             pointerEvents="none"
           />
         ))}
-        {MAP.countries.map((c) => {
-          const capital = GEOGRAPHY[c.capital];
-          const wc = world.countries[c.id];
+        {Object.entries(SEA_ZONES).map(([id, z]) => (
+          <text
+            key={id}
+            x={z.x}
+            y={z.y - (mode === "naval" ? 40 : 0)}
+            className={atlas.seaName}
+          >
+            {z.name.toLocaleUpperCase("tr-TR")}
+          </text>
+        ))}
+        {countryLabels.map((label) => {
+          if (mode === "naval" || mode === "air") return null;
+          const c = label.country,
+            selectedCountry = world.provinces[selected]?.controller === c.id;
           if (
-            wc.capitulated &&
-            !Object.values(world.provinces).some((p) => p.controller === c.id)
+            (!detailed || close) &&
+            TINY_COUNTRIES.has(c.id) &&
+            !selectedCountry
           )
             return null;
           return (
-            <g key={c.id} pointerEvents="none">
-              <circle
-                cx={capital.x}
-                cy={capital.y}
-                r="2.5"
-                fill="#f5e2b5"
-                stroke="#253334"
-                strokeWidth="1"
-              />
+            <g
+              key={c.id}
+              pointerEvents="none"
+              opacity={mode === "supply" ? 0.55 : 1}
+            >
               <text
-                x={capital.x}
-                y={capital.y - 12}
+                x={label.x}
+                y={label.y}
                 textAnchor="middle"
-                className={styles.countryLabel}
+                className={atlas.nationName}
                 style={{
-                  fontSize: [
-                    "luxembourg",
-                    "belgium",
-                    "netherlands",
-                    "albania",
-                    "estonia",
-                    "latvia",
-                    "lithuania",
-                  ].includes(c.id)
-                    ? 8
-                    : 11,
+                  fontSize: close
+                    ? 8.5
+                    : label.lands > 8
+                      ? 15
+                      : label.lands > 3
+                        ? 12
+                        : 9,
+                  letterSpacing: close ? 1.3 : label.lands > 5 ? 2.5 : 1.1,
                 }}
               >
-                {c.name.toLocaleUpperCase("tr-TR")}
+                {(c.id === "uk"
+                  ? "Britanya"
+                  : c.id === "spain"
+                    ? "İspanya"
+                    : c.name
+                ).toLocaleUpperCase("tr-TR")}
               </text>
             </g>
           );
         })}
-        {view.w < 800 &&
-          MAP.provinces.map((p) => (
-            <text
-              key={p.id}
-              x={p.x}
-              y={p.y + 20}
-              textAnchor="middle"
-              className={styles.cityLabel}
-              pointerEvents="none"
-            >
-              {p.name}
-              {p.port ? " ⚓" : ""}
-            </text>
-          ))}
+        <g pointerEvents="none" data-testid="urban-centers">
+          {MAP.provinces.map((p) => {
+            const country = world.countries[world.provinces[p.id].controller],
+              capital = country.capital === p.id,
+              label = cityLabels.get(p.id),
+              markerSize = counterScale;
+            if (!capital && !detailed && p.vp < 4 && p.id !== selected)
+              return null;
+            if (
+              p.x < view.x - 30 ||
+              p.x > view.x + view.w + 30 ||
+              p.y < view.y - 30 ||
+              p.y > view.y + view.h + 30
+            )
+              return null;
+            return (
+              <g key={p.id} data-city={p.id}>
+                {capital ? (
+                  <g
+                    transform={`translate(${p.x} ${p.y}) scale(${markerSize})`}
+                  >
+                    <circle
+                      r="5.2"
+                      fill="#efe0b5"
+                      stroke="#293e32"
+                      strokeWidth="1"
+                    />
+                    <path
+                      d="M0-3L.8-1 3-1 1.2.5 2 3 0 1.5-2 3-1.2.5-3-1-.8-1Z"
+                      fill="#5b4930"
+                    />
+                  </g>
+                ) : (
+                  <circle
+                    cx={p.x}
+                    cy={p.y}
+                    r={(p.vp > 3 ? 2.6 : 2) * markerSize}
+                    fill={p.id === selected ? "#fff1c8" : "#dccda6"}
+                    stroke="#334533"
+                    strokeWidth={0.8 * markerSize}
+                  />
+                )}
+                {label && (
+                  <text
+                    x={label.x}
+                    y={label.y}
+                    textAnchor={label.end ? "end" : "start"}
+                    className={atlas.cityName}
+                    style={{
+                      fontSize: 11 * markerSize,
+                      strokeWidth: 2.5 * markerSize,
+                    }}
+                  >
+                    {p.name}
+                  </text>
+                )}
+                {p.port && detailed && (
+                  <use
+                    href="#anchor-symbol"
+                    x={p.x - 15 * markerSize}
+                    y={p.y - 5 * markerSize}
+                    width={8 * markerSize}
+                    height={8 * markerSize}
+                    style={{ color: "#d0d7c2" }}
+                  />
+                )}
+                {mode === "supply" &&
+                  world.provinces[p.id].buildings.hub > 0 &&
+                  world.provinces[p.id].controller === player.id && (
+                    <rect
+                      x={p.x - 4 * markerSize}
+                      y={p.y + 5 * markerSize}
+                      width={8 * markerSize}
+                      height={7 * markerSize}
+                      fill={network.has(p.id) ? "#d6e6b4" : "#d38b70"}
+                      stroke="#293f2a"
+                      strokeWidth={markerSize}
+                    />
+                  )}
+              </g>
+            );
+          })}
+        </g>
         {[
           ...world.fronts
             .filter((f) => f.country === world.player)
@@ -341,31 +1110,73 @@ export default function WarMap({
           .map((f) => (
             <g key={f.id} pointerEvents="none">
               <polyline
-                points={f.points
-                  .map((id) => `${GEOGRAPHY[id].x},${GEOGRAPHY[id].y}`)
-                  .join(" ")}
+                points={pointList(f.points)}
                 fill="none"
-                stroke={f.id === "draft" ? "#f9dba1" : "#adcfb5"}
-                strokeWidth="5"
+                stroke="#183528"
+                strokeWidth="8"
                 strokeLinecap="round"
-                opacity=".75"
+                strokeLinejoin="round"
+                opacity=".55"
+              />
+              <polyline
+                points={pointList(f.points)}
+                fill="none"
+                stroke={f.id === "draft" ? "#ffe2a2" : "#b7d5a0"}
+                strokeWidth="4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                opacity=".9"
               />
               {f.points.map((id) => (
                 <circle
                   key={id}
                   cx={GEOGRAPHY[id].x}
                   cy={GEOGRAPHY[id].y}
-                  r="4"
-                  fill="#dbe4bd"
+                  r="3.3"
+                  fill="#eef0ce"
+                  stroke="#354a32"
                 />
               ))}
             </g>
           ))}
+        {friendlyPlans.map((p) => {
+          const army = world.armies.find((a) => p.armies.includes(a.id));
+          if (!army || !p.objectives.length) return null;
+          const points = pointList([army.province, ...p.objectives]);
+          return (
+            <g key={p.id} pointerEvents="none" opacity={p.active ? 0.95 : 0.6}>
+              <polyline
+                points={points}
+                stroke="#573e29"
+                strokeWidth="9"
+                fill="none"
+                strokeLinejoin="round"
+                opacity=".5"
+              />
+              <polyline
+                points={points}
+                stroke="#eac484"
+                strokeWidth="4.5"
+                fill="none"
+                strokeLinejoin="round"
+                strokeDasharray={p.active ? undefined : "8 5"}
+                markerEnd="url(#offensive-arrow)"
+              />
+              <text
+                x={GEOGRAPHY[p.objectives[0]].x}
+                y={GEOGRAPHY[p.objectives[0]].y - 22}
+                className={atlas.planLabel}
+              >
+                {p.active
+                  ? "TAARRUZ"
+                  : `HAZIRLIK %${Math.floor(p.preparation)}`}
+              </text>
+            </g>
+          );
+        })}
         {route.length > 1 && (
           <polyline
-            points={route
-              .map((id) => `${GEOGRAPHY[id].x},${GEOGRAPHY[id].y}`)
-              .join(" ")}
+            points={pointList(route)}
             fill="none"
             stroke="#f2c779"
             strokeWidth="2.5"
@@ -374,18 +1185,263 @@ export default function WarMap({
             pointerEvents="none"
           />
         )}
+        {mode === "air" && (
+          <g>
+            {selectedWing && (
+              <circle
+                cx={GEOGRAPHY[selectedWing.wing.base].x}
+                cy={GEOGRAPHY[selectedWing.wing.base].y}
+                r={
+                  AIRCRAFT[selectedWing.wing.model].range *
+                  (selectedWing.country.tech.includes("aviation3") ? 1.2 : 1)
+                }
+                fill="#8fcedb08"
+                stroke="#b2d7dc"
+                strokeWidth="1.1"
+                strokeDasharray="7 7"
+                pointerEvents="none"
+              />
+            )}
+            {Object.values(world.countries)
+              .filter((c) => visible(c.id))
+              .flatMap((c) =>
+                c.air.wings
+                  .filter((w) => w.count > 0)
+                  .map((w) => {
+                    const base = GEOGRAPHY[w.base],
+                      target = GEOGRAPHY[w.target],
+                      own = c.id === player.id;
+                    const active = w.mission !== "idle",
+                      path = curvedPath(base.x, base.y, target.x, target.y);
+                    const offset =
+                      c.air.wings
+                        .slice(0, c.air.wings.indexOf(w))
+                        .filter((a) => a.base === w.base && a.count > 0)
+                        .length * 18;
+                    return (
+                      <g key={w.id}>
+                        {active && (
+                          <>
+                            <path
+                              d={path}
+                              fill="none"
+                              stroke={own ? "#b5dce4" : "#ddb1a2"}
+                              strokeWidth={wingId === w.id ? 2.5 : 1.5}
+                              strokeDasharray="5 4"
+                              markerEnd="url(#air-arrow)"
+                              pointerEvents="none"
+                            />
+                            <circle
+                              cx={target.x}
+                              cy={target.y}
+                              r="12"
+                              stroke="#9fc8cc"
+                              fill="#a4c8d01a"
+                              strokeDasharray="3 3"
+                              pointerEvents="none"
+                            />
+                          </>
+                        )}
+                        <g
+                          transform={`translate(${base.x + offset - 7} ${base.y - 22})`}
+                          role="button"
+                          aria-label={`${w.name}, ${Math.floor(w.count)} uçak, ${AIR_MISSIONS[w.mission]}`}
+                          tabIndex={0}
+                          className={atlas.airCounter}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (!drag.current.moved) {
+                              if (ordering) onSelect(w.base, e.shiftKey);
+                              else setWingId(wingId === w.id ? null : w.id);
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              if (ordering) onSelect(w.base, e.shiftKey);
+                              else setWingId(wingId === w.id ? null : w.id);
+                            }
+                          }}
+                        >
+                          <rect
+                            x="-2"
+                            y="-2"
+                            width="19"
+                            height="22"
+                            rx="2"
+                            fill="#1a3e49"
+                            stroke={wingId === w.id ? "#ffdc9a" : "#b9d4d5"}
+                            strokeWidth="1"
+                          />
+                          <use
+                            href="#aircraft-symbol"
+                            width="12"
+                            height="12"
+                            x="1"
+                            y="-1"
+                            fill="#cfe9e9"
+                          />
+                          <text
+                            x="7.5"
+                            y="17"
+                            textAnchor="middle"
+                            fill="#e0e7d2"
+                            fontSize="6.5"
+                          >
+                            {Math.floor(w.count)}
+                          </text>
+                          <title>{`${c.name} · ${w.name} · ${AIR_MISSIONS[w.mission]} · ${target.name}`}</title>
+                        </g>
+                      </g>
+                    );
+                  }),
+              )}
+          </g>
+        )}
+        {mode === "naval" && (
+          <g>
+            {(
+              Object.entries(SEA_ZONES) as [
+                SeaZone,
+                (typeof SEA_ZONES)[SeaZone],
+              ][]
+            ).map(([id, z]) => {
+              const control = seaControl(world, player.id, id),
+                ownShips = player.navy.ships.filter(
+                  (s) => s.zone === id && s.mission !== "idle",
+                ),
+                color =
+                  control >= 0.5
+                    ? "#9acdc1"
+                    : ownShips.length
+                      ? "#d7ab82"
+                      : "#8ba3a3";
+              const fleets = Object.values(world.countries)
+                .filter(
+                  (c) =>
+                    visible(c.id) ||
+                    (ownShips.some((s) => s.mission === "patrol") &&
+                      player.wars.includes(c.id)),
+                )
+                .map((c) => ({
+                  c,
+                  ships: c.navy.ships.filter(
+                    (s) => s.zone === id && s.mission !== "idle",
+                  ),
+                }))
+                .filter((f) => f.ships.length);
+              return (
+                <g key={id}>
+                  <ellipse
+                    cx={z.x}
+                    cy={z.y}
+                    rx={id === "mediterranean" ? 220 : 125}
+                    ry={id === "mediterranean" ? 65 : 90}
+                    fill={`${color}15`}
+                    stroke={color}
+                    strokeWidth="1.2"
+                    strokeDasharray="7 6"
+                    mask="url(#ocean-mask)"
+                    pointerEvents="none"
+                  />
+                  <g
+                    transform={`translate(${z.x - 42} ${z.y - 20})`}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`${z.name}, deniz üstünlüğü yüzde ${Math.round(control * 100)}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (!drag.current.moved)
+                        setSeaZone(seaZone === id ? null : id);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setSeaZone(seaZone === id ? null : id);
+                      }
+                    }}
+                    className={atlas.seaCounter}
+                  >
+                    <rect
+                      width="84"
+                      height="28"
+                      rx="3"
+                      fill="#16343c"
+                      stroke={seaZone === id ? "#f6d8a0" : color}
+                      strokeWidth="1"
+                    />
+                    <text
+                      x="42"
+                      y="11"
+                      textAnchor="middle"
+                      fill="#a9c3c0"
+                      fontSize="6"
+                      letterSpacing="1"
+                    >
+                      DENİZ ÜSTÜNLÜĞÜ
+                    </text>
+                    <text
+                      x="42"
+                      y="23"
+                      textAnchor="middle"
+                      fill="#e3e6cd"
+                      fontSize="10"
+                    >
+                      %{Math.round(control * 100)}
+                    </text>
+                  </g>
+                  {fleets.map(({ c, ships }, i) => (
+                    <g
+                      key={c.id}
+                      transform={`translate(${z.x - 30 + i * 37} ${z.y + 15})`}
+                      pointerEvents="none"
+                    >
+                      <rect
+                        width="32"
+                        height="20"
+                        rx="2"
+                        fill={c.id === player.id ? "#d7e1cd" : "#977967"}
+                        stroke="#102a2f"
+                        strokeWidth="1.2"
+                      />
+                      <path
+                        d="M4 11L6 15H18L21 11ZM10 10V5H15V10M12 5V2"
+                        stroke="#2f4c48"
+                        fill="none"
+                        strokeWidth="1"
+                      />
+                      <text
+                        x="26"
+                        y="14"
+                        textAnchor="middle"
+                        fill="#29443e"
+                        fontSize="8"
+                      >
+                        {ships.length}
+                      </text>
+                      <title>{`${c.name} · ${ships.length} gemi · ortalama gövde %${Math.round(ships.reduce((n, s) => n + s.health, 0) / ships.length)}`}</title>
+                    </g>
+                  ))}
+                </g>
+              );
+            })}
+          </g>
+        )}
         {formations.map((group, index) => {
           const a = group.find((a) => a.id === armyId) ?? group[0],
             p = GEOGRAPHY[a.province],
-            own = a.country === world.player;
+            own = a.country === world.player,
+            chosen = group.some((x) => x.id === armyId);
           const offset =
             formations
               .slice(0, index)
-              .filter((g) => g[0].province === a.province).length * 26;
+              .filter((g) => g[0].province === a.province).length * 31;
+          const averageOrg =
+            group.reduce((n, a) => n + a.organization, 0) / group.length;
           return (
             <g
               key={`${a.province}:${a.country}`}
-              transform={`translate(${p.x - 11 + offset} ${p.y - 3})`}
+              transform={`translate(${p.x + (-13 + offset) * counterScale} ${p.y + 4 * counterScale}) scale(${counterScale})`}
               role="button"
               tabIndex={own ? 0 : -1}
               aria-label={`${world.countries[a.country].name}: ${group.length} tümen, ${p.name}`}
@@ -393,78 +1449,213 @@ export default function WarMap({
               onClick={(e) => {
                 e.stopPropagation();
                 if (!drag.current.moved) {
-                  if (own) onArmy(a.id);
+                  if (ordering) onSelect(a.province, e.shiftKey);
+                  else if (own)
+                    onArmy(
+                      group[
+                        (group.findIndex((unit) => unit.id === armyId) + 1) %
+                          group.length
+                      ].id,
+                    );
                   else onSelect(a.province, false);
                 }
               }}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && own) onArmy(a.id);
-              }}
-              className={styles.counter}
-            >
-              <rect
-                width="25"
-                height="17"
-                rx="2"
-                fill={own ? "#e2dfca" : "#625655"}
-                stroke={
-                  group.some((x) => x.id === armyId) ? "#ffd183" : "#202b2c"
+                if ((e.key === "Enter" || e.key === " ") && own) {
+                  e.preventDefault();
+                  if (ordering) onSelect(a.province, e.shiftKey);
+                  else
+                    onArmy(
+                      group[
+                        (group.findIndex((unit) => unit.id === armyId) + 1) %
+                          group.length
+                      ].id,
+                    );
                 }
-                strokeWidth="1.8"
+              }}
+              className={`${styles.counter} ${atlas.armyCounter}`}
+              opacity={mode === "air" || mode === "naval" ? 0.65 : 1}
+            >
+              {group.length > 1 && (
+                <rect
+                  x="3"
+                  y="-3"
+                  width="29"
+                  height="20"
+                  rx="1.5"
+                  fill="#9ca58c"
+                  stroke="#263b31"
+                  strokeWidth="1"
+                />
+              )}
+              <rect
+                width="29"
+                height="20"
+                rx="1.5"
+                fill={
+                  own
+                    ? "#e3dfc5"
+                    : player.allies.includes(a.country)
+                      ? "#b9ced0"
+                      : "#9c7765"
+                }
+                stroke={chosen ? "#ffdf97" : "#25362d"}
+                strokeWidth={chosen ? 2.1 : 1.3}
               />
               <rect
-                x="3"
-                y="3"
+                x="0"
+                y="0"
+                width="3"
+                height="20"
+                fill={world.countries[a.country].color}
+              />
+              <rect
+                x="6"
+                y="4"
                 width="12"
                 height="9"
                 fill="none"
-                stroke={own ? "#3b5045" : "#f2e2cf"}
-                strokeWidth=".7"
+                stroke={own ? "#364a38" : "#f1e8d1"}
+                strokeWidth=".8"
               />
               <text
-                x="9"
-                y="11.5"
+                x="12"
+                y="12"
                 textAnchor="middle"
                 fontSize="10"
-                fill={own ? "#243d35" : "#f2e2cf"}
+                fill={own ? "#263b2e" : "#f4ecd7"}
               >
                 {UNITS[a.type].symbol}
               </text>
               <text
-                x="20"
-                y="12"
+                x="23"
+                y="13"
                 textAnchor="middle"
                 fontSize="8"
-                fill={own ? "#243d35" : "#f2e2cf"}
+                fontWeight="700"
+                fill={own ? "#263b2e" : "#f4ecd7"}
               >
                 {group.length}
               </text>
+              <rect x="3" y="17" width="26" height="3" fill="#394537" />
               <rect
-                y="15"
-                height="2"
-                width={(25 * a.organization) / 100}
-                fill={a.supply < 0.3 ? "#e77c65" : "#77b591"}
+                x="3"
+                y="17"
+                width={(26 * averageOrg) / 100}
+                height="3"
+                fill={a.supply < 0.3 ? "#dc8065" : "#83b77c"}
               />
+              {a.move && <path d="M30 8L35 10L30 12" fill="#f2cd8f" />}
+              <title>{`${a.name} · ${group.length} tümen · Organizasyon %${Math.round(averageOrg)} · İkmal %${Math.round(a.supply * 100)}`}</title>
             </g>
           );
         })}
-        {world.battles.map((b) => {
-          const p = GEOGRAPHY[b.province];
-          return (
-            <g
-              key={b.id}
-              transform={`translate(${p.x + 25} ${p.y - 12})`}
-              className={styles.battlePulse}
-              pointerEvents="none"
-            >
-              <circle r="10" fill="#873f30" stroke="#ffc28a" />
-              <text y="4" textAnchor="middle" fontSize="13" fill="#ffe6cb">
-                ⚔
-              </text>
-            </g>
-          );
-        })}
+        {world.battles
+          .filter(
+            (b) =>
+              visible(b.attacker) ||
+              visible(b.defender) ||
+              GEOGRAPHY[b.province].neighbors.some(
+                (n) => world.provinces[n.id].controller === player.id,
+              ),
+          )
+          .map((b) => {
+            const p = GEOGRAPHY[b.province],
+              ratio = b.attack / Math.max(1, b.attack + b.defense),
+              favorable = b.attacker === player.id ? ratio >= 0.5 : ratio < 0.5;
+            return (
+              <g
+                key={b.id}
+                transform={`translate(${p.x + 30} ${p.y - 12})`}
+                className={styles.battlePulse}
+                pointerEvents="none"
+              >
+                <circle
+                  r="12"
+                  fill="#352c22"
+                  stroke={favorable ? "#bdd598" : "#db9c7c"}
+                  strokeWidth="2"
+                />
+                <path
+                  d="M-4-5L5 5M-5 5L5-5M-5-4L-3-6M4 6L6 4M-6 4L-4 6M3-6L5-4"
+                  stroke="#e9d7ad"
+                  strokeWidth="1.4"
+                />
+                <title>{`${p.name} muharebesi · saldırı ${Math.round(b.attack)} / savunma ${Math.round(b.defense)}`}</title>
+              </g>
+            );
+          })}
       </svg>
+      <div className={atlas.search}>
+        <input
+          aria-label="Şehir bul"
+          placeholder="⌕ Şehir bul…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") setSearch("");
+          }}
+        />
+        {search.trim() && (
+          <div role="list" aria-label="Şehir arama sonuçları">
+            {URBAN_PLACES.filter((p) =>
+              searchName(p.name).includes(searchName(search.trim())),
+            )
+              .slice(0, 6)
+              .map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => {
+                    setView((v) => {
+                      const w = Math.min(420, (350 * v.w) / v.h),
+                        h = (w * v.h) / v.w;
+                      return constrainCamera({
+                        x: p.x - w / 2,
+                        y: p.y - h / 2,
+                        w,
+                        h,
+                      });
+                    });
+                    onSelect(p.province, false);
+                    setSearch("");
+                  }}
+                >
+                  {p.name}
+                  <small>
+                    {
+                      world.countries[world.provinces[p.province].controller]
+                        .name
+                    }
+                  </small>
+                </button>
+              ))}
+            {!URBAN_PLACES.some((p) =>
+              searchName(p.name).includes(searchName(search.trim())),
+            ) && <p>Şehir bulunamadı.</p>}
+          </div>
+        )}
+      </div>
+      <div className={atlas.compass} aria-hidden="true">
+        <span>K</span>
+        <svg viewBox="0 0 44 44">
+          <circle
+            cx="22"
+            cy="22"
+            r="18"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth=".7"
+          />
+          <path
+            d="M22 4L27 22 22 40 17 22Z"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth=".9"
+          />
+          <path d="M22 4L27 22H22Z" fill="currentColor" />
+          <path d="M4 22H40" stroke="currentColor" strokeWidth=".5" />
+        </svg>
+      </div>
       <div className={styles.mapControls}>
         <button onClick={() => zoom(0.75)} aria-label="Haritayı yakınlaştır">
           ＋
@@ -479,25 +1670,161 @@ export default function WarMap({
         >
           ⌖
         </button>
-        <button
-          onClick={() => setView({ x: 0, y: 0, w: 1320, h: 880 })}
-          aria-label="Tüm haritayı göster"
-        >
+        <button onClick={resetView} aria-label="Tüm haritayı göster">
           ↔
         </button>
       </div>
+      {hovered && infoProvince && !ordering && (
+        <div className={atlas.regionInfo} aria-live="polite">
+          <span className={atlas.infoLine}>
+            <i
+              style={{
+                background: world.countries[infoProvince.controller].color,
+              }}
+            />
+            {world.countries[infoProvince.controller].name}
+          </span>
+          <strong>{hovered.name}</strong>
+          <span>
+            {TERRAINS[GEOGRAPHY[hovered.id].terrain].name} · {hovered.vp} zafer
+            puanı {hovered.port ? "· Liman" : ""}
+          </span>
+          {infoProvince.controller === player.id && (
+            <small>
+              İkmal %
+              {Math.round(
+                localSupply(world, player.id, hovered.id, network) * 100,
+              )}{" "}
+              · Altyapı {infoProvince.buildings.infra}/5
+            </small>
+          )}
+        </div>
+      )}
+      {mode === "air" && selectedWing && (
+        <div className={atlas.layerInfo}>
+          <button
+            aria-label="Hava bilgilerini kapat"
+            onClick={() => setWingId(null)}
+          >
+            ×
+          </button>
+          <strong>{selectedWing.wing.name}</strong>
+          <small>
+            {selectedWing.country.name} ·{" "}
+            {AIRCRAFT[selectedWing.wing.model].name}
+          </small>
+          <span>
+            {AIR_MISSIONS[selectedWing.wing.mission]} ·{" "}
+            {Math.floor(selectedWing.wing.count)} uçak
+          </span>
+          <small>
+            {GEOGRAPHY[selectedWing.wing.base].name} →{" "}
+            {GEOGRAPHY[selectedWing.wing.target].name}
+          </small>
+          <small>Kesikli çember: üsten erişim menzili</small>
+        </div>
+      )}
+      {mode === "naval" && seaZone && (
+        <div className={atlas.layerInfo}>
+          <button
+            aria-label="Deniz bilgilerini kapat"
+            onClick={() => setSeaZone(null)}
+          >
+            ×
+          </button>
+          <strong>{SEA_ZONES[seaZone].name}</strong>
+          <span>
+            Deniz üstünlüğü %
+            {Math.round(seaControl(world, player.id, seaZone) * 100)}
+          </span>
+          <small>
+            {
+              player.navy.ships.filter(
+                (s) => s.zone === seaZone && s.mission !== "idle",
+              ).length
+            }{" "}
+            görevde gemin var.
+          </small>
+          <small>Devriye ve eskortlar deniz ikmalini korur.</small>
+        </div>
+      )}
+      <div className={atlas.overview}>
+        <span>
+          HAREKÂT SAHASI{" "}
+          <b>{Math.round((fitCamera(view.w / view.h).w / view.w) * 100)}%</b>
+        </span>
+        <svg
+          viewBox="0 0 1320 880"
+          role="button"
+          aria-label="Küçük haritada konuma git"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              focusPlayer();
+            }
+          }}
+          onClick={(e) => {
+            const matrix = e.currentTarget.getScreenCTM();
+            if (!matrix) return;
+            const p = new DOMPoint(e.clientX, e.clientY).matrixTransform(
+              matrix.inverse(),
+            );
+            setView((v) =>
+              constrainCamera({ ...v, x: p.x - v.w / 2, y: p.y - v.h / 2 }),
+            );
+          }}
+        >
+          <rect width="1320" height="880" fill="#18323a" />
+          {MAP.provinces.map((p) => {
+            const controller = world.provinces[p.id].controller;
+            return (
+              <path
+                key={p.id}
+                d={p.path}
+                fill={
+                  controller === world.player
+                    ? "#b4c29b"
+                    : player.wars.includes(controller)
+                      ? "#a47564"
+                      : player.allies.includes(controller)
+                        ? "#8caeb2"
+                        : "#617567"
+                }
+                fillRule="evenodd"
+                stroke="#1e302d"
+                strokeWidth="1"
+              />
+            );
+          })}
+          <rect
+            x={view.x}
+            y={view.y}
+            width={view.w}
+            height={view.h}
+            fill="#e2d5a30c"
+            stroke="#eed9a4"
+            strokeWidth="10"
+          />
+        </svg>
+      </div>
       <div className={styles.mapLegend}>
+        <b>{MODE_NAMES[mode]}</b> ·{" "}
         {ordering
-          ? "HEDEF SEÇ · Shift ile rotaya ekle"
-          : "Sürükle: harita · Tekerlek: yakınlaştır"}
+          ? "Hedef seç"
+          : "Sürükle · Tekerlek / iki parmak: yakınlaştır"}
         <span>
           {mode === "supply"
-            ? "Kırmızı: kesik ikmal · Yeşil: güçlü ikmal"
+            ? "Hatlar: demiryolu · Kare: ikmal merkezi · Kırmızı: ikmal kesik"
             : mode === "military"
-              ? "Yeşil: sen · Kırmızı: düşman · Mavi: müttefik"
+              ? "Yeşil: sen · Kırmızı: düşman · Oklar: taarruz planı"
               : mode === "terrain"
-                ? "Dağ · Orman · Ova · Şehir · Bataklık"
-                : "★ Başkent · Taralı alan: işgal"}
+                ? "Kabartma: dağ · Ağaç dokusu: orman · Çizgiler: demiryolu"
+                : mode === "air"
+                  ? "Uçağa tıkla: menzil · Kesikli hat: görev rotası"
+                  : mode === "naval"
+                    ? "Bölgeye tıkla: deniz üstünlüğü · Semboller: görevdeki filolar"
+                    : "★ Başkent · Taralı alan: işgal · Yakınlaş: şehirler ve demiryolları"}
         </span>
       </div>
     </div>

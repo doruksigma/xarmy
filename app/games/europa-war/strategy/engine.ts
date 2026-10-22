@@ -1,3 +1,6 @@
+import { conferenceAction, conferencesDay } from "./conference";
+import { managementAction, managementDay } from "./management";
+import { detachArmy, planningAction, planningDay } from "./planning";
 import { aiDay } from "./ai";
 import { diplomaticAction } from "./diplomacy";
 import { economyAction, economyDay } from "./economy";
@@ -20,7 +23,13 @@ export function applyAction(
       !c.capitulated,
       "Ülken teslim oldu. Kayıt yükleyebilir veya yeni sefer başlatabilirsin.",
     );
-    if (action.type === "front") {
+    if (action.type === "difficulty") {
+      requireRule(
+        ["easy", "normal", "hard"].includes(action.value),
+        "Geçerli zorluk seç.",
+      );
+      w.difficulty = action.value;
+    } else if (action.type === "front") {
       requireRule(
         action.provinces.length >= 2 &&
           action.provinces.length <= 20 &&
@@ -45,8 +54,7 @@ export function applyAction(
           ),
         "Hatta kendi tümenlerini ata.",
       );
-      for (const front of w.fronts)
-        front.armies = front.armies.filter((id) => !action.armies.includes(id));
+      for (const id of action.armies) detachArmy(w, id);
       w.fronts = w.fronts.filter((f) => f.armies.length > 0);
       for (const army of w.armies)
         if (action.armies.includes(army.id)) {
@@ -79,9 +87,7 @@ export function applyAction(
         (a) => a.id === action.army && a.country === c.id,
       );
       requireRule(a, "Kendi ordularından birini seç.");
-      if (action.type !== "general")
-        for (const front of w.fronts)
-          front.armies = front.armies.filter((id) => id !== a.id);
+      if (action.type !== "general") detachArmy(w, a.id);
       if (action.type === "halt") {
         a.move = null;
         a.route = [];
@@ -116,7 +122,10 @@ export function applyAction(
       diplomaticAction(w, c, action.target, action.kind);
     else
       requireRule(
-        economyAction(w, c, action) ||
+        conferenceAction(w, c, action) ||
+          managementAction(w, c, action) ||
+          planningAction(w, c, action) ||
+          economyAction(w, c, action) ||
           politicsAction(w, c, action) ||
           operationsAction(w, c, action),
         "İşlem tanınmadı.",
@@ -136,6 +145,8 @@ export function advanceDay(world: World): World {
   politicsDay(w);
   operationsDay(w);
   aiDay(w);
+  managementDay(w);
+  planningDay(w);
   for (const front of w.fronts) {
     const points = front.provinces.filter((id) =>
       friendly(w, front.country, w.provinces[id].controller),
@@ -153,6 +164,17 @@ export function advanceDay(world: World): World {
   }
   w.fronts = w.fronts.filter((f) => f.armies.length > 0);
   resolveLandDay(w);
+  for (const p of w.plans)
+    p.armies = p.armies.filter((id) =>
+      w.armies.some((a) => a.id === id && a.country === p.country),
+    );
+  w.plans = w.plans.filter((p) => p.armies.length);
+  for (const f of w.fronts)
+    f.armies = f.armies.filter((id) =>
+      w.armies.some((a) => a.id === id && a.country === f.country),
+    );
+  w.fronts = w.fronts.filter((f) => f.armies.length);
+  conferencesDay(w);
   w.tension = clamp(w.tension - 0.002);
   return w;
 }

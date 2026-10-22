@@ -1,4 +1,13 @@
 "use client";
+import CommandCenter from "./CommandCenter";
+import {
+  AirNavalPanel,
+  ArmyTools,
+  CabinetPanel,
+  PeacePanel,
+} from "./AdvancedPanels";
+import { tradeRoute } from "./trade-routes";
+import type { OffensivePlan } from "./types";
 import { useState } from "react";
 import {
   BUILDINGS,
@@ -20,6 +29,7 @@ import {
   controlled,
   dateLabel,
   GEOGRAPHY,
+  MAP,
   localSupply,
   militaryPower,
   navalPower,
@@ -38,6 +48,7 @@ import type {
 import styles from "../europa.module.css";
 
 export const TABS = [
+  ["command", "◈", "Komuta"],
   ["province", "⌖", "Bölge"],
   ["army", "⚑", "Ordu"],
   ["economy", "▥", "Sanayi"],
@@ -138,6 +149,8 @@ interface Props {
   onOrder: () => void;
   onParadrop: () => void;
   onFront: () => void;
+  onTab: (tab: Tab) => void;
+  onOffensive: (armies: string[], stance: OffensivePlan["stance"]) => void;
 }
 export default function WarPanels({
   world: w,
@@ -152,6 +165,8 @@ export default function WarPanels({
   onOrder,
   onParadrop,
   onFront,
+  onTab,
+  onOffensive,
 }: Props) {
   const c = w.countries[w.player],
     p = w.provinces[selected],
@@ -183,6 +198,8 @@ export default function WarPanels({
       </select>
     </label>
   );
+  if (tab === "command")
+    return <CommandCenter world={w} command={command} onTab={onTab} />;
   if (tab === "province")
     return (
       <>
@@ -230,6 +247,21 @@ export default function WarPanels({
             Tahkimat seviyesi: {p.buildings.fort}.
           </p>
         </div>
+        <details className={styles.fold}>
+          <summary>Komşu şehirler · {geo.neighbors.length}</summary>
+          <p>
+            {geo.neighbors
+              .map(
+                (edge) =>
+                  `${GEOGRAPHY[edge.id].name}${edge.sea ? " (deniz)" : ""}`,
+              )
+              .join(" · ")}
+          </p>
+          <p className={styles.hint}>
+            Her şehrin kendi sınırı vardır. Bu şehri ele geçirmek komşu
+            şehirlerin kontrolünü değiştirmez.
+          </p>
+        </details>
         <h3>Yeraltı kaynakları</h3>
         <div className={styles.chips}>
           {Object.entries(geo.resources)
@@ -346,6 +378,32 @@ export default function WarPanels({
         <p className={styles.subtitle}>
           {own.length} tümen · {number(c.manpower)} yedek insan gücü
         </p>
+        {w.battles
+          .filter((b) => b.attacker === c.id || b.defender === c.id)
+          .map((b) => (
+            <div className={styles.card} key={b.id} data-testid="battle-report">
+              <h3>⚔ {GEOGRAPHY[b.province].name} muharebesi</h3>
+              <p>
+                {w.countries[b.attacker].name} saldırıyor ·{" "}
+                {w.countries[b.defender].name} savunuyor
+              </p>
+              <Meter
+                value={(100 * b.attack) / Math.max(1, b.attack + b.defense)}
+                label="Saldıran tarafın güç payı"
+              />
+              <p>
+                Çatışma sürüyor. Birlikler asker ve organizasyon kaybediyor;
+                toparlanmak için çatışmadan çıkmaları gerekir.
+              </p>
+              <button onClick={() => onProvince(b.province)}>
+                Çatışma bölgesini incele →
+              </button>
+            </div>
+          ))}
+        <p className={styles.hint}>
+          Toplam kayıp: {number(c.casualties)} asker. Emirler, üstteki ▶ ile
+          zaman ilerlerken uygulanır.
+        </p>
         {a ? (
           <div className={styles.card}>
             <h3>
@@ -415,7 +473,19 @@ export default function WarPanels({
               Hedef seçerken Shift: mevcut rotaya yeni hedef ekler. Emir oku
               haritada görünür; düşman toprağında savaş başlar.
             </p>
-            {a.move && <Progress value={a.move.progress} total={a.move.days} />}
+            {a.move && (
+              <>
+                <p>
+                  {w.battles.some(
+                    (b) =>
+                      b.province === a.move!.to && b.attacker === a.country,
+                  )
+                    ? "Çatışıyor — ilerlemek için savunmayı kır."
+                    : `${GEOGRAPHY[a.move.to].name} yönünde ilerliyor.`}
+                </p>
+                <Progress value={a.move.progress} total={a.move.days} />
+              </>
+            )}
           </div>
         ) : (
           <p className={styles.hint}>
@@ -447,7 +517,13 @@ export default function WarPanels({
             </button>
           ))}
         </div>
-        <h3>Cephe planları</h3>
+        <ArmyTools
+          w={w}
+          command={command}
+          armyId={armyId}
+          onOffensive={onOffensive}
+        />
+        <h3>Savunma hatları</h3>
         <p>
           Haritada komşu eyaletlere sırayla tıklayarak savunma hattını çiz. Tüm
           tümenler bu hat boyunca dağılır; tek birliğe yeni emir vermen o
@@ -664,6 +740,7 @@ export default function WarPanels({
       <>
         <div className={styles.eyebrow}>DIŞİŞLERİ</div>
         <h2>Diplomasi</h2>
+        <PeacePanel w={w} command={command} target={target} />
         {targetSelect}
         <div className={styles.countryHead}>
           <span style={{ background: t.color }}>{t.flag}</span>
@@ -744,7 +821,15 @@ export default function WarPanels({
             </button>
           ))}
         </div>
-        {((t.capitulated && t.victor === c.id) || t.subjectOf === c.id) && (
+        {((t.capitulated &&
+          t.victor === c.id &&
+          !w.conferences.some(
+            (q) =>
+              q.status === "open" &&
+              q.defeated === t.id &&
+              q.participants.length > 1,
+          )) ||
+          t.subjectOf === c.id) && (
           <div className={styles.card}>
             <h3>Barış koşulları</h3>
             <p>
@@ -826,7 +911,10 @@ export default function WarPanels({
               <p>
                 {w.countries[t.from].name} → {w.countries[t.to].name}
                 <br />
-                {RESOURCES[t.resource]} · {t.amount} / gün
+                {RESOURCES[t.resource]} · {t.amount} / gün ·{" "}
+                {tradeRoute(w, t.from, t.to)
+                  ? `%${Math.round(tradeRoute(w, t.from, t.to)!.delivery * 100)} teslimat`
+                  : "Güzergâh kapalı"}
               </p>
               <button
                 onClick={() => command({ type: "cancelTrade", id: t.id })}
@@ -930,6 +1018,7 @@ export default function WarPanels({
       <>
         <div className={styles.eyebrow}>HÜKÛMET VE ULUSAL HEDEFLER</div>
         <h2>{c.name}</h2>
+        <CabinetPanel w={w} command={command} target={target} />
         <p className={styles.subtitle}>
           {c.leader} · {IDEOLOGIES[c.ideology]}
         </p>
@@ -1050,99 +1139,123 @@ export default function WarPanels({
         <div className={styles.eyebrow}>HAVA · DENİZ · İSTİHBARAT</div>
         <h2>Harekât merkezi</h2>
         {targetSelect}
-        <div className={styles.card}>
-          <h3>Hava komutanlığı</h3>
-          <p>
-            {number(c.equipment.fighter)} avcı · {number(c.equipment.bomber)}{" "}
-            bombardıman
-            <br />
-            Görev:{" "}
-            {
+        <AirNavalPanel w={w} command={command} target={target} />
+        <details className={styles.fold}>
+          <summary>Hızlı hava ve deniz emirleri</summary>
+          <div className={styles.card}>
+            <h3>Hava komutanlığı</h3>
+            <p>
+              {number(
+                c.air.wings
+                  .filter((a) => a.model === "fighter")
+                  .reduce((n, a) => n + a.count, 0),
+              )}{" "}
+              avcı ·{" "}
+              {number(
+                c.air.wings
+                  .filter((a) =>
+                    ["bomber", "strategicBomber"].includes(a.model),
+                  )
+                  .reduce((n, a) => n + a.count, 0),
+              )}{" "}
+              bombardıman
+              <br />
+              Görev:{" "}
               {
-                idle: "Beklemede",
-                superiority: "Hava üstünlüğü",
-                support: "Yakın hava desteği",
-                strategic: "Stratejik bombardıman",
-              }[c.air.mission]
-            }{" "}
-            · {w.countries[c.air.target].name}
-          </p>
-          <div className={styles.buttonRow}>
-            {(
-              [
-                ["idle", "Bekle"],
-                ["superiority", "Üstünlük"],
-                ["support", "Yakın destek"],
-                ["strategic", "Bombardıman"],
-              ] as const
-            ).map(([mission, name]) => (
-              <button
-                key={mission}
-                onClick={() =>
-                  command({
-                    type: "air",
-                    target: mission === "idle" ? c.id : target,
-                    mission,
-                  })
-                }
-              >
-                {name}
-              </button>
-            ))}
+                {
+                  idle: "Beklemede",
+                  superiority: "Hava üstünlüğü",
+                  support: "Yakın hava desteği",
+                  strategic: "Stratejik bombardıman",
+                }[c.air.mission]
+              }{" "}
+              · {w.countries[c.air.target].name}
+            </p>
+            <div className={styles.buttonRow}>
+              {(
+                [
+                  ["idle", "Bekle"],
+                  ["superiority", "Üstünlük"],
+                  ["support", "Yakın destek"],
+                  ["strategic", "Bombardıman"],
+                ] as const
+              ).map(([mission, name]) => (
+                <button
+                  key={mission}
+                  onClick={() =>
+                    command({
+                      type: "air",
+                      target: mission === "idle" ? c.id : target,
+                      mission,
+                    })
+                  }
+                >
+                  {name}
+                </button>
+              ))}
+            </div>
+            <p>
+              Üstünlük, düşman hava gücünü yıpratır. Yakın destek kara
+              saldırılarını güçlendirir. Bombardıman düşman başkentinin üretim
+              ve ikmalini azaltır.
+            </p>
+            <button
+              onClick={() =>
+                command({ type: "air", target: c.id, mission: "superiority" })
+              }
+            >
+              Kendi hava sahamı koru
+            </button>
           </div>
-          <p>
-            Üstünlük, düşman hava gücünü yıpratır. Yakın destek kara
-            saldırılarını güçlendirir. Bombardıman düşman başkentinin üretim ve
-            ikmalini azaltır.
-          </p>
-          <button
-            onClick={() =>
-              command({ type: "air", target: c.id, mission: "superiority" })
-            }
-          >
-            Kendi hava sahamı koru
-          </button>
-        </div>
-        <div className={styles.card}>
-          <h3>Deniz komutanlığı</h3>
-          <p>
-            {number(c.equipment.ship)} filo · {number(c.equipment.submarine)}{" "}
-            denizaltı · {number(c.equipment.carrier)} uçak gemisi
-            <br />
-            Görev:{" "}
-            {c.navy.mission === "idle"
-              ? "Beklemede"
-              : c.navy.mission === "raid"
-                ? "Konvoy baskını"
-                : "Devriye"}
-          </p>
-          <div className={styles.buttonRow}>
-            {(
-              [
-                ["idle", "Bekle"],
-                ["patrol", "Devriye"],
-                ["raid", "Konvoy baskını"],
-              ] as const
-            ).map(([mission, name]) => (
-              <button
-                key={mission}
-                onClick={() =>
-                  command({
-                    type: "navy",
-                    target: mission === "idle" ? c.id : target,
-                    mission,
-                  })
-                }
-              >
-                {name}
-              </button>
-            ))}
+          <div className={styles.card}>
+            <h3>Deniz komutanlığı</h3>
+            <p>
+              {
+                c.navy.ships.filter(
+                  (s) => !["submarine", "carrier"].includes(s.model),
+                ).length
+              }{" "}
+              savaş gemisi ·{" "}
+              {c.navy.ships.filter((s) => s.model === "submarine").length}{" "}
+              denizaltı ·{" "}
+              {c.navy.ships.filter((s) => s.model === "carrier").length} uçak
+              gemisi
+              <br />
+              Görev:{" "}
+              {c.navy.mission === "idle"
+                ? "Beklemede"
+                : c.navy.mission === "raid"
+                  ? "Konvoy baskını"
+                  : "Devriye"}
+            </p>
+            <div className={styles.buttonRow}>
+              {(
+                [
+                  ["idle", "Bekle"],
+                  ["patrol", "Devriye"],
+                  ["raid", "Konvoy baskını"],
+                ] as const
+              ).map(([mission, name]) => (
+                <button
+                  key={mission}
+                  onClick={() =>
+                    command({
+                      type: "navy",
+                      target: mission === "idle" ? c.id : target,
+                      mission,
+                    })
+                  }
+                >
+                  {name}
+                </button>
+              ))}
+            </div>
+            <p>
+              Donanma üstünlüğü deniz geçişlerini ve ada ikmalini açar.
+              Denizaltı baskınları düşman kaynak ithalatını azaltır.
+            </p>
           </div>
-          <p>
-            Donanma üstünlüğü deniz geçişlerini ve ada ikmalini açar. Denizaltı
-            baskınları düşman kaynak ithalatını azaltır.
-          </p>
-        </div>
+        </details>
         <div className={styles.card}>
           <h3>İstihbarat teşkilatı</h3>
           {!c.agency ? (

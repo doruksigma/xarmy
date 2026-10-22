@@ -1,3 +1,4 @@
+import { decisionAction, nationalFocus } from "./decisions";
 import { focusTree, IDEOLOGIES, TECHNOLOGIES } from "./catalog";
 import { declareWar } from "./diplomacy";
 import {
@@ -34,6 +35,7 @@ function setIdeology(c: Country, ideology: Ideology) {
   c.leader = `${IDEOLOGIES[ideology]} hükûmeti`;
 }
 export function politicsAction(w: World, c: Country, a: Action): boolean {
+  if (decisionAction(w, c, a)) return true;
   if (a.type === "research") {
     const t = TECHNOLOGIES.find((t) => t.id === a.id);
     requireRule(t, "Teknoloji bulunamadı.");
@@ -121,7 +123,12 @@ export function politicsAction(w: World, c: Country, a: Action): boolean {
 export function startCivilWar(w: World, country: string, historical = false) {
   const c = w.countries[country],
     lands = controlled(w, country).filter((p) => p.owner === country);
-  if (lands.length < 3 || c.capitulated || w.countries[`${country}-rebels`])
+  if (
+    lands.length < 3 ||
+    c.capitulated ||
+    country.endsWith("-rebels") ||
+    w.countries[`${country}-rebels`]
+  )
     return;
   const revolt = lands.filter((p, i) => i % 2 === 1);
   if (!revolt.length) return;
@@ -167,6 +174,29 @@ export function startCivilWar(w: World, country: string, historical = false) {
   r.recruitment = [];
   r.missions = [];
   r.history = [];
+  r.automation = {
+    economy: false,
+    research: false,
+    recruitment: false,
+    operations: false,
+  };
+  r.air.wings = [];
+  r.navy.ships = [];
+  for (const wing of [...c.air.wings])
+    if (revolt.some((p) => p.id === wing.base)) {
+      r.air.wings.push(wing);
+      c.air.wings = c.air.wings.filter((a) => a !== wing);
+    }
+  for (const ship of [...c.navy.ships])
+    if (revolt.some((p) => p.id === ship.port)) {
+      r.navy.ships.push(ship);
+      c.navy.ships = c.navy.ships.filter((a) => a !== ship);
+    }
+  r.air.target = id;
+  r.air.mission = "idle";
+  r.navy.target = id;
+  r.navy.mission = "idle";
+
   r.stability = 50;
   r.warSupport = 70;
   r.parties = {
@@ -242,6 +272,7 @@ function focusComplete(w: World, c: Country) {
       if (id !== c.id) changeRelation(w, c.id, id, 20);
     w.tension = clamp(w.tension - 2);
   }
+  if (f.effect === "national") nationalFocus(w, c, f.id);
   if (f.effect in IDEOLOGIES) setIdeology(c, f.effect as Ideology);
   if (c.id === w.player)
     event(w, `${f.name} tamamlandı. ${f.description}`, "politics");
@@ -323,8 +354,20 @@ function history(w: World) {
 export function politicsDay(w: World) {
   for (const c of Object.values(w.countries)) {
     if (c.capitulated) continue;
-    for (const q of c.research)
-      q.progress += 1 + c.science + (c.advisor === "science" ? 0.15 : 0);
+    for (const q of c.research) {
+      const branch = TECHNOLOGIES.find((t) => t.id === q.id)!.branch;
+      const bonus =
+        c.cabinet.science === "institute"
+          ? 0.1
+          : c.cabinet.science === "engineers" &&
+              ["Sanayi", "Zırh"].includes(branch)
+            ? 0.25
+            : c.cabinet.science === "doctrine" && branch === "Doktrin"
+              ? 0.3
+              : 0;
+      q.progress +=
+        1 + c.science + (c.advisor === "science" ? 0.15 : 0) + bonus;
+    }
     for (const q of c.research.filter((q) => q.progress >= q.total)) {
       c.tech.push(q.id);
       if (c.id === w.player)
@@ -383,6 +426,9 @@ export function politicsDay(w: World) {
       p.compliance = clamp(p.compliance + (garrison ? 0.015 : 0.08));
       if (p.resistance > 45) p.damage = clamp(p.damage + 0.6);
       if (
+        !w.conferences.some(
+          (q) => q.status === "open" && q.defeated === p.owner,
+        ) &&
         p.resistance > 85 &&
         w.day % 14 === 0 &&
         !w.armies.some((a) => a.province === p.id && a.country === p.controller)

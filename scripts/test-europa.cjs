@@ -3,7 +3,11 @@ const { mkdtempSync, rmSync } = require("node:fs");
 const path = require("node:path");
 const root = path.resolve(__dirname, "..");
 const output = mkdtempSync(path.join(root, "node_modules", ".europa-tests-"));
-const sources = ["app/games/europa-war/strategy/engine.test.ts"];
+const sources = [
+  "app/games/europa-war/strategy/engine.test.ts",
+  "app/games/europa-war/strategy/advanced.test.ts",
+  "app/games/europa-war/strategy/city-regions.test.ts",
+];
 try {
   const compile = spawnSync(
     process.execPath,

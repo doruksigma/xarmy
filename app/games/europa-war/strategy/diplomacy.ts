@@ -1,3 +1,4 @@
+import { openConference } from "./conference";
 import {
   atWar,
   changeRelation,
@@ -93,6 +94,14 @@ export function diplomaticAction(
   requireRule(t && t !== c, "Başka bir ülke seç.");
   const settlement = ["annex", "puppet", "liberate"].includes(kind);
   if (settlement) {
+    if (t.capitulated && t.victor) {
+      const conference = openConference(w, t.id);
+      requireRule(
+        conference.participants.length === 1,
+        "Bu savaşın birden fazla galibi var. Barış konferansında katkı puanlarınla bölge talep et.",
+      );
+      conference.status = "closed";
+    }
     if (kind === "liberate")
       requireRule(
         t.subjectOf === c.id || (t.victor === c.id && t.capitulated),
@@ -117,6 +126,24 @@ export function diplomaticAction(
           p.resistance = 0;
         }
       }
+    for (const p of Object.values(w.provinces))
+      if (p.controller === t.id && p.owner !== t.id) {
+        p.controller = p.owner;
+        p.resistance = 0;
+      }
+    for (const army of w.armies) {
+      const controller = w.provinces[army.province].controller;
+      if (
+        (army.country === t.id || w.provinces[army.province].owner === t.id) &&
+        controller !== army.country &&
+        !w.countries[controller].allies.includes(army.country)
+      ) {
+        const home = controlled(w, army.country)[0];
+        if (home) army.province = home.id;
+        army.move = null;
+        army.route = [];
+      }
+    }
     if (kind === "annex") {
       t.subjectOf = null;
       t.capitulated = true;

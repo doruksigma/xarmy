@@ -1,0 +1,340 @@
+.atlas {
+  background: #1c3640;
+  isolation: isolate;
+}
+.atlas .canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.atlas .canvas:active {
+  cursor: grabbing;
+}
+.seaName {
+  font:
+    italic 11px Georgia,
+    serif;
+  text-anchor: middle;
+  letter-spacing: 3px;
+  fill: #c0d1c4;
+  opacity: 0.4;
+  pointer-events: none;
+  paint-order: stroke;
+  stroke: #243e44;
+  stroke-width: 2px;
+}
+.nationName {
+  font-family: Georgia, "Times New Roman", serif;
+  font-weight: 600;
+  fill: #f3e6c4;
+  paint-order: stroke;
+  stroke: #263a30ad;
+  stroke-width: 2.2px;
+  stroke-linejoin: round;
+  text-shadow: 0 1px 1px #17231c;
+}
+.cityName {
+  font-family: Arial, sans-serif;
+  fill: #f3e7cb;
+  font-weight: 500;
+  paint-order: stroke;
+  stroke: #344a3b;
+  stroke-width: 1.8px;
+  stroke-linejoin: round;
+}
+.borders {
+  mix-blend-mode: normal;
+}
+.planLabel {
+  font:
+    bold 7px Arial,
+    sans-serif;
+  text-anchor: middle;
+  letter-spacing: 1px;
+  fill: #ffe2a7;
+  paint-order: stroke;
+  stroke: #433725;
+  stroke-width: 2px;
+}
+.armyCounter {
+  filter: drop-shadow(0 1.5px 1px #14231d80);
+}
+.armyCounter:hover {
+  filter: brightness(1.14) drop-shadow(0 1.5px 1px #14231d80);
+}
+.airCounter,
+.seaCounter {
+  cursor: pointer;
+  outline: none;
+}
+.airCounter:focus-visible > rect,
+.seaCounter:focus-visible > rect {
+  stroke: #ffe6a8;
+  stroke-width: 2px;
+}
+.airCounter:hover > rect,
+.seaCounter:hover > rect {
+  stroke: #f6dfaa;
+}
+.compass {
+  position: absolute;
+  right: 28px;
+  top: 126px;
+  width: 44px;
+  color: #c7d2b5;
+  opacity: 0.55;
+  pointer-events: none;
+  text-align: center;
+}
+.compass span {
+  font:
+    9px Georgia,
+    serif;
+}
+.atlas .compass svg {
+  height: 44px;
+  width: 44px;
+  cursor: default;
+}
+.overview {
+  position: absolute;
+  right: 22px;
+  bottom: 76px;
+  width: 150px;
+  padding: 5px;
+  border: 1px solid #81907a66;
+  background: #152f31e8;
+  border-radius: 3px;
+  box-shadow: 0 4px 14px #081e2333;
+}
+.overview > span {
+  display: flex;
+  justify-content: space-between;
+  padding: 3px 3px 7px;
+  font:
+    7px Arial,
+    sans-serif;
+  letter-spacing: 1.5px;
+  color: #b4c3ae;
+}
+.overview b {
+  font-weight: 400;
+  letter-spacing: 0;
+  color: #e5d1a1;
+}
+.atlas .overview svg {
+  width: 138px;
+  height: 92px;
+  cursor: crosshair;
+  touch-action: manipulation;
+  outline: none;
+}
+.overview svg:focus-visible {
+  outline: 1px solid #f4d999;
+}
+.regionInfo {
+  position: absolute;
+  left: 68px;
+  bottom: 91px;
+  display: grid;
+  gap: 6px;
+  min-width: 180px;
+  max-width: 270px;
+  padding: 14px 18px;
+  background: #142b28f0;
+  border: 1px solid #82947d66;
+  border-left: 2px solid #d9bd84;
+  box-shadow: 0 5px 16px #11242055;
+  color: #d7dcc5;
+  pointer-events: none;
+}
+.regionInfo strong {
+  font:
+    21px Georgia,
+    serif;
+  color: #f0e3c2;
+}
+.regionInfo > span {
+  font-size: 10px;
+}
+.regionInfo small {
+  font-size: 9px;
+  color: #a6b6a0;
+}
+.infoLine {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  letter-spacing: 0.8px;
+}
+.infoLine i {
+  width: 8px;
+  height: 8px;
+  display: inline-block;
+  border-radius: 50%;
+  border: 1px solid #c9cbb277;
+}
+.layerInfo {
+  position: absolute;
+  right: 22px;
+  bottom: 206px;
+  display: grid;
+  gap: 6px;
+  width: 215px;
+  background: #122d32f2;
+  border: 1px solid #668b8c;
+  padding: 14px 16px;
+  border-radius: 3px;
+  color: #d6e2cf;
+  box-shadow: 0 3px 14px #11232944;
+}
+.layerInfo strong {
+  font:
+    15px Georgia,
+    serif;
+  padding-right: 14px;
+  color: #f1e1b8;
+}
+.layerInfo span {
+  font-size: 11px;
+}
+.layerInfo small {
+  font-size: 9px;
+  color: #a8beb6;
+}
+.layerInfo button {
+  position: absolute;
+  right: 7px;
+  top: 5px;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-size: 18px;
+}
+@media (max-width: 1100px) {
+  .overview {
+    width: 120px;
+    right: 15px;
+  }
+  .atlas .overview svg {
+    width: 108px;
+    height: 72px;
+  }
+  .overview > span {
+    font-size: 6px;
+    letter-spacing: 1px;
+  }
+  .layerInfo {
+    bottom: 187px;
+    right: 15px;
+  }
+  .regionInfo {
+    min-width: 150px;
+    max-width: 220px;
+    padding: 12px;
+  }
+}
+@media (max-width: 700px) {
+  .overview {
+    right: 12px;
+    bottom: 85px;
+    width: 104px;
+  }
+  .atlas .overview svg {
+    width: 92px;
+    height: 61px;
+  }
+  .overview > span {
+    font-size: 5.5px;
+    letter-spacing: 0.5px;
+  }
+  .compass {
+    top: 140px;
+    right: 16px;
+    transform: scale(0.8);
+    transform-origin: top right;
+  }
+  .regionInfo {
+    display: none;
+  }
+  .layerInfo {
+    width: 200px;
+    bottom: 195px;
+    right: 12px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .armyCounter {
+    filter: none;
+  }
+}
+
+.search {
+  position: absolute;
+  top: 100px;
+  left: 28px;
+  width: 190px;
+  z-index: 5;
+}
+.search input {
+  width: 100%;
+  background: #142d2de8;
+  border: 1px solid #8b9c7a66;
+  color: #eee1bf;
+  border-radius: 3px;
+  padding: 9px 12px;
+  font-size: 12px;
+}
+.search input::placeholder {
+  color: #b7c5b1;
+}
+.search > div {
+  background: #142d2df5;
+  border: 1px solid #8b9c7a66;
+  max-height: 240px;
+  overflow: auto;
+}
+.search button {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: 3px;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid #82977a33;
+  padding: 10px;
+  color: #eee1bf;
+  font-size: 12px;
+  cursor: pointer;
+}
+.search button:hover {
+  background: #59664755;
+}
+.search small {
+  color: #a9bda4;
+  font-size: 10px;
+}
+.search p {
+  padding: 10px;
+  font-size: 12px;
+}
+.urbanPoint {
+  cursor: pointer;
+  outline: none;
+}
+.urbanPoint:hover rect,
+.urbanPoint:focus-visible rect {
+  fill: #fff2b7;
+  stroke: #fff2b7;
+  stroke-width: 1.5;
+}
+@media (max-width: 700px) {
+  .search {
+    top: 104px;
+    left: 14px;
+    width: 155px;
+  }
+}

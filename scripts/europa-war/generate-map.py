@@ -1,11 +1,11 @@
-"""Build local scenario geometry from public-domain Natural Earth 1:110m.
-Requires shapely; input is ne_110m_admin_0_countries.geojson. Strategic regions
+"""Build local scenario geometry from public-domain Natural Earth 1:50m.
+Requires shapely; input is ne_50m_admin_0_countries.geojson. Strategic regions
 are city-centred partitions, NOT surveyed administrative or exact 1936 borders.
 """
 import json, sys, math, hashlib
 from pathlib import Path
 from shapely.geometry import shape, box, Polygon, Point
-from shapely.ops import unary_union
+from shapely.ops import unary_union, nearest_points
 SOURCE=Path(sys.argv[1]); output=Path('app/games/europa-war/strategy/map-data.json')
 features=json.loads(SOURCE.read_text())['features']; raw={f['properties']['ADM0_A3']:shape(f['geometry']).buffer(0) for f in features}
 # id, Turkish name, flag, color, leader, ideology, population millions, industry,
@@ -56,6 +56,7 @@ transfer('ussr','finland',Polygon([(27.5,60.1),(30.4,60.1),(31.6,61.8),(30.1,64)
 # A city-centred polygon subdivision keeps provinces contiguous and real coasts.
 def project(x,y): return [(x+25)*15,(72-y)*22]
 def path(geom):
+    geom=geom.simplify(.008,preserve_topology=True)
     if geom.is_empty:return ''
     polys=[geom] if geom.geom_type=='Polygon' else [g for g in geom.geoms if g.geom_type=='Polygon']
     parts=[]
@@ -110,5 +111,93 @@ for p in provinces:
     if not others:continue
     q=min(others,key=lambda q:math.hypot(q['x']-p['x'],q['y']-p['y']));p['port']=q['port']=True
     p['neighbors'].append(dict(id=q['id'],sea=True));q['neighbors'].append(dict(id=p['id'],sea=True))
-output.write_text(json.dumps(dict(width=1320,height=880,countries=country,provinces=provinces,sourceSha256=hashlib.sha256(SOURCE.read_bytes()).hexdigest()),ensure_ascii=False,separators=(',',':')))
+# Stable gameplay connections and ports are versioned separately from visual detail.
+# A coastline resolution upgrade must not invalidate routes in existing saves.
+topology=json.loads(Path(__file__).with_name('scenario-topology.json').read_text())
+assert set(topology)=={p['id'] for p in provinces}, 'Scenario province IDs changed; migrate the topology explicitly.'
+for p in provinces:
+    p.update(topology[p['id']])
+# Subdivide each existing strategic region into independently controlled city
+# territories. Keeping its original city ID makes old campaign migration possible.
+# These are scenario boundaries, not historical administrative boundary claims.
+legacy_provinces=provinces
+legacy_shapes=shapes
+seeds={p['id']:[] for p in provinces}
+city_source=json.loads(Path(__file__).with_name('urban-centers.json').read_text())
+for cid,entries in city_source.items():
+    candidates=[(p,g) for p,g in zip(provinces,shapes) if p['country']==cid]
+    for i,entry in enumerate(entries.split(';')):
+        name,lon,lat=entry.split(',');lon=float(lon);lat=float(lat);point=Point(lon,lat)
+        p,g=min(candidates,key=lambda pair:pair[1].distance(point))
+        if not g.contains(point):
+            # Clip locations outside the approximate 1936 outline to its interior.
+            edge=nearest_points(g,point)[0];inside=g.representative_point()
+            point=Point(edge.x+(inside.x-edge.x)*.001,edge.y+(inside.y-edge.y)*.001)
+        seeds[p['id']].append((cid+'-city-'+str(i),name,point.x,point.y))
+
+def distribute(total,weights):
+    """Largest remainder: preserve population, factories and resource totals."""
+    raw=[total*w/sum(weights) for w in weights];result=[math.floor(v) for v in raw]
+    for i in sorted(range(len(raw)),key=lambda i:raw[i]-result[i],reverse=True)[:round(total-sum(result))]:result[i]+=1
+    return result
+
+provinces=[];shapes=[]
+for parent,geom in zip(legacy_provinces,legacy_shapes):
+    sites=[(parent['id'],parent['name'],parent['x']/15-25,72-parent['y']/22),*seeds[parent['id']]]
+    weights=[3,*[1]*(len(sites)-1)]
+    allocated={key:distribute(parent[key],weights) for key in ['population','civil','military']}
+    resources={key:distribute(value,weights) for key,value in parent['resources'].items()}
+    for i,(id,name,x,y) in enumerate(sites):
+        region=geom
+        for j,(_,_,xx,yy) in enumerate(sites):
+            if i==j:continue
+            mx,my=(x+xx)/2,(y+yy)/2;nx,ny=(xx-x)*.55,yy-y;length=math.hypot(nx,ny)
+            assert length>1e-8,f'Duplicate city coordinates: {id}'
+            nx/=length;ny/=length;tx,ty=-ny,nx
+            half=Polygon([(mx+tx*400,my+ty*400),(mx-tx*400,my-ty*400),(mx-tx*400-nx*800,my-ty*400-ny*800),(mx+tx*400-nx*800,my+ty*400-ny*800)])
+            region=region.intersection(half)
+        assert not region.is_empty and region.area>1e-8,f'Missing city region: {id}'
+        marker=Point(x,y)
+        if not region.contains(marker):marker=region.representative_point()
+        p={**parent,'id':id,'name':name,'legacyRegion':parent['id'],'path':path(region),'x':round(project(marker.x,marker.y)[0],1),'y':round(project(marker.x,marker.y)[1],1),'neighbors':[],
+           'population':allocated['population'][i],'civil':allocated['civil'][i],'military':allocated['military'][i],
+           'resources':{key:values[i] for key,values in resources.items()},
+           'port':parent['port'] if i==0 else False,'dock':parent['dock'] if i==0 else 0,
+           'vp':parent['vp'] if i==0 else 1,'terrain':parent['terrain'] if i==0 or parent['terrain']!='urban' else 'plains'}
+        provinces.append(p);shapes.append(region)
+
+# Adjacency now follows the actual city polygons. Old regional edges must NOT
+# create shortcuts across the cities inserted between their former endpoints.
+for i,a in enumerate(shapes):
+    for j,b in enumerate(shapes[:i]):
+        if a.distance(b)<.0001 and a.buffer(.00005).intersection(b).area>.000001:
+            provinces[i]['neighbors'].append(dict(id=provinces[j]['id'],sea=False));provinces[j]['neighbors'].append(dict(id=provinces[i]['id'],sea=False))
+byid={p['id']:p for p in provinces}
+for p in legacy_provinces:
+    for edge in p['neighbors']:
+        if edge['sea'] and not any(e['id']==edge['id'] for e in byid[p['id']]['neighbors']):
+            byid[p['id']]['neighbors'].append(dict(id=edge['id'],sea=True))
+
+# Every disconnected domestic landmass gets a sea connection, never a hidden
+# land bridge. This includes city subdivisions on Mediterranean islands.
+for c in country:
+    domestic=[p for p in provinces if p['country']==c['id']]
+    reached={c['capital']}
+    while True:
+        queue=list(reached)
+        for id in queue:
+            for edge in byid[id]['neighbors']:
+                if byid[edge['id']]['country']==c['id'] and edge['id'] not in reached:
+                    reached.add(edge['id']);queue.append(edge['id'])
+        unreached=[p for p in domestic if p['id'] not in reached]
+        if not unreached:break
+        p,q=min(((p,byid[id]) for p in unreached for id in reached),key=lambda pair:math.hypot(pair[0]['x']-pair[1]['x'],pair[0]['y']-pair[1]['y']))
+        for a,b in [(p,q),(q,p)]:
+            a['neighbors'].append(dict(id=b['id'],sea=True));a['port']=True
+        reached.add(p['id'])
+
+# Empty legacy marker layer: every named city now has a real province path.
+output.write_text(json.dumps(dict(width=1320,height=880,countries=country,provinces=provinces,cities=[],sourceSha256=hashlib.sha256(SOURCE.read_bytes()).hexdigest()),ensure_ascii=False,separators=(',',':')))
 print(f'{len(country)} countries, {len(provinces)} strategic provinces, {sum(len(p["neighbors"]) for p in provinces)//2} links; {output.stat().st_size} bytes')
+
+print(f'{len(provinces)-len(legacy_provinces)} additional independently controlled city regions')

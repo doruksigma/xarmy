@@ -27,7 +27,13 @@ export type Equipment =
   | "heavyTank"
   | "fighter"
   | "bomber"
+  | "strategicBomber"
+  | "reconPlane"
+  | "transport"
+  | "carrierFighter"
   | "ship"
+  | "destroyer"
+  | "battleship"
   | "submarine"
   | "carrier";
 export type UnitType =
@@ -51,14 +57,18 @@ export type Building =
   | "refinery"
   | "synthetic"
   | "fort"
-  | "radar";
+  | "radar"
+  | "mine"
+  | "airfield"
+  | "antiAir";
 export type MissionType =
   | "intel"
   | "sabotage"
   | "propaganda"
   | "plans"
   | "resistance"
-  | "diplomacy";
+  | "diplomacy"
+  | "coup";
 export type Stock = Record<Resource, number>;
 export type Arsenal = Record<Equipment, number>;
 export interface Province {
@@ -142,6 +152,14 @@ export interface Country {
   victor: string | null;
   generals: General[];
   advisor: "industry" | "science" | "army";
+  automation: {
+    economy: boolean;
+    research: boolean;
+    recruitment: boolean;
+    operations: boolean;
+  };
+  cabinet: { economy: string; military: string; science: string };
+  decisions: Record<string, number>;
   parties: Record<Ideology, number>;
   agency: boolean;
   agents: number;
@@ -152,8 +170,14 @@ export interface Country {
   air: {
     mission: "idle" | "superiority" | "support" | "strategic";
     target: string;
+    wings: AirWing[];
   };
-  navy: { mission: "idle" | "patrol" | "raid"; target: string };
+  navy: {
+    mission: "idle" | "patrol" | "raid";
+    target: string;
+    ships: Warship[];
+    zone: SeaZone;
+  };
   history: {
     day: number;
     treasury: number;
@@ -176,7 +200,13 @@ export interface Army {
   entrenchment: number;
   stance: "hold" | "advance";
   route: string[];
-  move: { to: string; progress: number; days: number } | null;
+  move: {
+    to: string;
+    progress: number;
+    days: number;
+    kind?: "paradrop";
+  } | null;
+  support: SupportType[];
 }
 export interface Battle {
   id: string;
@@ -206,9 +236,10 @@ export interface GameEvent {
   kind: "info" | "war" | "economy" | "politics";
 }
 export interface World {
-  version: 1;
+  version: 2;
   player: string;
   mode: "historical" | "alternative";
+  difficulty: "easy" | "normal" | "hard";
   day: number;
   seed: number;
   serial: number;
@@ -219,10 +250,129 @@ export interface World {
   battles: Battle[];
   trades: Trade[];
   fronts: Front[];
+  plans: OffensivePlan[];
+  conferences: PeaceConference[];
+  warScore: Record<string, Record<string, number>>;
   events: GameEvent[];
   firedEvents: string[];
 }
+export type AirModel =
+  | "fighter"
+  | "bomber"
+  | "strategicBomber"
+  | "reconPlane"
+  | "transport"
+  | "carrierFighter";
+export type AirMission =
+  | "idle"
+  | "superiority"
+  | "support"
+  | "strategic"
+  | "recon"
+  | "transport"
+  | "naval";
+export type ShipModel =
+  | "ship"
+  | "destroyer"
+  | "battleship"
+  | "submarine"
+  | "carrier";
+export type SeaZone =
+  | "atlantic"
+  | "north"
+  | "baltic"
+  | "mediterranean"
+  | "black";
+export type SupportType =
+  | "artillery"
+  | "engineers"
+  | "logistics"
+  | "hospital"
+  | "recon";
+export interface AirWing {
+  id: string;
+  name: string;
+  model: AirModel;
+  count: number;
+  size: number;
+  base: string;
+  target: string;
+  mission: AirMission;
+  readiness: number;
+  experience: number;
+}
+export interface Warship {
+  id: string;
+  name: string;
+  model: ShipModel;
+  health: number;
+  experience: number;
+  port: string;
+  zone: SeaZone;
+  mission: "idle" | "patrol" | "raid" | "escort";
+  aircraft: number;
+  transit: number;
+}
+export interface OffensivePlan {
+  id: string;
+  country: string;
+  name: string;
+  armies: string[];
+  objectives: string[];
+  preparation: number;
+  active: boolean;
+  stance: "careful" | "balanced" | "aggressive";
+}
+export interface PeaceConference {
+  id: string;
+  defeated: string;
+  participants: string[];
+  points: Record<string, number>;
+  available: string[];
+  awards: {
+    province: string;
+    country: string;
+    kind: "annex" | "puppet" | "liberate";
+    cost: number;
+  }[];
+  round: number;
+  turn: number;
+  status: "open" | "closed";
+}
 export type Action =
+  | { type: "difficulty"; value: World["difficulty"] }
+  | { type: "automation"; area: keyof Country["automation"]; enabled: boolean }
+  | { type: "autoPlan"; area: keyof Country["automation"] }
+  | { type: "support"; army: string; support: SupportType; remove?: boolean }
+  | {
+      type: "offensive";
+      armies: string[];
+      objectives: string[];
+      stance: OffensivePlan["stance"];
+    }
+  | { type: "plan"; id: string; kind: "start" | "pause" | "delete" }
+  | { type: "createWing"; model: AirModel; count: number; base: string }
+  | {
+      type: "wing";
+      id: string;
+      mission: AirMission;
+      target: string;
+      base?: string;
+    }
+  | { type: "disbandWing"; id: string }
+  | { type: "commission"; model: ShipModel; port: string }
+  | { type: "ship"; id: string; mission: Warship["mission"]; zone: SeaZone }
+  | { type: "carrierAircraft"; id: string; count: number }
+  | {
+      type: "peaceClaim";
+      conference: string;
+      province: string;
+      kind: "annex" | "puppet" | "liberate";
+    }
+  | { type: "peacePass"; conference: string }
+  | { type: "release"; country: string }
+  | { type: "cabinet"; slot: keyof Country["cabinet"]; id: string }
+  | { type: "decision"; id: string; target?: string }
   | { type: "front"; provinces: string[]; armies: string[] }
   | { type: "deleteFront"; id: string }
   | { type: "move"; army: string; to: string; append?: boolean }
