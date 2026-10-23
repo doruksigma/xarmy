@@ -1,8 +1,9 @@
 /* Run against a production server with other CPU-heavy tasks stopped.
    NODE_PATH=<playwright modules> node scripts/test-europa-responsiveness.cjs
    Optional: EUROPA_CPU_RATE=4, EUROPA_PROFILE=1, EUROPA_DURATION_MS=10000,
-   EUROPA_PHASES=startup,pan,camera,army,saves,initial,large,battle,
-   EUROPA_SAVE_FIXTURE=<save/world>, EUROPA_INSTRUMENT=1, EUROPA_MOBILE=1.
+   EUROPA_PHASES=startup,pan,camera,army,saves,initial,large,running-pan,battle,
+   EUROPA_SAVE_FIXTURE=<save/world>, EUROPA_INSTRUMENT=1, EUROPA_MOBILE=1,
+   EUROPA_WARMUP_MS=1500 (wait for assets/fonts and additional startup idle).
    This reports main-thread long tasks and rendering cost, not a pass/fail FPS target.
    Campaign fixtures use the public save-file import control. */
 const assert = require("node:assert/strict");
@@ -49,6 +50,7 @@ const phases = new Set(
 const profiling = process.env.EUROPA_PROFILE === "1";
 const instrumenting = process.env.EUROPA_INSTRUMENT === "1";
 const mobile = process.env.EUROPA_MOBILE === "1";
+const warmupMs = Number(process.env.EUROPA_WARMUP_MS || 0);
 const results = [];
 fs.mkdirSync(output, { recursive: true });
 function distribution(values) {
@@ -67,7 +69,11 @@ function record(result) {
   results.push(result);
   fs.writeFileSync(
     path.join(output, "results.json"),
-    JSON.stringify({ cpuRate: rate, mobile, results }, null, 2),
+    JSON.stringify(
+      { cpuRate: rate, mobile, profiling, instrumenting, warmupMs, results },
+      null,
+      2,
+    ),
   );
   console.log(JSON.stringify(result));
 }
@@ -121,6 +127,9 @@ function record(result) {
                 name,
                 duration: performance.now() - start,
                 characters: typeof result === "string" ? result.length : 0,
+                ...(name === "Worker.postMessage"
+                  ? { worldSnapshot: Boolean(args[0]?.world) }
+                  : {}),
               });
             return result;
           };
@@ -229,6 +238,12 @@ function record(result) {
         summary.totalMs += operation.duration;
         summary.maxMs = Math.max(summary.maxMs, operation.duration);
         summary.characters += operation.characters;
+        if (typeof operation.worldSnapshot === "boolean") {
+          const key = operation.worldSnapshot
+            ? "worldSnapshots"
+            : "continuations";
+          summary[key] = (summary[key] || 0) + 1;
+        }
       }
       record({
         phase: name,
@@ -269,6 +284,13 @@ function record(result) {
       .getByRole("button", { name: "Başkentime git", exact: true })
       .click();
     await page.waitForTimeout(500);
+    if (warmupMs > 0) {
+      await page.waitForLoadState("networkidle");
+      await page.evaluate(async () => {
+        await document.fonts.ready;
+      });
+      await page.waitForTimeout(warmupMs);
+    }
     if (phases.has("startup")) {
       const startup = await page.evaluate(
         () => window.__responsiveness.longtasks,
@@ -318,7 +340,7 @@ function record(result) {
           const { x, y, width, height } = element.viewBox.baseVal;
           return { x, y, width, height };
         });
-      const settle = () => page.waitForTimeout(450);
+      const settle = (milliseconds = 450) => page.waitForTimeout(milliseconds);
       const focus = async () => {
         await page
           .getByRole("button", { name: "Başkentime git", exact: true })
@@ -401,7 +423,9 @@ function record(result) {
         const anchor = await worldPoint();
         await page.mouse.move(point.x, point.y);
         for (let step = 0; step < 6; step++) await page.mouse.wheel(0, -35);
-        await settle();
+        // Include the wheel idle commit and compositor-layer release in the
+        // measurement, not just the immediate CSS response to input.
+        await settle(800);
         const final = await camera();
         const finalAnchor = await worldPoint();
         assert.ok(final.width < initial.width, "Wheel up must zoom in");
@@ -525,22 +549,70 @@ function record(result) {
         .click();
       await page.waitForTimeout(300);
     }
-    async function simulation(name, world) {
+    async function simulation(name, world, pan = false) {
       await importWorld(world);
+      if (pan && mobile)
+        await page
+          .getByRole("button", { name: "Yönetim panelini kapat", exact: true })
+          .click();
       await page
         .getByRole("button", { name: "5 kat hız", exact: true })
         .click();
+      const box = pan
+        ? await page.locator('[data-testid="war-map"]').boundingBox()
+        : null;
       const initialDate = await page
         .locator('[data-testid="game-date"]')
         .textContent();
       await measure(name, async () => {
+        const interactionsMs = {};
+        let actionStarted = performance.now();
         await page
           .getByRole("button", { name: "Zamanı başlat", exact: true })
           .click();
-        await page.waitForTimeout(duration);
+        interactionsMs.start = performance.now() - actionStarted;
+        if (pan) {
+          assert.ok(box, "The running map must have a viewport");
+          await page.evaluate(() => performance.mark("running-pan:start"));
+          for (let gesture = 0; gesture < 3; gesture++) {
+            actionStarted = performance.now();
+            const x = box.x + box.width * 0.5,
+              y = box.y + box.height * 0.55,
+              dx = Math.min(100, box.width * 0.22) * (gesture % 2 ? -1 : 1);
+            if (mobile) {
+              const point = (step) => [
+                { id: 1, x: x + (dx * step) / 30, y: y + (20 * step) / 30 },
+              ];
+              await cdp.send("Input.dispatchTouchEvent", {
+                type: "touchStart",
+                touchPoints: point(0),
+              });
+              for (let step = 1; step <= 30; step++)
+                await cdp.send("Input.dispatchTouchEvent", {
+                  type: "touchMove",
+                  touchPoints: point(step),
+                });
+              await cdp.send("Input.dispatchTouchEvent", {
+                type: "touchEnd",
+                touchPoints: [],
+              });
+            } else {
+              await page.mouse.move(x, y);
+              await page.mouse.down();
+              await page.mouse.move(x + dx, y + 20, { steps: 30 });
+              await page.mouse.up();
+            }
+            interactionsMs[`pan${gesture + 1}`] =
+              performance.now() - actionStarted;
+            await page.waitForTimeout(100);
+          }
+          await page.evaluate(() => performance.mark("running-pan:pause"));
+        } else await page.waitForTimeout(duration);
+        actionStarted = performance.now();
         await page
           .getByRole("button", { name: "Zamanı duraklat", exact: true })
           .click();
+        interactionsMs.pause = performance.now() - actionStarted;
         const finalDate = await page
           .locator('[data-testid="game-date"]')
           .textContent();
@@ -554,6 +626,7 @@ function record(result) {
           initialDay: world.day,
           initialDate,
           finalDate,
+          ...(pan ? { interactionsMs } : {}),
         };
       });
     }
@@ -671,14 +744,21 @@ function record(result) {
     }
     if (phases.has("initial"))
       await simulation("initial-5x", createWorld("turkey"));
-    if (phases.has("large")) {
+    if (phases.has("large") || phases.has("running-pan")) {
       const world = createWorld("turkey");
       const countries = Object.keys(world.countries);
       while (world.armies.length < 2000) {
         const country = countries[world.armies.length % countries.length];
         addArmy(world, country, world.countries[country].capital);
       }
-      await simulation("large-5x", world);
+      if (phases.has("large")) await simulation("large-5x", world);
+      if (phases.has("running-pan")) {
+        fs.writeFileSync(
+          path.join(output, "running-pan-fixture.json"),
+          encodeSave(world),
+        );
+        await simulation("running-large-pan", world, true);
+      }
     }
     if (phases.has("late") && process.env.EUROPA_SAVE_FIXTURE) {
       const raw = JSON.parse(

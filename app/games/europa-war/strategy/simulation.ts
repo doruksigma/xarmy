@@ -4,7 +4,8 @@ export type SimulationRequest = {
   type: "advance";
   id: number;
   revision: number;
-  world: World;
+  // Omitted only when the worker already holds this revision's accepted state.
+  world?: World;
 };
 
 export type SimulationResponse =
@@ -42,9 +43,11 @@ export class SimulationController {
   private disposed = false;
   private speed = 1;
   private revision = 0;
+  private workerRevision: number | null = null;
   private nextId = 0;
   private scheduled: Timer | null = null;
-  private pending: { id: number; revision: number; timeout: Timer } | null = null;
+  private pending: { id: number; revision: number; timeout: Timer } | null =
+    null;
   private readonly setTimer: NonNullable<Options["setTimer"]>;
   private readonly clearTimer: NonNullable<Options["clearTimer"]>;
 
@@ -91,6 +94,7 @@ export class SimulationController {
           return;
         }
         this.world = data.world;
+        this.workerRevision = pending.revision;
         this.options.onWorld(data.world);
         // Waiting after completion avoids queued days on slower devices.
         this.schedule();
@@ -157,6 +161,7 @@ export class SimulationController {
     this.pending = null;
     const worker = this.worker;
     this.worker = null;
+    this.workerRevision = null;
     if (worker) {
       worker.onmessage = null;
       worker.onerror = null;
@@ -213,7 +218,10 @@ export class SimulationController {
         type: "advance",
         id,
         revision,
-        world: this.world,
+        // Commands, loading, pause/resume and a fresh worker require a full
+        // resync. Continuous days reuse the last accepted worker snapshot,
+        // avoiding a synchronous main-thread clone of the whole campaign.
+        ...(this.workerRevision === revision ? {} : { world: this.world }),
       });
     } catch {
       this.fail(

@@ -286,6 +286,8 @@
 .province:focus-visible {
   stroke: #ffe0a0;
   stroke-width: 3;
+  /* Only the one keyboard-focused province needs a constant-pixel outline. */
+  vector-effect: non-scaling-stroke;
 }
 .seaLabel {
   font:

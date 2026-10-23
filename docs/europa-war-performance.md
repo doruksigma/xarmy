@@ -3,6 +3,92 @@
 Bu çalışma tekrarlayan donmaları hedefler. Harita, şehir sınırları, grup emirleri,
 oyun kuralları ve kayıt biçimi korunur.
 
+## Kalan kısa takılmalar için ek düzeltme
+
+Karşılaştırma tabanı `8dd7873`. Sonraki incelemede kamera kesinleşirken
+`clientWidth/clientHeight` okumalarının bütün SVG yerleşimini eşzamanlı
+hesaplattığı görüldü. Boyutlar artık yalnızca `ResizeObserver` bildiriminden
+alınır. İki parmak hareketinde ve aynı tekerlek hareketi içinde ekran konumu
+tekrar ölçülmez; yeni hareket, kaydırma ve boyut değişimi ölçümü yeniler.
+
+- Küçük haritanın 447 vektör bölgesi yerel Canvas ile tek PNG'ye çizilir.
+  Oyuncu/düşman/müttefik/nötr renkleri aynı kaldığında gün veya kamera değişimi
+  bu görseli yeniden üretmez. Bölge kontrolü ve diplomasi renkleri günceller.
+  Yalnızca son görsel tutulur; Canvas kullanılamazsa vektör yedeği gösterilir.
+- Şehir ve ülke sınırlarının kalınlığı kamera ölçeğiyle hesaplanır. Böylece
+  tarayıcı her harekette binlerce köşe için `non-scaling-stroke` hesabı yapmaz.
+  Klavyeyle odaklanan tek şehir, her yakınlıkta 3 piksel konturunu korur.
+- Ülke etiketleri için şehirler tek geçişte gruplanır; birlik gruplarının
+  konumları önceki grupları tekrar tekrar taramaz. Türkçe tarih biçimlendiricisi
+  her çağrıda yeniden oluşturulmaz.
+- Yavaş cihazdaki aralıklı tekerlek olayları 450 ms durulma aralığıyla
+  birleştirilir. Görüntü ilk olayda hareket eder; bu süre yalnızca ağır SVG
+  yenilemesinin zamanıdır. Görünür alan hazırlanan sınırı aşarsa geometri yine
+  hemen yenilenir. Basılı parmak hareketi zamanlayıcıyla sonlandırılmaz.
+- Worker kabul edilen son dünya durumunu tutar. Art arda günler yalnızca
+  işlem kimliği ve revizyon gönderir; her gün bütün dünyayı ana iş parçacığında
+  kopyalama kaldırılmıştır. Emir, yükleme, duraklat/devam veya worker'ın yeniden
+  başlaması tam eşitleme gerektirir. Worker'dan dönen dünya hâlâ tamdır; eski
+  sonuçları reddetme ve tek bekleyen gün kuralı korunur.
+
+Bu değişiklikler şehir sınırlarını, seçimi, birlikleri, emirleri veya oyun
+kurallarını azaltmaz. Ölçüm sırasında başka derleme ve tarayıcı testleri
+çalıştırılmaz. Telefon testleri Chromium emülasyonudur; fiziksel cihaz veya
+60 FPS doğrulaması değildir.
+
+Doğrulama: **190/190 otomatik test**, üretim derlemesi ve TypeScript kontrolü
+başarılı. **50 tarayıcı kontrolü** geçti: 18 kamera/etkileşim, 18 genel oyun,
+6 toplu emir, 8 worker/çevrimdışı. Ekran boyutu ve telefon yönü değiştikten
+sonra yakınlaştırma referansının sapması 2 CSS pikselin altında kaldı.
+Küçük harita önbelleği gerçek rasterizasyon sayacıyla, klavye konturu üç
+yakınlaştırma seviyesinde doğrulandı. Sayfa ve konsol hatası görülmedi;
+masaüstü/telefon oyun görüntüleri incelendi. Son üretim paketinin kimliği
+`m_jmYQEaEfmvdUarRN2lk`. Gerçek worker testi, veri gönderilmeden ilerleyen
+ardışık günlerin `advanceDay` sonucuyla birebir eşitliğini ve farklı seferin
+yeniden eşitlenmesini de doğrular.
+
+Gün ilerlerken 2.000 tümenle kaydırmayı yeniden ölçmek için
+`EUROPA_PHASES=running-pan` kullanılabilir. Bu faz gerçek sürükleme/dokunma
+girdileri verir; başlatma, her sürükleme ve duraklatma süresini ayrı kaydeder.
+
+Son ölçüm, Linux Chromium'da 4× CPU yavaşlatmayla 1440×1000 masaüstü ve
+390×844, 2× piksel yoğunluklu telefon emülasyonunda yapıldı. 2.000 tümenle
+oyun ilerlerken üç kaydırma boyunca gönderimler şöyleydi:
+
+| Görünüm | Worker'a gönderim | Toplam gönderim süresi | İlk tam gönderimden sonraki toplam |
+| --- | --- | --- | --- |
+| Masaüstü | 1 tam dünya + 18 devam isteği | 26,8 ms | 5,8 ms |
+| Telefon | 1 tam dünya + 11 devam isteği | 29,2 ms | 3,2 ms |
+
+Bu ölçüm yalnızca ana iş parçacığından worker'a gönderimi kapsar. Geri dönen
+verinin alınması ve arayüzün çizilmesi ayrıca iş yapar. Örnekler sırasıyla
+19 ve 12 gün ilerledi; farklı uzunluktaki örneklerden FPS artışı çıkarılmaz.
+
+Kamera ölçümleri aynı yönde iyileşmedi. Aşağıdaki değerler `8dd7873` ile son
+paketin iz kaydı açık koşularındaki **en uzun ana iş parçacığı görevidir**:
+
+| Hareket | Masaüstü önce → sonra | Telefon önce → sonra |
+| --- | --- | --- |
+| Fareyle kaydırma | 121 → 235 ms | 170 → 61 ms |
+| Dokunarak kaydırma | 94 → 186 ms | 116 → 190 ms |
+| Tekerlekle yakınlaştırma | 144 → 368 ms | 75 → 249 ms |
+| İki parmakla yakınlaştırma | 368 → 88 ms | 84 → 175 ms |
+| Küçük haritadan gezinme | 458 → 162 ms | 650 → 140 ms |
+
+Son masaüstü paketinin ısınma beklemeli, iz kaydı kapalı tekrarında bu beş
+değer sırasıyla 130, 186, 110, 110 ve 200 ms oldu. Bu tekrar farklı başlangıç
+koşulları nedeniyle doğrudan eski paket karşılaştırması değildir. Sonuçlar
+değişkendir ve bazı hareketlerde gerileme vardır; bütün kaydırmaların
+hızlandığı veya donmanın tamamen giderildiği doğrulanmamıştır. Tekerlek fazı,
+450 ms kesinleştirme ve 250 ms katman bırakma işlemlerini ölçüm dışında
+bırakmamak için son girdiden sonra 800 ms gözlenir.
+
+Ham karşılaştırma: çalışma ortamında
+`/workspace/scratch/europa-microstalls/comparison.json`. Genel oyun ve toplu
+emir kontrolleri bu çalışmanın önceki paketinde geçti; son kamera ve worker
+değişikliklerinden sonra 18 etkileşim ve 8 worker/çevrimdışı kontrolü tekrar
+çalıştırıldı.
+
 ## Değişiklikler
 
 - Günlük ekonomi, AI ve muharebe hesabı gerçek bir Web Worker içinde çalışır.

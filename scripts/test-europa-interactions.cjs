@@ -92,6 +92,22 @@ function fixture() {
       hasTouch: true,
       serviceWorkers: "block",
     });
+    // Observe the public canvas API, not application state. Comparing only href
+    // would miss repeatedly rasterizing identical pixels into the same PNG.
+    await context.addInitScript(() => {
+      window.__europaMinimapRasterizations = 0;
+      const encode = HTMLCanvasElement.prototype.toDataURL;
+      HTMLCanvasElement.prototype.toDataURL = function (...args) {
+        const ratio = Math.max(1, Math.min(4, window.devicePixelRatio || 1));
+        if (
+          args[0] === "image/png" &&
+          this.width === Math.ceil(144 * ratio) &&
+          this.height === Math.ceil(96 * ratio)
+        )
+          window.__europaMinimapRasterizations++;
+        return Reflect.apply(encode, this, args);
+      };
+    });
     page = await context.newPage();
     page.setDefaultTimeout(15000);
     page.on("pageerror", (error) => errors.push(error.message));
@@ -136,12 +152,12 @@ function fixture() {
             ?.textContent === `${n} tümen seçili`,
         n,
       );
-    const load = async () => {
+    const load = async (world = data.world) => {
       await tab("Kayıtlar");
       await page.getByLabel("Sefer kayıt dosyası").setInputFiles({
         name: "interaction-audit.json",
         mimeType: "application/json",
-        buffer: Buffer.from(encodeSave(data.world)),
+        buffer: Buffer.from(encodeSave(world)),
       });
       await page
         .getByRole("heading", { name: "Komuta merkezi", exact: true })
@@ -149,8 +165,37 @@ function fixture() {
       await page
         .getByRole("button", { name: "Zamanı başlat", exact: true })
         .waitFor();
-      selectedId = data.world.countries[data.world.player].capital;
+      selectedId = world.countries[world.player].capital;
       await settle();
+    };
+    const minimapSnapshot = async () => {
+      const backdrop = page.getByTestId("minimap-backdrop");
+      await backdrop.waitFor({ state: "attached" });
+      await page.waitForFunction(() =>
+        document
+          .querySelector('[data-testid="minimap-backdrop"]')
+          ?.getAttribute("href")
+          ?.startsWith("data:image/png"),
+      );
+      return {
+        href: await backdrop.getAttribute("href"),
+        rasterizations: await page.evaluate(
+          () => window.__europaMinimapRasterizations,
+        ),
+      };
+    };
+    const expectSameBackdrop = async (previous, label) => {
+      const next = await minimapSnapshot();
+      assert.equal(
+        next.href,
+        previous.href,
+        `${label}: backdrop pixels stay valid`,
+      );
+      assert.equal(
+        next.rasterizations,
+        previous.rasterizations,
+        `${label}: unchanged backdrop must not be rasterized again`,
+      );
     };
     const save = async () => {
       await tab("Kayıtlar");
@@ -304,12 +349,35 @@ function fixture() {
           }
         return null;
       });
+    const worldPoint = (point) =>
+      map().evaluate((svg, p) => {
+        const world = new DOMPoint(p.x, p.y).matrixTransform(
+          svg.getScreenCTM().inverse(),
+        );
+        return { x: world.x, y: world.y };
+      }, point);
+    const expectAnchor = async (world, screen, label) => {
+      const drift = await map().evaluate(
+        (svg, { world, screen }) => {
+          const result = new DOMPoint(world.x, world.y).matrixTransform(
+            svg.getScreenCTM(),
+          );
+          return Math.hypot(result.x - screen.x, result.y - screen.y);
+        },
+        { world, screen },
+      );
+      assert.ok(
+        drift < 2,
+        `${label}: map anchor drifted ${drift.toFixed(2)} CSS pixels`,
+      );
+    };
     const pinch = async ({
       zoomOut = false,
       translateX = 0,
       translateY = 0,
+      center: requestedCenter,
     } = {}) => {
-      const center = await surfacePoint();
+      const center = requestedCenter ?? (await surfacePoint());
       assert.ok(center, "Pinch center must be exposed");
       const session = await context.newCDPSession(page);
       const points = (distance, fraction = 0) =>
@@ -346,12 +414,131 @@ function fixture() {
       });
       await session.detach();
     };
+    const verifyAnchoredWheel = async (label) => {
+      const anchor = await surfacePoint();
+      assert.ok(anchor, `${label}: wheel anchor must be exposed`);
+      const world = await worldPoint(anchor),
+        previous = await readView();
+      await page.mouse.move(anchor.x, anchor.y);
+      await page.mouse.wheel(0, -70);
+      await settle(previous);
+      assert.ok(
+        (await readView())[2] < previous[2],
+        `${label}: wheel zooms in`,
+      );
+      await expectAnchor(world, anchor, label);
+      await verifyCoverage(label);
+      await verifyNoAccidentalSelection(label);
+    };
+    const verifyAnchoredPinch = async (label) => {
+      const center = await surfacePoint();
+      assert.ok(center, `${label}: pinch anchor must be exposed`);
+      const world = await worldPoint(center),
+        previous = await readView();
+      await pinch({ center });
+      await settle(previous);
+      assert.ok(
+        (await readView())[2] < previous[2],
+        `${label}: pinch zooms in`,
+      );
+      await expectAnchor(world, center, label);
+      await verifyCoverage(label);
+      await verifyNoAccidentalSelection(label);
+    };
+    const resizeMap = async (viewport, label) => {
+      const previous = await readView();
+      await page.setViewportSize(viewport);
+      await page.waitForFunction(() => {
+        const svg = document.querySelector('[data-testid="war-map"]');
+        const camera = svg.viewBox.baseVal;
+        const box = svg.parentElement.getBoundingClientRect();
+        return (
+          Math.abs(camera.width / camera.height - box.width / box.height) <
+          0.002
+        );
+      });
+      await settle(previous);
+      const camera = await readView();
+      assert.ok(
+        camera.every(Number.isFinite),
+        `${label}: finite camera coordinates`,
+      );
+      await verifyCoverage(label);
+    };
 
     await page.goto(`${base}/games/europa-war`, {
       waitUntil: "domcontentloaded",
     });
     await page.getByRole("button", { name: "SEFERİ BAŞLAT" }).click();
     await load();
+    const originalBackdrop = await minimapSnapshot();
+    assert.ok(
+      originalBackdrop.rasterizations > 0,
+      "Chromium must rasterize the minimap",
+    );
+    assert.equal(
+      await page
+        .getByRole("button", { name: "Küçük haritada konuma git", exact: true })
+        .locator("path")
+        .count(),
+      0,
+      "The raster minimap must not retain hundreds of SVG province paths",
+    );
+    await page
+      .getByRole("button", { name: "Başkentime git", exact: true })
+      .click();
+    await settle();
+    const outlineScales = [];
+    for (let level = 0; level < 3; level++) {
+      await map().focus();
+      await page.keyboard.press("Tab");
+      await page.waitForFunction((id) => {
+        const active = document.activeElement;
+        return (
+          active?.getAttribute("data-province") === id &&
+          active.matches(":focus-visible")
+        );
+      }, selectedId);
+      const outline = await map().evaluate((svg) => {
+        const province = document.activeElement;
+        const style = getComputedStyle(province),
+          matrix = province.getScreenCTM();
+        const scale = Math.hypot(matrix.a, matrix.b);
+        const pixels =
+          parseFloat(style.strokeWidth) *
+          (style.vectorEffect === "non-scaling-stroke" ? 1 : scale);
+        const fixedStrokes = [
+          ...svg.querySelectorAll("[data-province]"),
+        ].filter(
+          (el) => getComputedStyle(el).vectorEffect === "non-scaling-stroke",
+        ).length;
+        return { pixels, scale, fixedStrokes };
+      });
+      assert.ok(
+        Math.abs(outline.pixels - 3) < 0.05,
+        `Keyboard focus outline must stay 3 CSS pixels at zoom ${level}; got ${outline.pixels}`,
+      );
+      assert.equal(
+        outline.fixedStrokes,
+        1,
+        "Only the keyboard-focused province needs a non-scaling outline",
+      );
+      outlineScales.push(outline.scale);
+      if (level < 2) {
+        const previous = await readView();
+        await page
+          .getByRole("button", { name: "Haritayı yakınlaştır", exact: true })
+          .click();
+        await settle(previous);
+      }
+    }
+    assert.ok(
+      Math.max(...outlineScales) / Math.min(...outlineScales) > 1.5,
+      "Keyboard outline test must exercise substantially different map scales",
+    );
+    checks.push(
+      "Keyboard Tab focus keeps a 3 CSS-pixel province outline at three zoom levels; all other province strokes retain normal rendering",
+    );
     await page
       .getByRole("button", { name: "Başkentime git", exact: true })
       .click();
@@ -401,6 +588,51 @@ function fixture() {
     }
     await selectVisible("four repeated drags");
 
+    // Separate wheel notches can arrive well after a short frame debounce. Keep
+    // their visible movement immediate without rebuilding SVG between notches.
+    await map().focus();
+    before = await readView();
+    const slowWheelPoint = await surfacePoint();
+    assert.ok(
+      slowWheelPoint,
+      "Slow wheel anchor must be inside the exposed map",
+    );
+    const slowWheelWorld = await worldPoint(slowWheelPoint);
+    await page.mouse.move(slowWheelPoint.x, slowWheelPoint.y);
+    for (let notch = 1; notch <= 2; notch++) {
+      await page.mouse.wheel(0, -20);
+      await page.waitForTimeout(300);
+      assert.deepEqual(
+        await readView(),
+        before,
+        `Slow wheel notch ${notch} must not commit geometry during the 300 ms gap`,
+      );
+      const live = await map().evaluate((svg) => ({
+        transform: svg.style.transform,
+        promoted: svg.style.willChange,
+      }));
+      assert.ok(
+        live.transform,
+        `Slow wheel notch ${notch} must visibly transform the map`,
+      );
+      assert.equal(
+        live.promoted,
+        "transform",
+        "The wheel gesture must retain its compositor layer",
+      );
+    }
+    await settle(before);
+    assert.ok(
+      (await readView())[2] < before[2],
+      "Slow wheel notches must finally commit their zoom",
+    );
+    await expectAnchor(slowWheelWorld, slowWheelPoint, "Slow wheel notches");
+    await verifyCoverage("after slow wheel notches");
+    await verifyNoAccidentalSelection("slow wheel notches");
+    checks.push(
+      "Two slow wheel notches 300 ms apart keep immediate CSS movement without intermediate viewBox commits; final camera preserves pointer anchor and visible coverage",
+    );
+
     before = await readView();
     const wheelPoint = await surfacePoint();
     await page.mouse.move(wheelPoint.x, wheelPoint.y);
@@ -449,6 +681,103 @@ function fixture() {
     await page.screenshot({ path: path.join(output, "camera-minimap.png") });
     checks.push(
       "Visible province coverage checked during and after drag/pinch, after wheel and minimap; labels remain limited to capitals and selected city",
+    );
+    await expectSameBackdrop(
+      originalBackdrop,
+      "Camera movement and city selection",
+    );
+    // These snapshots pass through the real import UI. Only the displayed state
+    // varies, so the expected raster invalidation cannot be caused by AI combat.
+    const nextDay = structuredClone(data.world);
+    nextDay.day++;
+    await load(nextDay);
+    await expectSameBackdrop(originalBackdrop, "A day-only world update");
+    const allied = structuredClone(nextDay);
+    allied.countries.germany.allies.push("turkey");
+    allied.countries.turkey.allies.push("germany");
+    await load(allied);
+    await page.waitForFunction(
+      (href) =>
+        document
+          .querySelector('[data-testid="minimap-backdrop"]')
+          ?.getAttribute("href") !== href,
+      originalBackdrop.href,
+    );
+    const alliedBackdrop = await minimapSnapshot();
+    assert.equal(
+      alliedBackdrop.rasterizations,
+      originalBackdrop.rasterizations + 1,
+      "Alliance color changes must rebuild the backdrop once",
+    );
+    const occupied = structuredClone(allied);
+    occupied.provinces[data.enemy].controller = occupied.player;
+    await load(occupied);
+    await page.waitForFunction(
+      (href) =>
+        document
+          .querySelector('[data-testid="minimap-backdrop"]')
+          ?.getAttribute("href") !== href,
+      alliedBackdrop.href,
+    );
+    const occupiedBackdrop = await minimapSnapshot();
+    assert.equal(
+      occupiedBackdrop.rasterizations,
+      alliedBackdrop.rasterizations + 1,
+      "Captured territory must rebuild the backdrop once",
+    );
+    await load();
+    const restoredBackdrop = await minimapSnapshot();
+    assert.equal(
+      restoredBackdrop.href,
+      originalBackdrop.href,
+      "Restoring country control and relations must restore the original minimap pixels",
+    );
+    checks.push(
+      "Raster minimap: no SVG province duplication or repeated rasterization on camera/day updates; alliance and occupation changes refresh pixels once; loading the original campaign restores them",
+    );
+
+    // ResizeObserver now provides camera dimensions. Check the ground point under
+    // the pointer, not merely changing viewBox values, after desktop resizing.
+    await resizeMap({ width: 1180, height: 900 }, "Desktop viewport resize");
+    await page
+      .getByRole("button", { name: "Başkentime git", exact: true })
+      .click();
+    await settle();
+    await verifyAnchoredWheel("Wheel anchor after desktop resize");
+    await verifyAnchoredPinch("Pinch anchor after desktop resize");
+    await resizeMap({ width: 1440, height: 1000 }, "Desktop viewport restore");
+    await tab("Ordu");
+    const scrolled = await page
+      .getByTestId("army-roster")
+      .evaluate((roster) => {
+        for (let el = roster.parentElement; el; el = el.parentElement) {
+          if (
+            /(auto|scroll)/.test(getComputedStyle(el).overflowY) &&
+            el.scrollHeight > el.clientHeight + 100
+          ) {
+            el.scrollTop = Math.min(
+              el.scrollHeight - el.clientHeight,
+              el.scrollTop + 160,
+            );
+            return el.scrollTop > 0;
+          }
+        }
+        return false;
+      });
+    assert.ok(
+      scrolled,
+      "Army panel must really scroll to exercise viewport-cache invalidation",
+    );
+    await page.evaluate(() => new Promise(requestAnimationFrame));
+    await page
+      .getByRole("button", { name: "Başkentime git", exact: true })
+      .click();
+    await settle();
+    await verifyAnchoredWheel("Wheel anchor after panel scroll");
+    await verifyAnchoredPinch("Pinch anchor after panel scroll");
+    await expectSameBackdrop(restoredBackdrop, "Resize and scroll gestures");
+    checks.push(
+      "Desktop resize and real panel scroll: wheel/pinch preserve the intended ground point within 2 CSS pixels, camera ratio follows viewport and visible map coverage remains intact",
     );
 
     // 96 own divisions make each roster span three pages (40 + 40 + 16).
@@ -719,7 +1048,31 @@ function fixture() {
     checks.push(
       "390×844 touch viewport: one-finger dragging, pinch, visible province coverage, correct post-gesture selection, no horizontal page overflow",
     );
-    await page.setViewportSize({ width: 1440, height: 1000 });
+    if (await closePanel.isVisible()) await closePanel.click();
+    const orientationBackdrop = await minimapSnapshot();
+    for (const [viewport, label] of [
+      [{ width: 844, height: 390 }, "Landscape orientation"],
+      [{ width: 390, height: 844 }, "Portrait orientation restore"],
+    ]) {
+      await resizeMap(viewport, label);
+      await page
+        .getByRole("button", { name: "Başkentime git", exact: true })
+        .click();
+      await settle();
+      await verifyAnchoredWheel(`${label}: wheel`);
+      await verifyAnchoredPinch(`${label}: pinch`);
+    }
+    await expectSameBackdrop(
+      orientationBackdrop,
+      "Orientation changes and camera gestures",
+    );
+    checks.push(
+      "Portrait→landscape→portrait orientation: resized map dimensions stay finite and proportional; wheel/pinch anchors remain within 2 CSS pixels; minimap is not rasterized again",
+    );
+    await resizeMap(
+      { width: 1440, height: 1000 },
+      "Final desktop viewport restore",
+    );
     await tab("Ordu");
     await armySearch.fill("Denetim 096");
     await offensiveSearch.fill("Denetim 096");

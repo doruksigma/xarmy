@@ -4,6 +4,9 @@ import type { RefObject } from "react";
 
 export type Camera = { x: number; y: number; w: number; h: number };
 export const CAMERA_OVERSCAN = 0.45;
+// Slow devices can deliver wheel events hundreds of milliseconds apart. The
+// composed camera moves immediately; wait for the entire burst to reconcile.
+export const CAMERA_SETTLE_MS = 450;
 type Update = Camera | ((view: Camera) => Camera);
 
 /** Move the composed map during a gesture; reconcile geometry after it settles. */
@@ -77,7 +80,7 @@ export function useMapCamera(
       // A held pointer can produce slow/coalesced events on busy devices.
       // Only wheel/keyboard gestures use idle detection; dragging finishes on
       // pointerup, otherwise each slow pinch step can rebuild the whole map.
-      timer.current = settle ? setTimeout(finish, 120) : null;
+      timer.current = settle ? setTimeout(finish, CAMERA_SETTLE_MS) : null;
       if (frame.current !== null) return;
       frame.current = requestAnimationFrame(() => {
         frame.current = null;
@@ -106,13 +109,11 @@ export function useMapCamera(
 
   useLayoutEffect(() => {
     base.current = view;
-    if (svg.current)
-      size.current = {
-        width: svg.current.clientWidth,
-        height: svg.current.clientHeight,
-      };
+    // ResizeObserver supplies the dimensions before a camera resize. Reading
+    // clientWidth here forces layout of every newly reconciled SVG path at the
+    // end of a gesture, even though the viewport itself has not changed.
     paint();
-  }, [view, paint, svg]);
+  }, [view, paint]);
 
   useLayoutEffect(
     () => () => {

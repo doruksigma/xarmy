@@ -22,13 +22,14 @@ export function random(w: World) {
 export function dateOf(day: number) {
   return new Date(Date.UTC(1936, 0, 1 + day));
 }
+const calendarFormatter = new Intl.DateTimeFormat("tr-TR", {
+  day: "numeric",
+  month: "long",
+  year: "numeric",
+  timeZone: "UTC",
+});
 export function dateLabel(day: number) {
-  return dateOf(day).toLocaleDateString("tr-TR", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-    timeZone: "UTC",
-  });
+  return calendarFormatter.format(dateOf(day));
 }
 export function event(
   w: World,

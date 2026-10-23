@@ -9,7 +9,13 @@ import type { SeaZone, World } from "./types";
 import styles from "../europa.module.css";
 import atlas from "./map.module.css";
 import mapAssets from "./map-assets.json";
-import { CAMERA_OVERSCAN, useMapCamera, type Camera } from "./useMapCamera";
+import MinimapBackdrop from "./MinimapBackdrop";
+import {
+  CAMERA_OVERSCAN,
+  CAMERA_SETTLE_MS,
+  useMapCamera,
+  type Camera,
+} from "./useMapCamera";
 
 export type MapMode =
   | "political"
@@ -129,6 +135,11 @@ function WarMap({
     } | null>(null);
   const { view, liveView, setView, moveView, finish, overviewRef, canvasSize } =
     useMapCamera(svg, () => fitCamera(MAP.width / MAP.height));
+  const viewportRect = useRef<DOMRect | null>(null);
+  function readViewport() {
+    return (viewportRect.current ??=
+      svg.current!.parentElement!.getBoundingClientRect());
+  }
   const [search, setSearch] = useState("");
   const [viewportWidth, setViewportWidth] = useState(1000);
   const [hover, setHover] = useState(""),
@@ -137,6 +148,10 @@ function WarMap({
   const player = world.countries[world.player];
   const capitalRef = useRef(player.capital);
   capitalRef.current = player.capital;
+  // Match screen-pixel strokes at each committed zoom without asking the
+  // browser to transform thousands of coastline vertices for non-scaling SVG
+  // strokes during every gesture. The compositor scales them between commits.
+  const strokeScale = view.w / viewportWidth;
   const counterScale = Math.max(0.22, Math.min(1.6, view.w / viewportWidth));
   const needsSupply = mode === "supply" || !!hover;
   const network = useMemo(
@@ -186,12 +201,13 @@ function WarMap({
     player.intel[id]?.expires > world.day;
   const formations = useMemo(() => {
     const out = new Map<string, typeof world.armies>();
+    const battleProvinces = new Set(world.battles.map((b) => b.province));
     for (const a of world.armies) {
       const known =
         a.country === world.player ||
         player.allies.includes(a.country) ||
         player.intel[a.country]?.expires > world.day ||
-        world.battles.some((b) => b.province === a.province) ||
+        battleProvinces.has(a.province) ||
         GEOGRAPHY[a.province].neighbors.some(
           (n) => world.provinces[n.id].controller === world.player,
         );
@@ -202,33 +218,46 @@ function WarMap({
     }
     return [...out.values()];
   }, [world, player]);
-  const countryLabels = useMemo(
-    () =>
-      Object.values(world.countries)
-        .map((c) => {
-          const lands = MAP.provinces.filter(
-            (p) => world.provinces[p.id].controller === c.id,
-          );
-          if (!lands.length) return null;
-          const x = lands.reduce((n, p) => n + p.x, 0) / lands.length;
-          const y = lands.reduce((n, p) => n + p.y, 0) / lands.length;
-          const anchor = lands.reduce(
-            (best, p) =>
-              Math.hypot(p.x - x, p.y - y) < Math.hypot(best.x - x, best.y - y)
-                ? p
-                : best,
-            lands[0],
-          );
-          return {
-            country: c,
-            lands: lands.length,
-            x: anchor.x + (c.id === "uk" ? 22 : c.id === "ireland" ? -12 : 0),
-            y: anchor.y - (detailed ? 25 : 19) + (c.id === "ireland" ? 17 : 0),
-          };
-        })
-        .filter((x) => x !== null),
-    [world, detailed],
-  );
+  const formationOffsets = useMemo(() => {
+    const counts = new Map<string, number>();
+    return formations.map((group) => {
+      const province = group[0].province;
+      const count = counts.get(province) ?? 0;
+      counts.set(province, count + 1);
+      return count * 31;
+    });
+  }, [formations]);
+  const countryLabels = useMemo(() => {
+    // Group once instead of rescanning every province for every country on
+    // each simulated day. Ownership still updates immediately after combat.
+    const territories = new Map<string, typeof MAP.provinces>();
+    for (const p of MAP.provinces) {
+      const controller = world.provinces[p.id].controller;
+      if (!territories.has(controller)) territories.set(controller, []);
+      territories.get(controller)!.push(p);
+    }
+    return Object.values(world.countries)
+      .map((c) => {
+        const lands = territories.get(c.id);
+        if (!lands?.length) return null;
+        const x = lands.reduce((n, p) => n + p.x, 0) / lands.length;
+        const y = lands.reduce((n, p) => n + p.y, 0) / lands.length;
+        const anchor = lands.reduce(
+          (best, p) =>
+            Math.hypot(p.x - x, p.y - y) < Math.hypot(best.x - x, best.y - y)
+              ? p
+              : best,
+          lands[0],
+        );
+        return {
+          country: c,
+          lands: lands.length,
+          x: anchor.x + (c.id === "uk" ? 22 : c.id === "ireland" ? -12 : 0),
+          y: anchor.y - (detailed ? 25 : 19) + (c.id === "ireland" ? 17 : 0),
+        };
+      })
+      .filter((x) => x !== null);
+  }, [world, detailed]);
   const cityLabels = useMemo(() => {
     // Capitals are named at every zoom. Other names appear only on selection.
     type Box = { x: number; y: number; w: number; h: number };
@@ -320,6 +349,8 @@ function WarMap({
     const observer = new ResizeObserver(([entry]) => {
       const { width, height } = entry.contentRect;
       if (!width || !height) return;
+      canvasSize.current = { width, height };
+      viewportRect.current = null;
       setViewportWidth(width);
       const ratio = width / height,
         initial = !initialized;
@@ -345,9 +376,14 @@ function WarMap({
       });
     });
     observer.observe(el);
+    let lastWheel = -Infinity;
     const wheel = (e: WheelEvent) => {
       e.preventDefault();
-      const rect = el.parentElement?.getBoundingClientRect();
+      // Measure once per wheel burst, not after every compositor write.
+      if (e.timeStamp - lastWheel > CAMERA_SETTLE_MS)
+        viewportRect.current = null;
+      lastWheel = e.timeStamp;
+      const rect = readViewport();
       if (rect && rect.width && rect.height) {
         const camera = liveView.current;
         zoom(
@@ -365,9 +401,14 @@ function WarMap({
         );
       }
     };
+    const invalidateViewport = () => {
+      viewportRect.current = null;
+    };
+    window.addEventListener("scroll", invalidateViewport, true);
     el.addEventListener("wheel", wheel, { passive: false });
     return () => {
       observer.disconnect();
+      window.removeEventListener("scroll", invalidateViewport, true);
       el.removeEventListener("wheel", wheel);
     };
   }, []);
@@ -464,8 +505,9 @@ function WarMap({
           if (e.button !== 0) return;
           pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
           if (pointers.current.size === 2) {
+            viewportRect.current = null;
             const [a, b] = [...pointers.current.values()],
-              rect = e.currentTarget.parentElement!.getBoundingClientRect(),
+              rect = readViewport(),
               camera = liveView.current;
             const anchor = new DOMPoint(
               camera.x +
@@ -500,7 +542,7 @@ function WarMap({
           const gesture = pinch.current;
           if (gesture && pointers.current.size >= 2) {
             const [a, b] = [...pointers.current.values()],
-              rect = e.currentTarget.parentElement!.getBoundingClientRect();
+              rect = readViewport();
             const w = zoomWidth(
               (gesture.view.w * gesture.distance) /
                 Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)),
@@ -718,8 +760,9 @@ function WarMap({
                   fill={fill}
                   fillRule="evenodd"
                   stroke={close ? "#b1b99a" : "#2c3c33"}
-                  strokeWidth={close ? 1 : detailed ? 0.7 : 0.45}
-                  vectorEffect="non-scaling-stroke"
+                  strokeWidth={
+                    (close ? 1 : detailed ? 0.7 : 0.45) * strokeScale
+                  }
                   className={styles.province}
                   role="button"
                   aria-label={`${g.name}, ${country.name}`}
@@ -778,8 +821,7 @@ function WarMap({
               d={c.path}
               fill="none"
               stroke="#26362e"
-              strokeWidth={close ? 1.8 : 1.6}
-              vectorEffect="non-scaling-stroke"
+              strokeWidth={(close ? 1.8 : 1.6) * strokeScale}
               opacity=".85"
             />
           ))}
@@ -789,8 +831,7 @@ function WarMap({
               d={c.path}
               fill="none"
               stroke="#e9dfbf"
-              strokeWidth=".55"
-              vectorEffect="non-scaling-stroke"
+              strokeWidth={0.55 * strokeScale}
               opacity=".35"
             />
           ))}
@@ -815,17 +856,15 @@ function WarMap({
                     d={curvedPath(a.x, a.y, b.x, b.y)}
                     fill="none"
                     stroke={mode === "supply" ? "#bad59c" : "#343d2e"}
-                    strokeWidth={mode === "supply" ? 2 : 0.9}
-                    vectorEffect="non-scaling-stroke"
+                    strokeWidth={(mode === "supply" ? 2 : 0.9) * strokeScale}
                     opacity={mode === "supply" ? 0.7 : 0.4}
                   />
                   <path
                     d={curvedPath(a.x, a.y, b.x, b.y)}
                     fill="none"
                     stroke={mode === "supply" ? "#182c28" : "#eadfbd"}
-                    strokeWidth=".65"
-                    vectorEffect="non-scaling-stroke"
-                    strokeDasharray="2 4"
+                    strokeWidth={0.65 * strokeScale}
+                    strokeDasharray={`${2 * strokeScale} ${4 * strokeScale}`}
                     opacity=".65"
                   />
                 </g>
@@ -838,8 +877,7 @@ function WarMap({
             d={GEOGRAPHY[id].path}
             fill={id === selected ? "#f2cb8c16" : "#ffffff13"}
             stroke={id === selected ? "#ffe0a3" : "#f4ecd1"}
-            strokeWidth={id === selected ? 2.3 : 1.4}
-            vectorEffect="non-scaling-stroke"
+            strokeWidth={(id === selected ? 2.3 : 1.4) * strokeScale}
             pointerEvents="none"
           />
         ))}
@@ -1320,10 +1358,7 @@ function WarMap({
             p = GEOGRAPHY[a.province],
             own = a.country === world.player,
             chosen = group.some((x) => selectedArmies.has(x.id));
-          const offset =
-            formations
-              .slice(0, index)
-              .filter((g) => g[0].province === a.province).length * 31;
+          const offset = formationOffsets[index];
           const averageOrg =
             group.reduce((n, a) => n + a.organization, 0) / group.length;
           return (
@@ -1664,27 +1699,7 @@ function WarMap({
           }}
         >
           <rect width="1320" height="880" fill="#18323a" />
-          {MAP.provinces.map((p) => {
-            const controller = world.provinces[p.id].controller;
-            return (
-              <path
-                key={p.id}
-                d={p.path}
-                fill={
-                  controller === world.player
-                    ? "#b4c29b"
-                    : player.wars.includes(controller)
-                      ? "#a47564"
-                      : player.allies.includes(controller)
-                        ? "#8caeb2"
-                        : "#617567"
-                }
-                fillRule="evenodd"
-                stroke="#1e302d"
-                strokeWidth="1"
-              />
-            );
-          })}
+          <MinimapBackdrop world={world} />
           <rect
             ref={overviewRef}
             x={view.x}
