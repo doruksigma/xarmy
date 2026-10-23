@@ -8,13 +8,13 @@ import { dateLabel, GEOGRAPHY, MAP, surrender } from "./strategy/world";
 import {
   decodeSave,
   encodeSave,
-  listSaves,
   loadLocal,
   saveLocal,
   type SaveSlot,
 } from "./strategy/storage";
 import { useOfflinePack } from "./strategy/useOfflinePack";
 import { useSimulation } from "./strategy/useSimulation";
+import { useSaveSlots } from "./strategy/useSaveSlots";
 import type { Action, OffensivePlan, World } from "./strategy/types";
 import styles from "./europa.module.css";
 
@@ -27,15 +27,11 @@ function Saves({
   onLoad: (w: World) => void;
   onMessage: (s: string) => void;
 }) {
-  const [slots, setSlots] = useState<ReturnType<typeof listSaves>>([]),
+  const slots = useSaveSlots(),
     input = useRef<HTMLInputElement>(null);
-  useEffect(() => {
-    setSlots(listSaves());
-  }, [world.day]);
   function save(slot: SaveSlot) {
     try {
       saveLocal(slot, world);
-      setSlots(listSaves());
       onMessage("Sefer bu cihaza kaydedildi.");
     } catch (e) {
       onMessage((e as Error).message);
@@ -116,6 +112,7 @@ function Saves({
   );
 }
 export default function EuropaWarClient() {
+  const [campaignRevision, setCampaignRevision] = useState(0);
   const [setup, setSetup] = useState(true),
     [choice, setChoice] = useState("turkey"),
     [scenario, setScenario] = useState<World["mode"]>("historical"),
@@ -130,8 +127,8 @@ export default function EuropaWarClient() {
     >(null),
     [message, setMessage] = useState(""),
     [panel, setPanel] = useState(true),
-    [log, setLog] = useState(false),
-    [saved, setSaved] = useState<ReturnType<typeof listSaves>>([]);
+    [log, setLog] = useState(false);
+  const saved = useSaveSlots();
   const [attackArmies, setAttackArmies] = useState<string[]>([]),
     [attackStance, setAttackStance] =
       useState<OffensivePlan["stance"]>("balanced");
@@ -151,14 +148,17 @@ export default function EuropaWarClient() {
   const shown = world && !setup ? world : preview,
     c = shown.countries[shown.player],
     chosen = preview.countries[choice];
-  const selectedArmies = armyIds
-      .map((id) => shown.armies.find((a) => a.id === id && a.country === c.id))
-      .filter((a) => a !== undefined),
-    selectedArmyIds = selectedArmies.map((a) => a.id),
-    armyId = selectedArmyIds[0] ?? null;
-  useEffect(() => {
-    setSaved(listSaves());
-  }, [setup]);
+  const selectedArmies = useMemo(() => {
+    const own = new Map(
+      shown.armies.filter((a) => a.country === c.id).map((a) => [a.id, a]),
+    );
+    return armyIds.map((id) => own.get(id)).filter((a) => a !== undefined);
+  }, [armyIds, shown.armies, c.id]);
+  const selectedArmyIds = useMemo(
+    () => selectedArmies.map((a) => a.id),
+    [selectedArmies],
+  );
+  const armyId = selectedArmyIds[0] ?? null;
   useEffect(() => {
     const available = new Set(
       shown.armies.filter((a) => a.country === shown.player).map((a) => a.id),
@@ -215,6 +215,7 @@ export default function EuropaWarClient() {
     return () => window.removeEventListener("keydown", key);
   }, [setup, setPaused]);
   function restore(w: World) {
+    setCampaignRevision((revision) => revision + 1);
     setWorld(w);
     setSetup(false);
     setPaused(true);
@@ -241,88 +242,97 @@ export default function EuropaWarClient() {
       "Sefer hazır. Komuta merkezi önceliklerini gösteriyor. Planını seç, sonra ▶ ile zamanı ilerlet.",
     );
   }
-  function command(a: Action) {
-    const w = current.current;
-    if (!w) return false;
-    const result = applyAction(w, a);
-    if (result.error) {
-      say(result.error);
-      setPanel(true);
-      return false;
-    } else {
-      setWorld(result.world);
-      const count = "armies" in a ? new Set(a.armies).size : 1,
-        movementOrder = ["move", "moveGroup", "paradrop", "plan"].includes(
-          a.type,
-        ),
-        feedback =
-          a.type === "haltGroup"
-            ? `${count} tümen için hareket durduruldu; savunma emri verildi.`
-            : a.type === "moveGroup"
-              ? `${count} tümen için hareket emri hazır.`
-              : movementOrder
-                ? "Emir hazır."
-                : "Emir uygulandı.";
-      setMessage(
-        feedback +
-          (paused && movementOrder
-            ? " Zaman duraklatıldı; ▶ ile ilerlettiğinde birlikler harekete geçer."
-            : ""),
-      );
-      return true;
-    }
-  }
+  const command = useCallback(
+    (a: Action) => {
+      const w = current.current;
+      if (!w) return false;
+      const result = applyAction(w, a);
+      if (result.error) {
+        say(result.error);
+        setPanel(true);
+        return false;
+      } else {
+        setWorld(result.world);
+        const count = "armies" in a ? new Set(a.armies).size : 1,
+          movementOrder = ["move", "moveGroup", "paradrop", "plan"].includes(
+            a.type,
+          ),
+          feedback =
+            a.type === "haltGroup"
+              ? `${count} tümen için hareket durduruldu; savunma emri verildi.`
+              : a.type === "moveGroup"
+                ? `${count} tümen için hareket emri hazır.`
+                : movementOrder
+                  ? "Emir hazır."
+                  : "Emir uygulandı.";
+        setMessage(
+          feedback +
+            (paused && movementOrder
+              ? " Zaman duraklatıldı; ▶ ile ilerlettiğinde birlikler harekete geçer."
+              : ""),
+        );
+        return true;
+      }
+    },
+    [current, setWorld, paused],
+  );
   function onArmy(id: string) {
     onArmies([id]);
   }
-  function onArmies(ids: string[], append = false) {
-    const ownIds = new Set(
-      shown.armies.filter((a) => a.country === shown.player).map((a) => a.id),
-    );
-    const eligible = ids.filter((id) => ownIds.has(id));
-    setArmyIds((previous) => [
-      ...new Set([
-        ...(append ? previous.filter((id) => ownIds.has(id)) : []),
-        ...eligible,
-      ]),
-    ]);
-    setTab("army");
-    setPanel(true);
-    setOrder(null);
-    const a = shown.armies.find((a) => a.id === eligible[0]);
-    if (a) setSelected(a.province);
-  }
-  function onProvince(id: string, append = false) {
-    if (setup) {
-      setChoice(shown.provinces[id].owner);
-      setSelected(id);
-      return;
-    }
-    if (order === "front" || order === "offensive") {
-      setFrontPoints((points) =>
-        points.includes(id)
-          ? points.slice(0, points.indexOf(id) + 1)
-          : [...points, id],
+  const onArmies = useCallback(
+    (ids: string[], append = false) => {
+      const ownIds = new Set(
+        shown.armies.filter((a) => a.country === shown.player).map((a) => a.id),
       );
+      const eligible = ids.filter((id) => ownIds.has(id));
+      setArmyIds((previous) => [
+        ...new Set([
+          ...(append ? previous.filter((id) => ownIds.has(id)) : []),
+          ...eligible,
+        ]),
+      ]);
+      setTab("army");
+      setPanel(true);
+      setOrder(null);
+      const a = shown.armies.find((a) => a.id === eligible[0]);
+      if (a) setSelected(a.province);
+    },
+    [shown],
+  );
+  const onProvince = useCallback(
+    (id: string, append = false) => {
+      if (setup) {
+        setChoice(shown.provinces[id].owner);
+        setSelected(id);
+        return;
+      }
+      if (order === "front" || order === "offensive") {
+        setFrontPoints((points) =>
+          points.includes(id)
+            ? points.slice(0, points.indexOf(id) + 1)
+            : [...points, id],
+        );
+        setSelected(id);
+        return;
+      }
+      if ((order === "move" || order === "paradrop") && armyId) {
+        const accepted = command(
+          order === "move"
+            ? { type: "moveGroup", armies: selectedArmyIds, to: id, append }
+            : { type: "paradrop", army: armyId, to: id },
+        );
+        if (accepted) setOrder(null);
+        setSelected(id);
+        return;
+      }
       setSelected(id);
-      return;
-    }
-    if ((order === "move" || order === "paradrop") && armyId) {
-      const accepted = command(
-        order === "move"
-          ? { type: "moveGroup", armies: selectedArmyIds, to: id, append }
-          : { type: "paradrop", army: armyId, to: id },
-      );
-      if (accepted) setOrder(null);
-      setSelected(id);
-      return;
-    }
-    setSelected(id);
-    setTab("province");
-    setPanel(true);
-    const country = shown.provinces[id].controller;
-    if (country !== shown.player) setTarget(country);
-  }
+      setTab("province");
+      setPanel(true);
+      const country = shown.provinces[id].controller;
+      if (country !== shown.player) setTarget(country);
+    },
+    [setup, shown, order, armyId, selectedArmyIds, command],
+  );
   function beginOrder(value: "move" | "paradrop" | "front" | "offensive") {
     if (value === "move" && !selectedArmyIds.length) {
       say("Hareket emri vermek için kendi tümenlerini seç.");
@@ -615,6 +625,7 @@ export default function EuropaWarClient() {
                 <Saves world={world} onLoad={restore} onMessage={say} />
               ) : (
                 <WarPanels
+                  key={`${campaignRevision}:${shown.player}`}
                   world={shown}
                   tab={tab}
                   selected={selected}

@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   AIRCRAFT,
   AIR_MISSIONS,
@@ -37,11 +37,32 @@ export function ArmyTools({
   armyId: string | null;
   onOffensive: (armies: string[], stance: OffensivePlan["stance"]) => void;
 }) {
-  const own = w.armies.filter((a) => a.country === w.player),
+  const own = useMemo(
+      () => w.armies.filter((a) => a.country === w.player),
+      [w.armies, w.player],
+    ),
     a = own.find((a) => a.id === armyId),
     c = w.countries[w.player];
   const [selected, setSelected] = useState<string[]>([]),
-    [stance, setStance] = useState<OffensivePlan["stance"]>("balanced");
+    [stance, setStance] = useState<OffensivePlan["stance"]>("balanced"),
+    [query, setQuery] = useState(""),
+    [pageIndex, setPageIndex] = useState(0);
+  const selectedSet = useMemo(() => new Set(selected), [selected]),
+    available = useMemo(() => new Set(own.map((a) => a.id)), [own]),
+    eligible = selected.filter((id) => available.has(id));
+  const roster = useMemo(() => {
+    const text = query.trim().toLocaleLowerCase("tr-TR");
+    return text
+      ? own.filter((army) =>
+          `${army.name} ${GEOGRAPHY[army.province].name}`
+            .toLocaleLowerCase("tr-TR")
+            .includes(text),
+        )
+      : own;
+  }, [own, query]);
+  const pageSize = 40,
+    pageCount = Math.max(1, Math.ceil(roster.length / pageSize)),
+    page = Math.min(pageIndex, pageCount - 1);
   return (
     <>
       {a && (
@@ -97,12 +118,27 @@ export function ArmyTools({
           </button>
           <button onClick={() => setSelected([])}>Seçimi temizle</button>
         </div>
-        <div className={styles.unitChoices}>
-          {own.map((a) => (
+        <label className={styles.field}>
+          Taarruz için birlik ara
+          <input
+            value={query}
+            placeholder="Birlik adı veya şehir"
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setPageIndex(0);
+            }}
+          />
+        </label>
+        <p>
+          {eligible.length} tümen taarruz için seçili · {roster.length} birlik
+          listeleniyor.
+        </p>
+        <div className={styles.unitChoices} data-testid="offensive-roster">
+          {roster.slice(page * pageSize, (page + 1) * pageSize).map((a) => (
             <label key={a.id}>
               <input
                 type="checkbox"
-                checked={selected.includes(a.id)}
+                checked={selectedSet.has(a.id)}
                 onChange={(e) =>
                   setSelected((ids) =>
                     e.target.checked
@@ -116,6 +152,28 @@ export function ArmyTools({
             </label>
           ))}
         </div>
+        {pageCount > 1 && (
+          <div
+            className={styles.buttonRow}
+            aria-label="Taarruz birlik listesi sayfaları"
+          >
+            <button
+              disabled={page === 0}
+              onClick={() => setPageIndex(page - 1)}
+            >
+              Önceki taarruz birlikleri
+            </button>
+            <span>
+              {page + 1} / {pageCount}
+            </span>
+            <button
+              disabled={page + 1 === pageCount}
+              onClick={() => setPageIndex(page + 1)}
+            >
+              Sonraki taarruz birlikleri
+            </button>
+          </div>
+        )}
         <label className={styles.field}>
           İlerleme yaklaşımı
           <select
@@ -131,16 +189,8 @@ export function ArmyTools({
         </label>
         <button
           className={styles.primary}
-          disabled={
-            !selected.some((id) => own.some((a) => a.id === id)) ||
-            !c.wars.length
-          }
-          onClick={() =>
-            onOffensive(
-              selected.filter((id) => own.some((a) => a.id === id)),
-              stance,
-            )
-          }
+          disabled={!eligible.length || !c.wars.length}
+          onClick={() => onOffensive(eligible, stance)}
         >
           Haritada taarruz hedeflerini çiz
         </button>

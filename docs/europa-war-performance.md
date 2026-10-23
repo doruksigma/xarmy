@@ -66,9 +66,9 @@ Bu değişkenlik nedeniyle her cihazda donmanın tamamen bittiği veya 60 FPS
 sağlandığı iddia edilmez. Yoğun ordu ve yavaşlatılmış CPU sonuçları asıl
 karşılaştırmadır.
 
-## Yeniden doğrulama
+## İlk düzeltmenin doğrulaması (`d625982`)
 
-Son doğrulamada 129 motor/oyun kuralı, 20 simülasyon ve 24 çevrimdışı test
+İlk düzeltmede 129 motor/oyun kuralı, 20 simülasyon ve 24 çevrimdışı test
 başarılı oldu (173 farklı test). Tam paket koşusu 171/171 geçti; ardından
 eklenen iki worker adresi regresyonuyla ilgili simülasyon ve çevrimdışı
 paketler yeniden derlenip çalıştırıldı. Üretim derlemesi ve TypeScript
@@ -95,3 +95,83 @@ EUROPA_CPU_RATE=4 EUROPA_DURATION_MS=4000 EUROPA_PHASES=initial,large node scrip
 
 Performans ölçerken başka derleme/test/Chromium süreci çalıştırılmamalıdır.
 Worker ve çevrimdışı hata testleri gerçek üretim paketiyle tekrar doğrulanır.
+
+## İkinci inceleme: harita kaydırma ve yoğun arayüz
+
+Karşılaştırma tabanı `d625982`, ayrı bir dizinde yeniden üretilmiş üretim
+paketidir. Son paket aynı Chromium sürümünde, başka derleme veya tarayıcı
+testi çalışmazken ölçüldü. CDP ile 4× CPU yavaşlatma kullanıldı; masaüstü
+görünümü 1440×1000, telefon emülasyonu 390×844 ve 2× piksel yoğunluğudur.
+Bu, fiziksel Windows bilgisayarı veya telefon üzerinde yapılmış ölçüm değildir.
+
+Harita sürüklenirken React ağacını her harekette yeniden çizmek yerine,
+kamera animasyon karesinde CSS dönüşümüyle ilerler. Görünen alanın çevresi
+önceden hazırlanır; kenara yaklaşınca veya hareket bitince geometri yenilenir.
+Grafik katmanı aynı hareket içinde tekrar tekrar kurulmaz. Basılı parmak
+varken 120 ms zamanlayıcısı haritayı yeniden çizmez; son parmak bırakılınca
+kamera kesinleştirilir. Fare düğmesine basıldığında bütün SVG'ye yayılan
+imleç değişikliği de kaldırıldı.
+
+Aşağıdaki toplamlar bir hareket dizisi boyunca ana iş parçacığındaki
+`TaskDuration` değeridir. Sürükleme 30 hareket, iki parmak yakınlaştırma
+12 adımdır; bekleme, giriş iletimi ve doğrulama nedeniyle bunlar kare süresi
+veya FPS değildir. Uzun görev sınırı 50 ms'dir.
+
+| Senaryo | Toplam ana iş süresi önce → sonra | Uzun görev sayısı | En uzun görev önce → sonra |
+| --- | --- | --- | --- |
+| Masaüstü, fareyle sürükleme | 3.905 → 1.440 ms | 19 → 4 | 129 → 121 ms |
+| Masaüstü, tekerlekle yakınlaştırma | 1.722 → 1.449 ms | 9 → 7 | 152 → 144 ms |
+| Masaüstü, iki parmak yakınlaştırma | 2.017 → 2.177 ms | 12 → 11 | 131 → 368 ms |
+| Telefon görünümü, tek parmakla sürükleme | 2.034 → 825 ms | 4 → 2 | 121 → 116 ms |
+| Telefon görünümü, iki parmak yakınlaştırma | 1.525 → 612 ms | 13 → 2 | 179 → 84 ms |
+| Telefon görünümü, tekerlek girdisi | 865 → 683 ms | 4 → 3 | 60 → 75 ms |
+
+Fareyle sürüklemede toplam ana iş yaklaşık %63, telefon görünümündeki
+tek parmakla sürüklemede %59 azaldı. Her etkileşim aynı ölçüde iyileşmedi:
+masaüstü iki parmak örneği toplamda daha yavaştı. Küçük haritada konum
+değiştirme kontrolünde masaüstünde 458 ms, telefon görünümünde 650 ms tekil
+görev görüldü. Önceki denemeler ve son paket arasında da dalgalanma vardı.
+Bu sonuçlar tüm donmaların bittiği veya 60 FPS sağlandığı anlamına gelmez.
+
+Kameranın çevresini hazır tutmanın bellek maliyeti vardır. Aynı sürüklemenin
+sonunda canlı SVG öğeleri masaüstünde 1.729 → 2.804, telefon görünümünde
+1.337 → 2.077 oldu. Son kamera örneklerinde JavaScript heap anlık değerleri
+yaklaşık 8–23 MiB aralığındaydı. Bunlar çöp toplama zamanına bağlıdır;
+en yüksek bellek kullanımı veya GPU belleği olarak yorumlanmamalıdır.
+
+1.200 oyuncu tümeni ve beş büyük kayıtla arayüz ayrıca ölçüldü. İki birlik
+listesi arama ve 40'ar satırlık sayfalarla bütün birliklere erişimi korur;
+"Tüm tümenleri seç" 1.200 birliğin tamamını seçer. Kayıt özetleri değişmeyen
+kayıtları tekrar çözmez, kayıt listesi her oyun günü yerine kayıt değişince
+yenilenir.
+
+| Arayüz işlemi | En uzun görev önce → sonra |
+| --- | --- |
+| Ordu sekmesini açma | 2.377 → 183 ms |
+| 1.200 tümenin tamamını seçme | 3.543 → 220 ms |
+| Beş kayıt varken zamanı ilerletme | 608 → 91 ms |
+| Yönetim sekmeleri arasında geçiş | 3.476 → 108 ms |
+
+Ordu ekranında 2.400 seçim kutusu yerine 80 kutu, toplam 14.183 yerine
+3.706 DOM öğesi oluşturuldu. Kayıt ekranında 5,5 saniyelik çalışma isteği
+sırasında JSON çözme 49 çağrı / 1.012 ms'den, otomatik kayıtlarla ilişkili
+2 çağrı / 30 ms'ye indi; sefer 10 yerine 20 gün ilerledi. Başlatma/durdurma
+ile birlikte ölçülen süre iki pakette de yaklaşık 6,6 saniyedir.
+
+Son üretim paketinde gerçek fare ve CDP dokunma girdileriyle sürükleme yönü,
+tekerlek altında dünya noktasının korunması, iki parmak yakınlaştırma,
+küçük haritada tıklama/klavye, tüm birlikleri seçme ve beş kayıt yuvasıyla
+zamanın ilerlemesi doğrulandı. Sayfa hatası oluşmadı. Performans betiği
+ana iş parçacığı izini, CPU profilini, uzun görevleri ve bellek anlık
+değerlerini seçilen çıktı dizinine yazar.
+
+İkinci turda motor, simülasyon, çevrimdışı paket ve kayıt testleri birlikte
+**183/183** geçti. Genel oyun, toplu birlik, worker ve yeni harita/liste
+etkileşim paketlerinde **45 tarayıcı kontrol grubu** geçti. Son basılı-parmak
+düzeltmesinden sonra ilgili 13 etkileşim grubu yeniden doğrulandı.
+
+```sh
+EUROPA_CPU_RATE=4 EUROPA_PROFILE=1 EUROPA_PHASES=pan,camera EUROPA_ARTIFACT_DIR=/tmp/europa-desktop node scripts/test-europa-responsiveness.cjs
+EUROPA_CPU_RATE=4 EUROPA_MOBILE=1 EUROPA_PROFILE=1 EUROPA_PHASES=camera EUROPA_ARTIFACT_DIR=/tmp/europa-mobile node scripts/test-europa-responsiveness.cjs
+EUROPA_CPU_RATE=4 EUROPA_INSTRUMENT=1 EUROPA_PROFILE=1 EUROPA_DURATION_MS=5500 EUROPA_PHASES=army,saves EUROPA_ARTIFACT_DIR=/tmp/europa-large-ui node scripts/test-europa-responsiveness.cjs
+```

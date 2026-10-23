@@ -1,4 +1,5 @@
 import { startCivilWar } from "./politics";
+import { AIRCRAFT } from "./advanced-catalog";
 import {
   airNavalAction,
   airNavalDay,
@@ -70,9 +71,9 @@ export function operationsAction(w: World, c: Country, a: Action): boolean {
         !["support", "strategic"].includes(a.mission) ||
           c.air.wings.some(
             (w) =>
-              ["bomber", "strategicBomber"].includes(w.model) && w.count >= 1,
+              AIRCRAFT[w.model].missions.includes(a.mission) && w.count >= 1,
           ),
-        "Bombardıman uçağı gerekir.",
+        "Bu göreve uygun bir bombardıman kanadı gerekir.",
       );
       const assigned = quickAirOrder(w, c, a.mission, a.target);
       requireRule(

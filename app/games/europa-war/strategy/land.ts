@@ -123,19 +123,19 @@ export function combatPower(
       : 1 + p.buildings.fort * 0.15 + a.entrenchment * 0.003)
   );
 }
-function casualty(w: World, a: Army, strength: number, org: number) {
+function casualty(w: World, a: Army, strength: number, org: number, combat = true) {
   const actual = Math.min(a.strength, strength);
   a.strength = clamp(a.strength - actual);
   a.organization = clamp(a.organization - org);
   a.morale = clamp(a.morale - org * 0.25);
-  a.experience = clamp(a.experience + 0.3);
+  if (combat) a.experience = clamp(a.experience + 0.3);
   const c = w.countries[a.country];
   c.casualties += Math.round((UNITS[a.type].men * actual) / 100);
   if (a.support.includes("hospital"))
     c.manpower += Math.round(((UNITS[a.type].men * actual) / 100) * 0.2);
   c.exhaustion = clamp(c.exhaustion + actual * 0.015);
   const g = c.generals.find((g) => g.id === a.general);
-  if (g) {
+  if (combat && g) {
     g.xp = clamp(g.xp + 0.5, 0, 50);
     if (g.xp >= 50 && g.skill < 6) {
       g.xp -= 50;
@@ -229,7 +229,7 @@ export function resolveLandDay(w: World) {
       1,
     );
     if (a.supply < 0.25) {
-      casualty(w, a, 0.25, 2);
+      casualty(w, a, 0.25, 2, false);
       a.move && (a.move.progress = Math.max(0, a.move.progress - 0.1));
     } else if (!engaged) {
       a.organization = clamp(a.organization + (a.move ? 1 : 3) * a.supply);

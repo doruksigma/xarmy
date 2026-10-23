@@ -304,7 +304,9 @@ export function quickAirOrder(
         mission: wanted,
         target: wanted === "idle" ? wing.base : province,
       });
-      if (wanted !== "idle") assigned++;
+      // Escorts can accompany a mission, but do not make an unreachable
+      // bombardment/support order successful on their own.
+      if (wanted === mission && wing.count >= 1) assigned++;
     } catch {
       /* Out-of-range wings keep their previous orders. */
     }
@@ -329,7 +331,9 @@ export function quickNavalOrder(
         mission:
           mission === "raid" && ship.model !== "submarine" ? "escort" : mission,
       });
-      assigned++;
+      // Escorting surface ships cannot stand in for an unavailable submarine
+      // when the player specifically requested a convoy raid.
+      if (ship.mission === mission) assigned++;
     } catch {
       /* Each ship respects straits, fuel and transit. */
     }

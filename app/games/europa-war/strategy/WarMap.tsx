@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { TERRAINS, UNITS } from "./catalog";
 import { AIRCRAFT, AIR_MISSIONS, SEA_ZONES } from "./advanced-catalog";
@@ -9,6 +9,7 @@ import type { SeaZone, World } from "./types";
 import styles from "../europa.module.css";
 import atlas from "./map.module.css";
 import mapAssets from "./map-assets.json";
+import { CAMERA_OVERSCAN, useMapCamera, type Camera } from "./useMapCamera";
 
 export type MapMode =
   | "political"
@@ -54,7 +55,6 @@ const searchName = (s: string) =>
     .normalize("NFD")
     .replace(/\p{Diacritic}/gu, "")
     .replace(/ı/g, "i");
-type Camera = { x: number; y: number; w: number; h: number };
 type PointerPosition = { x: number; y: number };
 const fitCamera = (ratio: number): Camera => {
   const w = Math.max(MAP.width, MAP.height * ratio),
@@ -98,7 +98,7 @@ const pointList = (ids: string[]) =>
     .join(" ");
 const curvedPath = (ax: number, ay: number, bx: number, by: number) =>
   `M${ax} ${ay} Q${(ax + bx) / 2 + (by - ay) * 0.12} ${(ay + by) / 2 - (bx - ax) * 0.12} ${bx} ${by}`;
-export default function WarMap({
+function WarMap({
   world,
   selected,
   armyId,
@@ -127,9 +127,8 @@ export default function WarMap({
       view: Camera;
       anchor: PointerPosition;
     } | null>(null);
-  const [view, setView] = useState<Camera>(() =>
-    fitCamera(MAP.width / MAP.height),
-  );
+  const { view, liveView, setView, moveView, finish, overviewRef, canvasSize } =
+    useMapCamera(svg, () => fitCamera(MAP.width / MAP.height));
   const [search, setSearch] = useState("");
   const [viewportWidth, setViewportWidth] = useState(1000);
   const [hover, setHover] = useState(""),
@@ -146,6 +145,16 @@ export default function WarMap({
     [world, needsSupply],
   );
   const selectedArmies = new Set(armyIds);
+  // Keep the neighboring viewport ready while the compositor moves the map.
+  const bounds = useMemo(
+    () => ({
+      x: view.x - view.w * CAMERA_OVERSCAN,
+      y: view.y - view.h * CAMERA_OVERSCAN,
+      w: view.w * (1 + CAMERA_OVERSCAN * 2),
+      h: view.h * (1 + CAMERA_OVERSCAN * 2),
+    }),
+    [view],
+  );
   const capitals = useMemo(
     () => new Set(Object.values(world.countries).map((c) => c.capital)),
     [world],
@@ -159,15 +168,15 @@ export default function WarMap({
           .filter((p) => {
             const b = REGION_BOUNDS.get(p.id)!;
             return (
-              b.right >= view.x &&
-              b.left <= view.x + view.w &&
-              b.bottom >= view.y &&
-              b.top <= view.y + view.h
+              b.right >= bounds.x &&
+              b.left <= bounds.x + bounds.w &&
+              b.bottom >= bounds.y &&
+              b.top <= bounds.y + bounds.h
             );
           })
           .map((p) => p.id),
       ),
-    [view],
+    [bounds],
   );
   const detailed = view.w < 1000,
     close = view.w < 650;
@@ -258,10 +267,10 @@ export default function WarMap({
       );
     for (const p of candidates) {
       if (
-        p.x < view.x - 20 ||
-        p.x > view.x + view.w + 20 ||
-        p.y < view.y - 20 ||
-        p.y > view.y + view.h + 20
+        p.x < bounds.x - 20 ||
+        p.x > bounds.x + bounds.w + 20 ||
+        p.y < bounds.y - 20 ||
+        p.y > bounds.y + bounds.h + 20
       )
         continue;
       const width = p.name.length * size * 0.57 + 3 * counterScale;
@@ -287,13 +296,13 @@ export default function WarMap({
       }
     }
     return placed;
-  }, [countryLabels, formations, counterScale, selected, view, capitals]);
+  }, [countryLabels, formations, counterScale, selected, bounds, capitals]);
   const selectedWing = Object.values(world.countries)
     .filter((country) => visible(country.id))
     .flatMap((country) => country.air.wings.map((wing) => ({ wing, country })))
     .find(({ wing }) => wing.id === wingId);
-  function zoom(factor: number, point?: DOMPoint) {
-    setView((v) => {
+  function zoom(factor: number, point?: DOMPoint, gesture = false) {
+    (gesture ? moveView : setView)((v) => {
       const w = zoomWidth(v.w * factor, v.w / v.h),
         h = (w * v.h) / v.w;
       return constrainCamera({
@@ -338,8 +347,9 @@ export default function WarMap({
     observer.observe(el);
     const wheel = (e: WheelEvent) => {
       e.preventDefault();
-      const matrix = el.getScreenCTM();
-      if (matrix)
+      const rect = el.parentElement?.getBoundingClientRect();
+      if (rect && rect.width && rect.height) {
+        const camera = liveView.current;
         zoom(
           Math.exp(
             Math.max(
@@ -347,8 +357,13 @@ export default function WarMap({
               Math.min(0.3, e.deltaY * (e.deltaMode === 1 ? 0.035 : 0.0018)),
             ),
           ),
-          new DOMPoint(e.clientX, e.clientY).matrixTransform(matrix.inverse()),
+          new DOMPoint(
+            camera.x + ((e.clientX - rect.left) * camera.w) / rect.width,
+            camera.y + ((e.clientY - rect.top) * camera.h) / rect.height,
+          ),
+          true,
         );
+      }
     };
     el.addEventListener("wheel", wheel, { passive: false });
     return () => {
@@ -378,14 +393,15 @@ export default function WarMap({
         id,
         x: point.x,
         y: point.y,
-        vx: view.x,
-        vy: view.y,
-        scale: view.w / e.currentTarget.getBoundingClientRect().width,
+        vx: liveView.current.x,
+        vy: liveView.current.y,
+        scale: liveView.current.w / canvasSize.current.width,
         moved: true,
       };
     } else drag.current.id = -1;
     if (e.currentTarget.hasPointerCapture(e.pointerId))
       e.currentTarget.releasePointerCapture(e.pointerId);
+    if (!next) finish();
   }
   const routes = [
     ...new Set(
@@ -419,7 +435,7 @@ export default function WarMap({
           ) {
             e.preventDefault();
             const key = e.key;
-            setView((v) =>
+            moveView((v) =>
               constrainCamera({
                 ...v,
                 x:
@@ -449,15 +465,17 @@ export default function WarMap({
           pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
           if (pointers.current.size === 2) {
             const [a, b] = [...pointers.current.values()],
-              matrix = e.currentTarget.getScreenCTM();
-            if (!matrix) return;
+              rect = e.currentTarget.parentElement!.getBoundingClientRect(),
+              camera = liveView.current;
             const anchor = new DOMPoint(
-              (a.x + b.x) / 2,
-              (a.y + b.y) / 2,
-            ).matrixTransform(matrix.inverse());
+              camera.x +
+                (((a.x + b.x) / 2 - rect.left) * camera.w) / rect.width,
+              camera.y +
+                (((a.y + b.y) / 2 - rect.top) * camera.h) / rect.height,
+            );
             pinch.current = {
               distance: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)),
-              view,
+              view: camera,
               anchor,
             };
             drag.current.moved = true;
@@ -469,9 +487,9 @@ export default function WarMap({
               id: e.pointerId,
               x: e.clientX,
               y: e.clientY,
-              vx: view.x,
-              vy: view.y,
-              scale: view.w / e.currentTarget.getBoundingClientRect().width,
+              vx: liveView.current.x,
+              vy: liveView.current.y,
+              scale: liveView.current.w / canvasSize.current.width,
               moved: false,
             };
           }
@@ -482,14 +500,14 @@ export default function WarMap({
           const gesture = pinch.current;
           if (gesture && pointers.current.size >= 2) {
             const [a, b] = [...pointers.current.values()],
-              rect = e.currentTarget.getBoundingClientRect();
+              rect = e.currentTarget.parentElement!.getBoundingClientRect();
             const w = zoomWidth(
               (gesture.view.w * gesture.distance) /
                 Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)),
               gesture.view.w / gesture.view.h,
             );
             const h = (w * gesture.view.h) / gesture.view.w;
-            setView(
+            moveView(
               constrainCamera({
                 x:
                   gesture.anchor.x -
@@ -500,6 +518,7 @@ export default function WarMap({
                 w,
                 h,
               }),
+              false,
             );
             return;
           }
@@ -511,12 +530,14 @@ export default function WarMap({
             d.moved = true;
             setHover("");
             e.currentTarget.setPointerCapture(e.pointerId);
-            setView((v) =>
-              constrainCamera({
-                ...v,
-                x: d.vx - dx * d.scale,
-                y: d.vy - dy * d.scale,
-              }),
+            moveView(
+              (v) =>
+                constrainCamera({
+                  ...v,
+                  x: d.vx - dx * d.scale,
+                  y: d.vy - dy * d.scale,
+                }),
+              false,
             );
           }
         }}
@@ -704,7 +725,9 @@ export default function WarMap({
                   aria-label={`${g.name}, ${country.name}`}
                   tabIndex={g.id === selected ? 0 : -1}
                   data-province={g.id}
-                  onPointerEnter={() => setHover(g.id)}
+                  onPointerEnter={() => {
+                    if (!pointers.current.size) setHover(g.id);
+                  }}
                   onPointerLeave={() => setHover("")}
                   onClick={(e) => {
                     if (!drag.current.moved) onSelect(g.id, e.shiftKey);
@@ -881,10 +904,10 @@ export default function WarMap({
             if (!capital && !detailed && p.vp < 4 && p.id !== selected)
               return null;
             if (
-              p.x < view.x - 30 ||
-              p.x > view.x + view.w + 30 ||
-              p.y < view.y - 30 ||
-              p.y > view.y + view.h + 30
+              p.x < bounds.x - 30 ||
+              p.x > bounds.x + bounds.w + 30 ||
+              p.y < bounds.y - 30 ||
+              p.y > bounds.y + bounds.h + 30
             )
               return null;
             return (
@@ -1287,10 +1310,10 @@ export default function WarMap({
         {formations.map((group, index) => {
           const position = GEOGRAPHY[group[0].province];
           if (
-            position.x < view.x - 50 * counterScale ||
-            position.x > view.x + view.w + 50 * counterScale ||
-            position.y < view.y - 50 * counterScale ||
-            position.y > view.y + view.h + 50 * counterScale
+            position.x < bounds.x - 50 * counterScale ||
+            position.x > bounds.x + bounds.w + 50 * counterScale ||
+            position.y < bounds.y - 50 * counterScale ||
+            position.y > bounds.y + bounds.h + 50 * counterScale
           )
             return null;
           const a = group.find((a) => a.id === armyId) ?? group[0],
@@ -1663,6 +1686,7 @@ export default function WarMap({
             );
           })}
           <rect
+            ref={overviewRef}
             x={view.x}
             y={view.y}
             width={view.w}
@@ -1695,3 +1719,5 @@ export default function WarMap({
     </div>
   );
 }
+
+export default memo(WarMap);

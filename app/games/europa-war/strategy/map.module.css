@@ -1,14 +1,14 @@
 .atlas {
   background: #1c3640;
   isolation: isolate;
+  overflow: hidden;
 }
 .atlas .canvas {
   display: block;
   width: 100%;
   height: 100%;
-}
-.atlas .canvas:active {
-  cursor: grabbing;
+  overflow: visible;
+  transform-origin: 0 0;
 }
 .seaName {
   font:

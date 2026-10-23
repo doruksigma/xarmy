@@ -21,6 +21,7 @@ import {
   RARITY_COLORS,
   RARITY_MULTIPLIER,
   applyDamage,
+  advanceFall,
   matchOutcome,
   randomGenerator,
   reloadMagazine,
@@ -185,6 +186,7 @@ export function createGame(
       vertical = 0,
       stamina = 100,
       onGround = false,
+      emergencyChute = false,
       prone = false,
       slideTime = 0,
       shoulder = 1;
@@ -216,7 +218,9 @@ export function createGame(
       lastTime = performance.now(),
       fps = 0,
       fpsFrames = 0,
-      fpsElapsed = 0;
+      fpsElapsed = 0,
+      needsRender = true,
+      renderedPaused = false;
     const velocity = new THREE.Vector3(),
       keys = new Set<string>();
     const input: TouchInput = {
@@ -539,7 +543,7 @@ export function createGame(
         const text = `${source?.name ?? "Fırtına"} → ${target.name}`;
         feed.unshift(text);
         feed.splice(5);
-        if (source?.id === 0) {
+        if (source?.id === 0 && target.id !== 0) {
           kills++;
           announce("RAKİP ELENDİ");
         }
@@ -915,11 +919,35 @@ export function createGame(
         audio.explosion(player.position.distanceTo(p));
         if (
           player.position.distanceTo(p) < 22 &&
-          !segmentBlocked(p, player.position, world.colliders)
+          !segmentBlocked(
+            p,
+            player.position
+              .clone()
+              .add(
+                new THREE.Vector3(
+                  0,
+                  prone ? 0.5 : player.crouched ? 1 : 1.5,
+                  0,
+                ),
+              ),
+            world.colliders,
+          )
         )
           flashTime = 2.8;
         for (const a of actors)
-          if (a.id && a.position.distanceTo(p) < 24) botCooldown.set(a.id, 4);
+          if (
+            a.id &&
+            a.alive &&
+            a.position.distanceTo(p) < 24 &&
+            !segmentBlocked(
+              p,
+              a.position
+                .clone()
+                .add(new THREE.Vector3(0, a.crouched ? 1 : 1.5, 0)),
+              world.colliders,
+            )
+          )
+            botCooldown.set(a.id, 4);
       }
       scene.remove(g.mesh);
       g.mesh.geometry.dispose();
@@ -1187,7 +1215,8 @@ export function createGame(
     }
     function blur() {
       clearInput();
-      if (phase === "combat" || phase === "drop") paused = true;
+      if (phase === "plane" || phase === "combat" || phase === "drop")
+        paused = true;
     }
     function visibility() {
       if (document.hidden) blur();
@@ -1207,7 +1236,11 @@ export function createGame(
     canvas.addEventListener("contextmenu", contextMenu);
     document.addEventListener("visibilitychange", visibility);
     document.addEventListener("pointerlockchange", lockChange);
-    const resizeObserver = new ResizeObserver(() => rendering.resize());
+    // Rendering owns target resizing. Only invalidate the paused image here;
+    // allocating its shadow/post-processing targets twice causes extra stalls.
+    const resizeObserver = new ResizeObserver(() => {
+      needsRender = true;
+    });
     resizeObserver.observe(container);
     cleanupOnFailure.push(() => {
       cancelAnimationFrame(frame);
@@ -1249,6 +1282,7 @@ export function createGame(
         velocity.set(0, 0, 0);
         vertical = 0;
         onGround = false;
+        emergencyChute = false;
         parachute.visible = false;
         stamina = Math.min(100, stamina + 12 * dt);
         return;
@@ -1320,7 +1354,17 @@ export function createGame(
         player.position.z = before.z;
         velocity.z = 0;
       }
-      if (phase !== "drop") vertical -= 21 * dt;
+      const ground = support(player.position, before.y);
+      if (phase !== "drop") {
+        const fall = advanceFall(
+          vertical,
+          dt,
+          player.position.y - ground,
+          emergencyChute,
+        );
+        vertical = fall.velocity;
+        emergencyChute = fall.parachute;
+      }
       player.position.y += vertical * dt;
       // Sweep the head against ceilings; an upward jump must not pass through a roof.
       if (vertical > 0) {
@@ -1339,22 +1383,14 @@ export function createGame(
           }
         }
       }
-      const ground = support(player.position, before.y);
       if (player.position.y <= ground) {
         player.position.y = ground;
         if (phase === "drop") land();
         onGround = true;
         vertical = 0;
+        emergencyChute = false;
       } else onGround = false;
-      // Reopen a chute after a long fall instead of retaining a lethal free fall.
-      if (
-        phase === "combat" &&
-        player.position.y - ground > 15 &&
-        vertical < -12
-      ) {
-        vertical = -8;
-        parachute.visible = true;
-      } else if (phase !== "drop") parachute.visible = false;
+      if (phase !== "drop") parachute.visible = emergencyChute;
       player.speed = Math.hypot(velocity.x, velocity.z);
       stepClock -= dt;
       if (onGround && player.speed > 1 && stepClock <= 0) {
@@ -1562,6 +1598,14 @@ export function createGame(
       if (disposed) return;
       const raw = (now - lastTime) / 1000;
       lastTime = now;
+      const pauseChanged = paused !== renderedPaused;
+      // A paused world is a still image. Keep its last frame instead of drawing
+      // shadows, water reflections and post-processing behind the settings UI.
+      // Resize and quality changes request one fresh frame without advancing time.
+      if (paused && !needsRender && !pauseChanged) {
+        frame = requestAnimationFrame(tick);
+        return;
+      }
       const frameDelta = Math.min(0.25, Math.max(0.001, raw));
       fpsFrames++;
       fpsElapsed += Math.max(0, raw);
@@ -1768,12 +1812,14 @@ export function createGame(
         player.position,
         weather,
       );
+      needsRender = false;
+      renderedPaused = paused;
       container.style.setProperty(
         "--flash-opacity",
         String(Math.min(0.9, flashTime / 2)),
       );
       hudClock -= frameDelta;
-      if (hudClock <= 0) {
+      if (hudClock <= 0 || pauseChanged) {
         hudClock = 0.1;
         emitHud();
       }
@@ -1831,6 +1877,7 @@ export function createGame(
         quality = q;
         rendering.setQuality(q);
         world.setQuality(q);
+        needsRender = true;
       },
       setDifficulty(d) {
         difficulty = d;

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   applyDamage,
+  advanceFall,
   matchOutcome,
   randomGenerator,
   reloadMagazine,
@@ -78,4 +79,45 @@ test("seeded rounds vary while remaining reproducible for regression checks", ()
     Array.from({ length: 50 }, () => c()),
   );
   assert.ok(first.every((n) => n >= 0 && n < 1));
+});
+
+test("a long fall keeps its emergency parachute open through low altitude until landing", () => {
+  for (const dt of [1 / 60, 0.05]) {
+    let height = 55,
+      velocity = 0,
+      open = false,
+      deployed = false,
+      lowAltitudeFrames = 0;
+    for (let frame = 0; height > 0 && frame < 1000; frame++) {
+      const next = advanceFall(velocity, dt, height, open);
+      if (deployed)
+        assert.equal(
+          next.parachute,
+          true,
+          "An open chute must not flicker or close in midair",
+        );
+      velocity = next.velocity;
+      open = next.parachute;
+      deployed ||= open;
+      if (open) assert.ok(velocity >= -8);
+      if (height < 15 && open) lowAltitudeFrames++;
+      height += velocity * dt;
+    }
+    assert.ok(deployed && lowAltitudeFrames > 5);
+    assert.ok(height <= 0, "The parachute must still allow landing");
+    assert.equal(advanceFall(0, dt, 0, open).parachute, false);
+  }
+});
+
+test("ordinary ground jumps and short falls do not deploy the emergency parachute", () => {
+  let height = 0,
+    velocity = 7.2;
+  for (let frame = 0; frame < 100; frame++) {
+    const next = advanceFall(velocity, 0.05, height, false);
+    assert.equal(next.parachute, false);
+    velocity = next.velocity;
+    height += velocity * 0.05;
+    if (height <= 0) break;
+  }
+  assert.equal(advanceFall(-15, 0.05, 5, false).parachute, false);
 });

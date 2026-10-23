@@ -8,7 +8,7 @@ import {
 } from "./AdvancedPanels";
 import { tradeRoute } from "./trade-routes";
 import type { OffensivePlan } from "./types";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   BUILDINGS,
   EQUIPMENT,
@@ -181,15 +181,34 @@ export default function WarPanels({
   const [unit, setUnit] = useState<UnitType>("infantry"),
     [building, setBuilding] = useState<Building>("civil"),
     [tradeResource, setTradeResource] = useState<Resource>("oil"),
-    [branch, setBranch] = useState("Tümü");
-  const own = w.armies.filter((a) => a.country === c.id),
-    selectedArmies = own.filter((a) => armyIds.includes(a.id)),
+    [branch, setBranch] = useState("Tümü"),
+    [armySearch, setArmySearch] = useState(""),
+    [armyPage, setArmyPage] = useState(0);
+  const own = useMemo(
+    () => w.armies.filter((a) => a.country === c.id),
+    [w.armies, c.id],
+  );
+  const selection = useMemo(() => new Set(armyIds), [armyIds]);
+  const selectedArmies = own.filter((a) => selection.has(a.id)),
     selectedIds = selectedArmies.map((a) => a.id),
     colocated = own.filter((unit) => unit.province === (a?.province ?? p.id)),
     hasIntel =
       t.id === c.id ||
       (c.intel[t.id]?.expires > w.day && c.intel[t.id].level >= 50) ||
       c.allies.includes(t.id);
+  const roster = useMemo(() => {
+    const query = armySearch.trim().toLocaleLowerCase("tr-TR");
+    return query
+      ? own.filter((army) =>
+          `${army.name} ${GEOGRAPHY[army.province].name} ${UNITS[army.type].name}`
+            .toLocaleLowerCase("tr-TR")
+            .includes(query),
+        )
+      : own;
+  }, [own, armySearch]);
+  const pageSize = 40,
+    pageCount = Math.max(1, Math.ceil(roster.length / pageSize)),
+    page = Math.min(armyPage, pageCount - 1);
   const targetSelect = (
     <label className={styles.field}>
       Hedef ülke
@@ -562,8 +581,24 @@ export default function WarPanels({
             hedef seçerek ilerleme emri ver.
           </p>
         )}
-        <div className={styles.list}>
-          {own.map((a) => (
+        <label className={styles.field}>
+          Birlik ara
+          <input
+            value={armySearch}
+            placeholder="Birlik adı, şehir veya tür"
+            onChange={(e) => {
+              setArmySearch(e.target.value);
+              setArmyPage(0);
+            }}
+          />
+        </label>
+        <p className={styles.hint}>
+          {selectedIds.length} seçili · {roster.length} birlik
+          {armySearch.trim() ? " bulundu" : " listeleniyor"}. Seçimin diğer
+          sayfalarda da korunur.
+        </p>
+        <div className={styles.list} data-testid="army-roster">
+          {roster.slice(page * pageSize, (page + 1) * pageSize).map((a) => (
             <div
               key={a.id}
               style={{ display: "flex", alignItems: "center", gap: 8 }}
@@ -571,7 +606,7 @@ export default function WarPanels({
               <input
                 type="checkbox"
                 aria-label={`${a.name} seçime dahil`}
-                checked={selectedIds.includes(a.id)}
+                checked={selection.has(a.id)}
                 onChange={(e) =>
                   onArmies(
                     e.target.checked
@@ -587,8 +622,8 @@ export default function WarPanels({
                 }}
               />
               <button
-                className={`${styles.rowButton} ${selectedIds.includes(a.id) ? styles.active : ""}`}
-                aria-pressed={selectedIds.includes(a.id)}
+                className={`${styles.rowButton} ${selection.has(a.id) ? styles.active : ""}`}
+                aria-pressed={selection.has(a.id)}
                 onClick={() => onArmy(a.id)}
               >
                 <span>
@@ -609,6 +644,25 @@ export default function WarPanels({
             </div>
           ))}
         </div>
+        {pageCount > 1 && (
+          <div
+            className={styles.buttonRow}
+            aria-label="Birlik listesi sayfaları"
+          >
+            <button disabled={page === 0} onClick={() => setArmyPage(page - 1)}>
+              Önceki birlikler
+            </button>
+            <span>
+              {page + 1} / {pageCount}
+            </span>
+            <button
+              disabled={page + 1 === pageCount}
+              onClick={() => setArmyPage(page + 1)}
+            >
+              Sonraki birlikler
+            </button>
+          </div>
+        )}
         <ArmyTools
           w={w}
           command={command}

@@ -708,8 +708,9 @@ export function migrateLegacy(value: unknown): World {
   }
   return expanded;
 }
+const MAX_SAVE_LENGTH = 4 * 1024 * 1024;
 export function decodeSave(text: string): World {
-  if (text.length > 4 * 1024 * 1024)
+  if (text.length > MAX_SAVE_LENGTH)
     throw new Error("Kayıt dosyası 4 MB sınırını aşıyor.");
   let data: unknown;
   try {
@@ -744,7 +745,20 @@ export const SAVE_SLOTS = [
   "auto-2",
 ] as const;
 export type SaveSlot = (typeof SAVE_SLOTS)[number];
+/** Native storage events only notify other tabs; this also refreshes this window. */
+export const SAVE_CHANGE_EVENT = "xarmy-europa-save-change";
 const key = (slot: SaveSlot) => `xarmy-europa-1936-v1:${slot}`;
+interface SaveSummary {
+  slot: SaveSlot;
+  label: string;
+  valid: boolean;
+}
+// Retain metadata, never decoded worlds. One entry per supported slot bounds the
+// cache; exact text comparison also detects edits made by another tab or tool.
+const summaryCache = new Map<
+  SaveSlot,
+  { raw: string | null; summary: SaveSummary }
+>();
 export function saveLocal(slot: SaveSlot, w: World) {
   try {
     localStorage.setItem(key(slot), encodeSave(w));
@@ -753,25 +767,44 @@ export function saveLocal(slot: SaveSlot, w: World) {
       "Cihaz kaydı yapılamadı. Depolama iznini/boş alanı kontrol et veya JSON dosyası indir.",
     );
   }
+  summaryCache.delete(slot);
+  if (typeof window !== "undefined")
+    window.dispatchEvent(new Event(SAVE_CHANGE_EVENT));
 }
 export function loadLocal(slot: SaveSlot): World {
   const raw = localStorage.getItem(key(slot));
   if (!raw) throw new Error("Bu kayıt yuvası boş.");
   return decodeSave(raw);
 }
-export function listSaves() {
+export function listSaves(): SaveSummary[] {
   return SAVE_SLOTS.map((slot) => {
+    let raw: string | null;
     try {
-      const raw = localStorage.getItem(key(slot));
-      if (!raw) return { slot, label: "Boş yuva", valid: false };
-      const w = decodeSave(raw);
-      return {
-        slot,
-        label: `${w.countries[w.player].name} · ${w.day}. gün`,
-        valid: true,
-      };
+      raw = localStorage.getItem(key(slot));
     } catch {
+      // A previous valid label must not conceal revoked storage access.
+      summaryCache.delete(slot);
       return { slot, label: "Okunamayan kayıt", valid: false };
     }
+    const cached = summaryCache.get(slot);
+    if (cached && cached.raw === raw) return { ...cached.summary };
+    let summary: SaveSummary;
+    if (!raw) summary = { slot, label: "Boş yuva", valid: false };
+    else {
+      try {
+        const w = decodeSave(raw);
+        summary = {
+          slot,
+          label: `${w.countries[w.player].name} · ${w.day}. gün`,
+          valid: true,
+        };
+      } catch {
+        summary = { slot, label: "Okunamayan kayıt", valid: false };
+      }
+    }
+    if (raw === null || raw.length <= MAX_SAVE_LENGTH)
+      summaryCache.set(slot, { raw, summary });
+    else summaryCache.delete(slot); // Never retain arbitrarily large bad input.
+    return { ...summary };
   });
 }

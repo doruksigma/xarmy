@@ -217,3 +217,35 @@ test("dead bots cannot move, shoot, loot or heal", () => {
   assert.deepEqual(bot.position, before);
   assert.equal(bot.speed, 0);
 });
+
+test("bots do not get stuck collecting player-only attachments or bunker keys", () => {
+  const bot = actor(1),
+    ctx = context([bot]);
+  bot.armor = 100;
+  ctx.loot = [
+    {
+      id: 1,
+      position: bot.position.clone(),
+      kind: "attachment",
+      attachment: "scope",
+      rarity: "rare",
+      taken: false,
+    },
+    {
+      id: 2,
+      position: bot.position.clone(),
+      kind: "key",
+      rarity: "legendary",
+      taken: false,
+    },
+  ];
+  let attempts = 0;
+  // The engine intentionally refuses both item kinds for bots.
+  ctx.pickup = () => attempts++;
+  const brain = createBotBrain(bot, "normal", 21);
+  advance(brain, ctx, 3);
+  assert.equal(attempts, 0);
+  assert.equal(brain.mode, "roam");
+  assert.ok(bot.position.length() > 5, "The bot should continue patrolling");
+  assert.ok(ctx.loot.every((item) => !item.taken));
+});

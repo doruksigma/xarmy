@@ -312,7 +312,10 @@ export function createBotBrain(
     let best: Loot | null = null;
     let bestScore = 0;
     for (const item of ctx.loot) {
-      if (item.taken) continue;
+      // Keys and attachments are player-only inventory. Pursuing an item that
+      // pickup cannot consume leaves a bot repeatedly returning to the same spot.
+      if (item.taken || item.kind === "attachment" || item.kind === "key")
+        continue;
       const distance = distanceXZ(actor.position, item.position);
       if (
         distance > 42 ||
@@ -326,7 +329,6 @@ export function createBotBrain(
       if (item.kind === "ammo" && actor.reserve < 45) need = 80 - actor.reserve;
       if (item.kind === "weapon" && actor.weapon === "pistol") need = 65;
       if (item.kind === "chest") need = 36;
-      if (item.kind === "attachment") need = 14;
       const score = need / (distance + 6);
       if (score > bestScore) {
         bestScore = score;

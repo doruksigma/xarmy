@@ -18,20 +18,20 @@
 
 ## Kontroller
 
-| Kontrol | İşlev |
-| --- | --- |
-| WASD / fare | Hareket / bakış |
-| Sol / sağ fare | Ateş / nişan |
-| Shift | Koş |
-| Space | Uçaktan atla, zıpla, alçak engeli aş; araçta fren |
-| E | Eşya al, sandık/sığınak aç, araca veya zipline'a bin/in |
-| R | Şarjör doldur |
-| 1 veya 2 | Taşınan iki silah arasında geç |
-| C / Z / Ctrl | Eğil / sürün / koşarken kay |
-| Q | Kamera omzunu değiştir |
-| G / B | Bomba at / bomba türünü değiştir |
-| H | Sağlık çantası kullan |
-| O / Esc | Oyun ayarları / duraklat ve fareyi bırak |
+| Kontrol        | İşlev                                                   |
+| -------------- | ------------------------------------------------------- |
+| WASD / fare    | Hareket / bakış                                         |
+| Sol / sağ fare | Ateş / nişan                                            |
+| Shift          | Koş                                                     |
+| Space          | Uçaktan atla, zıpla, alçak engeli aş; araçta fren       |
+| E              | Eşya al, sandık/sığınak aç, araca veya zipline'a bin/in |
+| R              | Şarjör doldur                                           |
+| 1 veya 2       | Taşınan iki silah arasında geç                          |
+| C / Z / Ctrl   | Eğil / sürün / koşarken kay                             |
+| Q              | Kamera omzunu değiştir                                  |
+| G / B          | Bomba at / bomba türünü değiştir                        |
+| H              | Sağlık çantası kullan                                   |
+| O / Esc        | Oyun ayarları / duraklat ve fareyi bırak                |
 
 Araçta W/S gaz/geri vites, A/D yönlendirme, Space fren, E inme için kullanılır. Tarayıcı, fare kilidi ve sesi ilk tıklamaya kadar sınırlayabilir. Dokunmatik ekranda joystick, bakış alanı ve eylem düğmeleri görünür.
 
@@ -51,10 +51,12 @@ Gerçek screen-space reflection, hacimsel ışık/sis, ayrı contact-shadow geç
 
 ## Doğrulama
 
-`npm run test:battle`: görüş/engel kontrolü, tepki gecikmesi, botların birbirleriyle çatışması, alan önceliği, engel çevresinde yol, iyileştirme/doldurma, mühimmat korunumu, hasar, alan kapanması, maç sonucu, araçlar, fren/çarpışma/iniş ve zipline için 18 test.
+Güncel işlev denetimi ve doğrulama sınırları: [`battle-audit.md`](battle-audit.md).
+
+`npm run test:battle`: görüş/engel kontrolü, tepki gecikmesi, botların birbirleriyle çatışması, alan önceliği, engel çevresinde yol, iyileştirme/doldurma, mühimmat korunumu, hasar, alan kapanması, maç sonucu, araçlar, fren/çarpışma/iniş, zipline, oyuncuya ait eşyalarda takılmama ve acil paraşüt için 21 test.
 
 `npm run build`: TypeScript ve üretim derlemesi. Tarayıcı kontrolleri ayrıca gerçek WebGL sahne açılışını ve oyun akışını sınar; düşük donanım performansı ayrı değerlendirilmelidir.
 
-Bu geliştirmede 18 Battle Royale ve 95 mevcut satranç testi geçti; üretim derlemesi başarılı oldu. Gerçek Chromium/WebGL kontrolünde sahne açılışı, uçuş/iniş, ekipman toplama, hareket, kısa tıklamayla ateş, doldurma, ADS, bomba ve duraklat/devam et doğrulandı. Ayrı bir hızlandırılmış simülasyon kontrolünde GPU çizimleri atlanarak doğal elenme, sonuç ekranı, yeni maç tohumu ve önceki canvas temizliği doğrulandı; bu kontrol bir grafik performans ölçümü değildir.
+İlk sürümün geliştirmesinde 18 Battle Royale ve 95 mevcut satranç testi geçti; üretim derlemesi başarılı oldu. Gerçek Chromium/WebGL kontrolünde sahne açılışı, uçuş/iniş, ekipman toplama, hareket, kısa tıklamayla ateş, doldurma, ADS, bomba ve duraklat/devam et doğrulandı. Ayrı bir hızlandırılmış simülasyon kontrolünde GPU çizimleri atlanarak doğal elenme, sonuç ekranı, yeni maç tohumu ve önceki canvas temizliği doğrulandı; bu kontrol bir grafik performans ölçümü değildir.
 
 Üretim sunucusunda mobil görünüm, grafik ayarları ve dokunmatik uçaktan atlama da tarayıcıda doğrulandı. Geliştirme amaçlı salt okunur durum görüntüleri üretim paketinde bulunmaz. Arenadan çıkış sitenin mevcut ana sayfasına döner.

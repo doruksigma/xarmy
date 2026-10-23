@@ -741,7 +741,8 @@ export function focusTree(country: string): Focus[] {
       days: 70,
       requires: ["industry"],
       effect: "science",
-      description: "Araştırma hızı +%15; ek araştırma yuvası.",
+      description:
+        "Araştırma hızı +%15. Araştırma odaklarından ilk tamamlanan ortak ek yuvayı açar (ülkeye göre toplam en fazla 3).",
     },
     {
       id: "industry2",
@@ -783,7 +784,8 @@ export function focusTree(country: string): Focus[] {
       days: 70,
       requires: ["army"],
       effect: "science",
-      description: "Araştırma hızı +%15; ek araştırma yuvası.",
+      description:
+        "Araştırma hızı +%15. Araştırma odaklarından ilk tamamlanan ortak ek yuvayı açar (ülkeye göre toplam en fazla 3).",
     },
     {
       id: "mobilize",

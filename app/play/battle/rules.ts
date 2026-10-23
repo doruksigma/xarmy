@@ -174,3 +174,16 @@ export function matchOutcome(
       ? "victory"
       : "combat";
 }
+
+/** Keep an emergency chute open through the low-altitude part of a long fall. */
+export function advanceFall(
+  velocity: number,
+  seconds: number,
+  clearance: number,
+  chuteOpen: boolean,
+) {
+  const falling = velocity - 21 * Math.max(0, seconds);
+  const parachute =
+    (chuteOpen && clearance > 0) || (clearance > 15 && falling < -12);
+  return { velocity: parachute ? Math.max(-8, falling) : falling, parachute };
+}
