@@ -55,6 +55,16 @@ const shape =
     object(x) &&
     Object.keys(x).length === Object.keys(fields).length &&
     Object.entries(fields).every(([k, v]) => Object.hasOwn(x, k) && v(x[k]));
+// Existing saves keep their exact shape; a coordinated march adds one validated field.
+const shapeWithOptionalField = (
+  fields: Record<string, Validator>,
+  key: string,
+  validator: Validator,
+): Validator => {
+  const original = shape(fields),
+    extended = shape({ ...fields, [key]: validator });
+  return (x) => original(x) || extended(x);
+};
 const province = one(Object.keys(GEOGRAPHY)),
   unit = one(Object.keys(UNITS)),
   equipment = one(Object.keys(EQUIPMENT)),
@@ -210,33 +220,39 @@ const worldFields: Record<string, Validator> = {
     MAP.provinces.length,
   ),
   armies: arr(
-    shape({
-      id: str,
-      country: str,
-      name: str,
-      type: unit,
-      province,
-      strength: num(100.001),
-      organization: num(100),
-      morale: num(100),
-      supply: num(1),
-      experience: num(100),
-      general: nullable(str),
-      entrenchment: num(30),
-      stance: one(["hold", "advance"]),
-      support: arr(one(Object.keys(SUPPORT)), 3),
-      route: arr(province, 500),
-      move: nullable(
-        (x) =>
-          shape({ to: province, progress: num(), days: num(1000, 0.01) })(x) ||
-          shape({
-            to: province,
-            progress: num(),
-            days: num(1000, 0.01),
-            kind: one(["paradrop"]),
-          })(x),
-      ),
-    }),
+    shapeWithOptionalField(
+      {
+        id: str,
+        country: str,
+        name: str,
+        type: unit,
+        province,
+        strength: num(100.001),
+        organization: num(100),
+        morale: num(100),
+        supply: num(1),
+        experience: num(100),
+        general: nullable(str),
+        entrenchment: num(30),
+        stance: one(["hold", "advance"]),
+        support: arr(one(Object.keys(SUPPORT)), 3),
+        route: arr(province, 500),
+        move: nullable(
+          (x) =>
+            shape({ to: province, progress: num(), days: num(1000, 0.01) })(
+              x,
+            ) ||
+            shape({
+              to: province,
+              progress: num(),
+              days: num(1000, 0.01),
+              kind: one(["paradrop"]),
+            })(x),
+        ),
+      },
+      "marchGroup",
+      (v) => typeof v === "string" && safeKey(v),
+    ),
     2500,
   ),
   battles: arr(
@@ -748,7 +764,7 @@ export type SaveSlot = (typeof SAVE_SLOTS)[number];
 /** Native storage events only notify other tabs; this also refreshes this window. */
 export const SAVE_CHANGE_EVENT = "xarmy-europa-save-change";
 const key = (slot: SaveSlot) => `xarmy-europa-1936-v1:${slot}`;
-interface SaveSummary {
+export interface SaveSummary {
   slot: SaveSlot;
   label: string;
   valid: boolean;

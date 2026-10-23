@@ -91,6 +91,10 @@ export function applyAction(
       // All members receive one atomic order. Shared origins reuse pathfinding,
       // but each unit retains its own movement, supply and battle state.
       const routes = new Map<string, string[] | null>();
+      const marchGroup =
+        action.type === "moveGroup" && ids.length > 1
+          ? uid(w, "march")
+          : undefined;
       for (const id of ids) {
         const a = w.armies.find((a) => a.id === id && a.country === c.id);
         requireRule(a, "Kendi ordularından birini seç.");
@@ -148,6 +152,12 @@ export function applyAction(
             a.route = [...remaining];
           }
           a.stance = "advance";
+          if (
+            marchGroup &&
+            a.move?.kind !== "paradrop" &&
+            (a.move || a.route.length)
+          )
+            a.marchGroup = marchGroup;
         }
       }
     } else if (action.type === "diplomacy")

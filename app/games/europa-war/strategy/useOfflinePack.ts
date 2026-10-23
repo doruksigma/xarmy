@@ -3,8 +3,24 @@ import { useEffect, useState } from "react";
 import manifest from "./map-assets.json";
 import { EUROPA_OFFLINE_VERSION } from "./offline-protocol";
 import { getSimulationWorkerAssets } from "./simulation-assets";
+import { collectOfflinePageAssets } from "./offline-assets";
 
 type Reply = { type: string; version: string; terrain: string };
+
+function documentAssets(): string[] {
+  return [
+    ...Array.from(
+      document.querySelectorAll<HTMLScriptElement>("script[src]"),
+      (element) => element.src,
+    ),
+    ...Array.from(
+      document.querySelectorAll<HTMLLinkElement>(
+        'link[rel="stylesheet"],link[rel="preload"]',
+      ),
+      (element) => element.href,
+    ),
+  ];
+}
 
 function requestWorker(
   worker: ServiceWorker,
@@ -101,8 +117,14 @@ async function currentOfflineWorker(
 export function useOfflinePack() {
   const [status, setStatus] = useState("Sefer bu cihazda çalışır.");
   useEffect(() => {
-    if (process.env.NODE_ENV !== "production" || !("serviceWorker" in navigator))
+    if (
+      process.env.NODE_ENV !== "production" ||
+      !("serviceWorker" in navigator)
+    )
       return;
+    // Next may remove executed script tags while worker registration awaits.
+    // Capture them now; resource timing below also covers an already late mount.
+    const initialAssets = documentAssets();
     const cancellation = new AbortController();
     const { signal } = cancellation;
     const update = (text: string) => {
@@ -121,22 +143,11 @@ export function useOfflinePack() {
         // the version handshake still requires a compatible active worker.
         await registration.update().catch(() => undefined);
         const worker = await currentOfflineWorker(registration, signal);
-        const assets = new Set<string>();
-        for (const element of document.querySelectorAll<HTMLScriptElement>(
-          "script[src]",
-        ))
-          assets.add(element.src);
-        for (const element of document.querySelectorAll<HTMLLinkElement>(
-          'link[rel="stylesheet"],link[rel="preload"]',
-        ))
-          assets.add(element.href);
-        const local = [...assets].filter((value) => {
-          const url = new URL(value, location.origin);
-          return (
-            url.origin === location.origin &&
-            url.pathname.startsWith("/_next/static/")
-          );
-        });
+        const local = collectOfflinePageAssets(
+          location.origin,
+          [...initialAssets, ...documentAssets()],
+          performance.getEntriesByType("resource"),
+        );
         const result = await requestWorker(
           worker,
           {

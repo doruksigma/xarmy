@@ -151,7 +151,7 @@ function record(result) {
           ({ name, value }) => [name, value],
         ),
       );
-    async function measure(name, action) {
+    async function measure(name, action, verify) {
       await page.evaluate(() => {
         window.__responsiveness.longtasks = [];
         window.__responsiveness.frames = [];
@@ -245,10 +245,14 @@ function record(result) {
           summary[key] = (summary[key] || 0) + 1;
         }
       }
+      // Storage inspection can deserialize a large campaign. Keep verification
+      // outside the measured action, tracing, and operation instrumentation.
+      const verified = verify ? await verify() : {};
       record({
         phase: name,
         elapsedMs,
         ...extra,
+        ...verified,
         longtasks: {
           ...distribution(observed.longtasks.map((entry) => entry.duration)),
           blockingMs: observed.longtasks.reduce(
@@ -708,38 +712,78 @@ function record(result) {
           .getByRole("button", { name: "5 kat hız", exact: true })
           .click();
         await page.locator('button[title="Kayıtlar"]').click();
-        await measure("filled-saves-running", async () => {
-          const initialDate = await page
-            .locator('[data-testid="game-date"]')
-            .textContent();
-          await page
-            .getByRole("button", { name: "Zamanı başlat", exact: true })
-            .click();
-          await page.waitForTimeout(duration);
-          await page
-            .getByRole("button", { name: "Zamanı duraklat", exact: true })
-            .click();
-          const finalDate = await page
-            .locator('[data-testid="game-date"]')
-            .textContent();
-          assert.notEqual(
-            finalDate,
-            initialDate,
-            "Campaign with filled saves must advance",
-          );
-          const savedSlots = await page.evaluate(
-            () =>
-              Object.keys(localStorage).filter((key) =>
-                key.startsWith("xarmy-europa-1936-v1:"),
-              ).length,
-          );
-          assert.equal(
-            savedSlots,
-            5,
-            "Manual saves and both alternating autosaves must exist",
-          );
-          return { initialDate, finalDate, savedSlots, ownArmies: ownCount };
-        });
+        await measure(
+          "filled-saves-running",
+          async () => {
+            const initialDate = await page
+              .locator('[data-testid="game-date"]')
+              .textContent();
+            await page
+              .getByRole("button", { name: "Zamanı başlat", exact: true })
+              .click();
+            await page.waitForTimeout(duration);
+            await page
+              .getByRole("button", { name: "Zamanı duraklat", exact: true })
+              .click();
+            const finalDate = await page
+              .locator('[data-testid="game-date"]')
+              .textContent();
+            assert.notEqual(
+              finalDate,
+              initialDate,
+              "Campaign with filled saves must advance",
+            );
+            return { initialDate, finalDate, ownArmies: ownCount };
+          },
+          async () => {
+            const slots = await page.evaluate(async () => {
+              const manualSlots = ["slot-1", "slot-2", "slot-3"].filter(
+                (slot) => localStorage.getItem("xarmy-europa-1936-v1:" + slot),
+              ).length;
+              const automaticSlots = await new Promise((resolve, reject) => {
+                const opening = indexedDB.open("xarmy-europa-auto-v1", 1);
+                opening.onerror = () => reject(opening.error);
+                opening.onsuccess = () => {
+                  const db = opening.result;
+                  if (!db.objectStoreNames.contains("saves")) {
+                    db.close();
+                    reject(
+                      new Error("The IndexedDB autosave store is missing"),
+                    );
+                    return;
+                  }
+                  const transaction = db.transaction("saves", "readonly");
+                  const store = transaction.objectStore("saves");
+                  const requests = ["auto-1", "auto-2"].map((slot) =>
+                    store.getKey(slot),
+                  );
+                  transaction.oncomplete = () => {
+                    const count = requests.filter(
+                      (request) => request.result !== undefined,
+                    ).length;
+                    db.close();
+                    resolve(count);
+                  };
+                  transaction.onabort = transaction.onerror = () => {
+                    db.close();
+                    reject(transaction.error);
+                  };
+                };
+              });
+              return { manualSlots, automaticSlots };
+            });
+            assert.equal(slots.manualSlots, 3, "All manual saves must exist");
+            assert.equal(
+              slots.automaticSlots,
+              2,
+              "Both IndexedDB autosaves must exist",
+            );
+            return {
+              ...slots,
+              savedSlots: slots.manualSlots + slots.automaticSlots,
+            };
+          },
+        );
       }
     }
     if (phases.has("initial"))

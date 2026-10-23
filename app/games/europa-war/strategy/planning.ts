@@ -21,6 +21,8 @@ export function equipmentNeeds(a: Army): Partial<Record<Equipment, number>> {
   return needs;
 }
 export function detachArmy(w: World, id: string) {
+  const army = w.armies.find((a) => a.id === id);
+  if (army) delete army.marchGroup;
   for (const f of w.fronts) f.armies = f.armies.filter((x) => x !== id);
   for (const p of w.plans) p.armies = p.armies.filter((x) => x !== id);
 }

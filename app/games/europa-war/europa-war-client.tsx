@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import WarMap, { type MapMode } from "./strategy/WarMap";
 import WarPanels, { Meter, number, TABS, type Tab } from "./strategy/WarPanels";
@@ -8,10 +9,10 @@ import { dateLabel, GEOGRAPHY, MAP, surrender } from "./strategy/world";
 import {
   decodeSave,
   encodeSave,
-  loadLocal,
   saveLocal,
   type SaveSlot,
 } from "./strategy/storage";
+import { loadBrowserSave, saveAutomatic } from "./strategy/storage-browser";
 import { useOfflinePack } from "./strategy/useOfflinePack";
 import { useSimulation } from "./strategy/useSimulation";
 import { useSaveSlots } from "./strategy/useSaveSlots";
@@ -20,15 +21,19 @@ import styles from "./europa.module.css";
 
 function Saves({
   world,
-  onLoad,
+  onLoadSaved,
+  onImport,
   onMessage,
 }: {
   world: World;
-  onLoad: (w: World) => void;
+  onLoadSaved: (slot: SaveSlot) => Promise<void>;
+  onImport: (file: File) => Promise<void>;
   onMessage: (s: string) => void;
 }) {
   const slots = useSaveSlots(),
     input = useRef<HTMLInputElement>(null);
+  const [loading, setLoading] = useState(false);
+  const loadPending = useRef(false);
   function save(slot: SaveSlot) {
     try {
       saveLocal(slot, world);
@@ -37,12 +42,15 @@ function Saves({
       onMessage((e as Error).message);
     }
   }
-  function load(slot: SaveSlot) {
+  async function load(slot: SaveSlot) {
+    if (loadPending.current) return;
+    loadPending.current = true;
+    setLoading(true);
     try {
-      onLoad(loadLocal(slot));
-      onMessage("Kayıt yüklendi. Zaman duraklatıldı.");
-    } catch (e) {
-      onMessage((e as Error).message);
+      await onLoadSaved(slot);
+    } finally {
+      loadPending.current = false;
+      setLoading(false);
     }
   }
   function download() {
@@ -72,9 +80,11 @@ function Saves({
           <p>{label}</p>
           <div className={styles.buttonRow}>
             {!slot.startsWith("auto") && (
-              <button onClick={() => save(slot)}>Bu yuvaya kaydet</button>
+              <button disabled={loading} onClick={() => save(slot)}>
+                Bu yuvaya kaydet
+              </button>
             )}
-            <button disabled={!valid} onClick={() => load(slot)}>
+            <button disabled={!valid || loading} onClick={() => load(slot)}>
               Yükle
             </button>
           </div>
@@ -82,7 +92,9 @@ function Saves({
       ))}
       <div className={styles.buttonRow}>
         <button onClick={download}>JSON dosyası indir</button>
-        <button onClick={() => input.current?.click()}>Dosyadan yükle</button>
+        <button disabled={loading} onClick={() => input.current?.click()}>
+          Dosyadan yükle
+        </button>
       </div>
       <input
         ref={input}
@@ -91,17 +103,18 @@ function Saves({
         hidden
         aria-label="Sefer kayıt dosyası"
         onChange={async (e) => {
-          const file = e.target.files?.[0];
-          if (!file) return;
+          const element = e.currentTarget;
+          const file = element.files?.[0];
+          if (!file || loadPending.current) return;
+          loadPending.current = true;
+          setLoading(true);
           try {
-            if (file.size > 4 * 1024 * 1024)
-              throw new Error("Dosya en fazla 4 MB olabilir.");
-            onLoad(decodeSave(await file.text()));
-            onMessage("Dosya doğrulandı ve sefer yüklendi.");
-          } catch (error) {
-            onMessage((error as Error).message);
+            await onImport(file);
+          } finally {
+            element.value = "";
+            loadPending.current = false;
+            setLoading(false);
           }
-          e.target.value = "";
         }}
       />
       <p className={styles.hint}>
@@ -112,6 +125,11 @@ function Saves({
   );
 }
 export default function EuropaWarClient() {
+  const router = useRouter();
+  const transitionPending = useRef(false);
+  const [transition, setTransition] = useState<"saving" | "loading" | null>(
+    null,
+  );
   const [campaignRevision, setCampaignRevision] = useState(0);
   const [setup, setSetup] = useState(true),
     [choice, setChoice] = useState("turkey"),
@@ -128,7 +146,7 @@ export default function EuropaWarClient() {
     [message, setMessage] = useState(""),
     [panel, setPanel] = useState(true),
     [log, setLog] = useState(false);
-  const saved = useSaveSlots();
+  const saved = useSaveSlots(setup);
   const [attackArmies, setAttackArmies] = useState<string[]>([]),
     [attackStance, setAttackStance] =
       useState<OffensivePlan["stance"]>("balanced");
@@ -136,8 +154,25 @@ export default function EuropaWarClient() {
   const say = useCallback((text: string) => {
     setMessage(text);
   }, []);
-  const { world, setWorld, current, paused, setPaused, speed, setSpeed } =
-    useSimulation(say);
+  const {
+    world,
+    setWorld,
+    current,
+    paused,
+    setPaused: setSimulationPaused,
+    speed,
+    setSpeed,
+  } = useSimulation(say);
+  const setPaused = useCallback(
+    (next: boolean | ((paused: boolean) => boolean)) => {
+      // A save/restore owns the campaign snapshot until it finishes. Pausing
+      // remains allowed, but neither a keyboard toggle nor a map control can
+      // restart simulation while an exit is waiting for its transaction.
+      if (transitionPending.current && next !== true) return;
+      setSimulationPaused(next);
+    },
+    [setSimulationPaused],
+  );
   const offline = useOfflinePack();
   const lastAuto = useRef(-1),
     lastHiddenSave = useRef(-1);
@@ -174,25 +209,26 @@ export default function EuropaWarClient() {
   useEffect(() => {
     if (!world || world.day % 14 !== 0 || world.day === lastAuto.current)
       return;
-    try {
-      saveLocal(Math.floor(world.day / 14) % 2 ? "auto-1" : "auto-2", world);
-      lastAuto.current = world.day;
-    } catch (e) {
-      say((e as Error).message);
-    }
+    // Mark the request before starting it: commands on the same day must not
+    // enqueue a second full snapshot while its database transaction is pending.
+    lastAuto.current = world.day;
+    void saveAutomatic(
+      Math.floor(world.day / 14) % 2 ? "auto-1" : "auto-2",
+      world,
+    ).catch((e: Error) => say(e.message));
   }, [world, say]);
   useEffect(() => {
     const hide = () => {
       if (!document.hidden) return;
       setPaused(true);
+      // A load owns the selected save until it completes; writing the previous
+      // campaign on tab hide could otherwise replace the very slot being read.
+      // An exit already has its own committed-save request in flight.
+      if (transitionPending.current) return;
       const w = current.current;
       if (w && lastHiddenSave.current !== w.day) {
-        try {
-          saveLocal("auto-2", w);
-          lastHiddenSave.current = w.day;
-        } catch (e) {
-          say((e as Error).message);
-        }
+        lastHiddenSave.current = w.day;
+        void saveAutomatic("auto-2", w).catch((e: Error) => say(e.message));
       }
     };
     document.addEventListener("visibilitychange", hide);
@@ -230,6 +266,7 @@ export default function EuropaWarClient() {
     lastHiddenSave.current = -1;
   }
   function start() {
+    if (transitionPending.current) return;
     restore(
       createWorld(
         choice,
@@ -242,8 +279,41 @@ export default function EuropaWarClient() {
       "Sefer hazır. Komuta merkezi önceliklerini gösteriyor. Planını seç, sonra ▶ ile zamanı ilerlet.",
     );
   }
+  async function restoreSaved(slot: SaveSlot) {
+    if (transitionPending.current) return;
+    transitionPending.current = true;
+    setTransition("loading");
+    setPaused(true);
+    try {
+      restore(await loadBrowserSave(slot));
+      say("Kayıt yüklendi. Zaman duraklatıldı.");
+    } catch (e) {
+      say((e as Error).message);
+    } finally {
+      transitionPending.current = false;
+      setTransition(null);
+    }
+  }
+  async function importSaved(file: File) {
+    if (transitionPending.current) return;
+    transitionPending.current = true;
+    setTransition("loading");
+    setPaused(true);
+    try {
+      if (file.size > 4 * 1024 * 1024)
+        throw new Error("Dosya en fazla 4 MB olabilir.");
+      restore(decodeSave(await file.text()));
+      say("Dosya doğrulandı ve sefer yüklendi.");
+    } catch (e) {
+      say((e as Error).message);
+    } finally {
+      transitionPending.current = false;
+      setTransition(null);
+    }
+  }
   const command = useCallback(
     (a: Action) => {
+      if (transitionPending.current) return false;
       const w = current.current;
       if (!w) return false;
       const result = applyAction(w, a);
@@ -349,20 +419,25 @@ export default function EuropaWarClient() {
     setFrontPoints([]);
     if (window.matchMedia("(max-width:700px)").matches) setPanel(false);
   }
-  function newCampaign() {
+  async function newCampaign() {
+    if (transitionPending.current) return;
+    transitionPending.current = true;
+    setTransition("saving");
     setPaused(true);
     setOrder(null);
     setArmyIds([]);
     setFrontPoints([]);
     setAttackArmies([]);
     const w = current.current;
-    if (w)
-      try {
-        saveLocal("auto-2", w);
-      } catch (e) {
-        say((e as Error).message);
-      }
-    setSetup(true);
+    try {
+      if (w) await saveAutomatic("auto-2", w);
+      setSetup(true);
+    } catch (e) {
+      say((e as Error).message);
+    } finally {
+      transitionPending.current = false;
+      setTransition(null);
+    }
   }
   const totalOwned = Object.values(shown.provinces).filter(
     (p) => p.controller === c.id,
@@ -374,15 +449,29 @@ export default function EuropaWarClient() {
           className={styles.brand}
           href="/"
           aria-label="XARMY oyunlarına dön"
-          onClick={() => {
+          onClick={async (event) => {
+            if (
+              event.metaKey ||
+              event.ctrlKey ||
+              event.shiftKey ||
+              event.altKey
+            )
+              return;
+            event.preventDefault();
+            if (transitionPending.current) return;
+            transitionPending.current = true;
+            setTransition("saving");
             setPaused(true);
             const w = current.current;
-            if (w)
-              try {
-                saveLocal("auto-2", w);
-              } catch {
-                /* Manual export remains available in the archive. */
-              }
+            try {
+              if (w) await saveAutomatic("auto-2", w);
+              router.push("/");
+            } catch (e) {
+              say((e as Error).message);
+            } finally {
+              transitionPending.current = false;
+              setTransition(null);
+            }
           }}
         >
           X<span>ARMY</span>
@@ -423,9 +512,16 @@ export default function EuropaWarClient() {
         </div>
         <div className={styles.clock}>
           <strong data-testid="game-date">{dateLabel(shown.day)}</strong>
+          {transition && (
+            <small role="status">
+              {transition === "saving"
+                ? "Sefer kaydediliyor…"
+                : "Sefer yükleniyor…"}
+            </small>
+          )}
           <div>
             <button
-              disabled={setup}
+              disabled={setup || transition !== null}
               onClick={() => setPaused((p) => !p)}
               aria-label={paused ? "Zamanı başlat" : "Zamanı duraklat"}
               title="Boşluk: duraklat / devam et"
@@ -436,7 +532,7 @@ export default function EuropaWarClient() {
               <button
                 key={s}
                 className={speed === s ? styles.active : ""}
-                disabled={setup}
+                disabled={setup || transition !== null}
                 aria-label={`${s} kat hız`}
                 onClick={() => setSpeed(s)}
               >
@@ -655,7 +751,12 @@ export default function EuropaWarClient() {
                 </div>
               )}
               {tab === "saves" && world ? (
-                <Saves world={world} onLoad={restore} onMessage={say} />
+                <Saves
+                  world={world}
+                  onLoadSaved={restoreSaved}
+                  onImport={importSaved}
+                  onMessage={say}
+                />
               ) : (
                 <WarPanels
                   key={`${campaignRevision}:${shown.player}`}
@@ -821,13 +922,7 @@ export default function EuropaWarClient() {
                     <button
                       key={s.slot}
                       className={styles.rowButton}
-                      onClick={() => {
-                        try {
-                          restore(loadLocal(s.slot));
-                        } catch (e) {
-                          say((e as Error).message);
-                        }
-                      }}
+                      onClick={() => restoreSaved(s.slot)}
                     >
                       {s.label} →
                     </button>

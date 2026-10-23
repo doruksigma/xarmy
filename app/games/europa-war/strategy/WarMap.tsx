@@ -1,5 +1,5 @@
 "use client";
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { TERRAINS, UNITS } from "./catalog";
 import { AIRCRAFT, AIR_MISSIONS, SEA_ZONES } from "./advanced-catalog";
@@ -104,6 +104,187 @@ const pointList = (ids: string[]) =>
     .join(" ");
 const curvedPath = (ax: number, ay: number, bx: number, by: number) =>
   `M${ax} ${ay} Q${(ax + bx) / 2 + (by - ay) * 0.12} ${(ay + by) / 2 - (bx - ax) * 0.12} ${bx} ${by}`;
+const EMPTY_NETWORK = new Set<string>();
+const MAP_BACKGROUND = (
+  <>
+    <defs>
+      <radialGradient id="sea-glow">
+        <stop stopColor="#476268" />
+        <stop offset=".65" stopColor="#233f48" />
+        <stop offset="1" stopColor="#10262e" />
+      </radialGradient>
+      <pattern
+        id="sea-grid"
+        width="80"
+        height="80"
+        patternUnits="userSpaceOnUse"
+      >
+        <path
+          d="M80 0H0V80"
+          fill="none"
+          stroke="#b2c7bf"
+          strokeWidth=".5"
+          opacity=".12"
+        />
+        <path d="M39 40H41M40 39V41" stroke="#bbd0c9" opacity=".35" />
+      </pattern>
+      <pattern
+        id="sea-lines"
+        width="190"
+        height="150"
+        patternUnits="userSpaceOnUse"
+      >
+        <path
+          d="M-20 35Q50 5 120 40T230 40M-20 41Q50 11 120 46T230 46M-20 47Q50 17 120 52T230 52M-25 120Q50 85 120 112T230 112M-25 126Q50 91 120 118T230 118"
+          stroke="#89a6a2"
+          strokeWidth=".5"
+          fill="none"
+          opacity=".08"
+        />
+      </pattern>
+      <pattern
+        id="occupied"
+        width="7"
+        height="7"
+        patternUnits="userSpaceOnUse"
+        patternTransform="rotate(30)"
+      >
+        <path d="M0 0V7" stroke="#f7e6c6" strokeWidth="2" opacity=".3" />
+      </pattern>
+      <marker
+        id="order-arrow"
+        markerWidth="8"
+        markerHeight="8"
+        refX="5"
+        refY="3"
+        orient="auto"
+      >
+        <path d="M0 0L6 3L0 6Z" fill="#f2c779" />
+      </marker>
+      <marker
+        id="offensive-arrow"
+        markerWidth="5"
+        markerHeight="5"
+        refX="3.7"
+        refY="2"
+        orient="auto"
+      >
+        <path d="M0 0L4 2L0 4L1 2Z" fill="#eac484" />
+      </marker>
+      <marker
+        id="air-arrow"
+        markerWidth="5"
+        markerHeight="5"
+        refX="4"
+        refY="2"
+        orient="auto"
+      >
+        <path d="M0 0L4 2L0 4Z" fill="#a2d4dd" />
+      </marker>
+      <clipPath id="land-clip">
+        {MAP.countries.map((c) => (
+          <path key={c.id} d={c.path} />
+        ))}
+      </clipPath>
+      <mask id="ocean-mask">
+        <rect x="-1000" y="-1000" width="4000" height="4000" fill="white" />
+        {MAP.countries.map((c) => (
+          <path key={c.id} d={c.path} fill="black" />
+        ))}
+      </mask>
+      <symbol id="aircraft-symbol" viewBox="-9 -9 18 18">
+        <path d="M0-8L2-1 8 3V5L2 3 2 7 0 6-2 7-2 3-8 5V3L-2-1Z" />
+      </symbol>
+      <symbol id="anchor-symbol" viewBox="-9 -9 18 18">
+        <path
+          d="M0-4V7M-4-2H4M-7 2Q-7 7 0 7Q7 7 7 2M-8 4L-7 2-5 3M5 3L7 2 8 4"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.3"
+        />
+        <circle
+          cy="-6"
+          r="2"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.2"
+        />
+      </symbol>
+    </defs>
+    <rect
+      x="-1000"
+      y="-1000"
+      width="4000"
+      height="4000"
+      fill="url(#sea-glow)"
+    />
+    <rect
+      x="-1000"
+      y="-1000"
+      width="4000"
+      height="4000"
+      fill="url(#sea-lines)"
+    />
+    <rect
+      x="-1000"
+      y="-1000"
+      width="4000"
+      height="4000"
+      fill="url(#sea-grid)"
+    />
+  </>
+);
+
+const ProvinceRegion = memo(function ProvinceRegion({
+  province,
+  countryName,
+  fill,
+  close,
+  detailed,
+  strokeScale,
+  selected,
+  onHover,
+  onActivate,
+}: {
+  province: (typeof MAP.provinces)[number];
+  countryName: string;
+  fill: string;
+  close: boolean;
+  detailed: boolean;
+  strokeScale: number;
+  selected: boolean;
+  onHover: (id: string) => void;
+  onActivate: (id: string, append: boolean, pointer: boolean) => void;
+}) {
+  return (
+    <g>
+      <path
+        d={province.path}
+        fill={fill}
+        fillRule="evenodd"
+        stroke={close ? "#b1b99a" : "#2c3c33"}
+        strokeWidth={(close ? 1 : detailed ? 0.7 : 0.45) * strokeScale}
+        className={styles.province}
+        role="button"
+        aria-label={`${province.name}, ${countryName}`}
+        tabIndex={selected ? 0 : -1}
+        data-province={province.id}
+        onPointerEnter={() => onHover(province.id)}
+        onPointerLeave={() => onHover("")}
+        onClick={(e) => onActivate(province.id, e.shiftKey, true)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onActivate(province.id, e.shiftKey, false);
+          }
+        }}
+      >
+        <title>{`${province.name} · ${countryName} · ${TERRAINS[GEOGRAPHY[province.id].terrain].name} · ${province.vp} zafer puanı`}</title>
+      </path>
+    </g>
+  );
+});
+
 function WarMap({
   world,
   selected,
@@ -145,6 +326,17 @@ function WarMap({
   const [hover, setHover] = useState(""),
     [wingId, setWingId] = useState<string | null>(null),
     [seaZone, setSeaZone] = useState<SeaZone | null>(null);
+  const selectRef = useRef(onSelect);
+  selectRef.current = onSelect;
+  const hoverProvince = useCallback((id: string) => {
+    if (!id || !pointers.current.size) setHover(id);
+  }, []);
+  const activateProvince = useCallback(
+    (id: string, append: boolean, pointer: boolean) => {
+      if (!pointer || !drag.current.moved) selectRef.current(id, append);
+    },
+    [],
+  );
   const player = world.countries[world.player];
   const capitalRef = useRef(player.capital);
   capitalRef.current = player.capital;
@@ -159,7 +351,7 @@ function WarMap({
       needsSupply ? supplyNetwork(world, world.player) : new Set<string>(),
     [world, needsSupply],
   );
-  const selectedArmies = new Set(armyIds);
+  const selectedArmies = useMemo(() => new Set(armyIds), [armyIds]);
   // Keep the neighboring viewport ready while the compositor moves the map.
   const bounds = useMemo(
     () => ({
@@ -326,10 +518,16 @@ function WarMap({
     }
     return placed;
   }, [countryLabels, formations, counterScale, selected, bounds, capitals]);
-  const selectedWing = Object.values(world.countries)
-    .filter((country) => visible(country.id))
-    .flatMap((country) => country.air.wings.map((wing) => ({ wing, country })))
-    .find(({ wing }) => wing.id === wingId);
+  const selectedWing = useMemo(
+    () =>
+      Object.values(world.countries)
+        .filter((country) => visible(country.id))
+        .flatMap((country) =>
+          country.air.wings.map((wing) => ({ wing, country })),
+        )
+        .find(({ wing }) => wing.id === wingId),
+    [world, wingId],
+  );
   function zoom(factor: number, point?: DOMPoint, gesture = false) {
     (gesture ? moveView : setView)((v) => {
       const w = zoomWidth(v.w * factor, v.w / v.h),
@@ -444,286 +642,78 @@ function WarMap({
       e.currentTarget.releasePointerCapture(e.pointerId);
     if (!next) finish();
   }
-  const routes = [
-    ...new Set(
-      world.armies
-        .filter((a) => selectedArmies.has(a.id))
-        .map((a) =>
-          pointList([a.province, ...(a.move ? [a.move.to] : []), ...a.route]),
-        )
-        .filter((points) => points.includes(" ")),
-    ),
-  ];
+  const routes = useMemo(
+    () => [
+      ...new Set(
+        world.armies
+          .filter((a) => selectedArmies.has(a.id))
+          .map((a) =>
+            pointList([a.province, ...(a.move ? [a.move.to] : []), ...a.route]),
+          )
+          .filter((points) => points.includes(" ")),
+      ),
+    ],
+    [world, selectedArmies],
+  );
   const hovered = hover && world.provinces[hover] ? GEOGRAPHY[hover] : null;
   const infoProvince = hovered ? world.provinces[hover] : null;
-  const friendlyPlans = world.plans.filter((p) => p.country === world.player);
-  return (
-    <div
-      className={`${styles.map} ${atlas.atlas} ${ordering ? styles.ordering : ""}`}
-    >
-      <svg
-        ref={svg}
-        className={atlas.canvas}
-        viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`}
-        preserveAspectRatio="xMidYMid meet"
-        aria-label="Avrupa strateji haritası. Ok tuşlarıyla gezin, artı ve eksi ile yakınlaştırın, Home ile tüm haritayı gösterin."
-        tabIndex={0}
-        data-testid="war-map"
-        onKeyDown={(e) => {
-          if (e.target !== e.currentTarget) return;
-          if (
-            ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)
-          ) {
-            e.preventDefault();
-            const key = e.key;
-            moveView((v) =>
-              constrainCamera({
-                ...v,
-                x:
-                  v.x +
-                  (key === "ArrowLeft"
-                    ? -v.w * 0.12
-                    : key === "ArrowRight"
-                      ? v.w * 0.12
-                      : 0),
-                y:
-                  v.y +
-                  (key === "ArrowUp"
-                    ? -v.h * 0.12
-                    : key === "ArrowDown"
-                      ? v.h * 0.12
-                      : 0),
-              }),
-            );
-          } else if (["+", "=", "-", "Home"].includes(e.key)) {
-            e.preventDefault();
-            if (e.key === "Home") resetView();
-            else zoom(e.key === "-" ? 1.25 : 0.8);
-          }
-        }}
-        onPointerDown={(e) => {
-          if (e.button !== 0) return;
-          pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
-          if (pointers.current.size === 2) {
-            viewportRect.current = null;
-            const [a, b] = [...pointers.current.values()],
-              rect = readViewport(),
-              camera = liveView.current;
-            const anchor = new DOMPoint(
-              camera.x +
-                (((a.x + b.x) / 2 - rect.left) * camera.w) / rect.width,
-              camera.y +
-                (((a.y + b.y) / 2 - rect.top) * camera.h) / rect.height,
-            );
-            pinch.current = {
-              distance: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)),
-              view: camera,
-              anchor,
-            };
-            drag.current.moved = true;
-            setHover("");
-            for (const id of pointers.current.keys())
-              e.currentTarget.setPointerCapture(id);
-          } else if (pointers.current.size === 1) {
-            drag.current = {
-              id: e.pointerId,
-              x: e.clientX,
-              y: e.clientY,
-              vx: liveView.current.x,
-              vy: liveView.current.y,
-              scale: liveView.current.w / canvasSize.current.width,
-              moved: false,
-            };
-          }
-        }}
-        onPointerMove={(e) => {
-          if (!pointers.current.has(e.pointerId)) return;
-          pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
-          const gesture = pinch.current;
-          if (gesture && pointers.current.size >= 2) {
-            const [a, b] = [...pointers.current.values()],
-              rect = readViewport();
-            const w = zoomWidth(
-              (gesture.view.w * gesture.distance) /
-                Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)),
-              gesture.view.w / gesture.view.h,
-            );
-            const h = (w * gesture.view.h) / gesture.view.w;
-            moveView(
-              constrainCamera({
-                x:
-                  gesture.anchor.x -
-                  (((a.x + b.x) / 2 - rect.left) / rect.width) * w,
-                y:
-                  gesture.anchor.y -
-                  (((a.y + b.y) / 2 - rect.top) / rect.height) * h,
-                w,
-                h,
-              }),
-              false,
-            );
-            return;
-          }
-          const d = drag.current;
-          if (d.id !== e.pointerId) return;
-          const dx = e.clientX - d.x,
-            dy = e.clientY - d.y;
-          if (d.moved || Math.hypot(dx, dy) > 5) {
-            d.moved = true;
-            setHover("");
-            e.currentTarget.setPointerCapture(e.pointerId);
-            moveView(
-              (v) =>
-                constrainCamera({
-                  ...v,
-                  x: d.vx - dx * d.scale,
-                  y: d.vy - dy * d.scale,
-                }),
-              false,
-            );
-          }
-        }}
-        onPointerUp={endPointer}
-        onPointerCancel={endPointer}
-      >
-        <defs>
-          <radialGradient id="sea-glow">
-            <stop stopColor="#476268" />
-            <stop offset=".65" stopColor="#233f48" />
-            <stop offset="1" stopColor="#10262e" />
-          </radialGradient>
-          <pattern
-            id="sea-grid"
-            width="80"
-            height="80"
-            patternUnits="userSpaceOnUse"
-          >
-            <path
-              d="M80 0H0V80"
-              fill="none"
-              stroke="#b2c7bf"
-              strokeWidth=".5"
-              opacity=".12"
-            />
-            <path d="M39 40H41M40 39V41" stroke="#bbd0c9" opacity=".35" />
-          </pattern>
-          <pattern
-            id="sea-lines"
-            width="190"
-            height="150"
-            patternUnits="userSpaceOnUse"
-          >
-            <path
-              d="M-20 35Q50 5 120 40T230 40M-20 41Q50 11 120 46T230 46M-20 47Q50 17 120 52T230 52M-25 120Q50 85 120 112T230 112M-25 126Q50 91 120 118T230 118"
-              stroke="#89a6a2"
-              strokeWidth=".5"
-              fill="none"
-              opacity=".08"
-            />
-          </pattern>
-          <pattern
-            id="occupied"
-            width="7"
-            height="7"
-            patternUnits="userSpaceOnUse"
-            patternTransform="rotate(30)"
-          >
-            <path d="M0 0V7" stroke="#f7e6c6" strokeWidth="2" opacity=".3" />
-          </pattern>
-          <marker
-            id="order-arrow"
-            markerWidth="8"
-            markerHeight="8"
-            refX="5"
-            refY="3"
-            orient="auto"
-          >
-            <path d="M0 0L6 3L0 6Z" fill="#f2c779" />
-          </marker>
-          <marker
-            id="offensive-arrow"
-            markerWidth="5"
-            markerHeight="5"
-            refX="3.7"
-            refY="2"
-            orient="auto"
-          >
-            <path d="M0 0L4 2L0 4L1 2Z" fill="#eac484" />
-          </marker>
-          <marker
-            id="air-arrow"
-            markerWidth="5"
-            markerHeight="5"
-            refX="4"
-            refY="2"
-            orient="auto"
-          >
-            <path d="M0 0L4 2L0 4Z" fill="#a2d4dd" />
-          </marker>
-          <clipPath id="land-clip">
-            {MAP.countries.map((c) => (
-              <path key={c.id} d={c.path} />
-            ))}
-          </clipPath>
-          <mask id="ocean-mask">
-            <rect x="-1000" y="-1000" width="4000" height="4000" fill="white" />
-            {MAP.countries.map((c) => (
-              <path key={c.id} d={c.path} fill="black" />
-            ))}
-          </mask>
-          <symbol id="aircraft-symbol" viewBox="-9 -9 18 18">
-            <path d="M0-8L2-1 8 3V5L2 3 2 7 0 6-2 7-2 3-8 5V3L-2-1Z" />
-          </symbol>
-          <symbol id="anchor-symbol" viewBox="-9 -9 18 18">
-            <path
-              d="M0-4V7M-4-2H4M-7 2Q-7 7 0 7Q7 7 7 2M-8 4L-7 2-5 3M5 3L7 2 8 4"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.3"
-            />
-            <circle
-              cy="-6"
-              r="2"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.2"
-            />
-          </symbol>
-        </defs>
-        <rect
-          x="-1000"
-          y="-1000"
-          width="4000"
-          height="4000"
-          fill="url(#sea-glow)"
-        />
-        <rect
-          x="-1000"
-          y="-1000"
-          width="4000"
-          height="4000"
-          fill="url(#sea-lines)"
-        />
-        <rect
-          x="-1000"
-          y="-1000"
-          width="4000"
-          height="4000"
-          fill="url(#sea-grid)"
-        />
-        <g pointerEvents="none">
-          {MAP.countries.map((c) => (
-            <path
-              key={c.id}
-              d={c.path}
-              fill="#98b7b2"
-              stroke="#a0b8ac"
-              strokeWidth="6"
-              strokeLinejoin="round"
-              opacity=".13"
-            />
-          ))}
-        </g>
+  const friendlyPlans = useMemo(
+    () => world.plans.filter((p) => p.country === world.player),
+    [world],
+  );
+  const renderNetwork = mode === "supply" ? network : EMPTY_NETWORK;
+  // Keep coastlines mounted across gestures. Only their stroke scale changes;
+  // hover and simulation updates must not reconcile thousands of fixed vertices.
+  const coastlines = useMemo(
+    () => (
+      <g pointerEvents="none">
+        {MAP.countries.map((c) => (
+          <path
+            key={c.id}
+            d={c.path}
+            fill="#98b7b2"
+            stroke="#a0b8ac"
+            strokeWidth="6"
+            strokeLinejoin="round"
+            opacity=".13"
+          />
+        ))}
+      </g>
+    ),
+    [],
+  );
+  const countryBorders = useMemo(
+    () => (
+      <g pointerEvents="none" className={atlas.borders}>
+        {MAP.countries.map((c) => (
+          <path
+            key={c.id}
+            d={c.path}
+            fill="none"
+            stroke="#26362e"
+            strokeWidth={(close ? 1.8 : 1.6) * strokeScale}
+            opacity=".85"
+          />
+        ))}
+        {MAP.countries.map((c) => (
+          <path
+            key={c.id}
+            d={c.path}
+            fill="none"
+            stroke="#e9dfbf"
+            strokeWidth={0.55 * strokeScale}
+            opacity=".35"
+          />
+        ))}
+      </g>
+    ),
+    [close, strokeScale],
+  );
+  const geometry = useMemo(
+    () => (
+      <>
+        {MAP_BACKGROUND}
+        {coastlines}
         {MAP.provinces
           .filter((g) => terrainInView.has(g.id))
           .map((g) => {
@@ -735,7 +725,7 @@ function WarMap({
             if (mode === "supply")
               fill =
                 p.controller === world.player
-                  ? `hsl(${localSupply(world, world.player, p.id, network) * 110} 29% 42%)`
+                  ? `hsl(${localSupply(world, world.player, p.id, renderNetwork) * 110} 29% 42%)`
                   : "#53615b";
             if (mode === "military")
               fill =
@@ -754,37 +744,18 @@ function WarMap({
                     ? "#916f62"
                     : "#59695f";
             return (
-              <g key={g.id}>
-                <path
-                  d={g.path}
-                  fill={fill}
-                  fillRule="evenodd"
-                  stroke={close ? "#b1b99a" : "#2c3c33"}
-                  strokeWidth={
-                    (close ? 1 : detailed ? 0.7 : 0.45) * strokeScale
-                  }
-                  className={styles.province}
-                  role="button"
-                  aria-label={`${g.name}, ${country.name}`}
-                  tabIndex={g.id === selected ? 0 : -1}
-                  data-province={g.id}
-                  onPointerEnter={() => {
-                    if (!pointers.current.size) setHover(g.id);
-                  }}
-                  onPointerLeave={() => setHover("")}
-                  onClick={(e) => {
-                    if (!drag.current.moved) onSelect(g.id, e.shiftKey);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      onSelect(g.id, e.shiftKey);
-                    }
-                  }}
-                >
-                  <title>{`${g.name} · ${country.name} · ${TERRAINS[GEOGRAPHY[g.id].terrain].name} · ${g.vp} zafer puanı`}</title>
-                </path>
-              </g>
+              <ProvinceRegion
+                key={g.id}
+                province={g}
+                countryName={country.name}
+                fill={fill}
+                close={close}
+                detailed={detailed}
+                strokeScale={strokeScale}
+                selected={g.id === selected}
+                onHover={hoverProvince}
+                onActivate={activateProvince}
+              />
             );
           })}
         {/* Terrain is immutable: reuse one prerendered layer instead of thousands
@@ -814,28 +785,7 @@ function WarMap({
               />
             ))}
         </g>
-        <g pointerEvents="none" className={atlas.borders}>
-          {MAP.countries.map((c) => (
-            <path
-              key={c.id}
-              d={c.path}
-              fill="none"
-              stroke="#26362e"
-              strokeWidth={(close ? 1.8 : 1.6) * strokeScale}
-              opacity=".85"
-            />
-          ))}
-          {MAP.countries.map((c) => (
-            <path
-              key={c.id}
-              d={c.path}
-              fill="none"
-              stroke="#e9dfbf"
-              strokeWidth={0.55 * strokeScale}
-              opacity=".35"
-            />
-          ))}
-        </g>
+        {countryBorders}
         {(detailed || mode === "supply") && (
           <g pointerEvents="none" clipPath="url(#land-clip)">
             {links
@@ -848,7 +798,7 @@ function WarMap({
                     b.id === selected ||
                     (a.id === a.legacyRegion && b.id === b.legacyRegion)) &&
                   (mode !== "supply" ||
-                    (network.has(a.id) && network.has(b.id))),
+                    (renderNetwork.has(a.id) && renderNetwork.has(b.id))),
               )
               .map(({ a, b }) => (
                 <g key={`${a.id}-${b.id}`}>
@@ -871,16 +821,27 @@ function WarMap({
               ))}
           </g>
         )}
-        {[hover, selected].filter(Boolean).map((id, i) => (
-          <path
-            key={`${id}-${i}`}
-            d={GEOGRAPHY[id].path}
-            fill={id === selected ? "#f2cb8c16" : "#ffffff13"}
-            stroke={id === selected ? "#ffe0a3" : "#f4ecd1"}
-            strokeWidth={(id === selected ? 2.3 : 1.4) * strokeScale}
-            pointerEvents="none"
-          />
-        ))}
+      </>
+    ),
+    [
+      world,
+      mode,
+      terrainInView,
+      player,
+      selected,
+      close,
+      detailed,
+      strokeScale,
+      renderNetwork,
+      hoverProvince,
+      activateProvince,
+      coastlines,
+      countryBorders,
+    ],
+  );
+  const actors = useMemo(
+    () => (
+      <>
         {Object.entries(SEA_ZONES).map(([id, z]) => (
           <text
             key={id}
@@ -1008,7 +969,7 @@ function WarMap({
                       y={p.y + 5 * markerSize}
                       width={8 * markerSize}
                       height={7 * markerSize}
-                      fill={network.has(p.id) ? "#d6e6b4" : "#d38b70"}
+                      fill={renderNetwork.has(p.id) ? "#d6e6b4" : "#d38b70"}
                       stroke="#293f2a"
                       strokeWidth={markerSize}
                     />
@@ -1508,6 +1469,177 @@ function WarMap({
               </g>
             );
           })}
+      </>
+    ),
+    [
+      world,
+      mode,
+      player,
+      selected,
+      armyId,
+      armyIds,
+      countryLabels,
+      cityLabels,
+      capitals,
+      counterScale,
+      bounds,
+      detailed,
+      close,
+      draft,
+      friendlyPlans,
+      routes,
+      selectedWing,
+      wingId,
+      seaZone,
+      formations,
+      formationOffsets,
+      ordering,
+      onSelect,
+      onArmies,
+      renderNetwork,
+    ],
+  );
+  return (
+    <div
+      className={`${styles.map} ${atlas.atlas} ${ordering ? styles.ordering : ""}`}
+    >
+      <svg
+        ref={svg}
+        className={atlas.canvas}
+        viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`}
+        preserveAspectRatio="xMidYMid meet"
+        aria-label="Avrupa strateji haritası. Ok tuşlarıyla gezin, artı ve eksi ile yakınlaştırın, Home ile tüm haritayı gösterin."
+        tabIndex={0}
+        data-testid="war-map"
+        onKeyDown={(e) => {
+          if (e.target !== e.currentTarget) return;
+          if (
+            ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)
+          ) {
+            e.preventDefault();
+            const key = e.key;
+            moveView((v) =>
+              constrainCamera({
+                ...v,
+                x:
+                  v.x +
+                  (key === "ArrowLeft"
+                    ? -v.w * 0.12
+                    : key === "ArrowRight"
+                      ? v.w * 0.12
+                      : 0),
+                y:
+                  v.y +
+                  (key === "ArrowUp"
+                    ? -v.h * 0.12
+                    : key === "ArrowDown"
+                      ? v.h * 0.12
+                      : 0),
+              }),
+            );
+          } else if (["+", "=", "-", "Home"].includes(e.key)) {
+            e.preventDefault();
+            if (e.key === "Home") resetView();
+            else zoom(e.key === "-" ? 1.25 : 0.8);
+          }
+        }}
+        onPointerDown={(e) => {
+          if (e.button !== 0) return;
+          pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+          if (pointers.current.size === 2) {
+            viewportRect.current = null;
+            const [a, b] = [...pointers.current.values()],
+              rect = readViewport(),
+              camera = liveView.current;
+            const anchor = new DOMPoint(
+              camera.x +
+                (((a.x + b.x) / 2 - rect.left) * camera.w) / rect.width,
+              camera.y +
+                (((a.y + b.y) / 2 - rect.top) * camera.h) / rect.height,
+            );
+            pinch.current = {
+              distance: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)),
+              view: camera,
+              anchor,
+            };
+            drag.current.moved = true;
+            setHover("");
+            for (const id of pointers.current.keys())
+              e.currentTarget.setPointerCapture(id);
+          } else if (pointers.current.size === 1) {
+            drag.current = {
+              id: e.pointerId,
+              x: e.clientX,
+              y: e.clientY,
+              vx: liveView.current.x,
+              vy: liveView.current.y,
+              scale: liveView.current.w / canvasSize.current.width,
+              moved: false,
+            };
+          }
+        }}
+        onPointerMove={(e) => {
+          if (!pointers.current.has(e.pointerId)) return;
+          pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+          const gesture = pinch.current;
+          if (gesture && pointers.current.size >= 2) {
+            const [a, b] = [...pointers.current.values()],
+              rect = readViewport();
+            const w = zoomWidth(
+              (gesture.view.w * gesture.distance) /
+                Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)),
+              gesture.view.w / gesture.view.h,
+            );
+            const h = (w * gesture.view.h) / gesture.view.w;
+            moveView(
+              constrainCamera({
+                x:
+                  gesture.anchor.x -
+                  (((a.x + b.x) / 2 - rect.left) / rect.width) * w,
+                y:
+                  gesture.anchor.y -
+                  (((a.y + b.y) / 2 - rect.top) / rect.height) * h,
+                w,
+                h,
+              }),
+              false,
+            );
+            return;
+          }
+          const d = drag.current;
+          if (d.id !== e.pointerId) return;
+          const dx = e.clientX - d.x,
+            dy = e.clientY - d.y;
+          if (d.moved || Math.hypot(dx, dy) > 5) {
+            d.moved = true;
+            setHover("");
+            e.currentTarget.setPointerCapture(e.pointerId);
+            moveView(
+              (v) =>
+                constrainCamera({
+                  ...v,
+                  x: d.vx - dx * d.scale,
+                  y: d.vy - dy * d.scale,
+                }),
+              false,
+            );
+          }
+        }}
+        onPointerUp={endPointer}
+        onPointerCancel={endPointer}
+      >
+        {geometry}
+        {[hover, selected].filter(Boolean).map((id, i) => (
+          <path
+            key={`${id}-${i}`}
+            d={GEOGRAPHY[id].path}
+            fill={id === selected ? "#f2cb8c16" : "#ffffff13"}
+            stroke={id === selected ? "#ffe0a3" : "#f4ecd1"}
+            strokeWidth={(id === selected ? 2.3 : 1.4) * strokeScale}
+            pointerEvents="none"
+          />
+        ))}
+        {actors}
       </svg>
       <div className={atlas.search}>
         <input

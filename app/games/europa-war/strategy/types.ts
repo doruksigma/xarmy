@@ -199,6 +199,8 @@ export interface Army {
   general: string | null;
   entrenchment: number;
   stance: "hold" | "advance";
+  /** Explicit group order; only members on the same ground leg march together. */
+  marchGroup?: string;
   route: string[];
   move: {
     to: string;

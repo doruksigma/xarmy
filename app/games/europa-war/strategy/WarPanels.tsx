@@ -488,6 +488,20 @@ export default function WarPanels({
             Hareket ve savunma emirleri seçili tüm tümenlere uygulanır. Hedef
             seçerken Shift, mevcut rotalara yeni hedef ekler.
           </p>
+          {selectedIds.length > 1 && (
+            <p>
+              Aynı şehirden aynı yöne gönderdiğin tümenler birlikte ilerler.
+              Grup hızı en yavaş tümenin hızına göre ayarlanır.
+            </p>
+          )}
+          {selectedIds.length > 1 &&
+            selectedArmies.some((unit) => unit.supply < 0.25) && (
+              <p className={styles.hint} role="status">
+                Grubun ikmali çok düşük; bu yüzden ilerlemesi yavaş. Aynı
+                şehirdeki tümen sayısını azalt veya ikmal merkezi ve demiryolunu
+                geliştir.
+              </p>
+            )}
         </div>
         {a ? (
           <div className={styles.card}>

@@ -176,6 +176,7 @@ function retreat(w: World, a: Army) {
     );
     a.strength = 0;
   }
+  delete a.marchGroup;
 }
 export function inLandContact(w: World, a: Army) {
   const to = a.move?.to ?? a.route[0];
@@ -205,6 +206,23 @@ export function resolveLandDay(w: World) {
     return values.get(province)!;
   };
   const previousBattles = w.battles;
+  const planGroups = new Map<string, string>();
+  // A completed objective can deactivate its plan while other formations are
+  // still en route. Keep their issued legs together; stop/delete clears orders,
+  // and a replacement manual order removes that unit's plan membership.
+  for (const plan of w.plans)
+    for (const id of plan.armies) planGroups.set(id, plan.id);
+  const marchKey = (a: Army) => {
+    const group = a.marchGroup
+      ? `order:${a.marchGroup}`
+      : `plan:${planGroups.get(a.id) ?? ""}`;
+    return a.move &&
+      a.move.kind !== "paradrop" &&
+      (a.marchGroup || planGroups.has(a.id))
+      ? `${a.country}:${group}:${a.province}:${a.move.to}`
+      : null;
+  };
+  const marchStarts = new Map<string, number>();
   const occupants = new Map<string, Set<string>>();
   for (const a of w.armies) {
     if (a.strength <= 0) continue;
@@ -335,11 +353,50 @@ export function resolveLandDay(w: World) {
         // daily march and trap it even when withdrawing to friendly territory.
         const supplySpeed =
           a.supply < 0.25 ? Math.max(0.05, a.supply - 0.1) : a.supply;
+        marchStarts.set(a.id, a.move.progress);
         a.move.progress +=
           supplySpeed * (d.fuel && c.stock.fuel <= 0 ? 0.3 : 1);
       }
     } else a.entrenchment = clamp(a.entrenchment + 2, 0, 30);
   }
+  // A group command is one formation, not a tank departing ahead of its infantry.
+  // Independent orders and formations on different legs retain their own speed.
+  const marches = new Map<string, Army[]>();
+  for (const a of w.armies) {
+    const key = a.strength > 0 ? marchKey(a) : null;
+    if (!key) continue;
+    if (!marches.has(key)) marches.set(key, []);
+    marches.get(key)!.push(a);
+  }
+  for (const members of marches.values()) {
+    if (members.length < 2) continue;
+    const pace = Math.min(
+      ...members.map(
+        (a) =>
+          Math.max(0, a.move!.progress - marchStarts.get(a.id)!) / a.move!.days,
+      ),
+    );
+    for (const a of members)
+      a.move!.progress = marchStarts.get(a.id)! + pace * a.move!.days;
+  }
+  const readyMarches = new Map<string, boolean>();
+  const readyToEnter = (a: Army) => {
+    if (!a.move || a.move.progress < a.move.days) return false;
+    const key = marchKey(a);
+    if (!key) return true;
+    if (!readyMarches.has(key))
+      readyMarches.set(
+        key,
+        (marches.get(key) ?? []).every(
+          (member) =>
+            // A halted, destroyed or routed member no longer holds up its old group.
+            member.strength <= 0 ||
+            marchKey(member) !== key ||
+            member.move!.progress >= member.move!.days,
+        ),
+      );
+    return readyMarches.get(key)!;
+  };
   // Resolve one battle per attacking country and destination, with all forces together.
   // Apply casualties to the same world transaction; simultaneous battles cannot overwrite each other.
   const groups = new Map<string, { to: string; armies: Army[] }>();
@@ -351,8 +408,10 @@ export function resolveLandDay(w: World) {
   )) {
     const to = a.move!.to;
     if (!atWar(w, a.country, w.provinces[to].controller)) {
-      a.province = to;
-      a.move = null;
+      if (readyToEnter(a)) {
+        a.province = to;
+        a.move = null;
+      }
       continue;
     }
     const key = `${a.country}:${to}`;
@@ -372,7 +431,7 @@ export function resolveLandDay(w: World) {
         if (!friendly(w, a.country, defender)) {
           a.move = null;
           a.route = [];
-        } else if (a.move!.progress >= a.move!.days) {
+        } else if (readyToEnter(a)) {
           a.province = to;
           a.move = null;
         }
@@ -414,6 +473,7 @@ export function resolveLandDay(w: World) {
       for (const a of exhausted) {
         a.move = null;
         a.route = [];
+        delete a.marchGroup;
       }
       const stopped = exhausted.filter((a) => a.strength > 0).length;
       if (stopped && first.country === w.player)
@@ -425,6 +485,8 @@ export function resolveLandDay(w: World) {
       for (const a of defenders)
         if (a.organization < 10 || a.strength < 15) retreat(w, a);
     }
+    // Combat can remove a formation's slowest member from its current march.
+    readyMarches.clear();
     if (
       !w.armies.some(
         (a) =>
@@ -432,9 +494,7 @@ export function resolveLandDay(w: World) {
           a.strength > 0 &&
           atWar(w, first.country, a.country),
       ) &&
-      attackers.some(
-        (a) => a.move && a.move.progress >= a.move.days && a.strength > 0,
-      )
+      attackers.some((a) => a.strength > 0 && readyToEnter(a))
     ) {
       addWarScore(w, first.country, defender, GEOGRAPHY[to].vp * 2);
       p.controller = first.country;
@@ -442,7 +502,7 @@ export function resolveLandDay(w: World) {
       p.compliance = 0;
       p.damage = clamp(p.damage + 10);
       for (const a of attackers)
-        if (a.move && a.move.progress >= a.move.days && a.strength > 0) {
+        if (a.strength > 0 && readyToEnter(a)) {
           a.province = to;
           a.move = null;
         }
@@ -455,6 +515,7 @@ export function resolveLandDay(w: World) {
     }
   }
   w.armies = w.armies.filter((a) => a.strength > 0);
+  for (const a of w.armies) if (!a.move && !a.route.length) delete a.marchGroup;
   for (const c of Object.values(w.countries))
     if (!c.capitulated && c.wars.length && surrender(w, c.id) >= 80) {
       const occupied = Object.values(w.provinces).filter(
