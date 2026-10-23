@@ -112,19 +112,41 @@ export function applyAction(
           requireRule(w.provinces[action.to], "Hedef eyalet bulunamadı.");
           const start = action.append
             ? (a.route.at(-1) ?? a.move?.to ?? a.province)
-            : (a.move?.to ?? a.province);
-          if (!routes.has(start))
+            : a.province;
+          const continuingDrop =
+            !action.append &&
+            a.move?.kind === "paradrop" &&
+            a.move.to === action.to;
+          if (!continuingDrop && !routes.has(start))
             routes.set(start, routeTo(w, a, action.to, start));
-          const route = routes.get(start);
+          const route = continuingDrop ? [] : routes.get(start);
           requireRule(
             route,
             `${a.name}: Uygun rota yok. Sınır için savaş/geçiş izni, deniz için donanma gerekir.`,
           );
+          const continuing =
+            !action.append &&
+            (continuingDrop || (a.move !== null && route[0] === a.move.to));
+          const remaining =
+            continuing && !continuingDrop ? route.slice(1) : route;
+          const supplyRetreat =
+            !action.append &&
+            a.supply < 0.25 &&
+            route.every((id) =>
+              friendly(w, a.country, w.provinces[id].controller),
+            );
           requireRule(
-            route.length === 0 || a.organization >= 10,
+            remaining.length === 0 || a.organization >= 10 || supplyRetreat,
             `${a.name}: Birliğin önce organizasyonunu toplaması gerekiyor.`,
           );
-          a.route = action.append ? [...a.route, ...route] : [...route];
+          if (action.append) a.route = [...a.route, ...route];
+          else {
+            // A replacement order begins at the unit's actual location. Keep
+            // progress only when its next leg is still the requested path;
+            // redirecting out of combat must not wait for the old city to fall.
+            if (!continuing) a.move = null;
+            a.route = [...remaining];
+          }
           a.stance = "advance";
         }
       }

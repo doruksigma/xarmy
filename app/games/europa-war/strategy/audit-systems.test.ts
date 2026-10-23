@@ -1,8 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { applyAction } from "./engine";
+import { advanceDay, applyAction } from "./engine";
 import { declareWar, peace } from "./diplomacy";
 import { economyDay, CONSCRIPTION } from "./economy";
+import { airNavalDay, airSupport, regionalAirPower } from "./airnaval";
+import { AIRCRAFT } from "./advanced-catalog";
+import { tradeRoute } from "./trade-routes";
 import { intelChance, operationsDay } from "./operations";
 import { politicsDay } from "./politics";
 import { BUILDINGS, EQUIPMENT, MISSIONS, TECHNOLOGIES, UNITS } from "./catalog";
@@ -10,6 +13,7 @@ import { createWorld, controlled, friendly } from "./world";
 import { validateWorld } from "./storage";
 import type {
   Action,
+  AirModel,
   Building,
   Equipment,
   MissionType,
@@ -46,6 +50,228 @@ function coupWorld() {
   };
   return w;
 }
+
+for (const naval of [false, true])
+  test(`${naval ? "Tersane" : "Fabrika"} kaybından sonra üretim hatları azaltılabilir ve kapatılabilir`, () => {
+    let w = createWorld("uk");
+    const building = naval ? "dock" : "military";
+    const equipment = naval ? "destroyer" : "rifle";
+    const other = naval ? "submarine" : "artillery";
+    w.countries.uk.tech = TECHNOLOGIES.map((t) => t.id);
+    w.countries.uk.production = [
+      { equipment, factories: 3, efficiency: 0.8 },
+      { equipment: other, factories: 3, efficiency: 0.8 },
+    ];
+    for (const province of controlled(w, "uk"))
+      province.buildings[building] = 0;
+    w.provinces["uk-0"].buildings[building] = 1;
+    rejected(w, { type: "production", equipment, factories: 4 });
+    w = order(w, { type: "production", equipment, factories: 2 });
+    assert.equal(w.countries.uk.production[0].factories, 2);
+    assert.equal(w.countries.uk.production[0].efficiency, 0.8);
+    w = order(w, { type: "production", equipment, factories: 0 });
+    assert.equal(w.countries.uk.production.length, 1);
+    w = order(w, { type: "production", equipment: other, factories: 1 });
+    rejected(w, { type: "production", equipment, factories: 1 });
+    const stock = w.countries.uk.equipment[other];
+    economyDay(w);
+    assert.ok(w.countries.uk.equipment[other] > stock);
+    assert.ok(validateWorld(w));
+  });
+
+test("Düşmanın ele geçirdiği limanda uçak gemisine uçak yüklenemez veya boşaltılamaz", () => {
+  let w = createWorld("uk");
+  const ship = w.countries.uk.navy.ships.find((s) => s.model === "carrier")!;
+  ship.mission = "idle";
+  ship.transit = 0;
+  ship.aircraft = 10;
+  w.countries.uk.equipment.carrierFighter = 20;
+  declareWar(w, "germany", "uk");
+  w.provinces[ship.port].controller = "germany";
+  rejected(w, { type: "carrierAircraft", id: ship.id, count: 15 });
+  rejected(w, { type: "carrierAircraft", id: ship.id, count: 0 });
+  airNavalDay(w);
+  assert.equal(w.countries.uk.equipment.carrierFighter, 20);
+  assert.equal(ship.aircraft, 10);
+  assert.ok(ship.health < 100);
+  w.provinces[ship.port].controller = "uk";
+  w = order(w, { type: "carrierAircraft", id: ship.id, count: 15 });
+  assert.equal(w.countries.uk.equipment.carrierFighter, 15);
+  w = order(w, { type: "carrierAircraft", id: ship.id, count: 0 });
+  assert.equal(w.countries.uk.equipment.carrierFighter, 30);
+  assert.ok(validateWorld(w));
+});
+
+test("İhracat başkentinin işgali ticaret teslimatını ve ödemeyi durdurur", () => {
+  let w = createWorld("turkey");
+  w.countries.bulgaria.stock.rubber = 1000;
+  w = order(w, {
+    type: "trade",
+    target: "bulgaria",
+    resource: "rubber",
+    amount: 5,
+  });
+  declareWar(w, "germany", "bulgaria");
+  w.provinces[w.countries.bulgaria.capital].controller = "germany";
+  assert.equal(tradeRoute(w, "bulgaria", "turkey"), null);
+  const baseline = structuredClone(w);
+  baseline.trades = [];
+  economyDay(w);
+  economyDay(baseline);
+  for (const country of ["bulgaria", "turkey"]) {
+    assert.equal(
+      w.countries[country].stock.rubber,
+      baseline.countries[country].stock.rubber,
+    );
+    assert.equal(
+      w.countries[country].treasury,
+      baseline.countries[country].treasury,
+    );
+  }
+  w.provinces[w.countries.bulgaria.capital].controller = "bulgaria";
+  assert.ok(tradeRoute(w, "bulgaria", "turkey"));
+  const restored = structuredClone(w);
+  restored.trades = [];
+  economyDay(w);
+  economyDay(restored);
+  assert.equal(
+    w.countries.turkey.stock.rubber - restored.countries.turkey.stock.rubber,
+    5,
+  );
+  assert.equal(
+    w.countries.turkey.treasury - restored.countries.turkey.treasury,
+    -10,
+  );
+  assert.ok(validateWorld(w));
+});
+
+test("Bütün araştırmalar önkoşullardan başlayarak günlük ilerlemeyle tamamlanabilir", () => {
+  let w = createWorld("turkey", "alternative");
+  w.countries.turkey.tech = [];
+  w.countries.turkey.research = [];
+  const remaining = new Set(TECHNOLOGIES.map((t) => t.id));
+  while (remaining.size) {
+    const technology = TECHNOLOGIES.find(
+      (t) =>
+        remaining.has(t.id) &&
+        t.requires.every((id) => w.countries.turkey.tech.includes(id)),
+    );
+    assert.ok(
+      technology,
+      "Araştırma ağacı erişilemeyen önkoşul döngüsü içermemeli.",
+    );
+    w = order(w, { type: "research", id: technology.id });
+    rejected(w, { type: "research", id: technology.id });
+    const research = w.countries.turkey.research[0];
+    let days = 0;
+    while (w.countries.turkey.research.length && days <= research.total) {
+      w.day++;
+      politicsDay(w);
+      days++;
+    }
+    assert.ok(days > 1, technology.name);
+    assert.ok(w.countries.turkey.tech.includes(technology.id), technology.name);
+    assert.equal(w.countries.turkey.research.length, 0);
+    remaining.delete(technology.id);
+  }
+  assert.equal(new Set(w.countries.turkey.tech).size, TECHNOLOGIES.length);
+  assert.ok(validateWorld(w));
+});
+
+test("Gün ilerletme araştırmayı bitirir, açılan üretim ekipman ve tümen eğitimine bağlanır", () => {
+  let w = createWorld("turkey", "alternative");
+  w.countries.turkey.production = [];
+  rejected(w, { type: "production", equipment: "lightTank", factories: 1 });
+  rejected(w, { type: "recruit", unit: "lightTank", province: "turkey-0" });
+  w = order(w, { type: "research", id: "armor1" });
+  w.countries.turkey.research[0].progress =
+    w.countries.turkey.research[0].total - 1;
+  w = advanceDay(w);
+  assert.ok(w.countries.turkey.tech.includes("armor1"));
+  w.countries.turkey.equipment.lightTank = 0;
+  w = order(w, { type: "production", equipment: "lightTank", factories: 1 });
+  w = advanceDay(w);
+  assert.ok(w.countries.turkey.equipment.lightTank > 0);
+  rejected(w, { type: "recruit", unit: "lightTank", province: "turkey-0" });
+  for (const [equipment, amount] of Object.entries(UNITS.lightTank.equipment))
+    w.countries.turkey.equipment[equipment as Equipment] = amount;
+  w = order(w, { type: "recruit", unit: "lightTank", province: "turkey-0" });
+  w.countries.turkey.recruitment[0].progress =
+    w.countries.turkey.recruitment[0].total - 1;
+  const before = w.armies.filter(
+    (a) => a.country === "turkey" && a.type === "lightTank",
+  ).length;
+  w = advanceDay(w);
+  assert.equal(
+    w.armies.filter((a) => a.country === "turkey" && a.type === "lightTank")
+      .length,
+    before + 1,
+  );
+  assert.equal(w.countries.turkey.recruitment.length, 0);
+  assert.ok(validateWorld(w));
+});
+
+for (const model of Object.keys(AIRCRAFT) as AirModel[])
+  for (const mission of AIRCRAFT[model].missions)
+    test(`${AIRCRAFT[model].name} / ${mission}: kanat emri yakıt tüketir ve görev etkisi üretir`, () => {
+      let w = createWorld("germany", "alternative");
+      declareWar(w, "germany", "denmark");
+      w.countries.germany.air.wings = [];
+      w.countries.germany.equipment[model] = 20;
+      w.countries.germany.stock.fuel = 100;
+      if (mission === "naval") {
+        w.player = "denmark";
+        w.countries.denmark.equipment.destroyer = 1;
+        w = order(w, {
+          type: "commission",
+          model: "destroyer",
+          port: "denmark-0",
+        });
+        w = order(w, {
+          type: "ship",
+          id: w.countries.denmark.navy.ships.at(-1)!.id,
+          mission: "patrol",
+          zone: "baltic",
+        });
+        w.player = "germany";
+      }
+      w = order(w, { type: "createWing", model, count: 20, base: "germany-0" });
+      assert.equal(w.countries.germany.equipment[model], 0);
+      const wing = w.countries.germany.air.wings[0];
+      wing.readiness = 100;
+      w = order(w, { type: "wing", id: wing.id, mission, target: "denmark-0" });
+      if (mission === "superiority" || mission === "transport")
+        assert.ok(regionalAirPower(w, "germany", "denmark-0", mission) > 0);
+      if (mission === "support")
+        assert.ok(airSupport(w, "germany", "denmark-0") > 0);
+      const baseline = structuredClone(w);
+      baseline.countries.germany.air.wings[0].mission = "idle";
+      airNavalDay(w);
+      airNavalDay(baseline);
+      assert.ok(
+        Math.abs(
+          baseline.countries.germany.stock.fuel -
+            w.countries.germany.stock.fuel -
+            20 * AIRCRAFT[model].fuel,
+        ) < 1e-8,
+      );
+      assert.ok(w.countries.germany.air.wings[0].experience > 0);
+      if (mission === "strategic")
+        assert.ok(
+          w.provinces["denmark-0"].damage >
+            baseline.provinces["denmark-0"].damage,
+        );
+      if (mission === "recon") {
+        assert.ok(w.countries.germany.intel.denmark.level >= 55);
+        assert.ok(w.countries.germany.intel.denmark.expires > w.day);
+      }
+      if (mission === "naval")
+        assert.ok(
+          w.countries.denmark.navy.ships.at(-1)!.health <
+            baseline.countries.denmark.navy.ships.at(-1)!.health,
+        );
+      assert.ok(validateWorld(w));
+    });
 
 test("Savunma savaşına katılan müttefik saldırganla çelişen anlaşmalarını bitirir", () => {
   const w = createWorld("germany");

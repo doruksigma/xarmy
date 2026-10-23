@@ -600,17 +600,35 @@ function fixture() {
     const slowWheelWorld = await worldPoint(slowWheelPoint);
     await page.mouse.move(slowWheelPoint.x, slowWheelPoint.y);
     for (let notch = 1; notch <= 2; notch++) {
+      // Sample all camera properties together in the page. Separate protocol
+      // reads can straddle the 450 ms commit on a busy host, making the test
+      // pair an old viewBox with a correctly cleared transform.
+      await map().evaluate((svg) => {
+        window.__europaWheelSample = new Promise((resolve) => {
+          svg.addEventListener(
+            "wheel",
+            () => {
+              setTimeout(
+                () =>
+                  resolve({
+                    view: svg.getAttribute("viewBox").split(" ").map(Number),
+                    transform: svg.style.transform,
+                    promoted: svg.style.willChange,
+                  }),
+                300,
+              );
+            },
+            { once: true, capture: true },
+          );
+        });
+      });
       await page.mouse.wheel(0, -20);
-      await page.waitForTimeout(300);
+      const live = await page.evaluate(() => window.__europaWheelSample);
       assert.deepEqual(
-        await readView(),
+        live.view,
         before,
         `Slow wheel notch ${notch} must not commit geometry during the 300 ms gap`,
       );
-      const live = await map().evaluate((svg) => ({
-        transform: svg.style.transform,
-        promoted: svg.style.willChange,
-      }));
       assert.ok(
         live.transform,
         `Slow wheel notch ${notch} must visibly transform the map`,

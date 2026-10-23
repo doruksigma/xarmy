@@ -24,6 +24,7 @@ import { CONSCRIPTION, ECONOMIES } from "./economy";
 import { diplomaticAcceptance } from "./diplomacy";
 import { airPower, intelChance } from "./operations";
 import { researchDays, researchSlots } from "./politics";
+import { armyMovementWarnings, armyStatus } from "./army-status";
 import {
   capacity,
   controlled,
@@ -95,10 +96,11 @@ function Stat({ label, value }: { label: string; value: string | number }) {
   );
 }
 function Progress({ value, total }: { value: number; total: number }) {
+  const percent = Math.max(0, Math.min(100, (value / total) * 100));
   return (
     <div className={styles.progress}>
-      <i style={{ width: `${Math.min(100, (value / total) * 100)}%` }} />
-      <span>%{Math.floor((value / total) * 100)}</span>
+      <i style={{ width: `${percent}%` }} />
+      <span>%{Math.floor(percent)}</span>
     </div>
   );
 }
@@ -561,16 +563,18 @@ export default function WarPanels({
               </>
             )}
             <p>Emir okları haritada görünür; düşman toprağında savaş başlar.</p>
+            <p data-testid="army-order-status">
+              <strong>{armyStatus(w, a).label}</strong> ·{" "}
+              {armyStatus(w, a).detail}
+            </p>
+            {armyMovementWarnings(w, a).map((warning) => (
+              <p className={styles.hint} key={warning}>
+                {warning}
+              </p>
+            ))}
             {a.move && (
               <>
-                <p>
-                  {w.battles.some(
-                    (b) =>
-                      b.province === a.move!.to && b.attacker === a.country,
-                  )
-                    ? "Çatışıyor — ilerlemek için savunmayı kır."
-                    : `${GEOGRAPHY[a.move.to].name} yönünde ilerliyor.`}
-                </p>
+                <small>Yol ilerlemesi</small>
                 <Progress value={a.move.progress} total={a.move.days} />
               </>
             )}
@@ -632,13 +636,7 @@ export default function WarPanels({
                 </span>
                 <span>
                   %{Math.round(a.strength)}
-                  <small>
-                    {a.move
-                      ? "İlerliyor"
-                      : a.supply < 0.3
-                        ? "İkmal kesik"
-                        : "Hazır"}
-                  </small>
+                  <small>{armyStatus(w, a).label}</small>
                 </span>
               </button>
             </div>

@@ -261,8 +261,12 @@ export function airNavalAction(w: World, c: Country, a: Action): boolean {
       (s) => s.id === a.id && s.model === "carrier",
     );
     requireRule(
-      ship && ship.mission === "idle" && !ship.transit,
-      "Uçak yüklemek için uçak gemisini limana döndür.",
+      ship &&
+        ship.mission === "idle" &&
+        !ship.transit &&
+        friendly(w, c.id, w.provinces[ship.port].controller) &&
+        ship.zone === portZone(ship.port),
+      "Uçak yüklemek veya boşaltmak için uçak gemisini güvenli bir limana döndür.",
     );
     requireRule(
       Number.isInteger(a.count) && a.count >= 0 && a.count <= 30,

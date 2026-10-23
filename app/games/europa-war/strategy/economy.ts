@@ -86,6 +86,7 @@ export function economyAction(w: World, c: Country, a: Action): boolean {
       !def.tech || c.tech.includes(def.tech),
       "Bu ekipman için teknoloji araştırması gerekir.",
     );
+    const line = c.production.find((p) => p.equipment === a.equipment);
     const used = c.production
       .filter(
         (p) =>
@@ -94,13 +95,15 @@ export function economyAction(w: World, c: Country, a: Action): boolean {
       )
       .reduce((n, p) => n + p.factories, 0);
     requireRule(
-      used + a.factories <=
-        Math.floor(capacity(w, c.id, def.naval ? "dock" : "military")),
+      // Losing factories can leave several existing allocations over capacity.
+      // Let the player reduce them one at a time without permitting expansion.
+      a.factories <= (line?.factories ?? 0) ||
+        used + a.factories <=
+          Math.floor(capacity(w, c.id, def.naval ? "dock" : "military")),
       def.naval
         ? "Yeterli boş tersane yok."
         : "Yeterli boş askerî fabrika yok.",
     );
-    const line = c.production.find((p) => p.equipment === a.equipment);
     if (line) line.factories = a.factories;
     else if (a.factories)
       c.production.push({

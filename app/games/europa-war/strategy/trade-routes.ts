@@ -29,6 +29,17 @@ export function tradeRoute(
     buyer.embargoes.includes(from)
   )
     return null;
+  const canPass = (province: string) => {
+    const controller = w.provinces[province].controller;
+    return (
+      !buyer.wars.includes(controller) &&
+      !seller.wars.includes(controller) &&
+      !w.countries[controller].embargoes.includes(to)
+    );
+  };
+  // The source is already marked visited by BFS, so it needs the same
+  // blockade check as every subsequent province on the delivery route.
+  if (!canPass(seller.capital) || !canPass(buyer.capital)) return null;
   const queue = [seller.capital],
     seen = new Set(queue),
     previous = new Map<string, { province: string; seas: SeaZone[] }>(),
@@ -78,13 +89,7 @@ export function tradeRoute(
     }
     for (const edge of neighbors[province]) {
       if (seen.has(edge.id)) continue;
-      const controller = w.provinces[edge.id].controller;
-      if (
-        buyer.wars.includes(controller) ||
-        seller.wars.includes(controller) ||
-        w.countries[controller].embargoes.includes(to)
-      )
-        continue;
+      if (!canPass(edge.id)) continue;
       let seas: SeaZone[] = [];
       if (edge.sea) {
         if ([province, edge.id].includes("ussr-13")) continue;

@@ -552,7 +552,7 @@ export const TECHNOLOGIES: Technology[] = [
     1938,
     80,
     ["aviation1"],
-    "Hava üstünlüğü görevinde düşman istihbaratı artar.",
+    "Keşif uçağı üretimi açılır; keşif görevi düşman istihbaratını artırır.",
   ],
   [
     "naval1",

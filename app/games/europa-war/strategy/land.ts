@@ -123,7 +123,13 @@ export function combatPower(
       : 1 + p.buildings.fort * 0.15 + a.entrenchment * 0.003)
   );
 }
-function casualty(w: World, a: Army, strength: number, org: number, combat = true) {
+function casualty(
+  w: World,
+  a: Army,
+  strength: number,
+  org: number,
+  combat = true,
+) {
   const actual = Math.min(a.strength, strength);
   a.strength = clamp(a.strength - actual);
   a.organization = clamp(a.organization - org);
@@ -150,7 +156,9 @@ function retreat(w: World, a: Army) {
       friendly(w, a.country, w.provinces[e.id].controller) &&
       !w.armies.some(
         (enemy) =>
-          enemy.province === e.id && atWar(w, a.country, enemy.country),
+          enemy.strength > 0 &&
+          enemy.province === e.id &&
+          atWar(w, a.country, enemy.country),
       ),
   );
   exits.sort(
@@ -190,17 +198,31 @@ export function resolveLandDay(w: World) {
     let values = supplies.get(country);
     if (!values) supplies.set(country, (values = new Map()));
     if (!values.has(province))
-      values.set(province, localSupply(w, country, province, networks[country]));
+      values.set(
+        province,
+        localSupply(w, country, province, networks[country]),
+      );
     return values.get(province)!;
   };
   const previousBattles = w.battles;
+  const occupants = new Map<string, Set<string>>();
+  for (const a of w.armies) {
+    if (a.strength <= 0) continue;
+    if (!occupants.has(a.province)) occupants.set(a.province, new Set());
+    occupants.get(a.province)!.add(a.country);
+  }
   const engagements = w.armies.filter(
     (a) =>
       a.strength > 0 &&
       (inLandContact(w, a) ||
         (a.move &&
           a.move.progress >= a.move.days &&
-          atWar(w, a.country, w.provinces[a.move.to].controller))),
+          atWar(w, a.country, w.provinces[a.move.to].controller))) &&
+      // An undefended hostile province is a march, not a battle. Treating it
+      // as combat prevents recovering organization and receiving reinforcements.
+      [...(occupants.get(a.move?.to ?? a.route[0]) ?? [])].some((country) =>
+        atWar(w, a.country, country),
+      ),
   );
   const engagedIds = new Set(engagements.map((a) => a.id));
   const attacked = new Map<string, Set<string>>();
@@ -230,7 +252,6 @@ export function resolveLandDay(w: World) {
     );
     if (a.supply < 0.25) {
       casualty(w, a, 0.25, 2, false);
-      a.move && (a.move.progress = Math.max(0, a.move.progress - 0.1));
     } else if (!engaged) {
       a.organization = clamp(a.organization + (a.move ? 1 : 3) * a.supply);
       a.morale = clamp(a.morale + 0.5 * a.supply);
@@ -308,9 +329,15 @@ export function resolveLandDay(w: World) {
       ) {
         a.move = null;
         a.route = [];
-      } else
+      } else {
+        // Slow the day's distance before applying fuel shortage. Subtracting
+        // from accumulated progress can cancel a fuel-starved unit's entire
+        // daily march and trap it even when withdrawing to friendly territory.
+        const supplySpeed =
+          a.supply < 0.25 ? Math.max(0.05, a.supply - 0.1) : a.supply;
         a.move.progress +=
-          Math.max(0.15, a.supply) * (d.fuel && c.stock.fuel <= 0 ? 0.3 : 1);
+          supplySpeed * (d.fuel && c.stock.fuel <= 0 ? 0.3 : 1);
+      }
     } else a.entrenchment = clamp(a.entrenchment + 2, 0, 30);
   }
   // Resolve one battle per attacking country and destination, with all forces together.
@@ -381,11 +408,20 @@ export function resolveLandDay(w: World) {
       addWarScore(w, defender, first.country, attackLoss * attackers.length);
       attackers.forEach((a) => casualty(w, a, attackLoss, attackLoss * 2.8));
       defenders.forEach((a) => casualty(w, a, defenseLoss, defenseLoss * 3));
-      for (const a of attackers)
-        if (a.organization < 8 || a.strength < 15) {
-          a.move = null;
-          a.route = [];
-        }
+      const exhausted = attackers.filter(
+        (a) => a.organization < 8 || a.strength < 15,
+      );
+      for (const a of exhausted) {
+        a.move = null;
+        a.route = [];
+      }
+      const stopped = exhausted.filter((a) => a.strength > 0).length;
+      if (stopped && first.country === w.player)
+        event(
+          w,
+          `${GEOGRAPHY[to].name} taarruzunda ${stopped} tümen, düşük organizasyon veya ağır kayıplar nedeniyle durdu. Dinlenip takviye aldıktan sonra yeniden emir ver.`,
+          "war",
+        );
       for (const a of defenders)
         if (a.organization < 10 || a.strength < 15) retreat(w, a);
     }
@@ -397,7 +433,7 @@ export function resolveLandDay(w: World) {
           atWar(w, first.country, a.country),
       ) &&
       attackers.some(
-        (a) => a.move && a.move.progress >= a.move.days && a.strength > 15,
+        (a) => a.move && a.move.progress >= a.move.days && a.strength > 0,
       )
     ) {
       addWarScore(w, first.country, defender, GEOGRAPHY[to].vp * 2);

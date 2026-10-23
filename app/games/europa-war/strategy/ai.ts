@@ -269,7 +269,11 @@ export function aiDay(w: World) {
         const rear = adjacent
           .filter((e) => friendly(w, c.id, w.provinces[e.id].controller))
           .sort((l, r) => supplyAt(r.id) - supplyAt(l.id));
-        if (rear[0] && enemies.length) {
+        if (
+          rear[0] &&
+          (enemies.length ||
+            (a.supply < 0.35 && supplyAt(rear[0].id) > a.supply))
+        ) {
           a.route = [rear[0].id];
           a.stance = "hold";
         }

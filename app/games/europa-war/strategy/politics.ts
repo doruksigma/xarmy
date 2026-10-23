@@ -1,6 +1,7 @@
 import { decisionAction, nationalFocus } from "./decisions";
 import { focusTree, IDEOLOGIES, TECHNOLOGIES } from "./catalog";
 import { declareWar } from "./diplomacy";
+import { detachArmy } from "./planning";
 import {
   addArmy,
   changeRelation,
@@ -227,11 +228,16 @@ export function startCivilWar(
   }
   for (const a of w.armies)
     if (a.country === country && revolt.some((p) => p.id === a.province)) {
+      // A formation changing sides must stop obeying its former government's
+      // front and offensive orders, including before the next daily cleanup.
+      detachArmy(w, a.id);
       a.country = id;
       a.general = null;
       a.move = null;
       a.route = [];
     }
+  w.fronts = w.fronts.filter((f) => f.armies.length > 0);
+  w.plans = w.plans.filter((p) => p.armies.length > 0);
   if (!w.armies.some((a) => a.country === id) && r.manpower >= 9000) {
     addArmy(w, id, r.capital);
     r.manpower -= 9000;

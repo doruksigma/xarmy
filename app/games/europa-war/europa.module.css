@@ -944,6 +944,16 @@
   margin-left: 14px;
   font-size: 10px;
 }
+.orderBanner.mapNotice {
+  top: auto;
+  bottom: 52px;
+  width: min(420px, 85%);
+  box-sizing: border-box;
+  line-height: 1.5;
+}
+.mapNotice .buttonRow {
+  margin-top: 8px;
+}
 .openPanel {
   position: absolute;
   right: 18px;

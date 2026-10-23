@@ -272,6 +272,13 @@ export function conferencesDay(w: World) {
     // At most one full AI round per day; never take the human's negotiation turn.
     for (let i = 0; i < q.participants.length && q.status === "open"; i++) {
       const c = w.countries[q.participants[q.turn]];
+      // A participant may lose a different war while these talks are open.
+      // Capitulated players cannot issue commands, so waiting for their turn
+      // would block every surviving victor indefinitely. They may only pass.
+      if (c.capitulated) {
+        pass(w, q);
+        continue;
+      }
       if (c.id === w.player) break;
       const choices = q.available
         .filter((id) => provincePrice(id) <= q.points[c.id])

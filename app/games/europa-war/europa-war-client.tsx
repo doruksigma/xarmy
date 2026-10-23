@@ -254,9 +254,9 @@ export default function EuropaWarClient() {
       } else {
         setWorld(result.world);
         const count = "armies" in a ? new Set(a.armies).size : 1,
-          movementOrder = ["move", "moveGroup", "paradrop", "plan"].includes(
-            a.type,
-          ),
+          movementOrder =
+            ["move", "moveGroup", "paradrop", "front"].includes(a.type) ||
+            (a.type === "plan" && a.kind === "start"),
           feedback =
             a.type === "haltGroup"
               ? `${count} tümen için hareket durduruldu; savunma emri verildi.`
@@ -560,7 +560,37 @@ export default function EuropaWarClient() {
               </button>
             </div>
           )}
-          {!panel && (
+          {!setup && !panel && !order && message && (
+            <div
+              role="status"
+              className={`${styles.orderBanner} ${styles.mapNotice}`}
+              data-testid="map-order-notice"
+            >
+              <span>{message}</span>
+              <div className={styles.buttonRow}>
+                {paused && (
+                  <button
+                    onClick={() => {
+                      setPaused(false);
+                      setMessage("");
+                    }}
+                  >
+                    ▶ Zamanı ilerlet
+                  </button>
+                )}
+                <button onClick={() => setPanel(true)}>
+                  Yönetim panelini aç →
+                </button>
+                <button
+                  aria-label="Bildirimi kapat"
+                  onClick={() => setMessage("")}
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+          )}
+          {!panel && (setup || order || !message) && (
             <button className={styles.openPanel} onClick={() => setPanel(true)}>
               Yönetim panelini aç →
             </button>
@@ -604,7 +634,10 @@ export default function EuropaWarClient() {
               </span>
               <button
                 aria-label="Yönetim panelini kapat"
-                onClick={() => setPanel(false)}
+                onClick={() => {
+                  setPanel(false);
+                  setMessage("");
+                }}
               >
                 ×
               </button>
