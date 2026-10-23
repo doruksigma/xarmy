@@ -8,6 +8,7 @@ import {
   GEOGRAPHY,
   localSupply,
   requireRule,
+  supplyNetwork,
   uid,
 } from "./world";
 import type { Action, Army, Country, Equipment, World } from "./types";
@@ -136,6 +137,13 @@ function nextStep(w: World, a: Army, to: string) {
   }
 }
 export function planningDay(w: World) {
+  // Planning changes orders, so each country's supply network stays valid here.
+  const networks = new Map<string, Set<string>>();
+  const supplyAt = (country: string, province: string) => {
+    if (!networks.has(country))
+      networks.set(country, supplyNetwork(w, country));
+    return localSupply(w, country, province, networks.get(country)!);
+  };
   for (const p of w.plans) {
     p.armies = p.armies.filter((id) =>
       w.armies.some((a) => a.id === id && a.country === p.country),
@@ -171,10 +179,9 @@ export function planningDay(w: World) {
               !e.sea && friendly(w, a.country, w.provinces[e.id].controller),
           )
           .sort(
-            (l, r) =>
-              localSupply(w, a.country, r.id) - localSupply(w, a.country, l.id),
+            (l, r) => supplyAt(a.country, r.id) - supplyAt(a.country, l.id),
           )[0];
-        if (rear && localSupply(w, a.country, rear.id) > a.supply)
+        if (rear && supplyAt(a.country, rear.id) > a.supply)
           a.route = [rear.id];
         continue;
       }
@@ -189,7 +196,12 @@ export function planningDay(w: World) {
             (x) =>
               GEOGRAPHY[x.province].neighbors.some(
                 (e) => !e.sea && e.id === step,
-              ) && x.organization >= 25,
+              ) &&
+              x.organization >= 25 &&
+              x.supply >= 0.25 &&
+              x.strength >= 30 &&
+              ((!x.move && !x.route.length) ||
+                (x.move?.to ?? x.route[0]) === step),
           )
           .reduce((n, x) => n + combatPower(w, x, true, step), 0);
         if (

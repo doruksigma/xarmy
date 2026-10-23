@@ -12,6 +12,7 @@ import {
   GEOGRAPHY,
   localSupply,
   militaryPower,
+  supplyNetwork,
 } from "./world";
 import type { World } from "./types";
 
@@ -224,6 +225,12 @@ export function aiDay(w: World) {
       }
     }
     manage(w, c, "operations");
+    // Diplomacy and asset orders are settled before reusing this network.
+    let network: Set<string> | undefined;
+    const supplyAt = (province: string) => {
+      network ??= supplyNetwork(w, c.id);
+      return localSupply(w, c.id, province, network);
+    };
     for (const a of armies) {
       if (a.move || a.route.length) continue;
       if (!a.general) a.general = c.generals[a.type === "infantry" ? 0 : 1].id;
@@ -238,9 +245,7 @@ export function aiDay(w: World) {
       if (a.organization < 30 || a.supply < 0.35 || a.strength < 35) {
         const rear = adjacent
           .filter((e) => friendly(w, c.id, w.provinces[e.id].controller))
-          .sort(
-            (l, r) => localSupply(w, c.id, r.id) - localSupply(w, c.id, l.id),
-          );
+          .sort((l, r) => supplyAt(r.id) - supplyAt(l.id));
         if (rear[0] && enemies.length) {
           a.route = [rear[0].id];
           a.stance = "hold";

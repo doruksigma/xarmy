@@ -120,7 +120,12 @@ export function politicsAction(w: World, c: Country, a: Action): boolean {
   }
   return false;
 }
-export function startCivilWar(w: World, country: string, historical = false) {
+export function startCivilWar(
+  w: World,
+  country: string,
+  historical = false,
+  rebelIdeology?: Ideology,
+) {
   const c = w.countries[country],
     lands = controlled(w, country).filter((p) => p.owner === country);
   if (
@@ -139,11 +144,13 @@ export function startCivilWar(w: World, country: string, historical = false) {
   r.color = "#89705a";
   r.capital = revolt.find((p) => p.id === "spain-5")?.id ?? revolt[0].id;
   r.leader = historical ? "Milliyetçi askerî cunta" : "Muhalefet konseyi";
-  r.ideology = historical
-    ? "fascism"
-    : c.ideology === "democracy"
-      ? "republic"
-      : "democracy";
+  r.ideology =
+    rebelIdeology ??
+    (historical
+      ? "fascism"
+      : c.ideology === "democracy"
+        ? "republic"
+        : "democracy");
   r.population = Math.round((c.population * revolt.length) / lands.length);
   c.population -= r.population;
   r.manpower = c.manpower * 0.4;

@@ -1,13 +1,13 @@
 const { spawnSync } = require("node:child_process");
-const { mkdtempSync, rmSync } = require("node:fs");
+const { mkdtempSync, rmSync, readdirSync } = require("node:fs");
 const path = require("node:path");
 const root = path.resolve(__dirname, "..");
 const output = mkdtempSync(path.join(root, "node_modules", ".europa-tests-"));
-const sources = [
-  "app/games/europa-war/strategy/engine.test.ts",
-  "app/games/europa-war/strategy/advanced.test.ts",
-  "app/games/europa-war/strategy/city-regions.test.ts",
-];
+const strategy = "app/games/europa-war/strategy";
+const sources = readdirSync(path.join(root, strategy))
+  .filter((file) => file.endsWith(".test.ts"))
+  .sort()
+  .map((file) => `${strategy}/${file}`);
 try {
   const compile = spawnSync(
     process.execPath,

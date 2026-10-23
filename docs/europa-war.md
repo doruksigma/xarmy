@@ -14,12 +14,15 @@ bittiği iddia edilmez; aşağıda çalışan karşılıklar ve sınırlar açı
    kaynak harcar; istediğin anda kapatıp bütün ayarları elle yapabilirsin.
 3. Üstteki ▶ ile zamanı ilerlet; boşlukla duraklat. 1–5× hızlar gerçek günlük
    hesapları çalıştırır. Sekme arka plana geçince zaman durur.
-4. Haritadaki askerî sembolü seç, **Haritada hedef seç** düğmesine bas ve hedef
-   bölgeyi seç. Savaş ilanı olmadan tarafsız toprağa saldırılamaz. Duraklatılmış
-   oyunda emir bekler; bunu bildiren mesaj gösterilir.
-5. Birçok tümeni yönetmek için Ordu bölümünden savunma hattı veya taarruz
-   hedefleri çiz. Hazırlık %30'a ulaşınca planı başlat. Tekil dur/hareket emri
-   o birliği otomatik plandan çıkarır.
+4. Haritadaki askerî sembol o konumdaki **bütün kendi tümenlerini** seçer.
+   **Haritada hedef seç** ile grubun tamamına hareket veya saldırı emri ver.
+   Shift ile başka bir grubu seçime ekleyebilir, Ordu listesindeki kutularla
+   tümenleri ayrı seçebilir, **Dur / savun** ile seçili grubu durdurabilirsin.
+   Birlik adına tıklamak yalnızca o tümeni seçer. Savaş ilanı olmadan tarafsız
+   toprağa saldırılamaz. Duraklatılmış oyunda emir ▶ ile zamanı başlatana kadar bekler.
+5. Ordu bölümünden savunma hattı veya taarruz hedefleri çiz. Hazırlık %30'a
+   ulaşınca planı başlat. Elle verilen dur/hareket emri seçilen tümenleri
+   otomatik plandan çıkarır. Hedef seçerken Shift, her tümenin rotasına ekler.
 
 Kolay mod oyuncunun kara muharebe gücüne %50 destek verir; AI oyuncuya karşı
 savaş açmak ve saldırmak için daha yüksek üstünlük arar. Normal eşit koşuldur.
@@ -37,6 +40,8 @@ Yardımcı savaş ilanı, barış koşulları veya ideoloji değişikliği karar
 - Siyasi, arazi, kara harekâtı, ikmal, hava ve deniz haritaları; arazi taramaları,
   dağ kabartıları, işgal deseni, şehir işaretleri, bağlantılar, birlik sayaçları,
   savaş işaretleri, savunma hatları ve taarruz okları.
+- Haritada her yakınlaştırmada yalnızca başkent adları görünür. Diğer şehrin
+  adı o şehir seçildiğinde açılır; seçim değişince önceki ad gizlenir.
 - Şehir araması, tekerlek yakınlaştırması, sürükleme, dokunarak yakınlaştırma,
   ülkeye odaklanma, bütün haritayı gösterme ve tıklanabilir küçük harita.
 - Eski 144 bölgenin kimlikleri korunur. Yeni şehir sınırları yolları değiştirir;
@@ -122,6 +127,7 @@ npm run build
 npm start
 # Playwright/Chromium bulunan geliştirme ortamında:
 node scripts/test-europa-browser.cjs
+node scripts/test-europa-group-browser.cjs
 ```
 
 Regresyonlar; sınır saldırısında iki taraflı hasar ve toparlanmanın durması,
@@ -153,3 +159,19 @@ bütün cihazlarda performans veya HOI4 düzeyinde denge garantisi değildir.
 
 Şehir sınırları ve masaüstü/mobil ekran görüntüleri gerçek çalışan oyunda
 incelendi. Bunlar yerel doğrulamalardır; Vercel üretim yayını ayrıca doğrulanmadı.
+
+## Güncel denetim — 23 Ekim 2026
+
+- **125/125 motor testi** ve Node 24 üretim derlemesi başarılı.
+- Üretim paketinde **18 genel + 6 grup/harita kontrolü** başarılı; sayfa hatası yok.
+- Üç tümenin toplu hareketi ve üçe üç çatışmada bütün birliklerin kaybı,
+  seçim/sıfırlama/kayıt, altı harita modunda başkent etiketleri, mobil dokunma
+  ve çevrimdışı devam etme doğrulandı.
+- Harita görünümü dışındaki bölgeler, arazi ayrıntıları ve birlik sayaçları
+  çizilmez; aynı bölgeye dönünce tekrar görünür. İkmal ve ortak rotaların
+  gereksiz yeniden hesaplanması azaltıldı.
+- Birlik grupları, eşzamanlı ele geçirme, taarruz desteği, savunma ittifakları
+  ve darbe görevlerinde bulunan hatalar düzeltildi.
+
+Özelliklerin test kapsamı, doğrulanmayan ayrıntılar ve ölçümler:
+[Europa War denetim raporu](europa-war-audit.md).

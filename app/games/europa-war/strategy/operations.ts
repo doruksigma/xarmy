@@ -188,7 +188,7 @@ export function operationsAction(w: World, c: Country, a: Action): boolean {
       a.mission !== "coup" ||
         (target.stability < 40 &&
           target.parties[c.ideology] >= 25 &&
-          c.agents >= 2 &&
+          c.agents - (c.counterIntel ? 1 : 0) >= 2 &&
           !target.id.endsWith("-rebels") &&
           !w.countries[`${target.id}-rebels`] &&
           controlled(w, target.id).length >= 3),
@@ -224,7 +224,7 @@ export function operationsDay(w: World) {
       }
       const success = random(w) < intelChance(c, t);
       if (success) {
-        if (mission.type === "coup") startCivilWar(w, t.id);
+        if (mission.type === "coup") startCivilWar(w, t.id, false, c.ideology);
         if (mission.type === "intel" || mission.type === "plans")
           c.intel[t.id] = {
             level: mission.type === "plans" ? 90 : 65,

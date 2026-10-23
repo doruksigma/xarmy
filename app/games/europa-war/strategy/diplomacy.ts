@@ -10,18 +10,22 @@ import {
 } from "./world";
 import type { Country, World } from "./types";
 
+function enterWar(a: Country, b: Country) {
+  a.wars.push(b.id);
+  b.wars.push(a.id);
+  a.allies = a.allies.filter((id) => id !== b.id);
+  b.allies = b.allies.filter((id) => id !== a.id);
+  a.access = a.access.filter((id) => id !== b.id);
+  b.access = b.access.filter((id) => id !== a.id);
+  delete a.pacts[b.id];
+  delete b.pacts[a.id];
+}
+
 export function declareWar(w: World, from: string, to: string) {
   const a = w.countries[from],
     b = w.countries[to];
   if (a.capitulated || b.capitulated || atWar(w, from, to)) return;
-  a.wars.push(to);
-  b.wars.push(from);
-  a.allies = a.allies.filter((id) => id !== to);
-  b.allies = b.allies.filter((id) => id !== from);
-  a.access = a.access.filter((id) => id !== to);
-  b.access = b.access.filter((id) => id !== from);
-  delete a.pacts[to];
-  delete b.pacts[from];
+  enterWar(a, b);
   a.warSupport = clamp(a.warSupport + 15);
   b.warSupport = clamp(b.warSupport + 25);
   changeRelation(w, from, to, -100);
@@ -30,8 +34,7 @@ export function declareWar(w: World, from: string, to: string) {
   // Defensive alliances are honored, without recursive alliance loops.
   for (const id of b.allies)
     if (id !== from && !w.countries[id].capitulated && !atWar(w, from, id)) {
-      a.wars.push(id);
-      w.countries[id].wars.push(from);
+      enterWar(a, w.countries[id]);
       event(
         w,
         `${w.countries[id].name}, müttefiki ${b.name} yanında savaşa katıldı.`,

@@ -81,42 +81,52 @@ export function applyAction(
     } else if (
       action.type === "move" ||
       action.type === "halt" ||
+      action.type === "moveGroup" ||
+      action.type === "haltGroup" ||
       action.type === "general"
     ) {
-      const a = w.armies.find(
-        (a) => a.id === action.army && a.country === c.id,
-      );
-      requireRule(a, "Kendi ordularından birini seç.");
-      if (action.type !== "general") detachArmy(w, a.id);
-      if (action.type === "halt") {
-        a.move = null;
-        a.route = [];
-        a.stance = "hold";
-      }
-      if (action.type === "general") {
-        requireRule(
-          action.general === null ||
-            c.generals.some((g) => g.id === action.general),
-          "Komutan bulunamadı.",
-        );
-        a.general = action.general;
-      }
-      if (action.type === "move") {
-        requireRule(w.provinces[action.to], "Hedef eyalet bulunamadı.");
-        const start = action.append
-          ? (a.route.at(-1) ?? a.move?.to ?? a.province)
-          : (a.move?.to ?? a.province);
-        const route = routeTo(w, a, action.to, start);
-        requireRule(
-          route && route.length > 0,
-          "Uygun rota yok. Sınır için savaş/geçiş izni, deniz için donanma gerekir.",
-        );
-        requireRule(
-          a.organization >= 10,
-          "Birliğin önce organizasyonunu toplaması gerekiyor.",
-        );
-        a.route = action.append ? [...a.route, ...route] : route;
-        a.stance = "advance";
+      const ids =
+        "armies" in action ? [...new Set(action.armies)] : [action.army];
+      requireRule(ids.length > 0, "Emir vermek için en az bir tümen seç.");
+      // All members receive one atomic order. Shared origins reuse pathfinding,
+      // but each unit retains its own movement, supply and battle state.
+      const routes = new Map<string, string[] | null>();
+      for (const id of ids) {
+        const a = w.armies.find((a) => a.id === id && a.country === c.id);
+        requireRule(a, "Kendi ordularından birini seç.");
+        if (action.type !== "general") detachArmy(w, a.id);
+        if (action.type === "halt" || action.type === "haltGroup") {
+          a.move = null;
+          a.route = [];
+          a.stance = "hold";
+        }
+        if (action.type === "general") {
+          requireRule(
+            action.general === null ||
+              c.generals.some((g) => g.id === action.general),
+            "Komutan bulunamadı.",
+          );
+          a.general = action.general;
+        }
+        if (action.type === "move" || action.type === "moveGroup") {
+          requireRule(w.provinces[action.to], "Hedef eyalet bulunamadı.");
+          const start = action.append
+            ? (a.route.at(-1) ?? a.move?.to ?? a.province)
+            : (a.move?.to ?? a.province);
+          if (!routes.has(start))
+            routes.set(start, routeTo(w, a, action.to, start));
+          const route = routes.get(start);
+          requireRule(
+            route,
+            `${a.name}: Uygun rota yok. Sınır için savaş/geçiş izni, deniz için donanma gerekir.`,
+          );
+          requireRule(
+            route.length === 0 || a.organization >= 10,
+            `${a.name}: Birliğin önce organizasyonunu toplaması gerekiyor.`,
+          );
+          a.route = action.append ? [...a.route, ...route] : [...route];
+          a.stance = "advance";
+        }
       }
     } else if (action.type === "diplomacy")
       diplomaticAction(w, c, action.target, action.kind);

@@ -141,11 +141,13 @@ interface Props {
   tab: Tab;
   selected: string;
   armyId: string | null;
+  armyIds: string[];
   target: string;
   onTarget: (id: string) => void;
   command: (a: Action) => void;
   onProvince: (id: string) => void;
   onArmy: (id: string) => void;
+  onArmies: (ids: string[], append?: boolean) => void;
   onOrder: () => void;
   onParadrop: () => void;
   onFront: () => void;
@@ -157,11 +159,13 @@ export default function WarPanels({
   tab,
   selected,
   armyId,
+  armyIds,
   target,
   onTarget,
   command,
   onProvince,
   onArmy,
+  onArmies,
   onOrder,
   onParadrop,
   onFront,
@@ -179,6 +183,9 @@ export default function WarPanels({
     [tradeResource, setTradeResource] = useState<Resource>("oil"),
     [branch, setBranch] = useState("Tümü");
   const own = w.armies.filter((a) => a.country === c.id),
+    selectedArmies = own.filter((a) => armyIds.includes(a.id)),
+    selectedIds = selectedArmies.map((a) => a.id),
+    colocated = own.filter((unit) => unit.province === (a?.province ?? p.id)),
     hasIntel =
       t.id === c.id ||
       (c.intel[t.id]?.expires > w.day && c.intel[t.id].level >= 50) ||
@@ -315,6 +322,15 @@ export default function WarPanels({
           </div>
         )}
         <h3>Bölgedeki birlikler</h3>
+        {own.filter((a) => a.province === p.id).length > 1 && (
+          <button
+            onClick={() =>
+              onArmies(own.filter((a) => a.province === p.id).map((a) => a.id))
+            }
+          >
+            Bölgedeki tüm tümenleri seç
+          </button>
+        )}
         {own
           .filter((a) => a.province === p.id)
           .map((a) => (
@@ -404,8 +420,62 @@ export default function WarPanels({
           Toplam kayıp: {number(c.casualties)} asker. Emirler, üstteki ▶ ile
           zaman ilerlerken uygulanır.
         </p>
+        <div className={styles.card}>
+          <h3 data-testid="army-selection-count">
+            {selectedIds.length} tümen seçili
+          </h3>
+          <p>
+            Haritadaki simge o konumdaki tüm tümenleri seçer. Shift ile başka
+            bir grubu seçime ekle. Aşağıdaki kutularla tümen ekleyip çıkar;
+            birlik adına tıklayarak tek tümen seç.
+          </p>
+          <div className={styles.buttonRow}>
+            <button
+              disabled={!own.length}
+              onClick={() => onArmies(own.map((a) => a.id))}
+            >
+              Tüm tümenleri seç
+            </button>
+            <button disabled={!selectedIds.length} onClick={() => onArmies([])}>
+              Seçimi temizle
+            </button>
+          </div>
+          {colocated.length > 1 && (
+            <button onClick={() => onArmies(colocated.map((a) => a.id))}>
+              {GEOGRAPHY[colocated[0].province].name}: {colocated.length} tümeni
+              seç
+            </button>
+          )}
+          <div className={styles.buttonRow}>
+            <button
+              className={styles.primary}
+              disabled={!selectedIds.length}
+              onClick={onOrder}
+            >
+              Haritada hedef seç · {selectedIds.length} tümen
+            </button>
+            <button
+              disabled={!selectedIds.length}
+              onClick={() =>
+                command({ type: "haltGroup", armies: selectedIds })
+              }
+            >
+              Dur / savun · {selectedIds.length} tümen
+            </button>
+          </div>
+          <p>
+            Hareket ve savunma emirleri seçili tüm tümenlere uygulanır. Hedef
+            seçerken Shift, mevcut rotalara yeni hedef ekler.
+          </p>
+        </div>
         {a ? (
           <div className={styles.card}>
+            {selectedIds.length > 1 && (
+              <small>
+                Birlik ayrıntısı · komutan ve destek değişiklikleri bu tümene
+                uygulanır
+              </small>
+            )}
             <h3>
               {UNITS[a.type].symbol} {a.name}
             </h3>
@@ -458,21 +528,20 @@ export default function WarPanels({
                 ))}
               </select>
             </label>
-            <div className={styles.buttonRow}>
-              <button className={styles.primary} onClick={onOrder}>
-                Haritada hedef seç
-              </button>
-              <button onClick={() => command({ type: "halt", army: a.id })}>
-                Dur / savun
-              </button>
-            </div>
             {a.type === "paratrooper" && (
-              <button onClick={onParadrop}>Hava indirme hedefi seç</button>
+              <>
+                <button
+                  disabled={selectedIds.length !== 1}
+                  onClick={onParadrop}
+                >
+                  Hava indirme hedefi seç
+                </button>
+                {selectedIds.length > 1 && (
+                  <p>Hava indirme için tek bir paraşütçü tümeni seç.</p>
+                )}
+              </>
             )}
-            <p>
-              Hedef seçerken Shift: mevcut rotaya yeni hedef ekler. Emir oku
-              haritada görünür; düşman toprağında savaş başlar.
-            </p>
+            <p>Emir okları haritada görünür; düşman toprağında savaş başlar.</p>
             {a.move && (
               <>
                 <p>
@@ -495,26 +564,49 @@ export default function WarPanels({
         )}
         <div className={styles.list}>
           {own.map((a) => (
-            <button
-              className={`${styles.rowButton} ${a.id === armyId ? styles.active : ""}`}
+            <div
               key={a.id}
-              onClick={() => onArmy(a.id)}
+              style={{ display: "flex", alignItems: "center", gap: 8 }}
             >
-              <span>
-                {UNITS[a.type].symbol} {a.name}
-                <small>{GEOGRAPHY[a.province].name}</small>
-              </span>
-              <span>
-                %{Math.round(a.strength)}
-                <small>
-                  {a.move
-                    ? "İlerliyor"
-                    : a.supply < 0.3
-                      ? "İkmal kesik"
-                      : "Hazır"}
-                </small>
-              </span>
-            </button>
+              <input
+                type="checkbox"
+                aria-label={`${a.name} seçime dahil`}
+                checked={selectedIds.includes(a.id)}
+                onChange={(e) =>
+                  onArmies(
+                    e.target.checked
+                      ? [...armyIds, a.id]
+                      : armyIds.filter((id) => id !== a.id),
+                  )
+                }
+                style={{
+                  width: 18,
+                  height: 18,
+                  flexShrink: 0,
+                  accentColor: "#b7bf8c",
+                }}
+              />
+              <button
+                className={`${styles.rowButton} ${selectedIds.includes(a.id) ? styles.active : ""}`}
+                aria-pressed={selectedIds.includes(a.id)}
+                onClick={() => onArmy(a.id)}
+              >
+                <span>
+                  {UNITS[a.type].symbol} {a.name}
+                  <small>{GEOGRAPHY[a.province].name}</small>
+                </span>
+                <span>
+                  %{Math.round(a.strength)}
+                  <small>
+                    {a.move
+                      ? "İlerliyor"
+                      : a.supply < 0.3
+                        ? "İkmal kesik"
+                        : "Hazır"}
+                  </small>
+                </span>
+              </button>
+            </div>
           ))}
         </div>
         <ArmyTools

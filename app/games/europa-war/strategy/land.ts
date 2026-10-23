@@ -304,7 +304,7 @@ export function resolveLandDay(w: World) {
   }
   // Resolve one battle per attacking country and destination, with all forces together.
   // Apply casualties to the same world transaction; simultaneous battles cannot overwrite each other.
-  const groups = new Map<string, Army[]>();
+  const groups = new Map<string, { to: string; armies: Army[] }>();
   for (const a of w.armies.filter(
     (a) =>
       a.strength > 0 &&
@@ -318,14 +318,29 @@ export function resolveLandDay(w: World) {
       continue;
     }
     const key = `${a.country}:${to}`;
-    groups.set(key, [...(groups.get(key) ?? []), a]);
+    if (!groups.has(key)) groups.set(key, { to, armies: [] });
+    groups.get(key)!.armies.push(a);
   }
-  for (const attackers of groups.values()) {
+  for (const { to, armies } of groups.values()) {
+    // An earlier battle may have killed or routed members of this group.
+    const attackers = armies.filter((a) => a.strength > 0 && a.move?.to === to);
     const first = attackers[0];
-    if (!first.move) continue;
-    const to = first.move.to,
-      p = w.provinces[to],
+    if (!first) continue;
+    const p = w.provinces[to],
       defender = p.controller;
+    // Another country may already have captured this destination today.
+    if (!atWar(w, first.country, defender)) {
+      for (const a of attackers) {
+        if (!friendly(w, a.country, defender)) {
+          a.move = null;
+          a.route = [];
+        } else if (a.move!.progress >= a.move!.days) {
+          a.province = to;
+          a.move = null;
+        }
+      }
+      continue;
+    }
     const defenders = w.armies.filter(
       (a) =>
         a.province === to &&

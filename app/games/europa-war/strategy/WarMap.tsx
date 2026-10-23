@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { TERRAINS, UNITS } from "./catalog";
 import { AIRCRAFT, AIR_MISSIONS, SEA_ZONES } from "./advanced-catalog";
@@ -31,6 +31,22 @@ const URBAN_PLACES = MAP.provinces.map((p) => ({
   x: p.x,
   y: p.y,
 }));
+const REGION_BOUNDS = new Map(
+  MAP.provinces.map((p) => {
+    const coordinates = p.path.match(/-?\d+(?:\.\d+)?/g)!.map(Number);
+    const xs = coordinates.filter((_, i) => i % 2 === 0);
+    const ys = coordinates.filter((_, i) => i % 2 === 1);
+    return [
+      p.id,
+      {
+        left: Math.min(...xs),
+        right: Math.max(...xs),
+        top: Math.min(...ys),
+        bottom: Math.max(...ys),
+      },
+    ];
+  }),
+);
 const searchName = (s: string) =>
   s
     .toLocaleLowerCase("tr-TR")
@@ -81,7 +97,7 @@ const pointList = (ids: string[]) =>
     .join(" ");
 const curvedPath = (ax: number, ay: number, bx: number, by: number) =>
   `M${ax} ${ay} Q${(ax + bx) / 2 + (by - ay) * 0.12} ${(ay + by) / 2 - (bx - ax) * 0.12} ${bx} ${by}`;
-function TerrainTexture({
+const TerrainTexture = memo(function TerrainTexture({
   terrain,
   id,
   path,
@@ -148,24 +164,26 @@ function TerrainTexture({
       <path d={path} fill="url(#land-light)" opacity=".32" />
     </g>
   );
-}
+});
 
 export default function WarMap({
   world,
   selected,
   armyId,
+  armyIds,
+  onArmies,
   mode,
   onSelect,
-  onArmy,
   ordering,
   draft = [],
 }: {
   world: World;
   selected: string;
   armyId: string | null;
+  armyIds: string[];
+  onArmies: (ids: string[], append?: boolean) => void;
   mode: MapMode;
   onSelect: (id: string, append: boolean) => void;
-  onArmy: (id: string) => void;
   ordering: boolean;
   draft?: string[];
 }) {
@@ -189,8 +207,36 @@ export default function WarMap({
   const capitalRef = useRef(player.capital);
   capitalRef.current = player.capital;
   const counterScale = Math.max(0.22, Math.min(1.6, view.w / viewportWidth));
-  const network = useMemo(() => supplyNetwork(world, world.player), [world]);
-  const selectedArmy = world.armies.find((a) => a.id === armyId);
+  const needsSupply = mode === "supply" || !!hover;
+  const network = useMemo(
+    () =>
+      needsSupply ? supplyNetwork(world, world.player) : new Set<string>(),
+    [world, needsSupply],
+  );
+  const selectedArmies = new Set(armyIds);
+  const capitals = useMemo(
+    () => new Set(Object.values(world.countries).map((c) => c.capital)),
+    [world],
+  );
+  // Only mount terrain detail that intersects the camera. Province polygons stay
+  // selectable; no game data or territory is removed by this render optimization.
+  const terrainInView = useMemo(
+    () =>
+      new Set(
+        MAP.provinces
+          .filter((p) => {
+            const b = REGION_BOUNDS.get(p.id)!;
+            return (
+              b.right >= view.x &&
+              b.left <= view.x + view.w &&
+              b.bottom >= view.y &&
+              b.top <= view.y + view.h
+            );
+          })
+          .map((p) => p.id),
+      ),
+    [view],
+  );
   const detailed = view.w < 1000,
     close = view.w < 650;
   const visible = (id: string) =>
@@ -210,7 +256,8 @@ export default function WarMap({
         );
       if (!known) continue;
       const key = `${a.province}:${a.country}`;
-      out.set(key, [...(out.get(key) ?? []), a]);
+      if (!out.has(key)) out.set(key, []);
+      out.get(key)!.push(a);
     }
     return [...out.values()];
   }, [world, player]);
@@ -242,8 +289,7 @@ export default function WarMap({
     [world, detailed],
   );
   const cityLabels = useMemo(() => {
-    // Every city is a selectable territory. Prioritize its name when selected,
-    // then capitals and victory points; zoom reveals the smaller settlements.
+    // Capitals are named at every zoom. Other names appear only on selection.
     type Box = { x: number; y: number; w: number; h: number };
     const boxes: Box[] = [];
     for (const l of countryLabels)
@@ -272,32 +318,27 @@ export default function WarMap({
           a.y < b.y + b.h &&
           a.y + a.h > b.y,
       );
-    for (const p of [...MAP.provinces].sort(
-      (a, b) =>
-        Number(b.id === selected) - Number(a.id === selected) ||
-        Number(
-          world.countries[world.provinces[b.id].controller].capital === b.id,
-        ) -
-          Number(
-            world.countries[world.provinces[a.id].controller].capital === a.id,
-          ) ||
-        b.vp - a.vp,
-    )) {
-      const capital =
-        world.countries[world.provinces[p.id].controller].capital === p.id;
+    const candidates = MAP.provinces
+      .filter((p) => p.id === selected || capitals.has(p.id))
+      .sort(
+        (a, b) =>
+          Number(b.id === selected) - Number(a.id === selected) || b.vp - a.vp,
+      );
+    for (const p of candidates) {
       if (
         p.x < view.x - 20 ||
         p.x > view.x + view.w + 20 ||
         p.y < view.y - 20 ||
-        p.y > view.y + view.h + 20 ||
-        (!detailed && p.id !== selected && !(capital && mode === "air"))
+        p.y > view.y + view.h + 20
       )
         continue;
       const width = p.name.length * size * 0.57 + 3 * counterScale;
       const candidates = [
         { x: p.x + 7 * counterScale, y: p.y - 5 * counterScale, end: false },
         { x: p.x - 7 * counterScale, y: p.y - 5 * counterScale, end: true },
-        { x: p.x + 7 * counterScale, y: p.y + 14 * counterScale, end: false },
+        { x: p.x + 7 * counterScale, y: p.y - 35 * counterScale, end: false },
+        { x: p.x - 20 * counterScale, y: p.y + 14 * counterScale, end: true },
+        { x: p.x + 40 * counterScale, y: p.y + 14 * counterScale, end: false },
       ];
       for (const label of candidates) {
         const box = {
@@ -306,23 +347,15 @@ export default function WarMap({
           w: width,
           h: size + 3 * counterScale,
         };
-        if (overlap(box) && p.id !== selected) continue;
+        if (overlap(box) && p.id !== selected && label !== candidates.at(-1))
+          continue;
         boxes.push(box);
         placed.set(p.id, label);
         break;
       }
     }
     return placed;
-  }, [
-    countryLabels,
-    formations,
-    counterScale,
-    selected,
-    view,
-    detailed,
-    mode,
-    world,
-  ]);
+  }, [countryLabels, formations, counterScale, selected, view, capitals]);
   const selectedWing = Object.values(world.countries)
     .filter((country) => visible(country.id))
     .flatMap((country) => country.air.wings.map((wing) => ({ wing, country })))
@@ -422,13 +455,16 @@ export default function WarMap({
     if (e.currentTarget.hasPointerCapture(e.pointerId))
       e.currentTarget.releasePointerCapture(e.pointerId);
   }
-  const route = selectedArmy
-    ? [
-        selectedArmy.province,
-        ...(selectedArmy.move ? [selectedArmy.move.to] : []),
-        ...selectedArmy.route,
-      ]
-    : [];
+  const routes = [
+    ...new Set(
+      world.armies
+        .filter((a) => selectedArmies.has(a.id))
+        .map((a) =>
+          pointList([a.province, ...(a.move ? [a.move.to] : []), ...a.route]),
+        )
+        .filter((points) => points.includes(" ")),
+    ),
+  ];
   const hovered = hover && world.provinces[hover] ? GEOGRAPHY[hover] : null;
   const infoProvince = hovered ? world.provinces[hover] : null;
   const friendlyPlans = world.plans.filter((p) => p.country === world.player);
@@ -756,11 +792,13 @@ export default function WarMap({
               <path key={c.id} d={c.path} fill="black" />
             ))}
           </mask>
-          {MAP.provinces.map((p) => (
-            <clipPath key={p.id} id={`province-clip-${p.id}`}>
-              <path d={p.path} fillRule="evenodd" />
-            </clipPath>
-          ))}
+          {MAP.provinces
+            .filter((p) => terrainInView.has(p.id))
+            .map((p) => (
+              <clipPath key={p.id} id={`province-clip-${p.id}`}>
+                <path d={p.path} fillRule="evenodd" />
+              </clipPath>
+            ))}
           <symbol id="aircraft-symbol" viewBox="-9 -9 18 18">
             <path d="M0-8L2-1 8 3V5L2 3 2 7 0 6-2 7-2 3-8 5V3L-2-1Z" />
           </symbol>
@@ -814,79 +852,83 @@ export default function WarMap({
             />
           ))}
         </g>
-        {MAP.provinces.map((g) => {
-          const p = world.provinces[g.id],
-            country = world.countries[p.controller];
-          let fill = country.color;
-          if (mode === "terrain")
-            fill = TERRAINS[GEOGRAPHY[g.id].terrain].color;
-          if (mode === "supply")
-            fill =
-              p.controller === world.player
-                ? `hsl(${localSupply(world, world.player, p.id, network) * 110} 29% 42%)`
-                : "#53615b";
-          if (mode === "military")
-            fill =
-              p.controller === world.player
-                ? "#79937a"
-                : player.wars.includes(p.controller)
-                  ? "#a46d60"
-                  : player.allies.includes(p.controller)
-                    ? "#79979d"
-                    : "#71756a";
-          if (mode === "air" || mode === "naval")
-            fill =
-              p.controller === world.player
-                ? "#708d83"
-                : player.wars.includes(p.controller)
-                  ? "#916f62"
-                  : "#59695f";
-          return (
-            <g key={g.id}>
-              <path
-                d={g.path}
-                fill={fill}
-                fillRule="evenodd"
-                stroke={close ? "#b1b99a" : "#2c3c33"}
-                strokeWidth={close ? 1 : detailed ? 0.7 : 0.45}
-                vectorEffect="non-scaling-stroke"
-                className={styles.province}
-                role="button"
-                aria-label={`${g.name}, ${country.name}`}
-                tabIndex={g.id === selected ? 0 : -1}
-                data-province={g.id}
-                onPointerEnter={() => setHover(g.id)}
-                onPointerLeave={() => setHover("")}
-                onClick={(e) => {
-                  if (!drag.current.moved) onSelect(g.id, e.shiftKey);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    onSelect(g.id, e.shiftKey);
-                  }
-                }}
-              >
-                <title>{`${g.name} · ${country.name} · ${TERRAINS[GEOGRAPHY[g.id].terrain].name} · ${g.vp} zafer puanı`}</title>
-              </path>
-              <TerrainTexture
-                terrain={g.terrain}
-                id={g.id}
-                path={g.path}
-                x={g.x}
-                y={g.y}
-              />
-              {p.owner !== p.controller && (
+        {MAP.provinces
+          .filter((g) => terrainInView.has(g.id))
+          .map((g) => {
+            const p = world.provinces[g.id],
+              country = world.countries[p.controller];
+            let fill = country.color;
+            if (mode === "terrain")
+              fill = TERRAINS[GEOGRAPHY[g.id].terrain].color;
+            if (mode === "supply")
+              fill =
+                p.controller === world.player
+                  ? `hsl(${localSupply(world, world.player, p.id, network) * 110} 29% 42%)`
+                  : "#53615b";
+            if (mode === "military")
+              fill =
+                p.controller === world.player
+                  ? "#79937a"
+                  : player.wars.includes(p.controller)
+                    ? "#a46d60"
+                    : player.allies.includes(p.controller)
+                      ? "#79979d"
+                      : "#71756a";
+            if (mode === "air" || mode === "naval")
+              fill =
+                p.controller === world.player
+                  ? "#708d83"
+                  : player.wars.includes(p.controller)
+                    ? "#916f62"
+                    : "#59695f";
+            return (
+              <g key={g.id}>
                 <path
                   d={g.path}
-                  fill="url(#occupied)"
+                  fill={fill}
                   fillRule="evenodd"
-                  pointerEvents="none"
-                />
-              )}
-            </g>
-          );
-        })}
+                  stroke={close ? "#b1b99a" : "#2c3c33"}
+                  strokeWidth={close ? 1 : detailed ? 0.7 : 0.45}
+                  vectorEffect="non-scaling-stroke"
+                  className={styles.province}
+                  role="button"
+                  aria-label={`${g.name}, ${country.name}`}
+                  tabIndex={g.id === selected ? 0 : -1}
+                  data-province={g.id}
+                  onPointerEnter={() => setHover(g.id)}
+                  onPointerLeave={() => setHover("")}
+                  onClick={(e) => {
+                    if (!drag.current.moved) onSelect(g.id, e.shiftKey);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      onSelect(g.id, e.shiftKey);
+                    }
+                  }}
+                >
+                  <title>{`${g.name} · ${country.name} · ${TERRAINS[GEOGRAPHY[g.id].terrain].name} · ${g.vp} zafer puanı`}</title>
+                </path>
+                {terrainInView.has(g.id) && (
+                  <TerrainTexture
+                    terrain={g.terrain}
+                    id={g.id}
+                    path={g.path}
+                    x={g.x}
+                    y={g.y}
+                  />
+                )}
+                {p.owner !== p.controller && (
+                  <path
+                    d={g.path}
+                    fill="url(#occupied)"
+                    fillRule="evenodd"
+                    pointerEvents="none"
+                  />
+                )}
+              </g>
+            );
+          })}
         <path
           d="M0 0H1320V880H0Z"
           clipPath="url(#land-clip)"
@@ -1020,7 +1062,7 @@ export default function WarMap({
         <g pointerEvents="none" data-testid="urban-centers">
           {MAP.provinces.map((p) => {
             const country = world.countries[world.provinces[p.id].controller],
-              capital = country.capital === p.id,
+              capital = capitals.has(p.id),
               label = cityLabels.get(p.id),
               markerSize = counterScale;
             if (!capital && !detailed && p.vp < 4 && p.id !== selected)
@@ -1064,6 +1106,7 @@ export default function WarMap({
                     x={label.x}
                     y={label.y}
                     textAnchor={label.end ? "end" : "start"}
+                    data-city-label={p.id}
                     className={atlas.cityName}
                     style={{
                       fontSize: 11 * markerSize,
@@ -1174,9 +1217,10 @@ export default function WarMap({
             </g>
           );
         })}
-        {route.length > 1 && (
+        {routes.map((points) => (
           <polyline
-            points={pointList(route)}
+            key={points}
+            points={points}
             fill="none"
             stroke="#f2c779"
             strokeWidth="2.5"
@@ -1184,7 +1228,7 @@ export default function WarMap({
             markerEnd="url(#order-arrow)"
             pointerEvents="none"
           />
-        )}
+        ))}
         {mode === "air" && (
           <g>
             {selectedWing && (
@@ -1428,10 +1472,18 @@ export default function WarMap({
           </g>
         )}
         {formations.map((group, index) => {
+          const position = GEOGRAPHY[group[0].province];
+          if (
+            position.x < view.x - 50 * counterScale ||
+            position.x > view.x + view.w + 50 * counterScale ||
+            position.y < view.y - 50 * counterScale ||
+            position.y > view.y + view.h + 50 * counterScale
+          )
+            return null;
           const a = group.find((a) => a.id === armyId) ?? group[0],
             p = GEOGRAPHY[a.province],
             own = a.country === world.player,
-            chosen = group.some((x) => x.id === armyId);
+            chosen = group.some((x) => selectedArmies.has(x.id));
           const offset =
             formations
               .slice(0, index)
@@ -1446,16 +1498,18 @@ export default function WarMap({
               tabIndex={own ? 0 : -1}
               aria-label={`${world.countries[a.country].name}: ${group.length} tümen, ${p.name}`}
               data-army={own ? a.id : undefined}
+              data-army-stack={
+                own ? group.map((unit) => unit.id).join(",") : undefined
+              }
+              aria-pressed={own ? chosen : undefined}
               onClick={(e) => {
                 e.stopPropagation();
                 if (!drag.current.moved) {
                   if (ordering) onSelect(a.province, e.shiftKey);
                   else if (own)
-                    onArmy(
-                      group[
-                        (group.findIndex((unit) => unit.id === armyId) + 1) %
-                          group.length
-                      ].id,
+                    onArmies(
+                      group.map((unit) => unit.id),
+                      e.shiftKey,
                     );
                   else onSelect(a.province, false);
                 }
@@ -1465,11 +1519,9 @@ export default function WarMap({
                   e.preventDefault();
                   if (ordering) onSelect(a.province, e.shiftKey);
                   else
-                    onArmy(
-                      group[
-                        (group.findIndex((unit) => unit.id === armyId) + 1) %
-                          group.length
-                      ].id,
+                    onArmies(
+                      group.map((unit) => unit.id),
+                      e.shiftKey,
                     );
                 }
               }}
