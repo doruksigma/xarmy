@@ -41,7 +41,10 @@ diplomatik kombinasyon veya tarihsel olay ayrı ayrı oynanmış değildir.
 | 86–93           | Ajan eğitimi/ayrılması, karşı casusluk, şifreleme etkisi, keşif/plan/sabotaj/propaganda/direniş/gizli diplomasi/darbe sonuçları                                                           | Yakalanma olasılıklarının istatistiksel dağılımı ve bütün başarısızlık dalları ayrı örneklenmedi.                          |
 | 99–100          | Yerel kayıt/yükleme, bozuk kayıt reddi, v1 ve 144→447 geçişi, zaman/tarih, duraklatma, çevrimdışı yeniden açılış                                                                          | İlk açılışta çevrimdışı paket indirilmiş olmalı; farklı tarayıcı/depolama kotaları ayrı denenmedi.                         |
 
-## Performans değişiklikleri
+## Önceki harita optimizasyonu
+
+Tekrarlayan donmalar için sonraki worker, ikmal ve çizim düzeltmeleri ile
+karşılaştırmalı ölçümler [performans raporundadır](europa-war-performance.md).
 
 - Şehir etiketi yerleştirme yalnızca başkentler ve seçim için yapılır.
 - Ekran dışında kalan bölge şekilleri, arazi ayrıntıları ve birlik simgeleri

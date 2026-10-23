@@ -14,7 +14,7 @@ import {
   militaryPower,
   supplyNetwork,
 } from "./world";
-import type { World } from "./types";
+import type { Army, World } from "./types";
 
 /** AI decisions use stocks, local force ratios, supply, diplomatic threats and
  * research prerequisites. No hidden resources or random auto-capture. */
@@ -227,10 +227,33 @@ export function aiDay(w: World) {
     manage(w, c, "operations");
     // Diplomacy and asset orders are settled before reusing this network.
     let network: Set<string> | undefined;
+    const supplies = new Map<string, number>();
     const supplyAt = (province: string) => {
       network ??= supplyNetwork(w, c.id);
-      return localSupply(w, c.id, province, network);
+      if (!supplies.has(province))
+        supplies.set(province, localSupply(w, c.id, province, network));
+      return supplies.get(province)!;
     };
+    // This pass only changes orders and generals; locations and enemy combat
+    // strength remain fixed until the next country takes its turn.
+    const byProvince = new Map<string, Army[]>(),
+      ownCounts = new Map<string, number>(),
+      defenses = new Map<string, number>(),
+      routes = new Map<string, string[] | null>();
+    for (const a of w.armies) {
+      const at = byProvince.get(a.province);
+      if (at) at.push(a);
+      else byProvince.set(a.province, [a]);
+      if (a.country === c.id)
+        ownCounts.set(a.province, (ownCounts.get(a.province) ?? 0) + 1);
+    }
+    const borders = threat
+      ? controlled(w, c.id).filter((p) =>
+          GEOGRAPHY[p.id].neighbors.some((e) =>
+            atWar(w, c.id, w.provinces[e.id].controller),
+          ),
+        )
+      : [];
     for (const a of armies) {
       if (a.move || a.route.length) continue;
       if (!a.general) a.general = c.generals[a.type === "infantry" ? 0 : 1].id;
@@ -255,13 +278,14 @@ export function aiDay(w: World) {
       if (enemies.length) {
         const ranked = enemies
           .map((e) => {
-            const defenders = w.armies.filter(
-              (t) => t.province === e.id && atWar(w, c.id, t.country),
-            );
-            const def = defenders.reduce(
-              (n, t) => n + combatPower(w, t, false, e.id),
-              0,
-            );
+            if (!defenses.has(e.id))
+              defenses.set(
+                e.id,
+                (byProvince.get(e.id) ?? [])
+                  .filter((t) => atWar(w, c.id, t.country))
+                  .reduce((n, t) => n + combatPower(w, t, false, e.id), 0),
+              );
+            const def = defenses.get(e.id)!;
             const atk = combatPower(w, a, true, e.id);
             return {
               id: e.id,
@@ -285,24 +309,26 @@ export function aiDay(w: World) {
         continue;
       }
       if (threat) {
-        const borders = controlled(w, c.id).filter((p) =>
-          GEOGRAPHY[p.id].neighbors.some((e) =>
-            atWar(w, c.id, w.provinces[e.id].controller),
-          ),
-        );
-        borders.sort((l, r) => {
-          const score = (p: typeof l) =>
-            w.armies.filter((t) => t.country === c.id && t.province === p.id)
-              .length *
-              100 +
+        let border: (typeof borders)[number] | undefined,
+          bestScore = Infinity;
+        for (const p of borders) {
+          const score =
+            (ownCounts.get(p.id) ?? 0) * 100 +
             Math.hypot(
               GEOGRAPHY[a.province].x - GEOGRAPHY[p.id].x,
               GEOGRAPHY[a.province].y - GEOGRAPHY[p.id].y,
             );
-          return score(l) - score(r);
-        });
-        const route = borders[0] ? routeTo(w, a, borders[0].id) : null;
-        if (route) a.route = route;
+          if (score < bestScore) {
+            border = p;
+            bestScore = score;
+          }
+        }
+        if (border) {
+          const key = `${a.province}:${border.id}`;
+          if (!routes.has(key)) routes.set(key, routeTo(w, a, border.id));
+          const route = routes.get(key);
+          if (route) a.route = [...route];
+        }
       }
     }
   }

@@ -113,9 +113,9 @@ export function localSupply(
 ) {
   if (!(network ?? supplyNetwork(w, c)).has(province)) return 0.08;
   const p = w.provinces[province];
-  const troops = w.armies.filter(
-    (a) => a.province === province && friendly(w, c, a.country),
-  ).length;
+  let troops = 0;
+  for (const a of w.armies)
+    if (a.province === province && friendly(w, c, a.country)) troops++;
   return clamp(
     ((0.4 +
       p.buildings.infra * 0.12 +

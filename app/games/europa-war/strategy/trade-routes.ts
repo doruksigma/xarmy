@@ -2,6 +2,18 @@ import { portZone, seaRoute, shipOperational } from "./military-assets";
 import { GEOGRAPHY } from "./world";
 import type { SeaZone, World } from "./types";
 
+// Map topology is fixed; preserve the existing land-first BFS order without
+// copying and sorting every province's neighbors for every trade each day.
+const neighbors = Object.fromEntries(
+  Object.entries(GEOGRAPHY).map(([id, p]) => [
+    id,
+    [...p.neighbors].sort((a, b) => Number(a.sea) - Number(b.sea)),
+  ]),
+);
+const ports = Object.fromEntries(
+  Object.keys(GEOGRAPHY).map((id) => [id, portZone(id)]),
+);
+
 export function tradeRoute(
   w: World,
   from: string,
@@ -17,18 +29,24 @@ export function tradeRoute(
     buyer.embargoes.includes(from)
   )
     return null;
-  const paths = [
-      {
-        province: seller.capital,
-        provinces: [seller.capital],
-        seas: [] as SeaZone[],
-      },
-    ],
-    seen = new Set([seller.capital]);
-  for (const path of paths) {
-    if (path.province === buyer.capital) {
+  const queue = [seller.capital],
+    seen = new Set(queue),
+    previous = new Map<string, { province: string; seas: SeaZone[] }>(),
+    seaPaths = new Map<string, SeaZone[] | null>();
+  for (const province of queue) {
+    if (province === buyer.capital) {
+      const provinces = [province],
+        legs: SeaZone[][] = [];
+      let step = previous.get(province);
+      while (step) {
+        provinces.push(step.province);
+        legs.push(step.seas);
+        step = previous.get(step.province);
+      }
+      provinces.reverse();
+      const seas = [...new Set(legs.reverse().flat())];
       let delivery = 1;
-      for (const zone of new Set(path.seas)) {
+      for (const zone of seas) {
         const raiders = buyer.wars
           .flatMap((id) =>
             w.countries[id].navy.ships.filter((s) =>
@@ -53,14 +71,12 @@ export function tradeRoute(
         delivery *= Math.max(0.15, 1 - (raiders * 0.15) / (1 + escorts));
       }
       return {
-        provinces: path.provinces,
-        seas: [...new Set(path.seas)],
+        provinces,
+        seas,
         delivery,
       };
     }
-    for (const edge of [...GEOGRAPHY[path.province].neighbors].sort(
-      (a, b) => Number(a.sea) - Number(b.sea),
-    )) {
+    for (const edge of neighbors[province]) {
       if (seen.has(edge.id)) continue;
       const controller = w.provinces[edge.id].controller;
       if (
@@ -71,22 +87,19 @@ export function tradeRoute(
         continue;
       let seas: SeaZone[] = [];
       if (edge.sea) {
-        if ([path.province, edge.id].includes("ussr-13")) continue;
-        const route = seaRoute(
-          w,
-          to,
-          portZone(path.province),
-          portZone(edge.id),
-        );
+        if ([province, edge.id].includes("ussr-13")) continue;
+        const fromZone = ports[province],
+          toZone = ports[edge.id],
+          key = `${fromZone}:${toZone}`;
+        if (!seaPaths.has(key))
+          seaPaths.set(key, seaRoute(w, to, fromZone, toZone));
+        const route = seaPaths.get(key);
         if (!route) continue;
         seas = route;
       }
       seen.add(edge.id);
-      paths.push({
-        province: edge.id,
-        provinces: [...path.provinces, edge.id],
-        seas: [...path.seas, ...seas],
-      });
+      previous.set(edge.id, { province, seas });
+      queue.push(edge.id);
     }
   }
   return null;

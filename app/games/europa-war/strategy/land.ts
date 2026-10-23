@@ -182,6 +182,17 @@ export function resolveLandDay(w: World) {
   const networks = Object.fromEntries(
     Object.keys(w.countries).map((c) => [c, supplyNetwork(w, c)]),
   );
+  // Positions and infrastructure do not change during the readiness pass.
+  // Stacked divisions share its supply calculation, but retain their own
+  // general, support and cabinet modifiers. Discard before resolving movement.
+  const supplies = new Map<string, Map<string, number>>();
+  const supplyAt = (country: string, province: string) => {
+    let values = supplies.get(country);
+    if (!values) supplies.set(country, (values = new Map()));
+    if (!values.has(province))
+      values.set(province, localSupply(w, country, province, networks[country]));
+    return values.get(province)!;
+  };
   const previousBattles = w.battles;
   const engagements = w.armies.filter(
     (a) =>
@@ -210,7 +221,7 @@ export function resolveLandDay(w: World) {
       d = UNITS[a.type];
     const general = c.generals.find((g) => g.id === a.general);
     a.supply = clamp(
-      localSupply(w, a.country, a.province, networks[a.country]) *
+      supplyAt(a.country, a.province) *
         (general?.trait === "logistics" ? 1.15 : 1) *
         (a.support.includes("logistics") ? 1.2 : 1) *
         (c.cabinet.military === "quartermaster" ? 1.1 : 1),

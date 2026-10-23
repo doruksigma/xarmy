@@ -3,7 +3,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import WarMap, { type MapMode } from "./strategy/WarMap";
 import WarPanels, { Meter, number, TABS, type Tab } from "./strategy/WarPanels";
-import { advanceDay, applyAction, createWorld } from "./strategy/engine";
+import { applyAction, createWorld } from "./strategy/engine";
 import { dateLabel, GEOGRAPHY, MAP, surrender } from "./strategy/world";
 import {
   decodeSave,
@@ -14,6 +14,7 @@ import {
   type SaveSlot,
 } from "./strategy/storage";
 import { useOfflinePack } from "./strategy/useOfflinePack";
+import { useSimulation } from "./strategy/useSimulation";
 import type { Action, OffensivePlan, World } from "./strategy/types";
 import styles from "./europa.module.css";
 
@@ -115,14 +116,11 @@ function Saves({
   );
 }
 export default function EuropaWarClient() {
-  const [world, setWorld] = useState<World | null>(null),
-    [setup, setSetup] = useState(true),
+  const [setup, setSetup] = useState(true),
     [choice, setChoice] = useState("turkey"),
     [scenario, setScenario] = useState<World["mode"]>("historical"),
     [difficulty, setDifficulty] = useState<World["difficulty"]>("easy");
-  const [paused, setPaused] = useState(true),
-    [speed, setSpeed] = useState(1),
-    [tab, setTab] = useState<Tab>("command"),
+  const [tab, setTab] = useState<Tab>("command"),
     [selected, setSelected] = useState("turkey-0"),
     [armyIds, setArmyIds] = useState<string[]>([]),
     [target, setTarget] = useState("germany");
@@ -138,11 +136,14 @@ export default function EuropaWarClient() {
     [attackStance, setAttackStance] =
       useState<OffensivePlan["stance"]>("balanced");
   const [frontPoints, setFrontPoints] = useState<string[]>([]);
+  const say = useCallback((text: string) => {
+    setMessage(text);
+  }, []);
+  const { world, setWorld, current, paused, setPaused, speed, setSpeed } =
+    useSimulation(say);
   const offline = useOfflinePack();
-  const current = useRef(world),
-    lastAuto = useRef(-1),
+  const lastAuto = useRef(-1),
     lastHiddenSave = useRef(-1);
-  current.current = world;
   const preview = useMemo(
     () => createWorld(choice, scenario, 1936, difficulty),
     [choice, scenario, difficulty],
@@ -155,9 +156,6 @@ export default function EuropaWarClient() {
       .filter((a) => a !== undefined),
     selectedArmyIds = selectedArmies.map((a) => a.id),
     armyId = selectedArmyIds[0] ?? null;
-  const say = useCallback((text: string) => {
-    setMessage(text);
-  }, []);
   useEffect(() => {
     setSaved(listSaves());
   }, [setup]);
@@ -173,14 +171,6 @@ export default function EuropaWarClient() {
   useEffect(() => {
     if (!armyId && (order === "move" || order === "paradrop")) setOrder(null);
   }, [armyId, order]);
-  useEffect(() => {
-    if (paused || setup || !world) return;
-    const timer = setInterval(() => {
-      if (document.hidden) return;
-      setWorld((w) => (w ? advanceDay(w) : w));
-    }, 1000 / speed);
-    return () => clearInterval(timer);
-  }, [paused, speed, setup, !!world]);
   useEffect(() => {
     if (!world || world.day % 14 !== 0 || world.day === lastAuto.current)
       return;
@@ -207,7 +197,7 @@ export default function EuropaWarClient() {
     };
     document.addEventListener("visibilitychange", hide);
     return () => document.removeEventListener("visibilitychange", hide);
-  }, [say]);
+  }, [say, setPaused, current]);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement).closest("input,select,textarea,button,a"))
@@ -223,7 +213,7 @@ export default function EuropaWarClient() {
     };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
-  }, [setup]);
+  }, [setup, setPaused]);
   function restore(w: World) {
     setWorld(w);
     setSetup(false);
@@ -236,6 +226,7 @@ export default function EuropaWarClient() {
     setTarget(Object.keys(w.countries).find((id) => id !== w.player)!);
     setTab("command");
     lastAuto.current = w.day;
+    lastHiddenSave.current = -1;
   }
   function start() {
     restore(
@@ -260,7 +251,6 @@ export default function EuropaWarClient() {
       return false;
     } else {
       setWorld(result.world);
-      current.current = result.world;
       const count = "armies" in a ? new Set(a.armies).size : 1,
         movementOrder = ["move", "moveGroup", "paradrop", "plan"].includes(
           a.type,
@@ -355,9 +345,10 @@ export default function EuropaWarClient() {
     setArmyIds([]);
     setFrontPoints([]);
     setAttackArmies([]);
-    if (world)
+    const w = current.current;
+    if (w)
       try {
-        saveLocal("auto-2", world);
+        saveLocal("auto-2", w);
       } catch (e) {
         say((e as Error).message);
       }
@@ -374,9 +365,11 @@ export default function EuropaWarClient() {
           href="/"
           aria-label="XARMY oyunlarına dön"
           onClick={() => {
-            if (world)
+            setPaused(true);
+            const w = current.current;
+            if (w)
               try {
-                saveLocal("auto-2", world);
+                saveLocal("auto-2", w);
               } catch {
                 /* Manual export remains available in the archive. */
               }
