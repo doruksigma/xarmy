@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "rootDir": "../..",
+    "outDir": "../../node_modules/.color-hide-server",
+    "types": ["node"],
+    "lib": ["ES2022", "DOM"]
+  },
+  "include": ["index.ts", "server.ts", "../../lib/color-hide/*.ts"],
+  "exclude": ["../../lib/color-hide/*.test.ts", "*.test.ts"]
+}

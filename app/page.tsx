@@ -61,6 +61,31 @@ export default function HomePage() {
         </div>
       </section>
 
+      <Link
+        href="/games/color-hide"
+        className="relative mt-12 overflow-hidden rounded-3xl border border-lime-300/30 bg-gradient-to-br from-emerald-950 via-green-950 to-slate-900 p-7 md:p-10 transition hover:border-lime-300/70 group"
+      >
+        <div
+          className="absolute right-4 top-1/2 -translate-y-1/2 text-[140px] text-lime-300/10 pointer-events-none"
+          aria-hidden="true"
+        >
+          ♣
+        </div>
+        <span className="text-[10px] tracking-[.25em] font-bold text-lime-300">
+          YENİ OYUN · 2–5 ARKADAŞ · ONLINE
+        </span>
+        <h2 className="mt-3 text-3xl md:text-4xl font-black tracking-tight text-white">
+          Color <span className="text-lime-300">Hide</span> 3D
+        </h2>
+        <p className="mt-3 max-w-lg text-sm leading-6 text-emerald-100/70">
+          Rengini seç, gözden kaybol. Ormanda, şehirde ve okulda arkadaşlarınla
+          saklambaç oyna. Yakalanırsan ebe takımına katıl!
+        </p>
+        <span className="mt-5 inline-flex items-center gap-8 rounded-xl bg-lime-300 px-5 py-3 text-sm font-bold text-emerald-950 group-hover:bg-lime-200">
+          Odaya gir <span aria-hidden="true">↗</span>
+        </span>
+      </Link>
+
       {/* FEATURES */}
       <section className="mt-20 grid gap-6 md:grid-cols-3">
         <Feature
