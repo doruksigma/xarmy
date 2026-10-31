@@ -39,18 +39,21 @@ export function createMaterials(quality: Quality, seed: number) {
     );
   }
   function surface(
-    kind: "earth" | "plaster" | "wood" | "rock" | "roof",
+    kind: "earth" | "plaster" | "wood" | "rock" | "roof" | "asphalt" | "metal",
     base: number,
     repeat: number,
   ) {
+    // Small repeatable detail maps stay bounded even at Ultra.
+    const mapSize =
+      kind === "asphalt" || kind === "metal" ? Math.min(size, 512) : size;
     const canvas = document.createElement("canvas");
-    canvas.width = canvas.height = size;
+    canvas.width = canvas.height = mapSize;
     const ctx = canvas.getContext("2d")!;
     const color = new THREE.Color(base);
     ctx.fillStyle = `#${color.getHexString()}`;
-    ctx.fillRect(0, 0, size, size);
-    const data = ctx.getImageData(0, 0, size, size);
-    const heights = new Uint8Array(size * size);
+    ctx.fillRect(0, 0, mapSize, mapSize);
+    const data = ctx.getImageData(0, 0, mapSize, mapSize);
+    const heights = new Uint8Array(mapSize * mapSize);
     const rgb = [
       Math.round(color.r * 255),
       Math.round(color.g * 255),
@@ -62,25 +65,39 @@ export function createMaterials(quality: Quality, seed: number) {
     rgb[0] = c.r * 255;
     rgb[1] = c.g * 255;
     rgb[2] = c.b * 255;
-    for (let y = 0; y < size; y++)
-      for (let x = 0; x < size; x++) {
+    for (let y = 0; y < mapSize; y++)
+      for (let x = 0; x < mapSize; x++) {
         const grain = random();
         let value = 0.9 + grain * 0.13;
         // Earth has fine mineral variation; large biome variation lives in world
         // coordinates, so the same large blotch never repeats across the ground.
-        if (kind !== "earth")
+        if (kind !== "earth" && kind !== "asphalt" && kind !== "metal")
           value += 0.06 * Math.sin(x * 0.033) * Math.sin(y * 0.021);
         if (kind === "wood")
           value +=
             0.12 * Math.sin(x * 0.2 + Math.sin(y * 0.007) * 4) +
-            (x % Math.round(size / 5) < 3 ? -0.3 : 0);
+            (x % Math.round(mapSize / 5) < 3 ? -0.3 : 0);
         if (kind === "roof")
           value +=
-            (y % Math.round(size / 12) < 4 ? -0.35 : 0) +
-            0.1 * Math.sin((x * Math.PI) / (size / 12));
+            (y % Math.round(mapSize / 12) < 4 ? -0.35 : 0) +
+            0.1 * Math.sin((x * Math.PI) / (mapSize / 12));
         if (kind === "rock")
-          value += 0.16 * (noise((x / size) * 8, (y / size) * 8, 8, 541) - 0.5);
-        const i = y * size + x;
+          value +=
+            0.16 * (noise((x / mapSize) * 8, (y / mapSize) * 8, 8, 541) - 0.5);
+        if (kind === "asphalt") {
+          // Aggregate, patched tar and fine worn grooves share the relief map.
+          const fleck = ((x * 73 + y * 151 + (x >> 2) * (y >> 2)) & 31) / 31;
+          value = 0.76 + grain * 0.15 + (fleck > 0.88 ? 0.22 : 0);
+          const seam = Math.abs((x + Math.sin(y * 0.037) * 9) % 127);
+          if (seam < 1.5) value *= 0.48;
+        }
+        if (kind === "metal") {
+          const scratch = ((x * 17 + (y >> 2) * 101) & 255) > 250;
+          value = 0.88 + grain * 0.08 + Math.sin(y * 1.8) * 0.025;
+          if (scratch && x % 43 < 18) value += 0.12;
+          if ((x + 23) % 128 < 1.5) value *= 0.82;
+        }
+        const i = y * mapSize + x;
         heights[i] = Math.max(0, Math.min(255, value * 145));
         for (let channel = 0; channel < 3; channel++)
           data.data[i * 4 + channel] = rgb[channel] * value;
@@ -88,7 +105,7 @@ export function createMaterials(quality: Quality, seed: number) {
       }
     ctx.putImageData(data, 0, 0);
     const normalCanvas = document.createElement("canvas");
-    const normalSize = Math.min(size, 512);
+    const normalSize = Math.min(mapSize, 512);
     normalCanvas.width = normalCanvas.height = normalSize;
     const nc = normalCanvas.getContext("2d")!;
     const normals = nc.createImageData(normalSize, normalSize);
@@ -96,14 +113,14 @@ export function createMaterials(quality: Quality, seed: number) {
     roughCanvas.width = roughCanvas.height = normalSize;
     const rc = roughCanvas.getContext("2d")!;
     const rough = rc.createImageData(normalSize, normalSize);
-    const stride = size / normalSize;
+    const stride = mapSize / normalSize;
     for (let y = 0; y < normalSize; y++)
       for (let x = 0; x < normalSize; x++) {
         const sx = Math.floor(x * stride),
           sy = Math.floor(y * stride),
-          h = heights[sy * size + sx];
-        const dx = heights[sy * size + ((sx + stride) % size)] - h;
-        const dy = heights[((sy + stride) % size) * size + sx] - h;
+          h = heights[sy * mapSize + sx];
+        const dx = heights[sy * mapSize + ((sx + stride) % mapSize)] - h;
+        const dy = heights[((sy + stride) % mapSize) * mapSize + sx] - h;
         const i = (y * normalSize + x) * 4;
         normals.data[i] = 128 - dx * 1.2;
         normals.data[i + 1] = 128 - dy * 1.2;
@@ -133,6 +150,8 @@ export function createMaterials(quality: Quality, seed: number) {
   const wood = surface("wood", 0x70523a, 1);
   const rock = surface("rock", 0x7e8580, 2);
   const roof = surface("roof", 0x79574a, 2);
+  const asphalt = surface("asphalt", 0xe3e2d7, 1);
+  const brushedMetal = surface("metal", 0xffffff, 1);
   // Original leaf cluster cutout, used on intersecting foliage cards. The
   // irregular outline gives light and wind a natural silhouette at low cost.
   const foliageCanvas = document.createElement("canvas");
@@ -170,7 +189,44 @@ export function createMaterials(quality: Quality, seed: number) {
   const foliageMap = new THREE.CanvasTexture(foliageCanvas);
   foliageMap.colorSpace = THREE.SRGBColorSpace;
   textures.push(foliageMap);
+  // One original atlas makes landmarks readable without one texture per sign.
+  const signCanvas = document.createElement("canvas");
+  signCanvas.width = 1024;
+  signCanvas.height = 512;
+  const sc = signCanvas.getContext("2d")!;
+  const signs = [
+    "KIYI KASABASI",
+    "ATÖLYE",
+    "İLK YARDIM",
+    "ÇAMLIK",
+    "KUZEY ÜSSÜ",
+    "DÖKÜMHANE",
+    "DEPO",
+    "YETKİLİ PERSONEL",
+  ];
+  for (let row = 0; row < signs.length; row++) {
+    const y = row * 64;
+    sc.fillStyle = row === 2 ? "#235c48" : row > 3 ? "#383e3d" : "#284953";
+    sc.fillRect(0, y, 1024, 64);
+    sc.strokeStyle = row > 3 ? "#e6bb61" : "#e2d7b5";
+    sc.lineWidth = 2;
+    sc.strokeRect(7, y + 5, 1010, 54);
+    sc.fillStyle = "#f2e8c9";
+    sc.font = "bold 38px sans-serif";
+    sc.textAlign = "center";
+    sc.textBaseline = "middle";
+    sc.fillText(signs[row], 512, y + 33);
+  }
+  const signMap = new THREE.CanvasTexture(signCanvas);
+  signMap.colorSpace = THREE.SRGBColorSpace;
+  signMap.anisotropy = 4;
+  textures.push(signMap);
   const mats = {
+    signage: new THREE.MeshStandardMaterial({
+      map: signMap,
+      roughness: 0.72,
+      metalness: 0.18,
+    }),
     ground: new THREE.MeshStandardMaterial({
       ...earth,
       color: 0xffffff,
@@ -206,11 +262,15 @@ export function createMaterials(quality: Quality, seed: number) {
       normalScale: new THREE.Vector2(0.65, 0.65),
     }),
     metal: new THREE.MeshStandardMaterial({
+      ...brushedMetal,
+      normalScale: new THREE.Vector2(0.1, 0.1),
       color: 0x45525a,
       metalness: 0.72,
       roughness: 0.39,
     }),
     painted: new THREE.MeshStandardMaterial({
+      ...brushedMetal,
+      normalScale: new THREE.Vector2(0.08, 0.08),
       color: 0x71847a,
       metalness: 0.45,
       roughness: 0.58,
@@ -222,7 +282,12 @@ export function createMaterials(quality: Quality, seed: number) {
     }),
     trim: new THREE.MeshStandardMaterial({ color: 0xe2daca, roughness: 0.66 }),
     dark: new THREE.MeshStandardMaterial({ color: 0x202b2f, roughness: 0.82 }),
-    road: new THREE.MeshStandardMaterial({ color: 0x393c3b, roughness: 0.98 }),
+    road: new THREE.MeshStandardMaterial({
+      ...asphalt,
+      color: 0x505452,
+      roughness: 0.98,
+      normalScale: new THREE.Vector2(0.24, 0.24),
+    }),
     paint: new THREE.MeshStandardMaterial({ color: 0xd4cfa3, roughness: 0.8 }),
     bark: new THREE.MeshStandardMaterial({
       ...wood,
@@ -239,6 +304,11 @@ export function createMaterials(quality: Quality, seed: number) {
     grass: new THREE.MeshStandardMaterial({
       color: 0x9ba36b,
       roughness: 1,
+      side: THREE.DoubleSide,
+    }),
+    fern: new THREE.MeshStandardMaterial({
+      color: 0x718a4d,
+      roughness: 0.96,
       side: THREE.DoubleSide,
     }),
     glass: new THREE.MeshPhysicalMaterial({
@@ -267,7 +337,14 @@ export function createMaterials(quality: Quality, seed: number) {
     const oldMaps = new Set<THREE.Texture>();
     const replace = (
       names: (keyof typeof mats)[],
-      kind: "earth" | "plaster" | "wood" | "rock" | "roof",
+      kind:
+        | "earth"
+        | "plaster"
+        | "wood"
+        | "rock"
+        | "roof"
+        | "asphalt"
+        | "metal",
       base: number,
       repeat: number,
     ) => {
@@ -291,6 +368,8 @@ export function createMaterials(quality: Quality, seed: number) {
     replace(["wood", "bark"], "wood", 0x70523a, 1);
     replace(["rock"], "rock", 0x7e8580, 2);
     replace(["roof"], "roof", 0x79574a, 2);
+    replace(["road"], "asphalt", 0xe3e2d7, 1);
+    replace(["metal", "painted"], "metal", 0xffffff, 1);
     for (const texture of oldMaps) {
       texture.dispose();
       const i = textures.indexOf(texture);

@@ -105,6 +105,8 @@ const pointList = (ids: string[]) =>
 const curvedPath = (ax: number, ay: number, bx: number, by: number) =>
   `M${ax} ${ay} Q${(ax + bx) / 2 + (by - ay) * 0.12} ${(ay + by) / 2 - (bx - ax) * 0.12} ${bx} ${by}`;
 const EMPTY_NETWORK = new Set<string>();
+const MAP_DETAILS_KEY = "xarmy-europa-map-details-v1";
+type MapDetails = { terrain: boolean; readiness: boolean };
 const MAP_BACKGROUND = (
   <>
     <defs>
@@ -322,6 +324,31 @@ function WarMap({
       svg.current!.parentElement!.getBoundingClientRect());
   }
   const [search, setSearch] = useState("");
+  const [mapDetails, setMapDetails] = useState<MapDetails>({
+    terrain: true,
+    readiness: true,
+  });
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(MAP_DETAILS_KEY) || "null");
+      if (
+        typeof saved?.terrain === "boolean" &&
+        typeof saved?.readiness === "boolean"
+      )
+        setMapDetails({ terrain: saved.terrain, readiness: saved.readiness });
+    } catch {
+      // Map preferences are optional; blocked storage must not stop a campaign.
+    }
+  }, []);
+  function toggleMapDetail(key: keyof MapDetails) {
+    const next = { ...mapDetails, [key]: !mapDetails[key] };
+    setMapDetails(next);
+    try {
+      localStorage.setItem(MAP_DETAILS_KEY, JSON.stringify(next));
+    } catch {
+      // The selected appearance still applies for this session.
+    }
+  }
   const [viewportWidth, setViewportWidth] = useState(1000);
   const [hover, setHover] = useState(""),
     [wingId, setWingId] = useState<string | null>(null),
@@ -352,6 +379,19 @@ function WarMap({
     [world, needsSupply],
   );
   const selectedArmies = useMemo(() => new Set(armyIds), [armyIds]);
+  const battleLocations = useMemo(() => {
+    const attacking = new Set<string>(),
+      defending = new Set<string>();
+    for (const battle of world.battles) {
+      attacking.add(`${battle.attacker}:${battle.province}`);
+      // Allied divisions can defend the same province. Index countries once
+      // per battle rather than scanning every battle for every division.
+      for (const country of Object.values(world.countries))
+        if (country.wars.includes(battle.attacker))
+          defending.add(`${country.id}:${battle.province}`);
+    }
+    return { attacking, defending };
+  }, [world.battles, world.countries]);
   // Keep the neighboring viewport ready while the compositor moves the map.
   const bounds = useMemo(
     () => ({
@@ -622,6 +662,32 @@ function WarMap({
   function resetView() {
     setView((v) => fitCamera(v.w / v.h));
   }
+  function focusSelectedArmies() {
+    const positions = world.armies
+      .filter(
+        (army) => army.country === player.id && selectedArmies.has(army.id),
+      )
+      .map((army) => GEOGRAPHY[army.province]);
+    if (!positions.length) return;
+    const left = Math.min(...positions.map((p) => p.x)),
+      right = Math.max(...positions.map((p) => p.x)),
+      top = Math.min(...positions.map((p) => p.y)),
+      bottom = Math.max(...positions.map((p) => p.y));
+    setView((v) => {
+      const ratio = v.w / v.h;
+      const w = zoomWidth(
+        Math.max(330 * ratio, right - left + 140, (bottom - top + 130) * ratio),
+        ratio,
+      );
+      const h = w / ratio;
+      return constrainCamera({
+        x: (left + right - w) / 2,
+        y: (top + bottom - h) / 2,
+        w,
+        h,
+      });
+    });
+  }
   function endPointer(e: ReactPointerEvent<SVGSVGElement>) {
     pointers.current.delete(e.pointerId);
     pinch.current = null;
@@ -760,14 +826,17 @@ function WarMap({
           })}
         {/* Terrain is immutable: reuse one prerendered layer instead of thousands
             of clipped SVG primitives on every pan or simulation update. */}
-        <image
-          href={mapAssets.terrain.url}
-          width={MAP.width}
-          height={MAP.height}
-          preserveAspectRatio="none"
-          pointerEvents="none"
-          data-testid="terrain-overlay"
-        />
+        {mapDetails.terrain && (
+          <image
+            href={mapAssets.terrain.url}
+            width={MAP.width}
+            height={MAP.height}
+            preserveAspectRatio="none"
+            pointerEvents="none"
+            data-testid="terrain-overlay"
+            opacity={mode === "military" || mode === "supply" ? 0.58 : 1}
+          />
+        )}
         <g pointerEvents="none">
           {MAP.provinces
             .filter(
@@ -837,6 +906,7 @@ function WarMap({
       activateProvince,
       coastlines,
       countryBorders,
+      mapDetails.terrain,
     ],
   );
   const actors = useMemo(
@@ -1321,7 +1391,47 @@ function WarMap({
             chosen = group.some((x) => selectedArmies.has(x.id));
           const offset = formationOffsets[index];
           const averageOrg =
-            group.reduce((n, a) => n + a.organization, 0) / group.length;
+              group.reduce((n, a) => n + a.organization, 0) / group.length,
+            averageStrength =
+              group.reduce((n, a) => n + a.strength, 0) / group.length,
+            averageSupply =
+              group.reduce((n, a) => n + a.supply, 0) / group.length,
+            fighting = group.filter(
+              (unit) =>
+                battleLocations.defending.has(
+                  `${unit.country}:${unit.province}`,
+                ) ||
+                (unit.move &&
+                  battleLocations.attacking.has(
+                    `${unit.country}:${unit.move.to}`,
+                  )),
+            ).length,
+            marching = group.filter(
+              (unit) =>
+                unit.move &&
+                !battleLocations.defending.has(
+                  `${unit.country}:${unit.province}`,
+                ) &&
+                !battleLocations.attacking.has(
+                  `${unit.country}:${unit.move.to}`,
+                ),
+            ).length;
+          const status = fighting
+            ? `${fighting} ÇATIŞIYOR`
+            : averageSupply < 0.3
+              ? "İKMAL DÜŞÜK"
+              : marching
+                ? `${marching}/${group.length} İLERLİYOR`
+                : averageOrg < 25 || averageStrength < 30
+                  ? "TOPARLANIYOR"
+                  : "HAZIR";
+          const statusColor =
+            fighting || averageSupply < 0.3
+              ? "#f0b18e"
+              : marching
+                ? "#b8d5e3"
+                : "#bad6a4";
+          const showReadiness = own && mapDetails.readiness;
           return (
             <g
               key={`${a.province}:${a.country}`}
@@ -1357,9 +1467,32 @@ function WarMap({
                     );
                 }
               }}
-              className={`${styles.counter} ${atlas.armyCounter}`}
+              className={`${styles.counter} ${atlas.armyCounter} ${chosen ? atlas.selectedArmy : ""}`}
               opacity={mode === "air" || mode === "naval" ? 0.65 : 1}
             >
+              <rect
+                x="1"
+                y="2"
+                width="31"
+                height="22"
+                rx="2"
+                fill="#10251f"
+                opacity=".4"
+                pointerEvents="none"
+              />
+              {chosen && (
+                <rect
+                  x="-4"
+                  y="-7"
+                  width="40"
+                  height={showReadiness ? 34 : 31}
+                  rx="4"
+                  fill="#e6c98318"
+                  stroke="#ffe0a3"
+                  strokeWidth=".8"
+                  pointerEvents="none"
+                />
+              )}
               {group.length > 1 && (
                 <rect
                   x="3"
@@ -1385,6 +1518,7 @@ function WarMap({
                 }
                 stroke={chosen ? "#ffdf97" : "#25362d"}
                 strokeWidth={chosen ? 2.1 : 1.3}
+                data-counter-face="true"
               />
               <rect
                 x="0"
@@ -1427,37 +1561,96 @@ function WarMap({
                 y="17"
                 width={(26 * averageOrg) / 100}
                 height="3"
-                fill={a.supply < 0.3 ? "#dc8065" : "#83b77c"}
+                fill={averageOrg < 25 ? "#dc8065" : "#83b77c"}
               />
-              {a.move && <path d="M30 8L35 10L30 12" fill="#f2cd8f" />}
-              <title>{`${a.name} · ${group.length} tümen · Organizasyon %${Math.round(averageOrg)} · İkmal %${Math.round(a.supply * 100)}`}</title>
+              {showReadiness && (
+                <>
+                  <rect x="3" y="21" width="26" height="2" fill="#233b37" />
+                  <rect
+                    x="3"
+                    y="21"
+                    width={(26 * averageStrength) / 100}
+                    height="2"
+                    fill={averageStrength < 30 ? "#e29b7b" : "#9bc5d2"}
+                  />
+                  {(chosen ||
+                    (detailed &&
+                      (fighting > 0 ||
+                        marching > 0 ||
+                        averageSupply < 0.3))) && (
+                    <g pointerEvents="none" data-army-readiness={status}>
+                      <rect
+                        x="-9"
+                        y="27"
+                        width="50"
+                        height="11"
+                        rx="2"
+                        fill="#112b28"
+                        stroke={statusColor}
+                        strokeWidth=".5"
+                      />
+                      <text
+                        x="16"
+                        y="34.5"
+                        textAnchor="middle"
+                        fill={statusColor}
+                        fontSize="5.7"
+                        fontWeight="700"
+                      >
+                        {status}
+                      </text>
+                    </g>
+                  )}
+                </>
+              )}
+              {marching > 0 && <path d="M30 8L35 10L30 12" fill="#f2cd8f" />}
+              <title>{`${a.name} · ${group.length} tümen · ${marching} ilerliyor · ${fighting} çatışıyor · Organizasyon %${Math.round(averageOrg)} · Mevcut güç %${Math.round(averageStrength)} · Ortalama ikmal %${Math.round(averageSupply * 100)}`}</title>
             </g>
           );
         })}
         {world.battles
-          .filter(
-            (b) =>
+          .filter((b) => {
+            const p = GEOGRAPHY[b.province];
+            if (
+              p.x < bounds.x - 50 * counterScale ||
+              p.x > bounds.x + bounds.w + 50 * counterScale ||
+              p.y < bounds.y - 50 * counterScale ||
+              p.y > bounds.y + bounds.h + 50 * counterScale
+            )
+              return false;
+            return (
               visible(b.attacker) ||
               visible(b.defender) ||
               GEOGRAPHY[b.province].neighbors.some(
                 (n) => world.provinces[n.id].controller === player.id,
-              ),
-          )
-          .map((b) => {
+              )
+            );
+          })
+          .map((b, index) => {
             const p = GEOGRAPHY[b.province],
               ratio = b.attack / Math.max(1, b.attack + b.defense),
-              favorable = b.attacker === player.id ? ratio >= 0.5 : ratio < 0.5;
+              friendlyAttacker =
+                b.attacker === player.id || player.allies.includes(b.attacker),
+              friendlyDefender =
+                b.defender === player.id || player.allies.includes(b.defender),
+              favorable = friendlyAttacker ? ratio >= 0.5 : ratio < 0.5,
+              battleColor =
+                !friendlyAttacker && !friendlyDefender
+                  ? "#d9c393"
+                  : favorable
+                    ? "#bdd598"
+                    : "#db9c7c";
             return (
               <g
                 key={b.id}
-                transform={`translate(${p.x + 30} ${p.y - 12})`}
-                className={styles.battlePulse}
+                transform={`translate(${p.x + 35 * counterScale} ${p.y - 14 * counterScale}) scale(${counterScale})`}
+                className={index < 12 ? styles.battlePulse : undefined}
                 pointerEvents="none"
               >
                 <circle
                   r="12"
                   fill="#352c22"
-                  stroke={favorable ? "#bdd598" : "#db9c7c"}
+                  stroke={battleColor}
                   strokeWidth="2"
                 />
                 <path
@@ -1497,6 +1690,8 @@ function WarMap({
       onSelect,
       onArmies,
       renderNetwork,
+      mapDetails.readiness,
+      battleLocations,
     ],
   );
   return (
@@ -1711,7 +1906,29 @@ function WarMap({
           <path d="M4 22H40" stroke="currentColor" strokeWidth=".5" />
         </svg>
       </div>
-      <div className={styles.mapControls}>
+      <div
+        className={atlas.mapOptions}
+        role="group"
+        aria-label="Harita görünümü"
+      >
+        <button
+          type="button"
+          aria-pressed={mapDetails.terrain}
+          onClick={() => toggleMapDetail("terrain")}
+          title="Dağ, orman ve zemin kabartmasını göster veya sade siyasi haritaya geç"
+        >
+          <span aria-hidden="true">▧</span> Kabartma
+        </button>
+        <button
+          type="button"
+          aria-pressed={mapDetails.readiness}
+          onClick={() => toggleMapDetail("readiness")}
+          title="Birliklerin mevcut gücünü ve hareket/çatışma durumunu göster"
+        >
+          <span aria-hidden="true">▥</span> Birlik durumu
+        </button>
+      </div>
+      <div className={`${styles.mapControls} ${atlas.navigation}`}>
         <button onClick={() => zoom(0.75)} aria-label="Haritayı yakınlaştır">
           ＋
         </button>
@@ -1727,6 +1944,14 @@ function WarMap({
         </button>
         <button onClick={resetView} aria-label="Tüm haritayı göster">
           ↔
+        </button>
+        <button
+          onClick={focusSelectedArmies}
+          disabled={!armyIds.length}
+          aria-label="Seçili tümenlere git"
+          title="Seçili tümenlere git"
+        >
+          ▣
         </button>
       </div>
       {hovered && infoProvince && !ordering && (
@@ -1844,7 +2069,7 @@ function WarMap({
           />
         </svg>
       </div>
-      <div className={styles.mapLegend}>
+      <div className={`${styles.mapLegend} ${atlas.legend}`}>
         <b>{MODE_NAMES[mode]}</b> ·{" "}
         {ordering
           ? "Hedef seç"
@@ -1862,6 +2087,13 @@ function WarMap({
                     ? "Bölgeye tıkla: deniz üstünlüğü · Semboller: görevdeki filolar"
                     : "★ Başkent · Taralı alan: işgal · Yakınlaş: şehirler ve demiryolları"}
         </span>
+        {mapDetails.readiness && (
+          <span className={atlas.readinessLegend}>
+            <i className={atlas.organizationKey} /> Organizasyon
+            <i className={atlas.strengthKey} /> Mevcut güç
+            <i className={atlas.supplyKey} /> İkmal / çatışma uyarısı
+          </span>
+        )}
       </div>
     </div>
   );

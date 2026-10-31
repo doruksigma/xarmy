@@ -15,6 +15,7 @@ import type {
   RoomView,
 } from "@/lib/color-hide/types";
 import { getMap } from "@/lib/color-hide/maps";
+import { readPreferences, savePreferences } from "@/lib/color-hide/preferences";
 import { useRoom } from "./useRoom";
 import styles from "./color-hide.module.css";
 
@@ -418,10 +419,24 @@ function Arena({
   const [paintOpen, setPaintOpen] = useState(false);
   const [paint, setPaint] = useState<Paint>(DEFAULT_PAINT);
   const [part, setPart] = useState<keyof Paint>("body");
-  const [camera, setCamera] = useState<"first" | "third">("third");
-  const [lowQuality, setLowQuality] = useState(false);
-  const settings = useRef({ camera, lowQuality });
-  settings.current = { camera, lowQuality };
+  const [preferences, setPreferences] = useState(readPreferences);
+  const { camera, lowQuality, muted, sensitivity } = preferences;
+  const setCamera = (
+    value:
+      | "first"
+      | "third"
+      | ((current: "first" | "third") => "first" | "third"),
+  ) =>
+    setPreferences((current) => ({
+      ...current,
+      camera: typeof value === "function" ? value(current.camera) : value,
+    }));
+  const setLowQuality = (value: boolean) =>
+    setPreferences((current) => ({ ...current, lowQuality: value }));
+  const settings = useRef(preferences);
+  settings.current = preferences;
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsDialog = useRef<HTMLDialogElement>(null);
   const [sceneError, setSceneError] = useState("");
   const [locked, setLocked] = useState(false);
   const [remaining, setRemaining] = useState(
@@ -439,8 +454,8 @@ function Arena({
   const playing = room.phase === "hiding" || room.phase === "seeking";
   const sendRef = useRef(send);
   sendRef.current = send;
-  const paintOpenRef = useRef(paintOpen);
-  paintOpenRef.current = paintOpen;
+  const interactionBlocked = useRef(false);
+  interactionBlocked.current = paintOpen || settingsOpen || confirmLeave;
   const toggleCrouch = () => {
     input.current.crouch = !input.current.crouch;
     setCrouch(input.current.crouch);
@@ -449,7 +464,26 @@ function Arena({
     if (live.current.phase === "seeking" && online.current)
       sendRef.current({ type: "shoot", ...(aim ? { aim } : {}) });
   };
-  useEffect(() => setLowQuality(matchMedia("(pointer: coarse)").matches), []);
+  useEffect(() => {
+    savePreferences(preferences);
+  }, [preferences]);
+  useEffect(() => controller.current?.setCamera(camera), [camera]);
+  useEffect(() => controller.current?.setQuality(lowQuality), [lowQuality]);
+  useEffect(() => controller.current?.setMuted(muted), [muted]);
+  useEffect(
+    () => controller.current?.setSensitivity(sensitivity),
+    [sensitivity],
+  );
+  useEffect(() => {
+    const dialog = settingsDialog.current;
+    if (!dialog) return;
+    if (settingsOpen && !dialog.open) {
+      keys.current.clear();
+      input.current.jump = false;
+      if (document.pointerLockElement) document.exitPointerLock();
+      dialog.showModal();
+    } else if (!settingsOpen && dialog.open) dialog.close();
+  }, [settingsOpen]);
 
   useEffect(() => {
     let disposed = false;
@@ -474,6 +508,8 @@ function Arena({
           controller.current.setLook(player?.yaw ?? 0, player?.pitch ?? 0);
           controller.current.setCamera(settings.current.camera);
           controller.current.setQuality(settings.current.lowQuality);
+          controller.current.setMuted(settings.current.muted);
+          controller.current.setSensitivity(settings.current.sensitivity);
           controller.current.update(live.current);
         } catch {
           setSceneError(
@@ -508,17 +544,12 @@ function Arena({
   useEffect(() => () => clearTimeout(paintTimeout.current), []);
   useEffect(() => {
     if (room.phase === "finished" || sceneError || !connected) {
+      setSettingsOpen(false);
       keys.current.clear();
       input.current.jump = false;
       if (document.pointerLockElement) document.exitPointerLock();
     }
   }, [room.phase, sceneError, connected]);
-  useEffect(() => {
-    controller.current?.setCamera(camera);
-  }, [camera]);
-  useEffect(() => {
-    controller.current?.setQuality(lowQuality);
-  }, [lowQuality]);
   useEffect(() => {
     const received = performance.now();
     setRemaining(room.phaseEndsAt - room.serverTime);
@@ -536,7 +567,7 @@ function Arena({
       target instanceof HTMLElement &&
       !!target.closest("input,select,textarea,button");
     const down = (e: KeyboardEvent) => {
-      if (editable(e.target) || paintOpenRef.current) return;
+      if (editable(e.target) || interactionBlocked.current) return;
       if (
         [
           "KeyW",
@@ -578,7 +609,7 @@ function Arena({
       const enabled =
         online.current &&
         !document.hidden &&
-        !paintOpenRef.current &&
+        !interactionBlocked.current &&
         (world.phase === "hiding" || world.phase === "seeking");
       const current = input.current;
       if (!online.current) return;
@@ -699,6 +730,12 @@ function Arena({
           onClick={() => setLowQuality(!lowQuality)}
         >
           {lowQuality ? "Akıcı grafik" : "Detaylı grafik"}
+        </button>
+        <button
+          aria-label="Oyun ayarlarını aç"
+          onClick={() => setSettingsOpen(true)}
+        >
+          Ayarlar
         </button>
         <button
           onClick={() => {
@@ -947,6 +984,88 @@ function Arena({
           </div>
         </div>
       )}
+      <dialog
+        ref={settingsDialog}
+        className={styles.settingsDialog}
+        aria-labelledby="color-settings-title"
+        onCancel={(event) => {
+          event.preventDefault();
+          setSettingsOpen(false);
+        }}
+        onClose={() => setSettingsOpen(false)}
+      >
+        <header>
+          <div>
+            <small>SANA GÖRE AYARLA</small>
+            <h2 id="color-settings-title">Oyun ayarları</h2>
+          </div>
+          <button
+            aria-label="Ayarları kapat"
+            onClick={() => setSettingsOpen(false)}
+          >
+            ✕
+          </button>
+        </header>
+        <p>Tur devam ediyor. Tercihlerin bu cihazda hatırlanır.</p>
+        <label htmlFor="color-quality">Görüntü kalitesi</label>
+        <select
+          id="color-quality"
+          value={lowQuality ? "low" : "high"}
+          onChange={(event) => setLowQuality(event.target.value === "low")}
+        >
+          <option value="low">Akıcı · daha az pil ve grafik yükü</option>
+          <option value="high">Detaylı · gölgeler ve çevre ayrıntıları</option>
+        </select>
+        <label htmlFor="color-camera">Kamera</label>
+        <select
+          id="color-camera"
+          value={camera}
+          onChange={(event) =>
+            setCamera(event.target.value === "first" ? "first" : "third")
+          }
+        >
+          <option value="third">Üçüncü kişi</option>
+          <option value="first">Birinci kişi</option>
+        </select>
+        <label htmlFor="color-sensitivity">
+          Bakış hassasiyeti <output>{sensitivity.toFixed(1)}×</output>
+        </label>
+        <input
+          id="color-sensitivity"
+          type="range"
+          min="0.4"
+          max="2"
+          step="0.1"
+          value={sensitivity}
+          onChange={(event) =>
+            setPreferences((current) => ({
+              ...current,
+              sensitivity: Number(event.target.value),
+            }))
+          }
+        />
+        <label className={styles.soundSetting}>
+          <span>
+            Oyun sesleri<small>Ateş, yakalama ve zafer sesleri</small>
+          </span>
+          <input
+            type="checkbox"
+            checked={!muted}
+            onChange={(event) =>
+              setPreferences((current) => ({
+                ...current,
+                muted: !event.target.checked,
+              }))
+            }
+          />
+        </label>
+        <button
+          className={styles.primary}
+          onClick={() => setSettingsOpen(false)}
+        >
+          Oyuna dön
+        </button>
+      </dialog>
       {confirmLeave && (
         <div className={styles.results}>
           <div className={styles.resultCard}>

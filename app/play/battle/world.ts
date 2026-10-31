@@ -348,6 +348,15 @@ export function createWorld(
   // Open interiors use separately segmented walls: doors and windows are real
   // holes, and every blocking slab shares the same collision and raycast shape.
   const cylinder = ownGeometry(new THREE.CylinderGeometry(1, 1, 1, 10));
+  function sign(x: number, y: number, z: number, row: number, width: number) {
+    const panel = new THREE.PlaneGeometry(width, width / 7);
+    const uv = panel.attributes.uv;
+    // Canvas rows run top to bottom; the texture's default flipY is intentional.
+    for (let i = 0; i < uv.count; i++) uv.setY(i, (7 - row + uv.getY(i)) / 8);
+    batch(panel, "signage", x, y, z);
+    panel.dispose();
+    box(x, y, z - 0.035, width + 0.12, width / 7 + 0.12, 0.06, "metal");
+  }
   function house(
     x: number,
     z: number,
@@ -412,6 +421,62 @@ export function createWorld(
         );
       }
     }
+    // Facade depth comes from drainpipes, shutters and a shared signage atlas.
+    // The slim trim hugs existing solid walls and never narrows a door opening.
+    for (const side of [-1, 1]) {
+      batch(
+        cylinder,
+        "metal",
+        x + side * (w / 2 + 0.23),
+        y + h / 2,
+        back + 0.4,
+        0.055,
+        h,
+        0.055,
+      );
+      if (kind === "town") {
+        for (const oz of [-d / 4, d / 4]) {
+          box(
+            x + side * (w / 2 + 0.18),
+            y + 2.25,
+            z + oz - d / 4 + 0.85,
+            0.08,
+            1.7,
+            0.48,
+            "painted",
+          );
+          for (let slat = 0; slat < 5; slat++)
+            box(
+              x + side * (w / 2 + 0.24),
+              y + 1.61 + slat * 0.31,
+              z + oz - d / 4 + 0.85,
+              0.03,
+              0.08,
+              0.44,
+              "wood",
+            );
+        }
+      }
+    }
+    sign(
+      x,
+      y + h - 0.65,
+      front + 0.205,
+      kind === "cabin"
+        ? 3
+        : kind === "warehouse"
+          ? x > 100
+            ? 5
+            : x < -90
+              ? 4
+              : 6
+          : x < -30
+            ? 2
+            : alternate
+              ? 1
+              : 0,
+      Math.min(w * 0.6, 7),
+    );
     // Two breakable panes; other windows stay open for combat sightlines.
     for (const sign of [-1, 1])
       destructible(
@@ -890,7 +955,7 @@ export function createWorld(
   }
   root.add(grasses);
   const wind = { value: 0 };
-  for (const material of [mats.foliage, mats.grass]) {
+  for (const material of [mats.foliage, mats.grass, mats.fern]) {
     material.onBeforeCompile = (shader) => {
       shader.uniforms.windTime = wind;
       shader.vertexShader =
@@ -946,6 +1011,161 @@ export function createWorld(
         z = l.z + Math.sin(a) * l.radius * 0.7;
       if (rawHeight(x, z) > -1) pointLoot(x, z);
     }
+
+  // Ground-scale detail uses a separate PRNG: adding visuals must never change
+  // the seeded obstacles, loot or spawn arrangement used by the simulation.
+  let decorSeed = (seed ^ 0x6a09e667) >>> 0;
+  const decorRandom = () => {
+    decorSeed = (Math.imul(decorSeed, 1664525) + 1013904223) >>> 0;
+    return decorSeed / 4294967296;
+  };
+  const frondPositions: number[] = [],
+    frondUvs: number[] = [];
+  for (let frond = 0; frond < 7; frond++) {
+    const angle = (frond * Math.PI * 2) / 7;
+    const direction = new THREE.Vector3(Math.cos(angle), 0, Math.sin(angle));
+    const across = new THREE.Vector3(-direction.z, 0, direction.x);
+    for (let segment = 0; segment < 5; segment++) {
+      const t0 = segment / 5,
+        t1 = (segment + 1) / 5;
+      const a = direction.clone().multiplyScalar(t0 * 0.95);
+      const b = direction.clone().multiplyScalar(t1 * 0.95);
+      a.y = Math.sin(t0 * Math.PI * 0.8) * 0.7;
+      b.y = Math.sin(t1 * Math.PI * 0.8) * 0.7;
+      const width = (1 - t0) * 0.19;
+      const left = a.clone().addScaledVector(across, width);
+      const right = a.clone().addScaledVector(across, -width);
+      for (const point of [a, left, b, a, b, right])
+        frondPositions.push(point.x, point.y, point.z);
+      frondUvs.push(0.5, t0, 0, t0, 0.5, t1, 0.5, t0, 0.5, t1, 1, t0);
+    }
+  }
+  const fernGeometry = ownGeometry(new THREE.BufferGeometry());
+  fernGeometry.setAttribute(
+    "position",
+    new THREE.Float32BufferAttribute(frondPositions, 3),
+  );
+  fernGeometry.setAttribute(
+    "uv",
+    new THREE.Float32BufferAttribute(frondUvs, 2),
+  );
+  fernGeometry.computeVertexNormals();
+  const pebbleGeometry = ownGeometry(new THREE.IcosahedronGeometry(1, 0));
+  type DetailKind = "fern" | "reed" | "pebble";
+  const detailCells = new Map<
+    string,
+    {
+      kind: DetailKind;
+      x: number;
+      z: number;
+      transforms: THREE.Matrix4[];
+      colors: THREE.Color[];
+    }
+  >();
+  const detailMeshes: {
+    mesh: THREE.InstancedMesh;
+    x: number;
+    z: number;
+    count: number;
+  }[] = [];
+  function detail(
+    kind: DetailKind,
+    x: number,
+    y: number,
+    z: number,
+    sx: number,
+    sy: number,
+    sz: number,
+  ) {
+    const cellX = Math.floor(x / 100),
+      cellZ = Math.floor(z / 100);
+    const key = `${kind}:${cellX}:${cellZ}`;
+    let cell = detailCells.get(key);
+    if (!cell) {
+      cell = {
+        kind,
+        x: cellX * 100 + 50,
+        z: cellZ * 100 + 50,
+        transforms: [],
+        colors: [],
+      };
+      detailCells.set(key, cell);
+    }
+    const transform = new THREE.Matrix4().compose(
+      new THREE.Vector3(x, y, z),
+      new THREE.Quaternion().setFromAxisAngle(Y, decorRandom() * Math.PI * 2),
+      new THREE.Vector3(sx, sy, sz),
+    );
+    cell.transforms.push(transform);
+    const tint = 0.72 + decorRandom() * 0.28;
+    cell.colors.push(
+      new THREE.Color().setRGB(tint, Math.min(1, tint + 0.05), tint * 0.85),
+    );
+  }
+  for (const site of treeSites) {
+    for (let plant = 0; plant < 2; plant++) {
+      const angle = decorRandom() * Math.PI * 2,
+        radius = 1.1 + decorRandom() * 2.2;
+      const x = site.x + Math.cos(angle) * radius,
+        z = site.z + Math.sin(angle) * radius;
+      const scale = 0.75 + decorRandom() * 0.55;
+      detail("fern", x, rawHeight(x, z) + 0.03, z, scale, scale, scale);
+      detail(
+        "pebble",
+        x + 0.8,
+        rawHeight(x + 0.8, z) + 0.035,
+        z,
+        0.12 + decorRandom() * 0.17,
+        0.08,
+        0.17,
+      );
+    }
+  }
+  // Shoreline plants remain above the waterline, and below a standing sightline.
+  for (let i = 0; i < 180; i++) {
+    const angle = i * 2.39996,
+      radius = 0.87 + decorRandom() * 0.2;
+    const x = 160 + Math.cos(angle) * 63 * radius,
+      z = -125 + Math.sin(angle) * 47 * radius;
+    const y = rawHeight(x, z);
+    if (y < -1.05 || y > 2.8) continue;
+    detail("reed", x, y, z, 0.6, 1.5 + decorRandom() * 0.5, 0.6);
+  }
+  for (const cell of detailCells.values()) {
+    const geometry =
+      cell.kind === "fern"
+        ? fernGeometry
+        : cell.kind === "reed"
+          ? grassGeo
+          : pebbleGeometry;
+    const material =
+      cell.kind === "fern"
+        ? mats.fern
+        : cell.kind === "reed"
+          ? mats.grass
+          : mats.rock;
+    const mesh = new THREE.InstancedMesh(
+      geometry,
+      material,
+      cell.transforms.length,
+    );
+    for (let i = 0; i < cell.transforms.length; i++) {
+      mesh.setMatrixAt(i, cell.transforms[i]);
+      mesh.setColorAt(i, cell.colors[i]);
+    }
+    mesh.computeBoundingSphere();
+    mesh.receiveShadow = true;
+    mesh.castShadow = false;
+    root.add(mesh);
+    detailMeshes.push({
+      mesh,
+      x: cell.x,
+      z: cell.z,
+      count: cell.transforms.length,
+    });
+  }
+  detailCells.clear();
+  let nextDetailUpdate = 0;
 
   for (const entry of batches.values()) {
     const merged = mergeGeometries(entry.geometry, false);
@@ -1012,6 +1232,16 @@ export function createWorld(
   function setQuality(q: Quality) {
     currentQuality = q;
     setMaterialQuality(q);
+    const detailFraction =
+      q === "low" ? 0.18 : q === "medium" ? 0.5 : q === "high" ? 0.8 : 1;
+    for (const detail of detailMeshes) {
+      detail.mesh.count = Math.max(
+        1,
+        Math.floor(detail.count * detailFraction),
+      );
+      detail.mesh.receiveShadow = q !== "low";
+    }
+    nextDetailUpdate = 0;
     grasses.count =
       q === "low" ? 1100 : q === "medium" ? 2600 : q === "high" ? 4400 : 6000;
     leaves.castShadow = q !== "low";
@@ -1043,6 +1273,21 @@ export function createWorld(
         gateCollider.box.min.y = by + gateOpen * 3.7;
         gateCollider.box.max.y = by + 3.5 + gateOpen * 3.7;
       }
+      if (time >= nextDetailUpdate) {
+        nextDetailUpdate = time + 0.2;
+        const distance =
+          currentQuality === "low"
+            ? 85
+            : currentQuality === "medium"
+              ? 120
+              : currentQuality === "high"
+                ? 170
+                : 220;
+        for (const detail of detailMeshes)
+          detail.mesh.visible =
+            player.y < 60 &&
+            Math.hypot(player.x - detail.x, player.z - detail.z) < distance;
+      }
       wind.value = time * (weather === "storm" ? 2 : 1);
       water.material.uniforms.time.value = time * 0.45;
       waterNormal.offset.set((time * 0.008) % 1, (time * 0.004) % 1);
@@ -1054,6 +1299,7 @@ export function createWorld(
     setQuality,
     dispose() {
       scene.remove(root);
+      for (const detail of detailMeshes) detail.mesh.dispose();
       for (const geometry of geometries) geometry.dispose();
       water.material.dispose();
       simpleWaterMat.dispose();

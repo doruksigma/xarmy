@@ -3,6 +3,11 @@ import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeom
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { getMap } from "../../../lib/color-hide/maps";
 import { shotAim, type AimAngles } from "../../../lib/color-hide/aim";
+import {
+  createAtmosphere,
+  surfaceMaps,
+  type SurfaceKind,
+} from "./scene-details";
 import type {
   MapDefinition,
   MapObject,
@@ -22,6 +27,8 @@ export type ColorHideScene = {
   fire(): void;
   setCamera(mode: "first" | "third"): void;
   setQuality(low: boolean): void;
+  setMuted(muted: boolean): void;
+  setSensitivity(value: number): void;
   setLook(yaw: number, pitch: number): void;
   dispose(): void;
 };
@@ -104,6 +111,10 @@ export function createScene(
   const matCache = new Map<string, THREE.MeshStandardMaterial>();
   const labelCache = new Map<string, THREE.MeshStandardMaterial>();
   const groundCache = new Map<string, THREE.MeshStandardMaterial>();
+  const surfaceCache = new Map<SurfaceKind, ReturnType<typeof surfaceMaps>>();
+  const surfaceMaterials = new Map<string, THREE.MeshStandardMaterial>();
+  const atmosphere = createAtmosphere();
+  scene.add(atmosphere.group);
   function geo(key: string, factory: () => THREE.BufferGeometry) {
     let g = geoCache.get(key);
     if (!g) {
@@ -121,6 +132,9 @@ export function createScene(
     () => new THREE.CylinderGeometry(1, 1, 1, 10),
   );
   const cone = geo("cone", () => new THREE.ConeGeometry(1, 1, 5));
+  const leafTile = geo("leaf-tile", () =>
+    new THREE.CircleGeometry(1, 5).rotateX(-Math.PI / 2),
+  );
   const torus = geo("torus", () => new THREE.TorusGeometry(1, 0.09, 6, 18));
   function material(color: string | number, roughness = 0.82, metalness = 0) {
     const key = `${color}:${roughness}:${metalness}`;
@@ -130,6 +144,32 @@ export function createScene(
       matCache.set(key, m);
       resources.materials.add(m);
     }
+    return m;
+  }
+  function surface(color: string | number, kind: SurfaceKind) {
+    const key = `${kind}:${color}`;
+    let m = surfaceMaterials.get(key);
+    if (m) return m;
+    let maps = surfaceCache.get(kind);
+    if (!maps) {
+      maps = surfaceMaps(kind);
+      for (const texture of [maps.map, maps.bumpMap]) {
+        texture.anisotropy = Math.min(
+          4,
+          renderer.capabilities.getMaxAnisotropy(),
+        );
+        resources.textures.add(texture);
+      }
+      surfaceCache.set(kind, maps);
+    }
+    m = new THREE.MeshStandardMaterial({
+      color,
+      ...maps,
+      roughness: kind === "wood" ? 0.78 : 0.91,
+      bumpScale: kind === "cloth" ? 0.008 : kind === "stone" ? 0.07 : 0.025,
+    });
+    resources.materials.add(m);
+    surfaceMaterials.set(key, m);
     return m;
   }
   function part(
@@ -183,6 +223,8 @@ export function createScene(
     audio: AudioContext | null = null;
   let blackout = false,
     visible = !document.hidden;
+  let muted = false,
+    sensitivity = 1;
   const actors = new Map<string, Actor>();
   const tmp = new THREE.Vector3(),
     camTarget = new THREE.Vector3(),
@@ -349,12 +391,22 @@ export function createScene(
   }
   function tree(parent: THREE.Group, o: MapObject) {
     const { x, z, width: w, height: h } = o;
-    part(parent, cylinder, material(o.color), x, h / 2, z, w / 2, h, w / 2);
+    part(
+      parent,
+      cylinder,
+      surface(o.color, "wood"),
+      x,
+      h / 2,
+      z,
+      w / 2,
+      h,
+      w / 2,
+    );
     for (const side of [-1, 1]) {
       const limb = part(
         parent,
         cylinder,
-        material(o.color),
+        surface(o.color, "wood"),
         x + side * 0.55,
         h * 0.74,
         z,
@@ -386,11 +438,48 @@ export function createScene(
   function wall(parent: THREE.Group, o: MapObject) {
     const { x, z, width: w, depth: d, height: h } = o,
       y = o.y ?? 0;
-    block(parent, o.color, x, y + h / 2, z, w, h, d);
+    part(
+      parent,
+      box,
+      y > 0 ? material(o.color) : surface(o.color, "masonry"),
+      x,
+      y + h / 2,
+      z,
+      w,
+      h,
+      d,
+    );
+    if (mapId === "school" && y === 1 && h === 1.7) {
+      // Chalk and a chalk rail stay flush to the existing solid blackboard.
+      for (const side of [-1, 1]) {
+        part(
+          parent,
+          box,
+          label("RENK + IŞIK = KAMUFLAJ", "#e3e8ce", "#40635a"),
+          x,
+          y + h / 2,
+          z + side * (d / 2 + 0.012),
+          w * 0.9,
+          h * 0.72,
+          0.01,
+        );
+      }
+    }
     if (h < 2 || y > 0 || w > 60 || d > 60) return;
     const wide = w > d;
     block(parent, "#f1e5cb", x, 0.12, z, w + 0.04, 0.24, d + 0.04);
     block(parent, "#f1e5cb", x, h - 0.12, z, w + 0.08, 0.16, d + 0.08);
+    // Shallow facade belts add readable depth without changing the solid wall.
+    block(
+      parent,
+      mapId === "school" ? "#789c91" : "#b2aa93",
+      x,
+      0.4,
+      z,
+      w + 0.025,
+      0.35,
+      d + 0.025,
+    );
     // Opaque decorative inset windows keep wall geometry and server occlusion
     // consistent. Only the actual gaps in the shared map are passages.
     const length = Math.max(w, d),
@@ -430,6 +519,27 @@ export function createScene(
           1.1,
           wide ? 0.025 : 0.045,
         );
+        block(
+          parent,
+          "#ded9c1",
+          px + (!wide ? side * 0.08 : 0),
+          1.98,
+          pz + (wide ? side * 0.08 : 0),
+          wide ? 1.13 : 0.025,
+          0.045,
+          wide ? 0.025 : 1.13,
+        );
+        // Window sills are decorative relief on an already opaque wall.
+        block(
+          parent,
+          "#e9dfc4",
+          px,
+          1.36,
+          pz,
+          wide ? 1.5 : 0.15,
+          0.09,
+          wide ? 0.15 : 1.5,
+        );
       }
     }
   }
@@ -455,7 +565,17 @@ export function createScene(
           );
         break;
       case "rock":
-        block(parent, o.color, x, base + h / 2, z, w, h, d, true);
+        part(
+          parent,
+          round,
+          surface(o.color, "stone"),
+          x,
+          base + h / 2,
+          z,
+          w,
+          h,
+          d,
+        );
         block(
           parent,
           "#98a07c",
@@ -487,7 +607,17 @@ export function createScene(
             );
         break;
       case "crate":
-        block(parent, o.color, x, base + h / 2, z, w, h, d, true);
+        part(
+          parent,
+          round,
+          surface(o.color, "wood"),
+          x,
+          base + h / 2,
+          z,
+          w,
+          h,
+          d,
+        );
         for (const side of [-1, 1]) {
           block(
             parent,
@@ -550,6 +680,18 @@ export function createScene(
               0.37,
             );
             wheel.rotation.z = Math.PI / 2;
+            const hub = part(
+              parent,
+              cylinder,
+              material("#a4b8b8", 0.35, 0.65),
+              x + s * w * 0.52,
+              0.38,
+              z + t * d * 0.31,
+              0.19,
+              0.025,
+              0.19,
+            );
+            hub.rotation.z = Math.PI / 2;
           }
           block(
             parent,
@@ -576,7 +718,17 @@ export function createScene(
         break;
       }
       case "desk":
-        block(parent, o.color, x, h - 0.09, z, w, 0.18, d, true);
+        part(
+          parent,
+          round,
+          surface(o.color, "wood"),
+          x,
+          h - 0.09,
+          z,
+          w,
+          0.18,
+          d,
+        );
         for (const s of [-1, 1])
           for (const t of [-1, 1])
             block(
@@ -647,8 +799,18 @@ export function createScene(
         }
         break;
       case "bench":
-        block(parent, o.color, x, 0.58, z, w, 0.15, d, true);
-        block(parent, o.color, x, 1.02, z + d * 0.43, w, 0.56, 0.15, true);
+        part(parent, round, surface(o.color, "wood"), x, 0.58, z, w, 0.15, d);
+        part(
+          parent,
+          round,
+          surface(o.color, "wood"),
+          x,
+          1.02,
+          z + d * 0.43,
+          w,
+          0.56,
+          0.15,
+        );
         for (const s of [-1, 1])
           block(
             parent,
@@ -716,6 +878,7 @@ export function createScene(
     map = def;
     mapId = def.id;
     scene.background = new THREE.Color(def.sky);
+    atmosphere.palette(def.sky, def.id === "forest");
     scene.fog = new THREE.Fog(def.sky, 35, 105);
     let ground = groundCache.get(def.id);
     if (!ground) {
@@ -738,6 +901,26 @@ export function createScene(
         block(staticGroup, "#d5ccaf", x, 0.04, 0, 2.4, 0.08, 63);
       for (let x = -5; x < 6; x += 1.3)
         block(staticGroup, "#e7ddc5", x, 0.035, 21, 0.7, 0.015, 3.8);
+      // Curb joints and drain covers sit below foot height, not new obstacles.
+      for (let z = -30; z <= 30; z += 2)
+        for (const x of [-7.2, 7.2])
+          block(staticGroup, "#a9aa9d", x, 0.082, z, 2.35, 0.005, 0.025);
+      for (const z of [-20, 0, 19]) {
+        for (const x of [-5.5, 5.5]) {
+          block(staticGroup, "#435461", x, 0.025, z, 0.55, 0.008, 0.85);
+          for (let slot = -2; slot <= 2; slot++)
+            block(
+              staticGroup,
+              "#87958d",
+              x + slot * 0.08,
+              0.033,
+              z,
+              0.035,
+              0.003,
+              0.7,
+            );
+        }
+      }
     } else if (def.id === "school") {
       block(staticGroup, "#e2d8bc", 0, 0.015, -3, 11, 0.025, 54);
       block(staticGroup, "#b8a082", 18, 0.025, 8, 15.6, 0.03, 15.6);
@@ -770,6 +953,8 @@ export function createScene(
           0.025,
           1.6,
         );
+      for (const x of [-5.35, 5.35])
+        block(staticGroup, "#a2b59a", x, 0.032, -3, 0.09, 0.004, 52);
     } else {
       for (let z = -30; z < 30; z++)
         block(
@@ -811,6 +996,24 @@ export function createScene(
             0.08,
             0.15,
           );
+      }
+      // Flat leaf litter and small pebbles enrich the paths; no crouching
+      // character can be hidden by this 4 cm ground detail on either quality.
+      for (let i = 0; i < 160; i++) {
+        const x = seed(i + 601) * 59 - 29.5;
+        const z = seed(i + 902) * 59 - 29.5;
+        const leaf = part(
+          staticGroup,
+          leafTile,
+          material(i % 3 === 0 ? "#b6a46c" : "#809559"),
+          x,
+          0.025,
+          z,
+          0.07 + seed(i) * 0.11,
+          0.018,
+          0.17,
+        );
+        leaf.rotation.y = seed(i + 88) * Math.PI;
       }
     }
     for (const o of def.objects) object(staticGroup, o);
@@ -878,6 +1081,13 @@ export function createScene(
         const m = new THREE.MeshStandardMaterial({
           color: value,
           roughness: 0.83,
+          map:
+            view.character === "robot" ? null : surface("#ffffff", "cloth").map,
+          bumpMap:
+            view.character === "robot"
+              ? null
+              : surface("#ffffff", "cloth").bumpMap,
+          bumpScale: 0.008,
         });
         resources.materials.add(m);
         return [key, m];
@@ -888,6 +1098,31 @@ export function createScene(
     root.add(torso);
     part(torso, round, colors.body, 0, 0.05, 0, 0.62, 0.64, 0.38);
     part(torso, round, colors.body, 0, 0.13, 0.24, 0.42, 0.45, 0.16);
+    part(torso, round, colors.body, 0, 0.34, 0.25, 0.44, 0.1, 0.19);
+    for (const side of [-1, 1]) {
+      part(
+        torso,
+        round,
+        colors.body,
+        side * 0.18,
+        0.12,
+        -0.2,
+        0.065,
+        0.51,
+        0.025,
+      );
+      part(
+        torso,
+        round,
+        colors.legs,
+        side * 0.18,
+        -0.16,
+        -0.22,
+        0.09,
+        0.065,
+        0.025,
+      );
+    }
     head.position.set(0, 0.62, 0);
     torso.add(head);
     part(
@@ -924,7 +1159,19 @@ export function createScene(
         0.046,
         0.018,
       );
+      part(
+        head,
+        round,
+        colors.head,
+        s * 0.105,
+        0.14,
+        -0.229,
+        0.13,
+        0.03,
+        0.028,
+      );
     }
+    part(head, ball, colors.head, 0, -0.06, -0.247, 0.05, 0.04, 0.045);
     if (view.character === "fox") {
       for (const s of [-1, 1]) {
         const ear = part(
@@ -1032,6 +1279,7 @@ export function createScene(
     }
   }
   function unlockAudio() {
+    if (muted) return;
     try {
       audio ??= new AudioContext();
       if (audio.state === "suspended") void audio.resume().catch(() => {});
@@ -1040,7 +1288,7 @@ export function createScene(
     }
   }
   function sound(kind: "shot" | "capture" | "win", gain = 1) {
-    if (!audio || audio.state !== "running") return;
+    if (muted || !audio || audio.state !== "running") return;
     const t = audio.currentTime;
     if (kind === "shot") {
       const duration = 0.16,
@@ -1223,6 +1471,7 @@ export function createScene(
   function applyQuality() {
     renderer.shadowMap.enabled = !low;
     renderer.shadowMap.needsUpdate = true;
+    atmosphere.quality(low);
     resize();
   }
   // Camera collision uses the same AABBs as the server. A third-person camera
@@ -1301,6 +1550,7 @@ export function createScene(
         ? new THREE.Color(map.sky)
         : scene.background;
     const serverNow = now + serverOffset;
+    atmosphere.update(now / 1000);
     for (const actor of actors.values()) {
       const p = actor.view;
       actor.root.visible =
@@ -1476,8 +1726,8 @@ export function createScene(
     canvas.focus({ preventScroll: true });
   };
   const look = (dx: number, dy: number) => {
-    yaw -= dx * 0.0025;
-    pitch = clamp(pitch - dy * 0.0025, -1.2, 1.2);
+    yaw -= dx * 0.0025 * sensitivity;
+    pitch = clamp(pitch - dy * 0.0025 * sensitivity, -1.2, 1.2);
     hooks.onLook(yaw, pitch);
   };
   const onPointerMove = (event: PointerEvent) => {
@@ -1539,6 +1789,14 @@ export function createScene(
       low = value;
       applyQuality();
     },
+    setMuted(value) {
+      muted = value;
+      if (muted && audio?.state === "running")
+        void audio.suspend().catch(() => {});
+    },
+    setSensitivity(value) {
+      if (Number.isFinite(value)) sensitivity = clamp(value, 0.4, 2);
+    },
     setLook(nextYaw, nextPitch) {
       yaw = nextYaw;
       pitch = clamp(nextPitch, -1.2, 1.2);
@@ -1560,6 +1818,7 @@ export function createScene(
       if (document.pointerLockElement === canvas) document.exitPointerLock();
       if (audio) void audio.close().catch(() => {});
       confetti?.dispose();
+      atmosphere.dispose();
       for (const g of resources.geometries) g.dispose();
       for (const m of resources.materials) m.dispose();
       for (const t of resources.textures) t.dispose();

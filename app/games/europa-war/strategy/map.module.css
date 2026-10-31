@@ -57,10 +57,16 @@
   stroke-width: 2px;
 }
 .armyCounter {
-  filter: drop-shadow(0 1.5px 1px #14231d80);
+  /* A small SVG backing plate supplies depth without a filter per formation. */
+  outline: none;
 }
-.armyCounter:hover {
-  filter: brightness(1.14) drop-shadow(0 1.5px 1px #14231d80);
+.armyCounter:hover > [data-counter-face],
+.armyCounter:focus-visible > [data-counter-face] {
+  stroke: #fff0bb;
+  stroke-width: 2;
+}
+.selectedArmy > [data-counter-face] {
+  fill: #f3e9bd;
 }
 .airCounter,
 .seaCounter {
@@ -321,6 +327,75 @@
   padding: 10px;
   font-size: 12px;
 }
+.mapOptions {
+  position: absolute;
+  left: 28px;
+  top: 143px;
+  display: flex;
+  gap: 5px;
+  z-index: 4;
+}
+.mapOptions button {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 9px;
+  border: 1px solid #6e817866;
+  border-radius: 4px;
+  background: #132c2bef;
+  color: #a6b8b1;
+  font-size: 10px;
+  line-height: 1.2;
+  cursor: pointer;
+}
+.mapOptions button[aria-pressed="true"] {
+  border-color: #b9bc8a99;
+  color: #e6e5bb;
+  background: #33463aed;
+}
+.mapOptions button:focus-visible {
+  outline: 2px solid #ffe4a4;
+  outline-offset: 2px;
+}
+.mapOptions button > span {
+  font-size: 13px;
+}
+.navigation {
+  bottom: 104px;
+}
+.navigation button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.legend {
+  max-width: calc(100% - 210px);
+}
+.legend .readinessLegend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  margin-top: 5px;
+  color: #c8d0bb;
+}
+.readinessLegend i {
+  display: inline-block;
+  width: 10px;
+  height: 3px;
+  margin-left: 7px;
+}
+.readinessLegend i:first-child {
+  margin-left: 0;
+}
+.organizationKey {
+  background: #83b77c;
+}
+.strengthKey {
+  background: #9bc5d2;
+}
+.supplyKey {
+  background: #f0b18e;
+}
 .urbanPoint {
   cursor: pointer;
   outline: none;
@@ -336,5 +411,24 @@
     top: 104px;
     left: 14px;
     width: 155px;
+  }
+  .mapOptions {
+    top: 146px;
+    left: 14px;
+    gap: 4px;
+  }
+  .mapOptions button {
+    min-height: 34px;
+    padding: 7px 8px;
+    font-size: 9px;
+  }
+  .navigation {
+    bottom: 86px;
+  }
+  .legend {
+    max-width: calc(100% - 28px);
+  }
+  .legend .readinessLegend {
+    display: none;
   }
 }

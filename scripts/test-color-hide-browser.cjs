@@ -117,6 +117,15 @@ function reticleAngles(eye, target, thirdPerson) {
     };
     clients.push(client);
     page.on("pageerror", (error) => client.pageErrors.push(error.message));
+    page.on("console", (message) => {
+      if (
+        message.type() === "error" &&
+        /THREE\.WebGLProgram|Shader Error|VALIDATE_STATUS|GL_INVALID|WebGL: INVALID|Error creating WebGL context/i.test(
+          message.text(),
+        )
+      )
+        client.pageErrors.push(message.text());
+    });
     page.on("websocket", (socket) => {
       socket.on("framesent", ({ payload }) => {
         try {

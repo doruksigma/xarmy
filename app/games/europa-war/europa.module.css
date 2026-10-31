@@ -974,6 +974,11 @@
     opacity: 1;
   }
 }
+@media (prefers-reduced-motion: reduce), (pointer: coarse) {
+  .battlePulse {
+    animation: none;
+  }
+}
 .setupShade {
   position: absolute;
   inset: 84px 0 0 72px;

@@ -23,6 +23,46 @@ type GameMode = "bot" | "online" | "coach";
 type Session = { code: string; token: string };
 type Promotion = { from: string; to: string };
 const SESSION_KEY = "xarmy-chess-room";
+const APPEARANCE_KEY = "xarmy-chess-appearance-v1";
+const BOARD_THEMES = {
+  emerald: {
+    name: "Zümrüt",
+    description: "Yumuşak yeşil, açık taş yüzey",
+    dark: "#638575",
+    light: "#e4e9da",
+    rim: "#294738",
+    grain:
+      "linear-gradient(135deg, rgba(255,255,255,.07), transparent 55%, rgba(0,0,0,.05))",
+  },
+  walnut: {
+    name: "Ceviz",
+    description: "Sıcak ahşap, klasik kulüp tahtası",
+    dark: "#99724f",
+    light: "#f0ddbd",
+    rim: "#503b2b",
+    grain:
+      "repeating-linear-gradient(97deg, transparent 0 9px, rgba(73,35,13,.035) 10px 12px, transparent 13px 21px)",
+  },
+  midnight: {
+    name: "Gece",
+    description: "Serin mavi, belirgin kareler",
+    dark: "#576d91",
+    light: "#dce4ef",
+    rim: "#293c5b",
+    grain: "linear-gradient(150deg, rgba(255,255,255,.06), transparent 65%)",
+  },
+} as const;
+type BoardTheme = keyof typeof BOARD_THEMES;
+type Appearance = {
+  theme: BoardTheme;
+  animations: boolean;
+  coordinates: boolean;
+};
+const DEFAULT_APPEARANCE: Appearance = {
+  theme: "emerald",
+  animations: true,
+  coordinates: true,
+};
 const button =
   "rounded-xl px-4 py-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-emerald-400";
 const primary = `${button} bg-emerald-400 text-slate-950 hover:bg-emerald-300`;
@@ -123,10 +163,58 @@ export default function ChessArena() {
   const [promotion, setPromotion] = useState<Promotion | null>(null);
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [flipped, setFlipped] = useState(false);
+  const [appearance, setAppearance] = useState<Appearance>(DEFAULT_APPEARANCE);
+  const [appearanceLoaded, setAppearanceLoaded] = useState(false);
+  const [reducedMotion, setReducedMotion] = useState(false);
+  const appearanceDialog = useRef<HTMLDialogElement | null>(null);
+  const boardTheme = BOARD_THEMES[appearance.theme];
   const workerRef = useRef<Worker | null>(null);
   const botRequest = useRef(0);
   const activeMode = useRef(mode);
   activeMode.current = mode;
+
+  useEffect(() => {
+    try {
+      const saved: unknown = JSON.parse(
+        localStorage.getItem(APPEARANCE_KEY) || "null",
+      );
+      if (saved && typeof saved === "object") {
+        const value = saved as Partial<Appearance>;
+        setAppearance({
+          theme:
+            typeof value.theme === "string" &&
+            Object.hasOwn(BOARD_THEMES, value.theme)
+              ? value.theme
+              : DEFAULT_APPEARANCE.theme,
+          animations:
+            typeof value.animations === "boolean"
+              ? value.animations
+              : DEFAULT_APPEARANCE.animations,
+          coordinates:
+            typeof value.coordinates === "boolean"
+              ? value.coordinates
+              : DEFAULT_APPEARANCE.coordinates,
+        });
+      }
+    } catch {
+      // Unavailable or damaged preferences must not prevent playing.
+    }
+    setAppearanceLoaded(true);
+    const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const updateMotion = () => setReducedMotion(motion.matches);
+    updateMotion();
+    motion.addEventListener("change", updateMotion);
+    return () => motion.removeEventListener("change", updateMotion);
+  }, []);
+
+  useEffect(() => {
+    if (!appearanceLoaded) return;
+    try {
+      localStorage.setItem(APPEARANCE_KEY, JSON.stringify(appearance));
+    } catch {
+      // The selected appearance still works for this visit.
+    }
+  }, [appearance, appearanceLoaded]);
 
   const saveGame = useCallback((next: Chess) => {
     gameRef.current = next;
@@ -656,12 +744,21 @@ export default function ChessArena() {
       {showReview ? (
         <div className="mb-3 flex items-center justify-between gap-2">
           <h1 className="text-lg font-bold">Maç analizi</h1>
-          <button
-            onClick={resetToMenu}
-            className="rounded-lg border border-slate-600 px-3 py-1 text-xs font-semibold"
-          >
-            Analizden çık
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className={styles.appearanceButton}
+              onClick={() => appearanceDialog.current?.showModal()}
+            >
+              Tahta görünümü
+            </button>
+            <button
+              onClick={resetToMenu}
+              className="rounded-lg border border-slate-600 px-3 py-1 text-xs font-semibold"
+            >
+              Analizden çık
+            </button>
+          </div>
         </div>
       ) : (
         <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
@@ -676,9 +773,13 @@ export default function ChessArena() {
               Botla oyna, arkadaşına meydan oku veya eğitmeninle öğren.
             </p>
           </div>
-          <span className="rounded-full border border-emerald-400/20 bg-emerald-400/5 px-3 py-1.5 text-xs text-emerald-300">
-            ♟ 2 oyuncu · Sonsuz olasılık
-          </span>
+          <button
+            type="button"
+            className={styles.appearanceButton}
+            onClick={() => appearanceDialog.current?.showModal()}
+          >
+            <span aria-hidden="true">◧</span> Tahta görünümü
+          </button>
         </div>
       )}
       <div
@@ -743,7 +844,9 @@ export default function ChessArena() {
           <div
             data-testid="chess-board"
             data-fen={displayedGame.fen()}
-            className={`${styles.boardFrame} overflow-hidden rounded-lg border border-slate-700 shadow-xl`}
+            data-theme={appearance.theme}
+            style={{ "--board-rim": boardTheme.rim } as CSSProperties}
+            className={styles.boardFrame}
           >
             <Chessboard
               key={showReview ? "review" : "live"}
@@ -756,10 +859,29 @@ export default function ChessArena() {
                 clearArrowsOnPositionChange: true,
                 boardOrientation:
                   (playerColor === "w") !== flipped ? "white" : "black",
-                darkSquareStyle: { backgroundColor: "#6b8a79" },
-                lightSquareStyle: { backgroundColor: "#e3e8db" },
-                showAnimations: !showReview,
-                animationDurationInMs: showReview ? 0 : 180,
+                darkSquareStyle: {
+                  backgroundColor: boardTheme.dark,
+                  backgroundImage: boardTheme.grain,
+                },
+                lightSquareStyle: {
+                  backgroundColor: boardTheme.light,
+                  backgroundImage: boardTheme.grain,
+                },
+                darkSquareNotationStyle: {
+                  color: boardTheme.light,
+                  fontWeight: 700,
+                },
+                lightSquareNotationStyle: {
+                  color: boardTheme.rim,
+                  fontWeight: 700,
+                },
+                showNotation: appearance.coordinates,
+                showAnimations:
+                  !showReview && appearance.animations && !reducedMotion,
+                animationDurationInMs:
+                  showReview || !appearance.animations || reducedMotion
+                    ? 0
+                    : 180,
                 allowDragging: canMove && !promotion,
                 allowDragOffBoard: false,
                 canDragPiece: ({ piece }) =>
@@ -1280,6 +1402,116 @@ export default function ChessArena() {
           )}
         </aside>
       </div>
+      <dialog
+        ref={appearanceDialog}
+        className={styles.appearanceDialog}
+        aria-labelledby="board-appearance-title"
+        onClick={(event) => {
+          if (event.target === event.currentTarget)
+            appearanceDialog.current?.close();
+        }}
+      >
+        <div className={styles.appearanceContent}>
+          <div className={styles.appearanceHeading}>
+            <div>
+              <p>TAHTANI KİŞİSELLEŞTİR</p>
+              <h2 id="board-appearance-title">Tahta görünümü</h2>
+            </div>
+            <button
+              type="button"
+              aria-label="Tahta görünümünü kapat"
+              onClick={() => appearanceDialog.current?.close()}
+            >
+              ×
+            </button>
+          </div>
+          <div
+            className={styles.themeOptions}
+            role="group"
+            aria-label="Tahta teması"
+          >
+            {(
+              Object.entries(BOARD_THEMES) as [BoardTheme, typeof boardTheme][]
+            ).map(([id, theme]) => (
+              <button
+                key={id}
+                type="button"
+                className={styles.themeOption}
+                aria-pressed={appearance.theme === id}
+                aria-label={`${theme.name} teması`}
+                onClick={() =>
+                  setAppearance((previous) => ({ ...previous, theme: id }))
+                }
+              >
+                <span
+                  className={styles.themePreview}
+                  style={{
+                    backgroundColor: theme.light,
+                    backgroundImage: `conic-gradient(${theme.dark} 25%, ${theme.light} 0 50%, ${theme.dark} 0 75%, ${theme.light} 0)`,
+                    borderColor: theme.rim,
+                  }}
+                  aria-hidden="true"
+                >
+                  <b>♞</b>
+                </span>
+                <strong>{theme.name}</strong>
+                <small>{theme.description}</small>
+                <span className={styles.themeSelection}>
+                  {appearance.theme === id ? "✓ Seçili" : "Seç"}
+                </span>
+              </button>
+            ))}
+          </div>
+          <label className={styles.appearanceToggle}>
+            <span>
+              <strong>Kare koordinatları</strong>
+              <small>Tahtanın kenarında a–h ve 1–8 işaretleri</small>
+            </span>
+            <input
+              type="checkbox"
+              checked={appearance.coordinates}
+              onChange={(event) =>
+                setAppearance((previous) => ({
+                  ...previous,
+                  coordinates: event.target.checked,
+                }))
+              }
+            />
+          </label>
+          <label className={styles.appearanceToggle}>
+            <span>
+              <strong>Yumuşak taş hareketleri</strong>
+              <small>
+                {reducedMotion
+                  ? "Cihazının hareketi azalt tercihi etkin; animasyonlar kapalı."
+                  : "Taşlar hamle sırasında akıcı hareket eder."}
+              </small>
+            </span>
+            <input
+              type="checkbox"
+              checked={appearance.animations && !reducedMotion}
+              disabled={reducedMotion}
+              onChange={(event) =>
+                setAppearance((previous) => ({
+                  ...previous,
+                  animations: event.target.checked,
+                }))
+              }
+            />
+          </label>
+          <p className={styles.appearanceNote}>
+            Seçimlerin bu cihazda hatırlanır. Analizde hamleler beklemeden
+            gösterilir.
+          </p>
+          <button
+            type="button"
+            className={`${primary} w-full`}
+            onClick={() => appearanceDialog.current?.close()}
+          >
+            Tamam
+          </button>
+        </div>
+      </dialog>
       {promotion && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm">
           <section
