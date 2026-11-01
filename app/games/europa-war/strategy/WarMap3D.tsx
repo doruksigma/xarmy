@@ -87,7 +87,9 @@ function WarMap3D(
         .slice(0, 7)
     : [];
   const selected = GEOGRAPHY[props.selected];
-  const onDemand = reducedMotion || (props.paused && quality === "low");
+  const onDemand =
+    reducedMotion ||
+    (props.paused && quality === "low" && !metrics?.continuous);
   return (
     <div className={styles.root} data-testid="map3d-container">
       <canvas

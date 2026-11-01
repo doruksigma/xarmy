@@ -165,6 +165,17 @@ whole equipment items and saves already-paid work between days;
 [the production guide](docs/europa-production.md) documents capacity, resource,
 legacy-save, and civil-war accounting.
 
+Larger infantry miniatures now carry helmets, rifles and field equipment;
+tanks, trucks and artillery have distinct detailed models. Nearby formations
+show up to three representative divisions. Denser city blocks and industrial
+scenery use instanced rendering and distance-based detail. Animated freight
+trains in all countries with valid rail routes follow capital-connected
+friendly infrastructure and disappear
+when that connection is cut; this is a visualisation of existing railways,
+not a new cargo or train-inventory simulation. See
+[railway behaviour and budgets](docs/europa-railways.md). The focused WebGL
+regression is `node scripts/test-europa-models-browser.cjs`.
+
 The larger expansion remains staged: [the supplied specification](docs/europa-expansion-spec.md)
 and [the implementation status](docs/europa-expansion-status.md) distinguish the
 existing systems, this stage, and the unfinished hourly/world-scenario/design

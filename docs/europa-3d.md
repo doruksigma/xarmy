@@ -24,7 +24,7 @@ ikmal, hava ve deniz renklerini seçer.
 
 Telefonlarda ilk ayar **Düşük**, masaüstünde **Orta**. Düşük/Orta/Yüksek/Ultra
 seçenekleri piksel yoğunluğunu, gölgeyi ve dekor yoğunluğunu değiştirir.
-Tercih cihazda saklanır. Düşükte duraklatılmış harita ihtiyaç üzerine çizilir;
+Tercih cihazda saklanır. Düşükte duraklatılmış harita, görünür tren yoksa ihtiyaç üzerine çizilir;
 gizlenen sekmede çizim döngüsü durur. Diğer ayarlardaki 60 FPS çizim tavanı,
 donanımda ölçülmüş 60 FPS garantisi değildir.
 
@@ -44,16 +44,34 @@ hazırlanırken gecikmeli 3D modülü de yüklenir; hazır bildirimi gelmeden
 Kabartı prosedüreldir; DEM, uydu haritası veya doğrulanmış yeni bir tarihsel
 atlas değildir. [Geometri belgesi](europa-3d-geometry.md) kaynağı açıklar.
 
-Evler, ormanlar, piyade ve tanklar kodla üretilmiş küçük strateji modelleridir.
+Evler, ormanlar, piyade ve araçlar kodla üretilmiş strateji minyatürleridir.
+Piyadeler daha büyük ölçekte miğfer, tüfek, kemer, çanta ve bot ayrıntıları
+taşır; tank, kamyon ve top ayrı modeller kullanır. Ülke rengi üniformanın
+tamamını değiştirmek yerine küçük işaretlerde gösterilir. Şehirlerde eğimli
+çatılar, pencereler, kapılar, bacalar ve sokak blokları bulunur.
 Sanayi yapıları mevcut bina sayılarına, hasarlı görünüm bölge hasarına ve
 vinçler gerçek inşaat kuyruğuna bağlıdır. Birlik konumu simülasyonun ilerleme
 değerinden yumuşatılır; bu animasyon varış veya fetih hesabı yapmaz. Savaş
 işaretleri gerçek muharebelere bağlıdır. Uçak/gemi işaretleri mevcut görev
 durumunu temsil eder; ayrıntılı model veya fizik simülasyonu değildir.
 
-Aynı konum ve hareket hedefini paylaşan tümenler `×N` sayılı tek görsel
-grupta gösterilir. Bu gösterim askerleri birleştirmez; grup emri her tümenin
-kendi hareket ve savaş kaydında uygulanır.
+Aynı konum ve hareket hedefini paylaşan tümenler sayılı tek seçim işaretinde
+toplanır. Yakında gruptan en fazla üç tümen ayrı minyatürlerle temsil edilir;
+uzakta model sayısı azaltılır. Bu gösterim askerleri birleştirmez; grup emri
+her tümenin kendi hareket ve savaş kaydında uygulanır. Görüş dışında kalan
+birlik modelleri çizime hazırlanmaz; temsilî model sayısı 3.072 ile sınırlıdır.
+
+Her ülkenin başkentine bağlı geçerli kara demiryollarında daha büyük buharlı
+lokomotif ve yük vagonları görünür. Çelik raylar, traversler ve çakıl yatağı
+birbirine uygun ölçüdedir. Trenler uzun, bağlı güzergâhları sürekli izler;
+oyun duraklatılsa da görsel hareket
+devam eder, sefer tarihi ve kaynaklar değişmez. Sistemin azaltılmış hareket
+tercihinde tren animasyonu durur. Hat kesildiğinde bağlantısız koldaki
+trafik kaldırılır. Yakın çevredeki trenler kalite bütçesine göre çizilir;
+başka bir ülkeye kaydırıldığında o ülkenin trenleri de görünür.
+Bu animasyon yeni bir yük teslimatı veya tren envanteri
+hesaplamaz. Güzergâh kuralları ve kalite bütçeleri
+[demiryolu belgesinde](europa-railways.md) açıklanmıştır.
 
 Bu aşama; tam dünya haritası, yeni saatlik savaş motoru, karargâh/kolordu
 zinciri, modüler tasarımcılar, ortak kapasiteli lojistik akışı veya yüksek

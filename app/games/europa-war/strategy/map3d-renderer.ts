@@ -12,6 +12,8 @@ import {
   provinceOutline,
 } from "./map3d-geometry";
 import { createScenery } from "./map3d-scenery";
+import { createUnitModels, UNIT_LABEL_HEIGHT } from "./map3d-units";
+import { createRailways } from "./map3d-railways";
 import {
   armyMapPosition,
   visibleFormations,
@@ -34,6 +36,7 @@ export interface Map3DState {
   onOrder?: (id: string) => void;
 }
 export interface Map3DMetrics {
+  continuous: boolean;
   fps: number;
   calls: number;
   triangles: number;
@@ -52,7 +55,7 @@ type Formation = {
   target: THREE.Vector3;
   angle: number;
   moving: boolean;
-  vehicle: boolean;
+  tint: number;
   overlay: Overlay;
 };
 const TERRAIN_COLORS = {
@@ -78,6 +81,12 @@ export class Map3DRenderer {
   private terrain: ReturnType<typeof buildTerrain>;
   private land: THREE.Mesh;
   private scenery: ReturnType<typeof createScenery>;
+  private units: ReturnType<typeof createUnitModels>;
+  private railways: ReturnType<typeof createRailways>;
+  private unitFrustum = new THREE.Frustum();
+  private unitProjection = new THREE.Matrix4();
+  private unitBounds = new THREE.Sphere();
+  private visibleUnits: Formation[] = [];
   private sea: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>;
   private sun = new THREE.DirectionalLight(0xffe8bb, 2.6);
   private selection: THREE.LineSegments | null = null;
@@ -96,13 +105,6 @@ export class Map3DRenderer {
   >[] = [];
   private formations: Formation[] = [];
   private overlays: Overlay[] = [];
-  private parts: THREE.InstancedMesh[] = [];
-  private bodyMaterial = new THREE.MeshStandardMaterial({
-    color: 0xffffff,
-    roughness: 0.76,
-    metalness: 0.1,
-  });
-  private partGeometries: THREE.BufferGeometry[] = [];
   private props: Map3DState;
   private quality: GraphicsQuality;
   private observer: ResizeObserver;
@@ -113,6 +115,8 @@ export class Map3DRenderer {
   private dirty = true;
   private lastFrame = 0;
   private lastStats = 0;
+  private lastContinuous: boolean | undefined;
+  private renderedFrames = 0;
   private frameCount = 0;
   private updateAt = 0;
   private width = 1;
@@ -227,28 +231,12 @@ export class Map3DRenderer {
       this.sea.position.y = -0.4;
       this.scene.add(this.sea);
       this.scenery = createScenery(this.scene);
+      this.units = createUnitModels(
+        this.scene,
+        (x, z) => heightAt(x + HALF_X, z + HALF_Z) + 0.12,
+      );
+      this.railways = createRailways(this.scene);
       this.scene.add(this.routes, this.markers);
-      this.partGeometries = [
-        new THREE.CapsuleGeometry(0.7, 1.4, 3, 6),
-        new THREE.SphereGeometry(0.68, 7, 5),
-        new THREE.BoxGeometry(0.5, 1.6, 0.55),
-        new THREE.BoxGeometry(0.5, 1.6, 0.55),
-        new THREE.BoxGeometry(3.6, 1.2, 5),
-        new THREE.CylinderGeometry(1, 1.3, 1, 8),
-        new THREE.BoxGeometry(0.32, 0.32, 3.4),
-        new THREE.BoxGeometry(0.8, 1.1, 4.9),
-        new THREE.BoxGeometry(0.8, 1.1, 4.9),
-      ];
-      this.parts = this.partGeometries.map((geometry) => {
-        const mesh = new THREE.InstancedMesh(geometry, this.bodyMaterial, 2048);
-        mesh.count = 0;
-        mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
-        mesh.frustumCulled = false;
-        this.scene.add(mesh);
-        return mesh;
-      });
       this.controls = new OrbitControls(this.camera, this.canvas);
       this.controls.enableDamping = true;
       this.controls.dampingFactor = 0.13;
@@ -335,6 +323,7 @@ export class Map3DRenderer {
     this.sun.shadow.mapSize.set(preset.shadows || 512, preset.shadows || 512);
     this.sun.shadow.needsUpdate = true;
     this.scenery.setQuality(value);
+    this.railways.setQuality(value);
     this.sea.material.uniforms.detail.value = value === "low" ? 0 : 1;
     this.canvas.dataset.quality = value;
     this.resize();
@@ -346,7 +335,10 @@ export class Map3DRenderer {
     const changedWorld = this.worldRef !== state.world;
     this.worldRef = state.world;
     if (changedWorld || old.mode !== state.mode) this.colorMap();
-    if (changedWorld) this.scenery.update(state.world);
+    if (changedWorld) {
+      this.scenery.update(state.world);
+      this.railways.update(state.world);
+    }
     if (
       changedWorld ||
       old.selected !== state.selected ||
@@ -473,7 +465,7 @@ export class Map3DRenderer {
     this.formations = visibleFormations(world).map((armies, index) => {
       const army = armies[0],
         p = armyMapPosition(army),
-        target = point(p.x, p.y, 2.6),
+        target = point(p.x, p.y, 0.12),
         key = armies.map((a) => a.id).join(",");
       // A tiny deterministic offset separates armies sharing a province without moving their true location.
       target.x += ((index % 3) - 1) * 1.8;
@@ -515,14 +507,7 @@ export class Map3DRenderer {
         target,
         moving: !!army.move,
         angle: to ? Math.atan2(to.x - origin.x, to.y - origin.y) : Math.PI,
-        vehicle: [
-          "lightTank",
-          "mediumTank",
-          "heavyTank",
-          "motorized",
-          "mechanized",
-          "artillery",
-        ].includes(army.type),
+        tint: new THREE.Color(world.countries[army.country].color).getHex(),
         overlay,
       };
     });
@@ -673,68 +658,37 @@ export class Map3DRenderer {
     );
   }
   private updateUnitMatrices(now: number) {
-    const dummy = new THREE.Object3D(),
-      parent = new THREE.Object3D(),
-      color = new THREE.Color();
-    const counts = this.parts.map(() => 0);
     const blend =
       this.props.paused || this.reduced
         ? 1
         : Math.min(1, (now - this.updateAt) / 400);
-    const put = (
-      part: number,
-      x: number,
-      y: number,
-      z: number,
-      sx: number,
-      sy: number,
-      sz: number,
-      angle: number,
-      tint: number,
-    ) => {
-      const i = counts[part]++;
-      if (i >= 2048) return;
-      dummy.position.set(x, y, z);
-      dummy.rotation.set(angle, 0, 0);
-      dummy.scale.set(sx, sy, sz);
-      dummy.updateMatrix();
-      dummy.matrix.premultiply(parent.matrix);
-      this.parts[part].setMatrixAt(i, dummy.matrix);
-      this.parts[part].setColorAt(i, color.setHex(tint));
-    };
-    for (const f of this.formations) {
-      f.position.lerpVectors(f.from, f.target, blend);
-      parent.position.copy(f.position);
-      parent.rotation.set(0, f.angle, 0);
-      parent.scale.setScalar(1.4);
-      parent.updateMatrix();
-      const tint = new THREE.Color(
-        this.props.world.countries[f.armies[0].country].color,
+    this.camera.updateMatrixWorld();
+    this.unitFrustum.setFromProjectionMatrix(
+      this.unitProjection.multiplyMatrices(
+        this.camera.projectionMatrix,
+        this.camera.matrixWorldInverse,
+      ),
+    );
+    this.visibleUnits.length = 0;
+    for (const formation of this.formations) {
+      formation.position.lerpVectors(formation.from, formation.target, blend);
+      formation.position.y =
+        heightAt(formation.position.x + HALF_X, formation.position.z + HALF_Z) +
+        0.12;
+      formation.overlay.position.copy(formation.position).y +=
+        UNIT_LABEL_HEIGHT;
+      if (
+        this.unitFrustum.intersectsSphere(
+          this.unitBounds.set(formation.position, UNIT_LABEL_HEIGHT * 2.5),
+        )
       )
-        .lerp(new THREE.Color(0x78826a), 0.45)
-        .getHex();
-      const step =
-        f.moving && !this.props.paused && !this.reduced
-          ? Math.sin(now * 0.011) * 0.5
-          : 0;
-      if (f.vehicle) {
-        put(4, 0, 0.5, 0, 1, 1, 1, 0, tint);
-        put(5, 0, 1.65, 0, 1, 1, 1, 0, tint);
-        put(6, 0, 1.75, 1.9, 1, 1, 1, 0, 0x494d42);
-        put(7, -1.6, 0.15, 0, 1, 1, 1, 0, 0x343d35);
-        put(8, 1.6, 0.15, 0, 1, 1, 1, 0, 0x343d35);
-      } else {
-        put(0, 0, 1.9, 0, 1, 1, 1, 0, tint);
-        put(1, 0, 3.55, 0, 1, 1, 1, 0, 0xbda886);
-        put(2, -0.45, 0.5, 0, 1, 1, 1, step, 0x485747);
-        put(3, 0.45, 0.5, 0, 1, 1, 1, -step, 0x485747);
-      }
-      f.overlay.position.copy(f.position).y += 7;
+        this.visibleUnits.push(formation);
     }
-    this.parts.forEach((mesh, i) => {
-      mesh.count = Math.min(counts[i], 2048);
-      mesh.instanceMatrix.needsUpdate = true;
-      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    this.units.update(this.visibleUnits, now, {
+      quality: this.quality,
+      paused: !!this.props.paused,
+      reduced: this.reduced,
+      distance: this.camera.position.distanceTo(this.controls.target),
     });
   }
   focusProvince(id: string, distance = 220) {
@@ -925,7 +879,10 @@ export class Map3DRenderer {
     }
     this.controls.update();
     const animated =
-      !this.reduced && (!this.props.paused || this.quality !== "low");
+      !this.reduced &&
+      (!this.props.paused ||
+        this.quality !== "low" ||
+        this.railways.stats.trains > 0);
     if (this.dirty || animated) {
       this.lastFrame = now;
       this.dirty = false;
@@ -949,7 +906,14 @@ export class Map3DRenderer {
         this.camera.position.distanceTo(this.controls.target),
       );
       this.updateUnitMatrices(now);
+      this.railways.animate(now / 1000, {
+        paused: !!this.props.paused,
+        reduced: this.reduced,
+        distance: this.camera.position.distanceTo(this.controls.target),
+        focus: this.controls.target,
+      });
       this.renderer.render(this.scene, this.camera);
+      this.canvas.dataset.renderedFrames = String(++this.renderedFrames);
       this.frameCount++;
       for (const item of this.overlays) {
         VEC.copy(item.position).project(this.camera);
@@ -967,6 +931,18 @@ export class Map3DRenderer {
           item.element.style.transform = `translate(${x.toFixed(1)}px,${y.toFixed(1)}px) translate(-50%,-100%)`;
       }
       this.canvas.dataset.ready = "true";
+      this.canvas.dataset.railEdges = String(this.railways.stats.edges);
+      this.canvas.dataset.trainCount = String(this.railways.stats.trains);
+      this.canvas.dataset.trainCountries = JSON.stringify(
+        this.railways.stats.countries,
+      );
+      this.canvas.dataset.trainPositions = JSON.stringify(
+        this.railways.stats.positions,
+      );
+      this.canvas.dataset.unitInstances = String(this.units.stats.instances);
+      this.canvas.dataset.infantryModels = String(this.units.stats.infantry);
+      this.canvas.dataset.vehicleModels = String(this.units.stats.vehicles);
+      this.canvas.dataset.modelDetail = String(this.units.stats.detail);
       this.canvas.dataset.cameraDistance = this.camera.position
         .distanceTo(this.controls.target)
         .toFixed(3);
@@ -974,9 +950,17 @@ export class Map3DRenderer {
       this.canvas.dataset.triangles = String(
         this.renderer.info.render.triangles,
       );
-      if (now - this.lastStats > 1000) {
+      // animate() may have hidden distant trains during this draw. Publish
+      // the settled state before an on-demand renderer stops scheduling.
+      const continuous =
+        !this.reduced &&
+        (!this.props.paused ||
+          this.quality !== "low" ||
+          this.railways.stats.trains > 0);
+      if (now - this.lastStats > 1000 || continuous !== this.lastContinuous) {
         const elapsed = this.lastStats ? now - this.lastStats : 1000;
         const metric = {
+          continuous,
           fps: Math.round((this.frameCount * 1000) / elapsed),
           calls: this.renderer.info.render.calls,
           triangles: this.renderer.info.render.triangles,
@@ -985,10 +969,12 @@ export class Map3DRenderer {
         };
         this.metrics(metric);
         this.lastStats = now;
+        this.lastContinuous = continuous;
         this.frameCount = 0;
       }
     }
-    // Damping settles cheaply; paused Low/reduced-motion only draw on demand.
+    // Ambient trains keep paused campaigns alive; Low without visible trains
+    // and reduced-motion scenes still settle to drawing only on demand.
     if (animated || this.dirty) this.schedule();
   };
   dispose() {
@@ -1001,9 +987,8 @@ export class Map3DRenderer {
     this.controls?.dispose();
     this.clearMarkers();
     this.pointerCancel();
-    this.parts.forEach((m) => m.dispose());
-    this.partGeometries.forEach((g) => g.dispose());
-    this.bodyMaterial.dispose();
+    this.units?.dispose();
+    this.railways?.dispose();
     this.scenery?.dispose();
     this.terrain?.dispose();
     this.terrainMaterial?.dispose();

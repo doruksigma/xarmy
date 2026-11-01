@@ -225,3 +225,70 @@ tercihiyle, aynı gerçek WebGL sahnesi üzerinde yapılmıştır.
 Gerçek cihaz, uzun süreli 3D büyük ordu/GPU profili ve canlı dağıtım doğrulaması
 bu sonuçların kapsamında değildir. Şartnamedeki bütün mekaniklerin uçtan uca
 kabulü, yukarıda belirtilen eksik sistemler tamamlanmadan geçilmiş sayılamaz.
+
+## 2. görsel aşama — ayrıntılı minyatürler ve demiryolu trafiği
+
+Kullanıcının daha büyük ve ayrıntılı modeller, daha yoğun yerleşim ve ikmal
+hatlarında hareket eden tren talebi üzerine:
+
+- Eski basit birlik parçaları; miğferli, tüfekli ve teçhizatlı piyade,
+  palet/tekerlek/taret ayrıntılı tank, tenteli kamyon ve sahra topuyla
+  değiştirildi. Hafif/ağır tankların ölçüsü farklıdır. Yakın görünümde aynı
+  gruptan üç tümen ayrı modellerle temsil edilebilir; seçim ve emirler gerçek
+  grubun tamamına uygulanmaya devam eder.
+- Evler, çatı, pencere, kapı, baca, sanayi tesisi, ağaç ve kaya prototipleri
+  ayrıntılandırıldı. Şehirler düzenli sokak blokları kullanır. Modeller özgün,
+  kodla üretilmiş strateji minyatürleridir; taranmış sanat varlıkları değildir.
+- Her ülkenin mevcut kara demiryollarının başkente bağlı bölümünde çelik ray,
+  travers, çakıl yatağı, istasyon, buharlı lokomotif, kömür tenderi ve yük
+  vagonları çizilir. Tren ve ray açıklığı birlikte 1,2 ölçek kullanır.
+  Trenler bu hatlarda sürekli ilerler; sefer duraklatıldığında da görsel
+  hareket sürer, azaltılmış hareket tercihinde donar. Demiryolu veya dost
+  kontrol bağlantısı kesilen şehirler arası hatlar kaldırılır; raylı bir
+  başkent kalırsa yerel istasyon trafiği sürebilir. Başlangıçtaki 29 ülkenin
+  tamamında tren bulunur; küçük/ada başkentlerinde gerçek eyalet sınırları
+  içinde yerel hatlar kullanılır. Deniz
+  komşuluklarına ve geçerli kara yolu bulunamayan geometrik aralıklara ray
+  uydurulmaz. [Demiryolu belgesi](europa-railways.md) ayrıntıları açıklar.
+- Birlik parçaları yedi instanced çizim grubunda tutulur; yakın/uzak ayrıntı,
+  görüş alanı elemesi, kaliteye göre yakında 6/12/20/32 tren sınırı, önbellekli
+  demiryolu geometrisi ve GPU kaynaklarının temizliği uygulanır.
+
+Bu aşama **tren envanteri, yük teslimatı, yeni ikmal kapasitesi veya savaş
+mekaniği eklemez**. Dünya durumu ve simülasyon rastgeleliği görsel işlemlerle
+değiştirilmez. Önceki aşamanın eksik sistem listesi geçerliliğini korur.
+
+### Bu görsel aşamanın doğrulaması — 1 Kasım 2026
+
+- `npm run test:europa`: **334/334** test geçti. Buna 25 demiryolu
+  ağı/render testi ve 5 birlik modeli testi dahildir. Her başlangıç
+  ülkesinde kamera yakınında tren çizilmesi, yerel hat genişliği, sabit ray
+  açıklığı, sefer duraklatılmışken görsel hareket, değişmeyen Dünya verisi
+  ve GPU kaynaklarının bırakılması denetlendi.
+- `npm run build`: son küresel tren sürümünün üretim derlemesi ve
+  TypeScript kontrolü geçti.
+- Gerçek WebGL ile lokomotif yakın planı ve ordu/şehir/tren birlikteliği
+  incelendi; bina yerleşimleri birlik alanından ve ray koridorundan ayrıldı.
+- `test-europa-models-browser.cjs`: son üretim sürümünde **12/12** masaüstü
+  ve dokunmatik mobil kontrol geçti; sayfa/konsol/istek hatası yoktu.
+  Düşük kalitede sefer duraklatılmışken hareket eden trenler, bütün Dünya
+  verisinin aynı kalması, azaltılmış harekette durma, Almanya/Fransa'ya
+  kaydırınca yabancı trenlerin çizilmesi, tankların korunması ve üç tümenin
+  birlikte hareket ederek şehri ele geçirmesi kontrol edildi.
+- Mevcut `test-europa-3d-browser.cjs` son küresel tren derlemesinde **19/19**
+  geçti; sayfa/konsol/istek hatası yoktu. Gerçek yüzey seçimi, iki parmak
+  yakınlaştırma, komutan emirleri, toplu ilerleme/fetih, üretim ve kayıt,
+  çevrimdışı 3D devam, WebGL kaybında 2D'ye dönüş ve yarıda kesilen
+  başlatmanın kaynak temizliği korundu. Toplam **31 tarayıcı kontrolü** geçti.
+
+Son ölçüm örneklerinde yakın piyade sahnesi masaüstünde 28 çizim çağrısı,
+Düşükte yaklaşık 247 bin, Ultrada 374 bin üçgen bildirdi. Yüksek kalitedeki
+yabancı ülke görünümünde 20 lokomotif ve 30 çizim çağrısı; Almanya'da yaklaşık
+1,12 milyon, Fransa'da 1,01 milyon üçgen ölçüldü. Bunlar gerçek renderer
+sayaçlarıdır, FPS ölçümü değildir. Headless Chromium sekmelerin gerçek
+görünürlüğünü değiştirmediğinden yerel arka plan sekmesi davranışı uçtan uca
+doğrulanmadı; sahte `document.hidden` değişikliğiyle test sonucu üretilmedi.
+
+Modellerin kaliteye göre çizim bütçesi vardır. Bu çalışma fiziksel telefon
+ve Windows ekran kartlarında 60 FPS doğrulaması değildir. Trenler mevcut
+altyapıyı görselleştirir; yeni bir ikmal/taşıma envanteri oluşturmaz.
