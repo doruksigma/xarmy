@@ -2,13 +2,16 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { containsProvincePoint } from "./map3d-geometry";
 import {
-  buildGlobalRailNetwork,
+  buildPlayerRailNetwork,
+  cartographicRailSeams,
+  findRailSeamRepairs,
+  railEdgeContainsPoint,
   buildRailNetwork,
-  railNetworkSignature,
+  playerRailNetworkSignature,
   railPointAt,
   roundRailCorners,
 } from "./map3d-rail-network";
-import { createWorld, friendly, GEOGRAPHY } from "./world";
+import { createWorld, GEOGRAPHY } from "./world";
 import type { World } from "./types";
 
 function isolate(world: World, ids: string[]) {
@@ -149,7 +152,7 @@ test("Her iki uçta ray gerekir; başkent veya aradaki ray silinince bağlı ağ
   assert.deepEqual(buildRailNetwork(world).routes, []);
 });
 
-test("Demiryolu erişim hakkına uyar; tarafsız veya düşman kontrolüne geçince bağlantı kalkar", () => {
+test("Müttefik ve geçiş izni olan yabancı raylar da gizlidir; yalnız doğrudan kontrol bağlantıyı açar", () => {
   const world = createWorld("turkey");
   const first = buildRailNetwork(world).edges.find(
     (edge) => edge.from === world.countries.turkey.capital,
@@ -158,10 +161,14 @@ test("Demiryolu erişim hakkına uyar; tarafsız veya düşman kontrolüne geçi
   world.provinces[first.to].controller = "bulgaria";
   assert.equal(buildRailNetwork(world).edges.length, 0);
   world.countries.bulgaria.access.push("turkey");
-  assert.equal(buildRailNetwork(world).edges.length, 1);
+  world.countries.turkey.allies.push("bulgaria");
+  world.countries.bulgaria.subjectOf = "turkey";
+  assert.equal(buildRailNetwork(world).edges.length, 0);
   world.countries.turkey.wars.push("bulgaria");
   world.countries.bulgaria.wars.push("turkey");
   assert.equal(buildRailNetwork(world).edges.length, 0);
+  world.provinces[first.to].controller = "turkey";
+  assert.equal(buildRailNetwork(world).edges.length, 1);
   world.provinces[first.from].controller = "bulgaria";
   assert.equal(buildRailNetwork(world).stations.length, 0);
 });
@@ -212,8 +219,7 @@ test("İstasyonlar gerçek bölge içinde; ray segmentleri kıyıda suya veya ba
           const x = a.x + ((b.x - a.x) * i) / samples;
           const y = a.y + ((b.y - a.y) * i) / samples;
           assert.ok(
-            containsProvincePoint(edge.from, x, y) ||
-              containsProvincePoint(edge.to, x, y),
+            railEdgeContainsPoint(edge, { x, y }),
             `${edge.from}→${edge.to}: ${x},${y}`,
           );
         }
@@ -258,185 +264,205 @@ test("Tren konumu mesafeyi uçlarda sınırlar, köşeleri izler ve sonlu yön �
     }
 });
 
-test("Küresel demiryolları diğer ülkeleri de içerir, fiziksel hatlar tekilleşir ve güzergâhlar adil dağıtılır", () => {
-  const world = createWorld("turkey");
-  const before = JSON.stringify(world);
-  const network = buildGlobalRailNetwork(world);
+test("Canlı ağ yalnız oyuncunun başkentine bağlı kendi raylarını gösterir; yerel süs hatları yoktur", () => {
+  const world = createWorld("turkey"),
+    before = JSON.stringify(world),
+    network = buildPlayerRailNetwork(world);
   assert.equal(JSON.stringify(world), before);
-  assert.ok(network.routes.length <= 64);
-  assert.ok(network.edges.length < 1500);
-  assert.ok(
-    network.edges.reduce((sum, edge) => sum + edge.points.length, 0) < 20000,
-  );
-  assert.equal(
-    new Set(network.edges.map((edge) => [edge.from, edge.to].sort().join(":")))
-      .size,
-    network.edges.length,
-  );
-  assert.equal(
-    new Set(network.stations.map((station) => station.province)).size,
-    network.stations.length,
-  );
-  const served = new Set(network.routes.map((route) => route.country));
-  for (const id of Object.keys(world.countries)) {
-    if (buildRailNetwork(world, id).routes.length)
-      assert.ok(
-        served.has(id),
-        `${id} gets a route before secondary routes fill the budget`,
-      );
+  assert.ok(network.routes.length > 0);
+  for (const edge of network.edges) {
+    assert.equal(world.provinces[edge.from].controller, world.player);
+    assert.equal(world.provinces[edge.to].controller, world.player);
+    assert.notEqual(edge.from, edge.to);
+    assert.ok(!edge.local);
   }
-  assert.ok(served.has("turkey") && served.has("germany") && served.has("uk"));
-  assert.equal(
-    served.size,
-    Object.keys(world.countries).length,
-    "Every initial country has a valid long route or local station track",
-  );
   for (const route of network.routes) {
-    assert.ok(route.country);
-    for (const id of route.ids) {
-      assert.ok(world.provinces[id].buildings.rail > 0);
-      assert.ok(friendly(world, route.country, world.provinces[id].controller));
-    }
-    const expected = [];
-    if (route.local) {
-      assert.equal(route.ids.length, 1);
-      const edge = network.edges.find(
-        (edge) =>
-          edge.local && edge.from === route.ids[0] && edge.to === route.ids[0],
-      );
-      assert.ok(edge);
-      assert.deepEqual(route.points, edge.points);
-      continue;
-    }
-    for (let i = 1; i < route.ids.length; i++) {
-      const from = route.ids[i - 1],
-        to = route.ids[i];
-      const edge = network.edges.find(
-        (edge) =>
-          (edge.from === from && edge.to === to) ||
-          (edge.from === to && edge.to === from),
-      );
-      assert.ok(edge);
-      const part =
-        edge.from === from ? edge.points : [...edge.points].reverse();
-      expected.push(...(i === 1 ? part : part.slice(1)));
-    }
-    assert.deepEqual(route.points, expected);
+    assert.equal(route.country, world.player);
+    assert.ok(!route.local);
   }
-  for (const edge of network.edges)
-    for (let j = 1; j < edge.points.length; j++) {
-      const a = edge.points[j - 1],
-        b = edge.points[j];
-      const samples = Math.max(
-        1,
-        Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / 0.35),
-      );
-      for (let i = 0; i <= samples; i++) {
-        const x = a.x + ((b.x - a.x) * i) / samples,
-          y = a.y + ((b.y - a.y) * i) / samples;
-        assert.ok(
-          containsProvincePoint(edge.from, x, y) ||
-            containsProvincePoint(edge.to, x, y),
-          `${edge.from}/${edge.to} stays on its actual endpoint provinces`,
-        );
-      }
-    }
+  isolate(world, ["turkey-0"]);
+  assert.deepEqual(buildPlayerRailNetwork(world).edges, []);
+  assert.deepEqual(buildPlayerRailNetwork(world).routes, []);
+  const tiny = createWorld("luxembourg");
+  assert.deepEqual(buildPlayerRailNetwork(tiny).edges, []);
+  assert.deepEqual(buildPlayerRailNetwork(tiny).routes, []);
 });
 
-test("Küresel ağ önbelleği oyuncu, gün, stok ve tümen değişimini dışarıda tutar; yabancı ray ve diplomasi değişimlerini izler", () => {
-  const world = createWorld("turkey");
-  const signature = railNetworkSignature(world),
-    network = buildGlobalRailNetwork(world);
+test("İşgal edilen kopuk cep gizli kalır; koridor ele geçirilince bağlanır, kaybedilince kesilir ve geri alınınca açılır", () => {
+  const world = createWorld("turkey"),
+    capital = "turkey-0",
+    corridor = "turkey-city-16",
+    pocket = "turkey-city-17";
+  isolate(world, [capital, corridor, pocket]);
+  world.provinces[corridor].controller = "bulgaria";
+  world.provinces[pocket].controller = "bulgaria";
+  world.provinces[pocket].buildings.hub = 1;
+  const isolatedSignature = playerRailNetworkSignature(world);
+  world.provinces[pocket].controller = "turkey";
+  assert.equal(playerRailNetworkSignature(world), isolatedSignature);
+  assert.equal(buildPlayerRailNetwork(world).edges.length, 0);
+  assert.ok(
+    !buildPlayerRailNetwork(world).stations.some(
+      (station) => station.province === pocket,
+    ),
+  );
+  world.countries.bulgaria.access.push("turkey");
+  world.countries.turkey.allies.push("bulgaria");
+  assert.equal(playerRailNetworkSignature(world), isolatedSignature);
+  world.provinces[corridor].controller = "turkey";
+  const connectedSignature = playerRailNetworkSignature(world);
+  assert.notEqual(connectedSignature, isolatedSignature);
+  assert.equal(buildPlayerRailNetwork(world).edges.length, 2);
+  assert.ok(
+    buildPlayerRailNetwork(world).stations.some(
+      (station) => station.province === pocket,
+    ),
+  );
+  world.provinces[corridor].controller = "bulgaria";
+  assert.equal(playerRailNetworkSignature(world), isolatedSignature);
+  assert.equal(buildPlayerRailNetwork(world).routes.length, 0);
+  world.provinces[corridor].controller = "turkey";
+  assert.equal(playerRailNetworkSignature(world), connectedSignature);
+  world.provinces[corridor].buildings.rail = 0;
+  assert.equal(buildPlayerRailNetwork(world).edges.length, 0);
+  world.provinces[corridor].buildings.rail = 1;
+  assert.equal(playerRailNetworkSignature(world), connectedSignature);
+  world.provinces[capital].controller = "bulgaria";
+  assert.deepEqual(buildPlayerRailNetwork(world).edges, []);
+  assert.deepEqual(buildPlayerRailNetwork(world).stations, []);
+});
+
+test("Oyuncu ağının önbelleği gün, stok, tümen ve yabancı değişimlerden etkilenmez", () => {
+  const world = createWorld("turkey"),
+    network = buildPlayerRailNetwork(world),
+    signature = playerRailNetworkSignature(world);
   world.day++;
-  world.countries.turkey.treasury += 50;
+  world.countries.turkey.treasury += 100;
   world.armies[0].province = world.armies[1].province;
-  world.player = "germany";
-  assert.equal(railNetworkSignature(world), signature);
-  assert.equal(buildGlobalRailNetwork(world), network);
-  world.provinces[world.countries.germany.capital].buildings.rail = 0;
-  assert.notEqual(railNetworkSignature(world), signature);
-  const changed = buildGlobalRailNetwork(world);
-  assert.notEqual(changed, network);
-  assert.ok(!changed.routes.some((route) => route.country === "germany"));
-  const afterRail = railNetworkSignature(world);
   world.countries.france.capital = "france-1";
-  assert.notEqual(railNetworkSignature(world), afterRail);
-  const afterCapital = railNetworkSignature(world);
-  world.countries.france.access.push("germany");
-  assert.notEqual(railNetworkSignature(world), afterCapital);
+  world.provinces["france-0"].controller = "germany";
+  world.provinces["germany-0"].buildings.rail = 0;
+  world.countries.bulgaria.access.push("turkey");
+  assert.equal(playerRailNetworkSignature(world), signature);
+  assert.equal(buildPlayerRailNetwork(world), network);
+  world.player = "germany";
+  assert.notEqual(playerRailNetworkSignature(world), signature);
 });
 
-test("Başka ülkenin şehirler arası hattı da geçiş iznine ve savaş durumuna uyar; aktif oyuncu değiştirilmez", () => {
-  const world = createWorld("turkey");
-  const edge = buildRailNetwork(world, "germany").edges.find(
-    (edge) => edge.from === world.countries.germany.capital,
-  )!;
-  isolate(world, [edge.from, edge.to]);
-  world.provinces[edge.to].controller = "poland";
-  assert.ok(
-    !buildGlobalRailNetwork(world).routes.some(
-      (route) => route.country === "germany" && !route.local,
-    ),
-  );
-  world.countries.poland.access.push("germany");
-  assert.ok(
-    buildGlobalRailNetwork(world).routes.some(
-      (route) => route.country === "germany" && !route.local,
-    ),
-  );
-  world.countries.germany.wars.push("poland");
-  world.countries.poland.wars.push("germany");
-  assert.ok(
-    !buildGlobalRailNetwork(world).routes.some(
-      (route) => route.country === "germany" && !route.local,
-    ),
-  );
-  assert.equal(world.player, "turkey");
+test("Şehir kavşaklarında bütün hat uçları aynı kesin koordinatı kullanır", () => {
+  const world = createWorld("turkey"),
+    network = buildPlayerRailNetwork(world),
+    anchors = new Map<string, { x: number; y: number }>();
+  for (const edge of network.edges)
+    for (const [id, point] of [
+      [edge.from, edge.points[0]],
+      [edge.to, edge.points.at(-1)!],
+    ] as const) {
+      if (anchors.has(id)) assert.deepEqual(point, anchors.get(id));
+      else anchors.set(id, point);
+    }
+  for (const station of network.stations)
+    assert.deepEqual(station.point, anchors.get(station.province));
 });
 
-test("Tek eyalet ve ada başkentlerinde yerel istasyon hattının bütün genişliği gerçek karanın içindedir", () => {
-  const world = createWorld("turkey");
-  const before = JSON.stringify(world),
-    network = buildGlobalRailNetwork(world);
-  const local = network.routes.filter((route) => route.local);
-  assert.deepEqual(local.map((route) => route.country).sort(), [
-    "denmark",
-    "estonia",
-    "luxembourg",
-  ]);
-  for (const route of local) {
-    assert.equal(route.ids.length, 1);
-    assert.equal(route.ids[0], world.countries[route.country!].capital);
-    assert.ok(world.provinces[route.ids[0]].buildings.rail > 0);
-    assert.ok(route.length >= 11);
-    const a = route.points[0],
-      b = route.points.at(-1)!;
-    const ux = (b.x - a.x) / route.length,
-      uy = (b.y - a.y) / route.length;
-    for (let along = 0; along <= route.length; along += 0.25)
-      for (let across = -1.8; across <= 1.8; across += 0.2)
-        assert.ok(
-          containsProvincePoint(
-            route.ids[0],
-            a.x + ux * along - uy * across,
-            a.y + uy * along + ux * across,
-          ),
-        );
-    const edge = network.edges.find(
-      (edge) => edge.local && edge.from === route.ids[0],
+test("Yalnız 0,15 birime kadar bitişik yuvarlama yarıkları onarılır; geniş su, delik ve üçüncü bölge doldurulmaz", () => {
+  const a0 = { x: 5, y: 0 },
+    a1 = { x: 5, y: 10 };
+  const make = (gap: number, adjacent = true, blocked = () => false) =>
+    cartographicRailSeams(
+      a0,
+      a1,
+      { x: 5 + gap, y: 10 },
+      { x: 5 + gap, y: 0 },
+      {
+        adjacent,
+        landA: (p) => p.x <= 5 && p.y >= 0 && p.y <= 10,
+        landB: (p) => p.x >= 5 + gap && p.y >= 0 && p.y <= 10,
+        blocked,
+      },
     );
-    assert.ok(edge);
-    assert.equal(
-      edge.from,
-      edge.to,
-      "No fabricated neighbor or foreign crossing",
+  const seams = make(0.1);
+  assert.equal(seams.length, 1);
+  assert.ok(seams[0].maxGap <= 0.15);
+  assert.deepEqual(make(0.151), []);
+  assert.deepEqual(make(2), []);
+  assert.deepEqual(make(0.1, false), []);
+  assert.deepEqual(
+    make(0.1, true, () => true),
+    [],
+  );
+  assert.deepEqual(findRailSeamRepairs("turkey-2", "greece-0"), []);
+  assert.deepEqual(findRailSeamRepairs("turkey-0", "germany-0"), []);
+  const blockers = [
+    [
+      { x: 4.9, y: 1.9 },
+      { x: 5.2, y: 1.9 },
+      { x: 5.2, y: 2.1 },
+      { x: 4.9, y: 2.1 },
+    ],
+    [
+      { x: 5.02, y: 1.9 },
+      { x: 5.08, y: 1.9 },
+      { x: 5.08, y: 2.1 },
+      { x: 5.02, y: 2.1 },
+    ],
+    [
+      { x: 5, y: 1.9 },
+      { x: 5.1, y: 1.9 },
+      { x: 5.1, y: 2.1 },
+      { x: 5, y: 2.1 },
+    ],
+    [
+      { x: 5, y: 0 },
+      { x: 5.1, y: 0 },
+      { x: 5.1, y: 10 },
+      { x: 5, y: 10 },
+    ],
+  ];
+  for (const blocker of blockers)
+    assert.deepEqual(
+      cartographicRailSeams(
+        a0,
+        a1,
+        { x: 5.1, y: 10 },
+        { x: 5.1, y: 0 },
+        {
+          adjacent: true,
+          landA: (p) => p.x <= 5,
+          landB: (p) => p.x >= 5.1,
+          blockers: [blocker],
+        },
+      ),
+      [],
+      "A thin third-province stripe or hole between probe locations rejects the entire repair",
     );
+  const ankaraKonya = findRailSeamRepairs("turkey-0", "turkey-4");
+  assert.ok(
+    ankaraKonya.length > 0 && ankaraKonya.every((seam) => seam.maxGap < 0.04),
+  );
+});
+
+test("Tallinn–Tartu sayısal sınır yarığı bağlanır; gerçek güzergâh yalnız kara veya belirtilen dar onarım şeridindedir", () => {
+  const world = createWorld("estonia");
+  isolate(world, ["estonia-0", "estonia-1"]);
+  const network = buildPlayerRailNetwork(world);
+  assert.equal(network.edges.length, 1);
+  assert.equal(network.repairedConnections, 1);
+  assert.ok(network.edges[0].seams?.length);
+  assert.ok(
+    network.edges[0].seams!.every((seam) => seam.maxGap <= 0.15 + 1e-9),
+  );
+  const edge = network.edges[0];
+  for (let j = 1; j < edge.points.length; j++) {
+    const a = edge.points[j - 1],
+      b = edge.points[j],
+      samples = Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / 0.01);
+    for (let i = 0; i <= samples; i++)
+      assert.ok(
+        railEdgeContainsPoint(edge, {
+          x: a.x + ((b.x - a.x) * i) / samples,
+          y: a.y + ((b.y - a.y) * i) / samples,
+        }),
+      );
   }
-  assert.equal(JSON.stringify(world), before);
-  world.provinces[world.countries.luxembourg.capital].buildings.rail = 0;
-  assert.ok(
-    !buildGlobalRailNetwork(world).routes.some(
-      (route) => route.country === "luxembourg",
-    ),
-  );
 });

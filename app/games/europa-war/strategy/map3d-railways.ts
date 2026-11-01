@@ -1,10 +1,9 @@
 import * as THREE from "three";
 import {
-  buildGlobalRailNetwork,
-  railNetworkSignature,
+  buildPlayerRailNetwork,
+  playerRailNetworkSignature,
   railPointAt,
   type RailNetwork,
-  type RailRoute,
 } from "./map3d-rail-network";
 import { containsProvincePoint, heightAt } from "./map3d-geometry";
 import {
@@ -35,6 +34,8 @@ export interface RailwayStats {
   positions: Array<{ x: number; y: number; z: number }>;
   progress: number;
   countries: string[];
+  /** Endpoints of the physical connected edges actually built in this view. */
+  provinces: string[];
 }
 export interface RailwayAnimation {
   /** Campaign pause deliberately does not stop this ambient train animation. */
@@ -106,19 +107,77 @@ const matrix = new THREE.Matrix4(),
   scale = new THREE.Vector3(),
   position = new THREE.Vector3();
 const axisY = new THREE.Vector3(0, 1, 0);
-function at(mapX: number, mapY: number, lift = 0) {
-  return position.set(
-    mapX - MAP.width / 2,
-    heightAt(mapX, mapY) + lift,
-    mapY - MAP.height / 2,
-  );
-}
-function pose(x: number, y: number, heading: number, size = 1, lift = 0.13) {
-  rotation.setFromAxisAngle(axisY, -heading);
-  return matrix.compose(at(x, y, lift), rotation, scale.setScalar(size));
-}
-
-export function createRailways(scene: THREE.Scene) {
+export function createRailways(
+  scene: THREE.Scene,
+  groundHeightAt: (mapX: number, mapY: number) => number = heightAt,
+) {
+  type FittedSegment = {
+    ax: number;
+    ay: number;
+    bx: number;
+    by: number;
+    ah: number;
+    bh: number;
+  };
+  const fittedSegments = new Map<string, FittedSegment[]>();
+  type FittedPath = {
+    edge: RailNetwork["edges"][number];
+    points: Array<{ x: number; y: number }>;
+    frames: Array<{ nx: number; ny: number }>;
+    heights: number[];
+  };
+  // At most four quality profiles per edge in the current network. Camera
+  // windows reuse these immutable fits; topology changes clear the whole cache.
+  const fittedPaths = new Map<string, FittedPath>();
+  function railHeightAt(x: number, y: number) {
+    let nearest = Infinity,
+      height: number | undefined;
+    for (const segment of fittedSegments.get(
+      `${Math.floor(x / 24)}:${Math.floor(y / 24)}`,
+    ) ?? []) {
+      const dx = segment.bx - segment.ax,
+        dy = segment.by - segment.ay;
+      const t = Math.max(
+        0,
+        Math.min(
+          1,
+          ((x - segment.ax) * dx + (y - segment.ay) * dy) /
+            (dx * dx + dy * dy || 1),
+        ),
+      );
+      const separation =
+        (x - segment.ax - dx * t) ** 2 + (y - segment.ay - dy * t) ** 2;
+      if (separation < nearest) {
+        nearest = separation;
+        height = segment.ah + (segment.bh - segment.ah) * t;
+      }
+    }
+    return nearest < 1e-4 && height !== undefined
+      ? height
+      : groundHeightAt(x, y);
+  }
+  function at(mapX: number, mapY: number, lift = 0, fitted = false) {
+    return position.set(
+      mapX - MAP.width / 2,
+      (fitted ? railHeightAt(mapX, mapY) : groundHeightAt(mapX, mapY)) + lift,
+      mapY - MAP.height / 2,
+    );
+  }
+  function pose(
+    x: number,
+    y: number,
+    heading: number,
+    size = 1,
+    lift = 0.13,
+    fitted = false,
+  ) {
+    rotation.setFromAxisAngle(axisY, -heading);
+    return matrix.compose(
+      at(x, y, lift, fitted),
+      rotation,
+      scale.setScalar(size),
+    );
+  }
   const group = new THREE.Group();
   group.name = "capital-connected-railways";
   scene.add(group);
@@ -190,7 +249,8 @@ export function createRailways(scene: THREE.Scene) {
   let quality: GraphicsQuality = "medium",
     disposed = false,
     oldSignature = "",
-    windowSignature = "";
+    windowSignature = "",
+    builtSelection = "";
   let worldRef: World | undefined;
   let focus = { x: 0, z: 0 };
   let hasFocus = false;
@@ -212,6 +272,7 @@ export function createRailways(scene: THREE.Scene) {
     positions: [],
     progress: 0,
     countries: [],
+    provinces: [],
   };
 
   function windowBounds() {
@@ -258,6 +319,60 @@ export function createRailways(scene: THREE.Scene) {
     const visibleEdges = network.edges.filter(
       (edge) => pointDistanceToEdge(bounds.x, bounds.y, edge) <= bounds.radius,
     );
+    const visibleStations = network.stations.filter(
+      (entry) =>
+        Math.hypot(entry.point.x - bounds.x, entry.point.y - bounds.y) <=
+        bounds.radius,
+    );
+    const selection = `${quality}:${visibleEdges.map((edge) => `${edge.from}>${edge.to}`).join(",")}:${visibleStations.map((entry) => entry.province).join(",")}`;
+    // Moving to another camera bucket can still show exactly the same complete
+    // network. Reuse its fitted mesh rather than resampling terrain while panning.
+    if (selection === builtSelection) return;
+    builtSelection = selection;
+    // A shared node has one physical cross-section. Per-edge endpoint normals
+    // would leave the two offset rails separated even at the same city anchor.
+    const nodeDirections = new Map<string, Array<{ x: number; y: number }>>();
+    for (const edge of network.edges) {
+      const ends = [
+        [edge.from, edge.points[0], edge.points[1]],
+        [edge.to, edge.points.at(-1)!, edge.points.at(-2)!],
+      ] as const;
+      for (const [id, a, b] of ends) {
+        const length = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+        const values = nodeDirections.get(id) ?? [];
+        values.push({ x: (b.x - a.x) / length, y: (b.y - a.y) / length });
+        nodeDirections.set(id, values);
+      }
+    }
+    const sharedTangents = new Map<
+      string,
+      { x: number; y: number; stretch: number }
+    >();
+    for (const [id, directions] of nodeDirections) {
+      if (directions.length < 2) continue;
+      let a = directions[0],
+        b = directions[1],
+        opposition = Infinity;
+      for (let i = 0; i < directions.length; i++)
+        for (let j = i + 1; j < directions.length; j++) {
+          const dot =
+            directions[i].x * directions[j].x +
+            directions[i].y * directions[j].y;
+          if (dot < opposition) {
+            opposition = dot;
+            a = directions[i];
+            b = directions[j];
+          }
+        }
+      const length = Math.hypot(a.x - b.x, a.y - b.y) || 1,
+        x = (a.x - b.x) / length,
+        y = (a.y - b.y) / length;
+      const stretch = Math.min(
+        1.7,
+        1 / Math.max(0.35, Math.abs(x * a.x + y * a.y)),
+      );
+      sharedTangents.set(id, { x, y, stretch });
+    }
     const segmentLength =
       quality === "low" ? 3 : quality === "medium" ? 2 : 1.3;
     const railPositions: number[] = [],
@@ -266,8 +381,12 @@ export function createRailways(scene: THREE.Scene) {
       bedIndices: number[] = [],
       bedUvs: number[] = [];
     let sleeperCount = 0;
-    for (const edge of visibleEdges) {
-      const points: Array<{ x: number; y: number }> = [edge.points[0]];
+    fittedSegments.clear();
+    const paths = visibleEdges.map((edge) => {
+      const pathKey = `${quality}:${edge.from}>${edge.to}`;
+      const cached = fittedPaths.get(pathKey);
+      if (cached) return { ...cached, heights: cached.heights.slice() };
+      let points: Array<{ x: number; y: number }> = [edge.points[0]];
       for (let i = 1; i < edge.points.length; i++) {
         const a = edge.points[i - 1],
           b = edge.points[i];
@@ -281,12 +400,167 @@ export function createRailways(scene: THREE.Scene) {
             y: a.y + ((b.y - a.y) * j) / pieces,
           });
       }
-      const frames = points.map((p, i) => {
-        const a = points[Math.max(0, i - 1)],
-          b = points[Math.min(points.length - 1, i + 1)];
-        const length = Math.hypot(b.x - a.x, b.y - a.y) || 1;
-        return { nx: -(b.y - a.y) / length, ny: (b.x - a.x) / length };
-      });
+      const makeFrames = () =>
+        points.map((_p, i) => {
+          const a = points[Math.max(0, i - 1)],
+            b = points[Math.min(points.length - 1, i + 1)];
+          const length = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+          let nx = -(b.y - a.y) / length,
+            ny = (b.x - a.x) / length;
+          const endpoint =
+            i === 0 ? edge.from : i === points.length - 1 ? edge.to : null;
+          const shared = endpoint ? sharedTangents.get(endpoint) : undefined;
+          if (shared) {
+            const sign = -shared.y * nx + shared.x * ny < 0 ? -1 : 1;
+            nx = -shared.y * shared.stretch * sign;
+            ny = shared.x * shared.stretch * sign;
+          }
+          return { nx, ny };
+        });
+      let frames = makeFrames();
+      // Terrain is a piecewise-planar mesh. Its creases can rise through the
+      // interior of a long rail strip even when both end vertices are grounded.
+      // Refine only those spans, on the unchanged validated centerline. Work is
+      // bounded and happens with the cached track window, never per frame.
+      const maximumPoints = Math.min(4096, points.length * 8);
+      if (groundHeightAt !== heightAt) {
+        for (let pass = 0; pass < 6 && points.length < maximumPoints; pass++) {
+          const refined: typeof points = [points[0]];
+          let added = 0;
+          for (let i = 1; i < points.length; i++) {
+            const a = points[i - 1],
+              b = points[i];
+            const na = frames[i - 1],
+              nb = frames[i];
+            let needsSplit = false;
+            for (const offset of [
+              -1.35, -1.03, -0.88, -0.75, -0.62, 0.62, 0.75, 0.88, 1.03, 1.35,
+            ]) {
+              const ax = a.x + na.nx * offset * TRAIN_WORLD_SCALE;
+              const ay = a.y + na.ny * offset * TRAIN_WORLD_SCALE;
+              const bx = b.x + nb.nx * offset * TRAIN_WORLD_SCALE;
+              const by = b.y + nb.ny * offset * TRAIN_WORLD_SCALE;
+              const ah = groundHeightAt(ax, ay),
+                bh = groundHeightAt(bx, by);
+              for (const t of [0.25, 0.5, 0.75]) {
+                if (
+                  groundHeightAt(ax + (bx - ax) * t, ay + (by - ay) * t) -
+                    (ah + (bh - ah) * t) >
+                  0.04
+                ) {
+                  needsSplit = true;
+                  break;
+                }
+              }
+              if (needsSplit) break;
+            }
+            if (needsSplit && points.length + added < maximumPoints) {
+              refined.push({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+              added++;
+            }
+            refined.push(b);
+          }
+          if (!added) break;
+          points = refined;
+          frames = makeFrames();
+        }
+      }
+      const heights = points.map((p, i) =>
+        groundHeightAt === heightAt
+          ? heightAt(p.x, p.y)
+          : Math.max(
+              ...[-1.03, -0.88, -0.75, -0.62, 0, 0.62, 0.75, 0.88, 1.03].map(
+                (offset) =>
+                  groundHeightAt(
+                    p.x + frames[i].nx * offset * TRAIN_WORLD_SCALE,
+                    p.y + frames[i].ny * offset * TRAIN_WORLD_SCALE,
+                  ),
+              ),
+            ),
+      );
+      if (groundHeightAt !== heightAt) {
+        // A rail bed is level across its gauge. Fit short local embankments to
+        // measured terrain steps; never raise the entire network. Both adjacent
+        // rows share any required correction so no triangle clips a crease.
+        for (let i = 1; i < points.length; i++) {
+          const a = points[i - 1],
+            b = points[i],
+            na = frames[i - 1],
+            nb = frames[i];
+          let correction = 0;
+          for (const t of [0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875]) {
+            for (const offset of [
+              -1.03, -0.88, -0.75, -0.62, 0, 0.62, 0.75, 0.88, 1.03,
+            ]) {
+              const x =
+                a.x +
+                (b.x - a.x) * t +
+                (na.nx + (nb.nx - na.nx) * t) * offset * TRAIN_WORLD_SCALE;
+              const y =
+                a.y +
+                (b.y - a.y) * t +
+                (na.ny + (nb.ny - na.ny) * t) * offset * TRAIN_WORLD_SCALE;
+              correction = Math.max(
+                correction,
+                groundHeightAt(x, y) -
+                  (heights[i - 1] + (heights[i] - heights[i - 1]) * t) -
+                  0.04,
+              );
+            }
+          }
+          heights[i - 1] += correction;
+          heights[i] += correction;
+        }
+      }
+      const path = { edge, points, frames, heights };
+      fittedPaths.set(pathKey, path);
+      return { ...path, heights: heights.slice() };
+    });
+    // Every branch at the same node uses the same fitted vertical anchor too.
+    const nodeHeights = new Map<string, number>();
+    for (const { edge, heights } of paths) {
+      nodeHeights.set(
+        edge.from,
+        Math.max(nodeHeights.get(edge.from) ?? -Infinity, heights[0]),
+      );
+      nodeHeights.set(
+        edge.to,
+        Math.max(nodeHeights.get(edge.to) ?? -Infinity, heights.at(-1)!),
+      );
+    }
+    for (const { edge, points, heights } of paths) {
+      heights[0] = nodeHeights.get(edge.from)!;
+      heights[heights.length - 1] = nodeHeights.get(edge.to)!;
+      if (groundHeightAt === heightAt) continue;
+      for (let i = 1; i < points.length; i++) {
+        const a = points[i - 1],
+          b = points[i];
+        const segment = {
+          ax: a.x,
+          ay: a.y,
+          bx: b.x,
+          by: b.y,
+          ah: heights[i - 1],
+          bh: heights[i],
+        };
+        for (
+          let x = Math.floor(Math.min(a.x, b.x) / 24);
+          x <= Math.floor(Math.max(a.x, b.x) / 24);
+          x++
+        )
+          for (
+            let y = Math.floor(Math.min(a.y, b.y) / 24);
+            y <= Math.floor(Math.max(a.y, b.y) / 24);
+            y++
+          ) {
+            const key = `${x}:${y}`,
+              bucket = fittedSegments.get(key) ?? [];
+            bucket.push(segment);
+            fittedSegments.set(key, bucket);
+          }
+      }
+    }
+    for (const { points, frames, heights } of paths) {
       // A continuous gravel shoulder, not disconnected decorative stripes.
       const bedStart = bedPositions.length / 3;
       for (let i = 0; i < points.length; i++) {
@@ -302,7 +576,10 @@ export function createRailways(scene: THREE.Scene) {
             y = p.y + n.ny * offset * TRAIN_WORLD_SCALE;
           bedPositions.push(
             x - MAP.width / 2,
-            heightAt(x, y) + lift * TRAIN_WORLD_SCALE,
+            (Math.abs(offset) > 1.03 || groundHeightAt === heightAt
+              ? groundHeightAt(x, y)
+              : heights[i]) +
+              lift * TRAIN_WORLD_SCALE,
             y - MAP.height / 2,
           );
           bedUvs.push(x * 0.22, y * 0.22);
@@ -339,7 +616,10 @@ export function createRailways(scene: THREE.Scene) {
               y = p.y + n.ny * (side * 0.75 + offset) * TRAIN_WORLD_SCALE;
             railPositions.push(
               x - MAP.width / 2,
-              heightAt(x, y) + lift * TRAIN_WORLD_SCALE,
+              (groundHeightAt === heightAt
+                ? groundHeightAt(x, y)
+                : heights[i]) +
+                lift * TRAIN_WORLD_SCALE,
               y - MAP.height / 2,
             );
           }
@@ -378,6 +658,7 @@ export function createRailways(scene: THREE.Scene) {
               Math.atan2(b.y - a.y, b.x - a.x),
               1,
               0.24 * TRAIN_WORLD_SCALE,
+              true,
             ),
           );
         }
@@ -411,12 +692,7 @@ export function createRailways(scene: THREE.Scene) {
     sleepers.instanceMatrix.needsUpdate = true;
     sleepers.computeBoundingSphere();
     let stationCount = 0;
-    for (const entry of network.stations) {
-      if (
-        Math.hypot(entry.point.x - bounds.x, entry.point.y - bounds.y) >
-        bounds.radius
-      )
-        continue;
+    for (const entry of visibleStations) {
       if (stationCount >= LIMITS.stations) break;
       let site: { x: number; y: number } | undefined;
       for (const offset of [
@@ -481,6 +757,9 @@ export function createRailways(scene: THREE.Scene) {
     stations.count = stationCount;
     stations.instanceMatrix.needsUpdate = true;
     stations.computeBoundingSphere();
+    stats.provinces = [
+      ...new Set(visibleEdges.flatMap((edge) => [edge.from, edge.to])),
+    ];
     stats.edges = visibleEdges.length;
     stats.stations = stationCount;
     stats.omittedConnections = network.omittedConnections;
@@ -599,20 +878,22 @@ export function createRailways(scene: THREE.Scene) {
         const front = railPointAt(route, d + length * 0.4),
           back = railPointAt(route, d - length * 0.4);
         const pitch = Math.atan2(
-          heightAt(front.x, front.y) - heightAt(back.x, back.y),
+          railHeightAt(front.x, front.y) - railHeightAt(back.x, back.y),
           length * 0.8,
         );
         poses.push({
           kind: car.kind,
-          position: at(p.x, p.y, 0.46 * TRAIN_WORLD_SCALE).clone(),
-          angle: -p.heading,
+          position: at(p.x, p.y, 0.46 * TRAIN_WORLD_SCALE, true).clone(),
+          // A rigid carriage follows its axle chord through a junction; using
+          // one segment heading would snap its entire body at the city anchor.
+          angle: -Math.atan2(front.y - back.y, front.x - back.x),
           pitch,
           scale: size,
           wheelPhase: -d / (TRAIN_DIMENSIONS.wheelRadius * size),
         });
       }
       const p = railPointAt(route, head),
-        locomotivePosition = at(p.x, p.y, 0.46 * TRAIN_WORLD_SCALE);
+        locomotivePosition = at(p.x, p.y, 0.46 * TRAIN_WORLD_SCALE, true);
       stats.countries.push(route.country ?? "");
       stats.positions.push({
         x: locomotivePosition.x,
@@ -637,10 +918,12 @@ export function createRailways(scene: THREE.Scene) {
         focus = { x: capital.x - MAP.width / 2, z: capital.y - MAP.height / 2 };
         hasFocus = true;
       }
-      const key = railNetworkSignature(world);
+      const key = playerRailNetworkSignature(world);
       if (key === oldSignature) return;
       oldSignature = key;
-      network = buildGlobalRailNetwork(world);
+      network = buildPlayerRailNetwork(world);
+      builtSelection = "";
+      fittedPaths.clear();
       refreshTrackWindow(true);
       placeTrains();
     },
@@ -697,8 +980,11 @@ export function createRailways(scene: THREE.Scene) {
       ])
         m.dispose();
       gravelTexture.dispose();
+      fittedSegments.clear();
+      fittedPaths.clear();
       stats.positions.length = 0;
       stats.countries.length = 0;
+      stats.provinces.length = 0;
       stats.edges = stats.trains = stats.stations = 0;
     },
   };

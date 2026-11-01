@@ -56,22 +56,44 @@ işaretleri gerçek muharebelere bağlıdır. Uçak/gemi işaretleri mevcut gör
 durumunu temsil eder; ayrıntılı model veya fizik simülasyonu değildir.
 
 Aynı konum ve hareket hedefini paylaşan tümenler sayılı tek seçim işaretinde
-toplanır. Yakında gruptan en fazla üç tümen ayrı minyatürlerle temsil edilir;
-uzakta model sayısı azaltılır. Bu gösterim askerleri birleştirmez; grup emri
+toplanır. Bir tümen piyadeyle, iki tümen piyade ve tankla, üç tümen
+piyade, tank ve topla; dört veya daha fazlası piyade, tank, top ve kamyonla
+temsil edilir. Bu dört tip sayıyı anlatan simgelerdir; grubun gerçek ekipman
+ve birlik türlerini değiştirmez. Uzakta ve Düşükte de aynı tipler korunur,
+yalnız küçük geometri ayrıntıları azaltılır. Bu gösterim askerleri birleştirmez; grup emri
 her tümenin kendi hareket ve savaş kaydında uygulanır. Görüş dışında kalan
 birlik modelleri çizime hazırlanmaz; temsilî model sayısı 3.072 ile sınırlıdır.
 
-Her ülkenin başkentine bağlı geçerli kara demiryollarında daha büyük buharlı
-lokomotif ve yük vagonları görünür. Çelik raylar, traversler ve çakıl yatağı
-birbirine uygun ölçüdedir. Trenler uzun, bağlı güzergâhları sürekli izler;
-oyun duraklatılsa da görsel hareket
-devam eder, sefer tarihi ve kaynaklar değişmez. Sistemin azaltılmış hareket
-tercihinde tren animasyonu durur. Hat kesildiğinde bağlantısız koldaki
-trafik kaldırılır. Yakın çevredeki trenler kalite bütçesine göre çizilir;
-başka bir ülkeye kaydırıldığında o ülkenin trenleri de görünür.
-Bu animasyon yeni bir yük teslimatı veya tren envanteri
-hesaplamaz. Güzergâh kuralları ve kalite bütçeleri
-[demiryolu belgesinde](europa-railways.md) açıklanmıştır.
+Yalnız oyuncunun kontrol ettiği, kendi başkentine kesintisiz kara demiryoluyla
+bağlanan bölgelerin rayları, istasyonları ve trenleri gösterilir. Müttefik
+bölgesi veya askerî geçiş izni bu görünürlük için yeterli değildir. Ele
+geçirilen kopuk bölge, aradaki raylı koridor da kontrol altına alındığında
+bağlanır; bağlantı kaybedilince yeniden gizlenir. Dekoratif yerel hatla
+bağlantısız bir bölgeye tren eklenmez.
+
+Büyük buharlı lokomotif ve yük vagonları; ortak şehir düğümlerinde birleşen
+çelik rayları, traversleri ve çakıl yatağını izler. Ray, tren, birlik ve bina
+yüksekliği ekranda çizilen arazi üçgenlerinden örneklenir; farklı ayrıntı
+düzeylerindeki araziye gömülerek kopuk görünmeleri önlenir. Trenler sefer duraklatılsa
+da hareket eder; azaltılmış hareket tercihinde durur. Bu hareket sefer
+tarihini veya kaynaklarını değiştirmez. Kurallar ve bütçeler
+[demiryolu belgesinde](europa-railways.md) açıklanır.
+
+Şehirlerin ortasındaki bağımsız artı biçimli yol çubukları kaldırılmıştır.
+Her geçerli bölge, Düşük dâhil bütün ayarlarda en az bir gerçek bina örneği
+alır. Binalar kara sınırları, görünen ray koridoru ve birliklerin kompakt
+gövde alanları gözetilerek yerleştirilir.
+
+Yürüyen piyadenin adımları, tank paletleri, kamyon tekerlekleri ve çekilen top
+ayrı hareket eder. Yalnız gerçek muharebeye katılan gruplarda namlu alevi,
+geri tepme, top mermisi yayı ve isabet etkileri gösterilir; kamyon destek
+animasyonu kullanır. İlk atış savaşın başlamasına bağlıdır; kısa muharebe
+önceki animasyon döngüsünün bitmesini beklemez. Gerçek düşman şehrine varıp
+kontrolü değiştiren grup kısa bir toparlanma ve bayrak kaldırma animasyonu
+oynatır. Duraklatma ve
+azaltılmış hareket bu birlik animasyonlarını dondurur. Kayıt yüklemek veya
+barışla toprak devretmek ele geçirme animasyonu başlatmaz. Bunlar mevcut
+savaş sonuçlarını görselleştirir; ilave hasar, cephane veya fetih hesabı yapmaz.
 
 Bu aşama; tam dünya haritası, yeni saatlik savaş motoru, karargâh/kolordu
 zinciri, modüler tasarımcılar, ortak kapasiteli lojistik akışı veya yüksek

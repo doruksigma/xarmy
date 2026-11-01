@@ -23,7 +23,6 @@ const {
   addArmy,
   GEOGRAPHY,
   dateLabel,
-  MAP,
 } = require("../app/games/europa-war/strategy/world.ts");
 const { declareWar } = require("../app/games/europa-war/strategy/diplomacy.ts");
 const {
@@ -142,7 +141,17 @@ function fixture() {
           ...el.dataset,
           trainPositions: JSON.parse(el.dataset.trainPositions || "[]"),
           trainCountries: JSON.parse(el.dataset.trainCountries || "[]"),
+          railProvinces: JSON.parse(el.dataset.railProvinces || "[]"),
+          cityHouseCounts: JSON.parse(el.dataset.cityHouseCounts || "{}"),
+          emptyCityProvinces: JSON.parse(el.dataset.emptyCityProvinces || "[]"),
         }));
+      const assertModels = (sample, count) => {
+        assert.equal(Number(sample.infantryModels), 1);
+        assert.equal(Number(sample.tankModels), count >= 2 ? 1 : 0);
+        assert.equal(Number(sample.artilleryModels), count >= 3 ? 1 : 0);
+        assert.equal(Number(sample.truckModels), count >= 4 ? 1 : 0);
+        assert.equal(Number(sample.vehicleModels), Math.min(3, count - 1));
+      };
       const pause = async () => {
         const b = page.getByRole("button", {
           name: "Zamanı duraklat",
@@ -237,6 +246,39 @@ function fixture() {
         page.screenshot({
           path: path.join(output, label + "-" + name + ".png"),
         });
+      const setMotion = async (reduced) => {
+        await page.emulateMedia({
+          reducedMotion: reduced ? "reduce" : "no-preference",
+        });
+        await click(
+          page.getByRole("button", { name: "2D siyasi harita", exact: true }),
+        );
+        await click(
+          page.getByRole("button", { name: "3D arazi", exact: true }),
+        );
+        await ready();
+      };
+      const orderGroup = async (scenario, count) => {
+        await focus(scenario.target);
+        await click(
+          page
+            .locator('[data-formation^="turkey:' + scenario.origin + ':"]')
+            .first(),
+        );
+        if (mobile) {
+          await click(
+            page.getByRole("button", {
+              name: `Haritada hedef seç · ${count} tümen`,
+              exact: true,
+            }),
+          );
+        }
+        await close();
+        const box = await canvas.boundingBox();
+        const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+        if (mobile) await page.touchscreen.tap(point.x, point.y);
+        else await page.mouse.click(point.x, point.y, { button: "right" });
+      };
       await page.goto(base + "/games/europa-war", {
         waitUntil: "domcontentloaded",
       });
@@ -279,20 +321,49 @@ function fixture() {
         Number(near.unitInstances) >= 2,
         "Near capital must render both infantry and tank instances",
       );
-      assert.equal(Number(near.infantryModels), 1);
-      assert.equal(Number(near.vehicleModels), 1);
+      assertModels(near, 2);
       assert.equal(near.modelDetail, "true");
+      assert.ok(near.cityHouseCounts[f.capital] > 0);
+      assert.deepEqual(near.emptyCityProvinces, []);
       samples.push({ label, view: "capital-close", ...near });
       await load(borderFixture);
       await focus(f.origin, 4);
       await screenshot("infantry-close");
-      assert.ok(
-        Number((await stats()).infantryModels) === 3,
-        "Three near infantry divisions must render together",
-      );
+      assertModels(await stats(), 3);
       passed(
         label +
           ": close-up infantry, tank, detailed scenery and one real supply train render in WebGL",
+      );
+      for (const count of mobile ? [4, 12] : [1, 2, 3, 4, 12]) {
+        const grouped = structuredClone(f);
+        grouped.world.armies = [];
+        for (let i = 0; i < count; i++)
+          addArmy(grouped.world, "turkey", f.capital);
+        grouped.world = decodeSave(encodeSave(grouped.world));
+        await load(grouped);
+        await focus(f.capital, 4);
+        const shown = await stats();
+        assertModels(shown, count);
+        assert.equal(Number(shown.muzzleFlashes), 0);
+        assert.equal(Number(shown.combatFormations), 0);
+        assert.equal(Number(shown.shells), 0);
+        assert.equal(Number(shown.impacts), 0);
+        assert.equal(
+          Number(shown.captures),
+          0,
+          "Importing a campaign must not create a capture effect",
+        );
+        samples.push({ label, view: `group-${count}`, ...shown });
+        await screenshot(`group-${count}`);
+        assert.equal(
+          (await save(`group-${count}`)).armies.length,
+          count,
+          "Representative miniatures must not delete divisions",
+        );
+      }
+      passed(
+        label +
+          ": group-size silhouettes are exact while all real divisions remain in the campaign",
       );
       const beforeQuality = await save("before-quality");
       for (const value of ["low", "medium", "high", "ultra", "low"]) {
@@ -306,6 +377,7 @@ function fixture() {
             ),
         );
         const sample = await stats();
+        assertModels(sample, 12);
         assert.ok(
           Number(sample.drawCalls) > 0 && Number(sample.drawCalls) < 180,
           "Instanced model/rail draw calls must remain bounded",
@@ -323,7 +395,7 @@ function fixture() {
       );
       passed(
         label +
-          ": all quality levels preserve the world and keep model rendering bounded",
+          ": all quality levels preserve group symbols and the world with bounded rendering",
       );
       if (!mobile) {
         await load(capitalFixture);
@@ -470,100 +542,90 @@ function fixture() {
           "desktop: the actual capital-connected country rail network renders multiple links and trains",
         );
 
-        const foreignWorld = structuredClone(f);
-        const startingWorld = createWorld(
-          "turkey",
-          "historical",
-          1936,
-          "normal",
-        );
-        for (const province of Object.values(foreignWorld.world.provinces))
-          province.buildings.rail =
-            startingWorld.provinces[province.id].buildings.rail;
-        await load(foreignWorld);
-        await page
-          .getByRole("combobox", { name: "Grafik kalitesi", exact: true })
-          .selectOption("high");
-        const beforeForeignViews = await save("foreign-before");
-        for (const country of ["germany", "france"]) {
-          const capital = foreignWorld.world.countries[country].capital;
-          await focus(capital);
-          for (let i = 0; i < 2; i++)
-            await click(
-              page.getByRole("button", {
-                name: "Haritayı uzaklaştır",
-                exact: true,
-              }),
-            );
-          await page.waitForFunction(
-            () =>
-              Number(
-                document.querySelector('[data-testid="war-map-3d"]')?.dataset
-                  .cameraDistance,
-              ) > 350,
-          );
-          await page.waitForFunction(
-            (country) =>
-              JSON.parse(
-                document.querySelector('[data-testid="war-map-3d"]')?.dataset
-                  .trainCountries || "[]",
-              ).includes(country),
-            country,
-          );
-          const foreign = await stats();
-          assert.equal(
-            foreign.trainPositions.length,
-            foreign.trainCountries.length,
-          );
-          assert.ok(Number(foreign.railEdges) > 1);
-          const index = foreign.trainCountries.indexOf(country);
-          assert.ok(index >= 0 && country !== foreignWorld.world.player);
-          const locomotive = foreign.trainPositions[index];
-          const mapX = locomotive.x + MAP.width / 2,
-            mapY = locomotive.z + MAP.height / 2;
-          assert.ok(
-            Math.hypot(
-              mapX - GEOGRAPHY[capital].x,
-              mapY - GEOGRAPHY[capital].y,
-            ) < 450,
-            "The rendered foreign locomotive must actually be near the requested country's view",
-          );
-          await screenshot(`${country}-rail-network`);
-          samples.push({ label, view: `${country}-rail-network`, ...foreign });
-          const nearest = Object.values(foreignWorld.world.provinces)
-            .filter((p) => p.controller === country)
-            .sort(
-              (a, b) =>
-                Math.hypot(GEOGRAPHY[a.id].x - mapX, GEOGRAPHY[a.id].y - mapY) -
-                Math.hypot(GEOGRAPHY[b.id].x - mapX, GEOGRAPHY[b.id].y - mapY),
-            )[0];
-          await focus(nearest.id, 1);
-          await page.waitForFunction(
-            (country) =>
-              JSON.parse(
-                document.querySelector('[data-testid="war-map-3d"]')?.dataset
-                  .trainCountries || "[]",
-              ).includes(country),
-            country,
-          );
-          await screenshot(`${country}-train-close`);
-        }
-        await focus(f.capital, 4);
-        const returnedArmies = await stats();
-        assert.ok(Number(returnedArmies.infantryModels) >= 1);
-        assert.equal(Number(returnedArmies.vehicleModels), 1);
-        await screenshot("armies-after-foreign-pan");
-        assert.deepEqual(
-          await save("foreign-after"),
-          beforeForeignViews,
-          "Panning to foreign trains cannot alter the country's armies or any campaign state",
-        );
+        // A disconnected captured pocket and allied foreign rail must not
+        // appear. Only exact player control plus a capital connection qualifies.
+        const corridor = structuredClone(capitalFixture);
+        const bridge = f.railNeighbor,
+          pocket = "turkey-city-17";
+        for (const province of Object.values(corridor.world.provinces))
+          province.buildings.rail = 0;
+        for (const id of [f.capital, bridge, pocket])
+          corridor.world.provinces[id].buildings.rail = 2;
+        for (const id of [bridge, pocket])
+          corridor.world.provinces[id].owner = "bulgaria";
+        corridor.world.provinces[bridge].controller = "bulgaria";
+        corridor.world.provinces[pocket].controller = "turkey";
+        corridor.world.countries.turkey.allies.push("uk");
+        corridor.world.countries.uk.allies.push("turkey");
+        const foreignCapital = corridor.world.countries.uk.capital;
+        corridor.world.provinces[foreignCapital].buildings.rail = 2;
+        corridor.world = decodeSave(encodeSave(corridor.world));
+        await load(corridor);
+        await focus(f.capital);
+        const disconnected = await stats();
+        assert.ok(!disconnected.railProvinces.includes(bridge));
+        assert.ok(!disconnected.railProvinces.includes(pocket));
+        assert.ok(!disconnected.railProvinces.includes(foreignCapital));
+        assert.ok(disconnected.trainCountries.every((id) => id === "turkey"));
+        await screenshot("disconnected-captured-pocket");
+        await focus(foreignCapital, 4);
+        const alliedView = await stats();
+        assert.equal(Number(alliedView.trainCount), 0);
+        assert.ok(!alliedView.railProvinces.includes(foreignCapital));
+        await screenshot("allied-foreign-rails-hidden");
+        await focus("luxembourg-0", 4);
+        const tinyCity = await stats();
+        assert.ok(tinyCity.cityHouseCounts["luxembourg-0"] > 0);
+        assert.deepEqual(tinyCity.emptyCityProvinces, []);
+        await screenshot("luxembourg-small-city");
         passed(
-          "desktop: actual German and French locomotives and rail networks render when panning abroad, preserving all armies and the full world",
+          "desktop: allied foreign rail and a disconnected captured pocket remain hidden",
         );
-        await page
-          .getByRole("combobox", { name: "Grafik kalitesi", exact: true })
-          .selectOption("low");
+
+        corridor.world.provinces[bridge].controller = "turkey";
+        await load(corridor);
+        await focus(bridge, 1);
+        const connected = await stats();
+        for (const id of [f.capital, bridge, pocket])
+          assert.ok(
+            connected.railProvinces.includes(id),
+            `Connected captured province ${id} must render`,
+          );
+        assert.ok(Number(connected.trainCount) > 0);
+        assert.ok(connected.trainCountries.every((id) => id === "turkey"));
+        assert.equal(
+          Number(connected.captures),
+          0,
+          "Loading a changed fixture cannot pretend a conquest happened",
+        );
+        const beforePan = await save("connected-capture-before-pan");
+        await screenshot("connected-captured-rail-corridor");
+        await focus(f.capital, 4);
+        assertModels(await stats(), 2);
+        assert.deepEqual(await save("connected-capture-after-pan"), beforePan);
+        passed(
+          "desktop: a player-controlled corridor adds captured foreign rail without changing the world during camera movement",
+        );
+
+        corridor.world.provinces[bridge].controller = "bulgaria";
+        await load(corridor);
+        await focus(pocket, 1);
+        const lost = await stats();
+        assert.ok(!lost.railProvinces.includes(bridge));
+        assert.ok(!lost.railProvinces.includes(pocket));
+        assert.ok(lost.trainCountries.every((id) => id === "turkey"));
+        await screenshot("lost-corridor-removes-captured-rails");
+        samples.push({
+          label,
+          view: "player-only-network",
+          disconnected,
+          alliedView,
+          connected,
+          lost,
+        });
+        passed(
+          "desktop: losing the connecting corridor removes captured pocket railway visuals",
+        );
         const cut = structuredClone(capitalFixture);
         cut.world.provinces[f.capital].buildings.rail = 0;
         cut.world.provinces[f.railNeighbor].buildings.rail = 0;
@@ -584,25 +646,108 @@ function fixture() {
         passed(
           "desktop: removing rail facilities or enemy capital occupation removes the unsupported train network",
         );
+
+        // These are starting conditions only. The browser issues the order and
+        // the real worker must resolve casualties, conquest and capture effects.
+        const combat = structuredClone(f);
+        combat.world.armies = [];
+        combat.world.day = 1; // Avoid Bulgaria's scheduled first-day AI attack.
+        combat.ids = ["infantry", "lightTank", "artillery", "motorized"].map(
+          (type) => {
+            const army = addArmy(combat.world, "turkey", f.origin, type);
+            army.organization = 100;
+            return army.id;
+          },
+        );
+        const defender = addArmy(combat.world, "bulgaria", f.target);
+        defender.organization = 100;
+        for (const province of Object.values(combat.world.provinces)) {
+          province.buildings.infra = 10;
+          province.buildings.hub = 5;
+          province.damage = 0;
+        }
+        combat.world.countries.turkey.stock.fuel = 1000;
+        combat.world = decodeSave(encodeSave(combat.world));
+        await load(combat);
+        await setMotion(false);
+        await orderGroup(combat, 4);
+        await focus(f.target, 1);
+        assert.equal(Number((await stats()).captures), 0);
+        await click(
+          page.getByRole("button", { name: "Zamanı başlat", exact: true }),
+        );
+        const shellFrame = await page.waitForFunction(() => {
+          const d = document.querySelector(
+            '[data-testid="war-map-3d"]',
+          )?.dataset;
+          return d && Number(d.shells) > 0 ? { ...d } : false;
+        });
+        const firing = await shellFrame.jsonValue();
+        await shellFrame.dispose();
+        await pause();
+        await screenshot("actual-battle-artillery-shell");
+        const battleWorld = await save("actual-battle");
+        assert.ok(battleWorld.battles.some((b) => b.province === f.target));
+        assert.ok(
+          battleWorld.countries.turkey.casualties >
+            combat.world.countries.turkey.casualties,
+        );
+        assert.ok(
+          battleWorld.countries.bulgaria.casualties >
+            combat.world.countries.bulgaria.casualties,
+        );
+        assert.ok(
+          combat.ids.every(
+            (id) => battleWorld.armies.find((a) => a.id === id)?.strength < 100,
+          ),
+        );
+        assert.ok(Number(firing.artilleryModels) >= 1);
+        assert.ok(Number(firing.combatFormations) >= 1);
+        assert.ok(Number(firing.shells) > 0);
+        samples.push({
+          label,
+          view: "actual-battle-artillery-shell",
+          ...firing,
+        });
+        passed(
+          "desktop: a real group battle causes casualties and visibly fires an artillery shell",
+        );
+
+        await click(
+          page.getByRole("button", { name: "Zamanı başlat", exact: true }),
+        );
+        const captureFrame = await page.waitForFunction(() => {
+          const d = document.querySelector(
+            '[data-testid="war-map-3d"]',
+          )?.dataset;
+          return d && Number(d.captures) > 0 ? { ...d } : false;
+        });
+        const celebration = await captureFrame.jsonValue();
+        await captureFrame.dispose();
+        await pause();
+        await screenshot("actual-city-capture-animation");
+        const capturedWorld = await save("actual-combat-capture");
+        assert.equal(capturedWorld.provinces[f.target].controller, "turkey");
+        assert.ok(
+          combat.ids.every(
+            (id) =>
+              capturedWorld.armies.find((a) => a.id === id)?.province ===
+              f.target,
+          ),
+        );
+        assert.ok(Number(celebration.captures) > 0);
+        samples.push({
+          label,
+          view: "actual-city-capture-animation",
+          ...celebration,
+        });
+        passed(
+          "desktop: actual conquest moves every attacker into the city and produces a capture animation",
+        );
+        await setMotion(true);
       }
       await load(f);
-      await focus(f.target);
-      await click(
-        page.locator('[data-formation^="turkey:' + f.origin + ':"]').first(),
-      );
-      if (mobile) {
-        await click(
-          page.getByRole("button", {
-            name: "Haritada hedef seç · 3 tümen",
-            exact: true,
-          }),
-        );
-        await close();
-      } else await close();
-      const box = await canvas.boundingBox();
-      const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
-      if (mobile) await page.touchscreen.tap(point.x, point.y);
-      else await page.mouse.click(point.x, point.y, { button: "right" });
+      await orderGroup(f, 3);
       let moved = await save("ordered");
       for (const id of f.ids) {
         const a = moved.armies.find((a) => a.id === id);
@@ -638,7 +783,7 @@ function fixture() {
         ),
       );
       await focus(f.target, 4);
-      assert.ok(Number((await stats()).infantryModels) >= 3);
+      assertModels(await stats(), 3);
       await screenshot("group-captured");
       assert.equal(
         await page.evaluate(

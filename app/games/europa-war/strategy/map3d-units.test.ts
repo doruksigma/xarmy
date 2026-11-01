@@ -1,157 +1,400 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import * as THREE from "three";
-import type { Army, UnitType } from "./types";
+import type { Army } from "./types";
 import {
   createUnitModels,
   MAX_UNIT_MINIATURES,
+  MAX_UNIT_EFFECTS,
   UNIT_MODEL_SCALE,
   UNIT_LABEL_HEIGHT,
+  unitDisplayLayout,
   type UnitFormation,
 } from "./map3d-units";
 
-const army = (type: UnitType, id: string = type): Army =>
-  ({ id, type }) as Army;
-const formation = (types: UnitType[], moving = false): UnitFormation => ({
-  armies: types.map((type, i) => army(type, `${type}-${i}`)),
+const formation = (count: number, moving = false): UnitFormation => ({
+  armies: Array.from(
+    { length: count },
+    (_, i) =>
+      ({ id: `army-${i}`, type: i % 2 ? "heavyTank" : "infantry" }) as Army,
+  ),
   position: new THREE.Vector3(25, 12, 30),
   angle: Math.PI / 4,
   moving,
   tint: 0xcb4848,
 });
 const settings = { quality: "medium" as const, distance: 450 };
+const mesh = (scene: THREE.Scene, name: string) =>
+  scene.getObjectByName(`unit-${name}`) as THREE.InstancedMesh;
+const matrices = (scene: THREE.Scene, name: string) => {
+  const m = mesh(scene, name);
+  return Array.from(m.instanceMatrix.array.slice(0, m.count * 16));
+};
+const sceneSnapshot = (scene: THREE.Scene) =>
+  scene.children.map((object) => {
+    const m = object as THREE.InstancedMesh;
+    return {
+      name: m.name,
+      count: m.count,
+      matrix: Array.from(m.instanceMatrix.array.slice(0, m.count * 16)),
+    };
+  });
 
-test("3D birlikler gerçek tümen türlerine göre ayrılır; kalabalık tek bir asker olarak çizilmez", () => {
+test("1/2/3/4/12 tümen, gerçek tipleri değiştirmeden tam istenen sayı sembollerini yakın ve uzak çizer", () => {
   const scene = new THREE.Scene(),
     models = createUnitModels(scene);
-  const groups = [
-    formation(["infantry", "infantry", "infantry"]),
-    formation(["lightTank", "motorized", "artillery"]),
+  const cases = [
+    { count: 1, kinds: ["infantry"], counts: [1, 0, 0, 0] },
+    { count: 2, kinds: ["tank", "infantry"], counts: [1, 1, 0, 0] },
+    {
+      count: 3,
+      kinds: ["artillery", "infantry", "tank"],
+      counts: [1, 1, 1, 0],
+    },
+    {
+      count: 4,
+      kinds: ["truck", "infantry", "artillery", "tank"],
+      counts: [1, 1, 1, 1],
+    },
+    {
+      count: 12,
+      kinds: ["truck", "infantry", "artillery", "tank"],
+      counts: [1, 1, 1, 1],
+    },
   ];
-  const before = JSON.stringify(groups);
-  models.update(groups, 100, settings);
-  assert.equal(models.stats.infantry, 3);
-  assert.equal(models.stats.vehicles, 3);
+  for (const item of cases)
+    for (const options of [
+      settings,
+      { quality: "low" as const, distance: 1800 },
+    ]) {
+      const group = formation(item.count),
+        before = JSON.stringify(group);
+      assert.deepEqual(
+        unitDisplayLayout(item.count).map((s) => s.kind),
+        item.kinds,
+      );
+      models.update([group], 100, options);
+      assert.deepEqual(
+        [
+          models.stats.infantry,
+          models.stats.tanks,
+          models.stats.artillery,
+          models.stats.trucks,
+        ],
+        item.counts,
+      );
+      assert.equal(JSON.stringify(group), before);
+    }
+  assert.equal(unitDisplayLayout(0).length, 0);
+  assert.equal(unitDisplayLayout(NaN).length, 0);
   assert.equal(
     scene.children.length,
-    7,
-    "all miniatures use only seven shared draw batches",
+    18,
+    "shared batches do not grow with army count",
   );
-  const meshes = scene.children as THREE.InstancedMesh[];
-  assert.equal(
-    meshes[1].count,
-    6,
-    "each infantry miniature has two independently animated legs",
-  );
-  assert.equal(meshes[2].count, 1);
-  assert.equal(meshes[3].count, 1);
-  assert.equal(meshes[4].count, 1);
-  assert.equal(
-    JSON.stringify(groups),
-    before,
-    "rendering does not change campaign formations",
-  );
-  for (const mesh of meshes) {
-    const positions = mesh.geometry.getAttribute("position");
-    for (const value of positions.array) assert.ok(Number.isFinite(value));
-    assert.ok(positions.count < 12000, `${mesh.name}: bounded source mesh`);
+  for (const m of scene.children as THREE.InstancedMesh[]) {
+    for (const name of ["position", "normal"])
+      for (const value of m.geometry.getAttribute(name).array)
+        assert.ok(Number.isFinite(value), m.name);
+    assert.ok(m.geometry.getAttribute("position").count < 12000, m.name);
   }
-  const bodyBounds = meshes[0].geometry.boundingBox!;
+  const bounds = mesh(scene, "infantry-body").geometry.boundingBox!;
   assert.ok(
-    bodyBounds.max.y * UNIT_MODEL_SCALE < UNIT_LABEL_HEIGHT,
-    "labels clear the helmet",
-  );
-  assert.ok(
-    bodyBounds.max.y * UNIT_MODEL_SCALE > 10,
-    "infantry is substantially larger than the old capsule figure",
+    bounds.max.y * UNIT_MODEL_SCALE > 10 &&
+      bounds.max.y * UNIT_MODEL_SCALE < UNIT_LABEL_HEIGHT,
   );
   models.dispose();
 });
 
-test("yürüme gerçek hareket durumunu izler; duraklatma ve azaltılmış hareket animasyonu sabitler", () => {
+test("takviye geldiğinde mevcut semboller sabit tip yuvalarında kalır", () => {
+  const all = unitDisplayLayout(4);
+  for (const count of [1, 2, 3])
+    for (const slot of unitDisplayLayout(count)) {
+      const existing = all.find((s) => s.kind === slot.kind)!;
+      assert.equal(slot.x, existing.x);
+      assert.equal(slot.z, existing.z);
+    }
+});
+
+test("her tür hareket animasyonu oynatır; hareketsiz durumda kendi kendine yürümez veya ateş etmez", () => {
   const scene = new THREE.Scene(),
-    models = createUnitModels(scene);
-  const group = formation(["infantry"], true);
-  const legs = scene.children[1] as THREE.InstancedMesh;
+    models = createUnitModels(scene),
+    group = formation(4, true);
   models.update([group], 0, settings);
-  const first = Array.from(legs.instanceMatrix.array.slice(0, 32));
-  models.update([group], 120, settings);
-  assert.notDeepEqual(
-    Array.from(legs.instanceMatrix.array.slice(0, 32)),
-    first,
+  const names = [
+    "infantry-legs",
+    "tank-treads",
+    "vehicle-wheels",
+    "truck-body",
+  ];
+  const before = names.map((name) => matrices(scene, name));
+  models.update([group], 180, settings);
+  names.forEach((name, i) =>
+    assert.notDeepEqual(matrices(scene, name), before[i], name),
   );
-  models.update([group], 300, { ...settings, paused: true });
-  const paused = Array.from(legs.instanceMatrix.array.slice(0, 32));
-  models.update([group], 800, { ...settings, paused: true });
-  assert.deepEqual(Array.from(legs.instanceMatrix.array.slice(0, 32)), paused);
-  models.update([group], 900, { ...settings, reduced: true });
-  assert.deepEqual(Array.from(legs.instanceMatrix.array.slice(0, 32)), paused);
+  assert.equal(
+    models.stats.muzzleFlashes + models.stats.shells + models.stats.impacts,
+    0,
+  );
+  group.moving = false;
+  models.update([group], 300, settings);
+  const idle = sceneSnapshot(scene);
+  models.update([group], 550, settings);
+  assert.deepEqual(sceneSnapshot(scene), idle);
   models.dispose();
 });
 
-test("dağılan askerlerin her biri kendi ayak konumundaki eğimli araziye oturur", () => {
-  const scene = new THREE.Scene();
-  const ground = (x: number, z: number) => 20 + x * 0.08 + z * 0.03;
-  const models = createUnitModels(scene, ground);
-  models.update([formation(["infantry", "infantry", "infantry"])], 0, {
-    ...settings,
-    paused: true,
-  });
-  const body = scene.children[0] as THREE.InstancedMesh;
-  const matrix = new THREE.Matrix4();
-  const heights = new Set<number>();
-  for (let i = 0; i < body.count; i++) {
-    body.getMatrixAt(i, matrix);
+test("gerçek çatışma tanımı tüfek ve tank tepkisini, top mermisi yayını, etkiyi ve kamyon desteğini açar", () => {
+  const scene = new THREE.Scene(),
+    models = createUnitModels(scene),
+    group = formation(4);
+  group.combat = { key: "battle-1", target: new THREE.Vector3(80, 12, 60) };
+  const before = JSON.stringify(group);
+  let flashes = 0,
+    shellCount = 0,
+    impacts = 0,
+    maxHeight = -Infinity;
+  let firstBarrel: number[] | undefined,
+    barrelMoved = false;
+  for (let tick = 0; tick < 100; tick++) {
+    models.update([group], tick * 100, settings);
+    flashes += models.stats.muzzleFlashes;
+    shellCount += models.stats.shells;
+    impacts += models.stats.impacts;
+    const barrel = matrices(scene, "tank-barrel");
+    if (firstBarrel && JSON.stringify(firstBarrel) !== JSON.stringify(barrel))
+      barrelMoved = true;
+    firstBarrel ??= barrel;
+    assert.ok(
+      mesh(scene, "support-crates").count > 0,
+      "truck handles supplies only during an actual event",
+    );
+    const shells = mesh(scene, "artillery-shells");
+    if (shells.count)
+      maxHeight = Math.max(maxHeight, shells.instanceMatrix.array[13]);
+  }
+  assert.ok(flashes > 0 && shellCount > 0 && impacts > 0 && barrelMoved);
+  assert.ok(
+    maxHeight > 24,
+    "shell rises above its source/target along a visible ballistic arc",
+  );
+  assert.equal(
+    JSON.stringify(group),
+    before,
+    "effects cannot inflict damage or alter routes/army types",
+  );
+  group.combat = undefined;
+  models.update([group], 10100, settings);
+  assert.equal(
+    models.stats.combatFormations +
+      models.stats.muzzleFlashes +
+      models.stats.shells +
+      models.stats.impacts,
+    0,
+  );
+  assert.equal(mesh(scene, "support-crates").count, 0);
+  models.dispose();
+});
+
+test("duraklatma ve azaltılmış hareket yürüyüşü, taret tepkisini ve uçan mermileri dondurur", () => {
+  const scene = new THREE.Scene(),
+    models = createUnitModels(scene),
+    group = formation(4, true);
+  group.combat = {
+    key: "battle-freeze",
+    target: new THREE.Vector3(70, 12, 70),
+  };
+  for (let tick = 0; tick < 5; tick++)
+    models.update([group], tick * 100, settings);
+  const active = sceneSnapshot(scene);
+  models.update([group], 900, { ...settings, paused: true });
+  assert.deepEqual(sceneSnapshot(scene), active);
+  models.update([group], 1900, { ...settings, paused: true });
+  assert.deepEqual(sceneSnapshot(scene), active);
+  models.update([group], 2400, { ...settings, reduced: true });
+  assert.deepEqual(sceneSnapshot(scene), active);
+  models.dispose();
+});
+
+test("uzun süredir açık haritada 2 FPS ile başlayan kısa savaş ilk iki çizimde top mermisini gösterir", () => {
+  for (const idleFrames of [0, 73, 14_401]) {
+    const scene = new THREE.Scene(),
+      models = createUnitModels(scene),
+      group = formation(4);
+    let now = 1_000_000;
+    models.update([], now, settings);
+    for (let i = 0; i < idleFrames; i++)
+      models.update([], (now += 500), settings);
+    const key = `battle-${idleFrames}-${"Türkiye-Bulgaristan-1936-".repeat(40)}`;
+    group.combat = { key, target: new THREE.Vector3(80, 12, 60) };
+    models.update([group], (now += 500), settings);
+    assert.equal(
+      models.stats.muzzleFlashes,
+      3,
+      "all weapons fire on battle entry",
+    );
+    models.update([group], (now += 500), settings);
+    assert.equal(
+      models.stats.shells,
+      1,
+      "next 2-FPS frame must show the shell",
+    );
+    const initialShell = matrices(scene, "artillery-shells");
+    models.update([group], (now += 500), settings);
+    assert.equal(models.stats.shells, 1);
+    assert.notDeepEqual(matrices(scene, "artillery-shells"), initialShell);
+    const frozen = sceneSnapshot(scene);
+    models.update([group], (now += 500), { ...settings, paused: true });
+    assert.deepEqual(sceneSnapshot(scene), frozen);
+    models.update([group], (now += 500), { ...settings, reduced: true });
+    assert.deepEqual(sceneSnapshot(scene), frozen);
+    group.combat = undefined;
+    models.update([group], (now += 500), settings);
+    assert.equal(models.stats.shells + models.stats.muzzleFlashes, 0);
+    // Reusing the same ID after its battle disappeared must start fresh; an
+    // abandoned per-battle clock would silently skip the first shot here.
+    group.combat = { key, target: new THREE.Vector3(80, 12, 60) };
+    models.update([group], (now += 500), settings);
+    assert.equal(models.stats.muzzleFlashes, 3);
+    models.update([group], (now += 500), settings);
+    assert.equal(models.stats.shells, 1);
+    models.dispose();
+  }
+});
+
+test("eşzamanlı savaşlar hemen ateş eder fakat sonraki top atışları olay kimliğine göre ayrışır", () => {
+  const scene = new THREE.Scene(),
+    models = createUnitModels(scene),
+    a = formation(3),
+    b = formation(3);
+  a.combat = { key: "battle-A", target: new THREE.Vector3(80, 12, 60) };
+  b.combat = { key: "battle-B", target: new THREE.Vector3(80, 12, 60) };
+  models.update([a, b], 0, settings);
+  assert.equal(models.stats.muzzleFlashes, 6);
+  let separated = false;
+  for (let tick = 1; tick <= 65; tick++) {
+    models.update([a, b], tick * 100, settings);
+    if (tick < 44) continue;
+    const barrels = matrices(scene, "artillery-barrel");
+    if (barrels.slice(0, 16).some((v, i) => v !== barrels[i + 16]))
+      separated = true;
+  }
+  assert.ok(separated, "later recoil cycles must not remain synchronized");
+  models.dispose();
+});
+
+test("yalnız gerçek ele geçirme olayı bayrağı yükseltir; pause ilerlemeyi korur ve olay bitince gösterim temizlenir", () => {
+  const scene = new THREE.Scene(),
+    models = createUnitModels(scene),
+    group = formation(4);
+  models.update([group], 0, settings);
+  assert.equal(models.stats.captures, 0);
+  group.capture = { key: "captured-town", progress: 0.05 };
+  models.update([group], 100, settings);
+  const rising = matrices(scene, "capture-flags");
+  assert.equal(
+    (mesh(scene, "capture-flags").material as THREE.Material).side,
+    THREE.DoubleSide,
+    "the capture cloth remains visible from either camera side",
+  );
+  assert.equal(models.stats.captures, 1);
+  group.capture.progress = 0.5;
+  models.update([group], 200, settings);
+  assert.notDeepEqual(matrices(scene, "capture-flags"), rising);
+  const held = sceneSnapshot(scene);
+  group.capture.progress = 0.9;
+  models.update([group], 900, { ...settings, paused: true });
+  assert.deepEqual(sceneSnapshot(scene), held);
+  group.capture = undefined;
+  models.update([group], 1000, settings);
+  assert.equal(models.stats.captures, 0);
+  assert.equal(mesh(scene, "capture-poles").count, 0);
+  assert.equal(mesh(scene, "capture-flags").count, 0);
+  models.dispose();
+});
+
+test("dört farklı model kendi konumundaki eğimli araziye basar", () => {
+  const scene = new THREE.Scene(),
+    ground = (x: number, z: number) => 20 + x * 0.08 + z * 0.03,
+    models = createUnitModels(scene, ground);
+  models.update([formation(4)], 0, { ...settings, paused: true });
+  const matrix = new THREE.Matrix4(),
+    heights = new Set<number>();
+  for (const name of [
+    "infantry-body",
+    "tank-hull",
+    "truck-body",
+    "artillery-base",
+  ]) {
+    mesh(scene, name).getMatrixAt(0, matrix);
     const [x, y, z] = matrix.elements.slice(12, 15);
     assert.ok(Math.abs(y - ground(x, z)) < 0.00001);
     heights.add(y);
   }
-  assert.equal(heights.size, 3);
+  assert.equal(heights.size, 4);
   models.dispose();
 });
 
-test("ülke rengi üniformayı boyamaz; yakın ayrıntı LOD'u kaynakları yeniden oluşturmaz", () => {
+test("ülke rengi yalnız yamayı değiştirir; uzak LOD modelleri eksiltmez veya geometriyi yeniden yaratmaz", () => {
   const scene = new THREE.Scene(),
-    models = createUnitModels(scene);
-  const group = formation(["infantry"]);
-  const meshes = scene.children as THREE.InstancedMesh[];
-  const ids = meshes.map((mesh) => mesh.geometry.uuid);
-  const clothColors = Array.from(
-    meshes[0].geometry.getAttribute("color").array,
+    models = createUnitModels(scene),
+    group = formation(12);
+  const ids = scene.children.map(
+      (m) => (m as THREE.InstancedMesh).geometry.uuid,
+    ),
+    cloth = Array.from(
+      mesh(scene, "infantry-body").geometry.getAttribute("color").array,
+    );
+  models.update([group], 0, settings);
+  const color = Array.from(
+    mesh(scene, "country-patches").instanceColor!.array.slice(0, 12),
   );
-  models.update([group], 1, settings);
-  assert.equal(models.stats.detail, true);
-  const accentBefore = Array.from(meshes[6].instanceColor!.array.slice(0, 3));
   group.tint = 0x2852cc;
-  models.update([group], 2, { quality: "low", distance: 1400 });
+  models.update([group], 100, { quality: "low", distance: 1800 });
   assert.equal(models.stats.detail, false);
-  assert.equal(meshes[5].count, 0);
-  assert.equal(meshes[0].instanceColor, null);
+  assert.equal(mesh(scene, "infantry-details").count, 0);
   assert.deepEqual(
-    Array.from(meshes[0].geometry.getAttribute("color").array),
-    clothColors,
+    [
+      models.stats.infantry,
+      models.stats.tanks,
+      models.stats.artillery,
+      models.stats.trucks,
+    ],
+    [1, 1, 1, 1],
+  );
+  assert.equal(mesh(scene, "infantry-body").instanceColor, null);
+  assert.deepEqual(
+    Array.from(
+      mesh(scene, "infantry-body").geometry.getAttribute("color").array,
+    ),
+    cloth,
   );
   assert.notDeepEqual(
-    Array.from(meshes[6].instanceColor!.array.slice(0, 3)),
-    accentBefore,
+    Array.from(
+      mesh(scene, "country-patches").instanceColor!.array.slice(0, 12),
+    ),
+    color,
   );
   assert.deepEqual(
-    meshes.map((mesh) => mesh.geometry.uuid),
+    scene.children.map((m) => (m as THREE.InstancedMesh).geometry.uuid),
     ids,
   );
   models.dispose();
 });
 
-test("büyük ordular sabit örnek sınırını aşmaz; tekrar dispose tüm geometri ve materyalleri bir kez bırakır", () => {
+test("çok büyük savaşta modeller ve efektler kapasiteyi aşmaz; dispose her kaynağı bir kez bırakır", () => {
   const scene = new THREE.Scene(),
-    models = createUnitModels(scene);
-  const group = formation(["infantry"]);
-  const groups = Array.from({ length: MAX_UNIT_MINIATURES + 5 }, () => group);
-  const meshes = scene.children as THREE.InstancedMesh[];
-  const geometries = new Set(meshes.map((mesh) => mesh.geometry));
-  const materials = new Set(
-    meshes.map((mesh) => mesh.material as THREE.Material),
+    models = createUnitModels(scene),
+    group = formation(4);
+  group.combat = { key: "large-battle", target: new THREE.Vector3(80, 12, 60) };
+  group.capture = { key: "large-capture", progress: 0.2 };
+  const groups = Array.from(
+    { length: MAX_UNIT_MINIATURES / 4 + 5 },
+    () => group,
   );
+  const meshes = scene.children as THREE.InstancedMesh[],
+    geometries = new Set(meshes.map((m) => m.geometry)),
+    materials = new Set(meshes.map((m) => m.material as THREE.Material));
   let releasedGeometry = 0,
     releasedMaterial = 0;
   geometries.forEach((g) =>
@@ -160,12 +403,28 @@ test("büyük ordular sabit örnek sınırını aşmaz; tekrar dispose tüm geom
   materials.forEach((m) =>
     m.addEventListener("dispose", () => releasedMaterial++),
   );
-  models.update(groups, 100, { quality: "low", distance: 1500 });
-  assert.equal(models.stats.infantry, MAX_UNIT_MINIATURES);
-  for (const mesh of meshes) assert.ok(mesh.count <= mesh.instanceMatrix.count);
+  models.update(groups, 0, { quality: "low", distance: 1500 });
+  assert.equal(
+    models.stats.infantry + models.stats.vehicles,
+    MAX_UNIT_MINIATURES,
+  );
+  assert.equal(models.stats.infantry, models.stats.tanks);
+  assert.equal(models.stats.tanks, models.stats.artillery);
+  assert.equal(models.stats.artillery, models.stats.trucks);
+  for (const m of meshes) assert.ok(m.count <= m.instanceMatrix.count, m.name);
+  for (const count of [
+    models.stats.shells,
+    models.stats.muzzleFlashes,
+    models.stats.impacts,
+    models.stats.captures,
+  ])
+    assert.ok(count <= MAX_UNIT_EFFECTS);
+  models.update([], 100, settings);
+  assert.ok(meshes.every((m) => !m.visible));
   models.dispose();
   models.dispose();
   assert.equal(scene.children.length, 0);
   assert.equal(releasedGeometry, geometries.size);
   assert.equal(releasedMaterial, materials.size);
+  assert.equal(models.stats.instances, 0);
 });

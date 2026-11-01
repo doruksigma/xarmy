@@ -6,8 +6,8 @@ import {
   provincePolygons,
 } from "./map3d-geometry";
 import {
-  buildGlobalRailNetwork,
-  railNetworkSignature,
+  buildPlayerRailNetwork,
+  playerRailNetworkSignature,
 } from "./map3d-rail-network";
 import {
   GRAPHICS_QUALITY,
@@ -16,6 +16,8 @@ import {
   type GraphicsQuality,
 } from "./map3d-visuals";
 import type { World } from "./types";
+import { UNIT_DISPLAY_LAYOUTS, UNIT_MODEL_FOOTPRINTS } from "./map3d-units";
+import { TRAIN_DIMENSIONS, TRAIN_WORLD_SCALE } from "./map3d-train-models";
 
 type Item = {
   x: number;
@@ -35,17 +37,98 @@ type RailSegment = {
   dz: number;
   length2: number;
 };
-// Idle formations face south. This reserves all 1–3 representative layouts,
-// including heavy tanks at scale 2.45, renderer offsets and a small safety gap.
-// Rear corners remain available to small towns whose province is very narrow.
-const STAGING = [
-  { left: -22, right: 22, top: -12.8, bottom: 7.7 },
-  { left: -8, right: 8, top: 7.7, bottom: 15.2 },
-] as const;
+
+export interface SceneryHouse {
+  province: string;
+  x: number;
+  z: number;
+  width: number;
+  depth: number;
+  height: number;
+  angle: number;
+  /** Index of the actual rendered masonry instance, not a planned slot. */
+  instance: number;
+}
+
+export interface SceneryStats {
+  houses: number;
+  housesByProvince: Readonly<Record<string, number>>;
+  emptyProvinces: readonly string[];
+  rebuilds: number;
+  streetBars: number;
+}
+// All count layouts share fixed per-kind slots. Reserve the four actual body
+// footprints at the renderer's idle yaw (PI), leaving gaps for narrow towns.
+// Elevated gun barrels may overhang roofs; do not erase an entire city for them.
+const STAGING = UNIT_DISPLAY_LAYOUTS[4].map((slot) => {
+  const body = UNIT_MODEL_FOOTPRINTS[slot.kind];
+  return {
+    left: -slot.x - body.halfWidth - 0.1,
+    right: -slot.x + body.halfWidth + 0.1,
+    top: -slot.z - body.front - 0.1,
+    bottom: -slot.z + body.rear + 0.1,
+  };
+});
 const TOWN_SLOTS = Array.from({ length: 24 * 24 }, (_, i) => ({
   dx: ((i % 24) - 11.5) * 3.15,
   dz: (Math.floor(i / 24) - 11.5) * 3.15,
 })).sort((a, b) => Math.hypot(a.dx, a.dz) - Math.hypot(b.dx, b.dz));
+const RAIL_CLEARANCE =
+  (TRAIN_DIMENSIONS.locomotive.width * TRAIN_WORLD_SCALE) / 2 + 0.33;
+
+/** Exact segment-to-oriented-footprint distance avoids circular exclusion zones
+ * swallowing narrow stations and towns while preserving the moving train lane. */
+function railDistanceSquared(
+  segment: RailSegment,
+  x: number,
+  z: number,
+  width: number,
+  depth: number,
+  angle: number,
+) {
+  const c = Math.cos(angle),
+    s = Math.sin(angle);
+  const ax = (segment.x - x) * c - (segment.z - z) * s;
+  const az = (segment.x - x) * s + (segment.z - z) * c;
+  const dx = segment.dx * c - segment.dz * s;
+  const dz = segment.dx * s + segment.dz * c;
+  const hx = width / 2,
+    hz = depth / 2;
+  let near = 0,
+    far = 1;
+  for (const [origin, delta, half] of [
+    [ax, dx, hx],
+    [az, dz, hz],
+  ]) {
+    if (Math.abs(delta) < 1e-9) {
+      if (Math.abs(origin) > half) {
+        near = Infinity;
+        break;
+      }
+    } else {
+      const a = (-half - origin) / delta,
+        b = (half - origin) / delta;
+      near = Math.max(near, Math.min(a, b));
+      far = Math.min(far, Math.max(a, b));
+    }
+  }
+  if (near <= far) return 0;
+  const toBox = (px: number, pz: number) =>
+    Math.max(0, Math.abs(px) - hx) ** 2 + Math.max(0, Math.abs(pz) - hz) ** 2;
+  let distance = Math.min(toBox(ax, az), toBox(ax + dx, az + dz));
+  for (const cx of [-hx, hx])
+    for (const cz of [-hz, hz]) {
+      const t = Math.max(
+        0,
+        Math.min(1, ((cx - ax) * dx + (cz - az) * dz) / (segment.length2 || 1)),
+      );
+      distance = Math.min(
+        distance,
+        (cx - ax - dx * t) ** 2 + (cz - az - dz * t) ** 2,
+      );
+    }
+  return distance;
+}
 
 /** Merge prototypes once, without adding a mesh/draw call for every window. */
 function merge(parts: THREE.BufferGeometry[]) {
@@ -202,7 +285,10 @@ function hangarRoof() {
 }
 
 /** Original miniature town kits. All details share thirteen instanced batches. */
-export function createScenery(scene: THREE.Scene) {
+export function createScenery(
+  scene: THREE.Scene,
+  groundHeightAt: (x: number, y: number) => number = heightAt,
+) {
   const group = new THREE.Group();
   group.name = "province-scenery";
   scene.add(group);
@@ -260,24 +346,46 @@ export function createScenery(scene: THREE.Scene) {
   });
   const dummy = new THREE.Object3D(),
     color = new THREE.Color();
+  const stats: SceneryStats = {
+    houses: 0,
+    housesByProvince: {},
+    emptyProvinces: [],
+    rebuilds: 0,
+    streetBars: 0,
+  };
+  const houses: SceneryHouse[] = [];
   let quality: GraphicsQuality = "medium",
     current: World | null = null,
     signature = "",
     railSignature = "",
     railGeometrySignature = "";
   const railSegments = new Map<string, RailSegment[]>();
-  const fallbackSites = new Map<string, { x: number; z: number } | null>();
+  const boundarySegments = new Map<string, RailSegment[]>();
+  type Cottage = {
+    x: number;
+    z: number;
+    width: number;
+    depth: number;
+    angle: number;
+  };
+  const fallbackSites = new Map<string, Cottage[]>();
+  const fallbackCandidates = new Map<
+    string,
+    { x: number; z: number; distance: number }[]
+  >();
+  let disposed = false;
   function update(world: World) {
+    if (disposed) return;
     current = world;
     const construction = new Set(
       Object.values(world.countries).flatMap((c) =>
         c.construction.map((q) => q.province),
       ),
     );
-    const nextRailSignature = railNetworkSignature(world);
+    const nextRailSignature = playerRailNetworkSignature(world);
     if (nextRailSignature !== railSignature) {
       railSignature = nextRailSignature;
-      const edges = buildGlobalRailNetwork(world).edges;
+      const edges = buildPlayerRailNetwork(world).edges;
       const visibleSignature = edges
         .map(
           (edge) =>
@@ -314,6 +422,11 @@ export function createScenery(scene: THREE.Scene) {
         .join("|");
     if (nextSignature === signature) return;
     signature = nextSignature;
+    stats.rebuilds++;
+    stats.houses = 0;
+    houses.length = 0;
+    const housesByProvince: Record<string, number> = {};
+    stats.housesByProvince = housesByProvince;
     const items: Item[][] = geometries.map(() => []);
     const density = GRAPHICS_QUALITY[quality].scenery;
     const houseDensity = 0.42 + density * 0.58;
@@ -328,17 +441,19 @@ export function createScenery(scene: THREE.Scene) {
       angle = 0,
       lift = 0,
     ) {
-      if (items[kind].length >= capacities[kind]) return;
+      if (items[kind].length >= capacities[kind]) return undefined;
+      const index = items[kind].length;
       items[kind].push({
         x: x - MAP.width / 2,
         z: z - MAP.height / 2,
-        y: heightAt(x, z) + sy / 2 + lift,
+        y: groundHeightAt(x, z) + sy / 2 + lift,
         sx,
         sy,
         sz,
         angle,
         color: tint,
       });
+      return index;
     }
     function footprint(
       id: string,
@@ -350,19 +465,105 @@ export function createScenery(scene: THREE.Scene) {
     ) {
       const c = Math.cos(angle),
         s = Math.sin(angle);
-      return [
-        [0, 0],
-        [-w / 2, -d / 2],
-        [-w / 2, d / 2],
-        [w / 2, -d / 2],
-        [w / 2, d / 2],
-      ].every(([dx, dz]) =>
-        containsProvincePoint(id, x + dx * c + dz * s, z - dx * s + dz * c),
+      if (
+        ![
+          [0, 0],
+          [-w / 2, -d / 2],
+          [-w / 2, d / 2],
+          [w / 2, -d / 2],
+          [w / 2, d / 2],
+        ].every(([dx, dz]) =>
+          containsProvincePoint(id, x + dx * c + dz * s, z - dx * s + dz * c),
+        )
+      )
+        return false;
+      let segments = boundarySegments.get(id);
+      if (!segments) {
+        segments = [];
+        for (const part of provincePolygons(id))
+          for (const ring of [part.outer, ...part.holes]) {
+            for (let i = 0; i < ring.length; i++) {
+              const a = ring[i],
+                b = ring[(i + 1) % ring.length];
+              const dx = b.x - a.x,
+                dz = b.y - a.y;
+              segments.push({
+                x: a.x,
+                z: a.y,
+                dx,
+                dz,
+                length2: dx * dx + dz * dz,
+              });
+            }
+          }
+        boundarySegments.set(id, segments);
+      }
+      // Corner samples alone miss concave coastal bays and small enclosed
+      // holes. No real boundary edge may enter the entire roof footprint.
+      return segments.every(
+        (segment) => railDistanceSquared(segment, x, z, w, d, angle) > 1e-10,
       );
     }
     for (const p of MAP.provinces) {
       const state = world.provinces[p.id];
       if (!state) continue;
+      housesByProvince[p.id] = 0;
+      const provinceHouses: SceneryHouse[] = [];
+      function recordHouse(
+        x: number,
+        z: number,
+        width: number,
+        depth: number,
+        height: number,
+        angle: number,
+        instance: number | undefined,
+      ) {
+        if (instance === undefined) return;
+        const house = {
+          province: p.id,
+          x,
+          z,
+          width,
+          depth,
+          height,
+          angle,
+          instance,
+        };
+        houses.push(house);
+        provinceHouses.push(house);
+        housesByProvince[p.id]++;
+        stats.houses++;
+      }
+      function separateHouse(
+        x: number,
+        z: number,
+        width: number,
+        depth: number,
+        angle = 0,
+      ) {
+        const halfX =
+          (Math.abs(Math.cos(angle)) * width +
+            Math.abs(Math.sin(angle)) * depth) /
+          2;
+        const halfZ =
+          (Math.abs(Math.sin(angle)) * width +
+            Math.abs(Math.cos(angle)) * depth) /
+          2;
+        return provinceHouses.every((house) => {
+          const otherX =
+            (Math.abs(Math.cos(house.angle)) * house.width +
+              Math.abs(Math.sin(house.angle)) * house.depth) *
+            0.55;
+          const otherZ =
+            (Math.abs(Math.sin(house.angle)) * house.width +
+              Math.abs(Math.cos(house.angle)) * house.depth) *
+            0.55;
+          return (
+            Math.abs(x - house.x) > halfX + otherX + 0.12 ||
+            Math.abs(z - house.z) > halfZ + otherZ + 0.12
+          );
+        });
+      }
       const random = visualRandom(visualSeed(p.id));
       const urban = p.terrain === "urban";
       const homes = Math.min(
@@ -406,22 +607,11 @@ export function createScenery(scene: THREE.Scene) {
           )
         )
           return false;
-        // The train is less than two units wide. Only its real path plus a
-        // modest 1.8-unit corridor is reserved; no wide city exclusion zone.
-        const radius = Math.hypot(width, depth) / 2 + 1.8;
+        // Reserve the actual moving train corridor, not a house-sized circle.
         for (const segment of railSegments.get(p.id) ?? []) {
-          const t = Math.max(
-            0,
-            Math.min(
-              1,
-              ((x - segment.x) * segment.dx + (z - segment.z) * segment.dz) /
-                (segment.length2 || 1),
-            ),
-          );
           if (
-            (x - segment.x - segment.dx * t) ** 2 +
-              (z - segment.z - segment.dz * t) ** 2 <
-            radius * radius
+            railDistanceSquared(segment, x, z, width, depth, angle) <
+            RAIL_CLEARANCE ** 2
           )
             return false;
         }
@@ -466,17 +656,19 @@ export function createScenery(scene: THREE.Scene) {
         )
           continue;
         landSlots++;
-        if (keep > houseDensity) continue;
+        // Density may remove extra homes, never the first visible town cluster.
+        if (keep > houseDensity && housesByProvince[p.id] >= 3) continue;
         const terrain = [
-          heightAt(point.x - width / 2, point.z - depth / 2),
-          heightAt(point.x + width / 2, point.z + depth / 2),
-          heightAt(point.x, point.z),
+          groundHeightAt(point.x - width / 2, point.z - depth / 2),
+          groundHeightAt(point.x + width / 2, point.z + depth / 2),
+          groundHeightAt(point.x, point.z),
         ];
         const foundation = Math.min(
           2.2,
           Math.max(...terrain) - Math.min(...terrain) + 0.24,
         );
-        const lift = Math.max(...terrain) - heightAt(point.x, point.z) + 0.15;
+        const lift =
+          Math.max(...terrain) - groundHeightAt(point.x, point.z) + 0.15;
         item(
           0,
           point.x,
@@ -490,7 +682,7 @@ export function createScenery(scene: THREE.Scene) {
         );
         const damaged = state.damage > 35 && i % 3 === 0;
         if (damaged) {
-          item(
+          const instance = item(
             0,
             point.x,
             point.z,
@@ -500,6 +692,15 @@ export function createScenery(scene: THREE.Scene) {
             0x625a4c,
             orientation,
             lift,
+          );
+          recordHouse(
+            point.x,
+            point.z,
+            width,
+            depth,
+            height * 0.35,
+            orientation,
+            instance,
           );
           item(
             11,
@@ -514,7 +715,7 @@ export function createScenery(scene: THREE.Scene) {
           );
           continue;
         }
-        item(
+        const instance = item(
           0,
           point.x,
           point.z,
@@ -524,6 +725,15 @@ export function createScenery(scene: THREE.Scene) {
           tint,
           orientation,
           lift,
+        );
+        recordHouse(
+          point.x,
+          point.z,
+          width,
+          depth,
+          height,
+          orientation,
+          instance,
         );
         item(
           urban ? 3 : 2,
@@ -573,56 +783,93 @@ export function createScenery(scene: THREE.Scene) {
           );
         }
       }
-      if (!landSlots) {
-        // Very narrow provinces can have a legal rear pocket between the regular
-        // grid lines. Keep one normal-sized village cottage when it really fits.
-        // This bounded fallback only runs when all regular town slots failed.
+      if (housesByProvince[p.id] < 3) {
+        // Narrow provinces often fall between the regular grid lines. Search
+        // actual land, nearest the city first, and keep a small cottage cluster.
+        // Results depend only on geography/visible rails, not quality or troops.
         if (!fallbackSites.has(p.id)) {
-          fallbackSites.set(p.id, null);
-          const boundary = provincePolygons(p.id).flatMap((part) => part.outer);
-          if (boundary.length) {
-            const left = Math.max(
-              p.x - 38,
-              Math.min(...boundary.map((v) => v.x)),
-            );
-            const right = Math.min(
-              p.x + 38,
-              Math.max(...boundary.map((v) => v.x)),
-            );
-            const top = Math.max(
-              p.y - 38,
-              Math.min(...boundary.map((v) => v.y)),
-            );
-            const bottom = Math.min(
-              p.y + 38,
-              Math.max(...boundary.map((v) => v.y)),
-            );
-            let found = false;
-            for (let row = 0; row < 96 && !found; row++)
-              for (let col = 0; col < 96 && !found; col++) {
-                const x = left + ((col + 0.5) / 96) * (right - left);
-                const z = top + ((row + 0.5) / 96) * (bottom - top);
+          const cottages: Cottage[] = [];
+          let candidates = fallbackCandidates.get(p.id);
+          if (!candidates) {
+            candidates = [];
+            for (const { outer } of provincePolygons(p.id)) {
+              const left = Math.min(...outer.map((v) => v.x)),
+                right = Math.max(...outer.map((v) => v.x));
+              const top = Math.min(...outer.map((v) => v.y)),
+                bottom = Math.max(...outer.map((v) => v.y));
+              const cols = Math.min(
+                144,
+                Math.max(1, Math.ceil((right - left) / 0.35)),
+              );
+              const rows = Math.min(
+                144,
+                Math.max(1, Math.ceil((bottom - top) / 0.35)),
+              );
+              for (let row = 0; row < rows; row++)
+                for (let col = 0; col < cols; col++) {
+                  const x = left + ((col + 0.5) / cols) * (right - left);
+                  const z = top + ((row + 0.5) / rows) * (bottom - top);
+                  candidates.push({
+                    x,
+                    z,
+                    distance: (x - p.x) ** 2 + (z - p.y) ** 2,
+                  });
+                }
+            }
+            candidates.sort((a, b) => a.distance - b.distance);
+            fallbackCandidates.set(p.id, candidates);
+          }
+          for (const [width, depth] of [
+            [1.45, 1.25],
+            [1.1, 0.95],
+          ]) {
+            for (const { x, z } of candidates) {
+              if (provinceHouses.length + cottages.length >= 3) break;
+              for (const angle of [0, Math.PI / 2, Math.PI / 4, -Math.PI / 4]) {
+                const halfX =
+                  (Math.abs(Math.cos(angle)) * width +
+                    Math.abs(Math.sin(angle)) * depth) *
+                  0.55;
+                const halfZ =
+                  (Math.abs(Math.sin(angle)) * width +
+                    Math.abs(Math.cos(angle)) * depth) *
+                  0.55;
                 if (
-                  !clearSite(x, z, 1.65, 1.45) ||
-                  !footprint(p.id, x, z, 1.65, 1.45)
+                  !clearSite(x, z, width + 0.2, depth + 0.2, angle) ||
+                  !separateHouse(x, z, width + 0.2, depth + 0.2, angle) ||
+                  !footprint(p.id, x, z, width + 0.2, depth + 0.2, angle) ||
+                  cottages.some(
+                    (other) =>
+                      Math.abs(x - other.x) <
+                        halfX +
+                          (Math.abs(Math.cos(other.angle)) * other.width +
+                            Math.abs(Math.sin(other.angle)) * other.depth) *
+                            0.55 +
+                          0.2 &&
+                      Math.abs(z - other.z) <
+                        halfZ +
+                          (Math.abs(Math.sin(other.angle)) * other.width +
+                            Math.abs(Math.cos(other.angle)) * other.depth) *
+                            0.55 +
+                          0.2,
+                  )
                 )
                   continue;
-                fallbackSites.set(p.id, { x, z });
-                found = true;
+                cottages.push({ x, z, width, depth, angle });
+                break;
               }
+            }
           }
+          fallbackSites.set(p.id, cottages);
         }
-        const cottage = fallbackSites.get(p.id);
-        if (cottage) {
-          item(0, cottage.x, cottage.z, 1.45, 2.1, 1.25, 0xcbbf9d);
-          item(2, cottage.x, cottage.z, 1.45, 2.1, 1.25, 0x34484a);
-          item(1, cottage.x, cottage.z, 1.45, 0.9, 1.25, 0x805644, 0, 2.1);
+        for (const cottage of fallbackSites.get(p.id) ?? []) {
+          const { x, z, width, depth, angle } = cottage;
+          const instance = item(0, x, z, width, 2.1, depth, 0xcbbf9d, angle);
+          recordHouse(x, z, width, depth, 2.1, angle, instance);
+          item(2, x, z, width, 2.1, depth, 0x34484a, angle);
+          item(1, x, z, width, 0.9, depth, 0x805644, angle, 2.1);
         }
       }
-      for (const angle of [orientation, orientation + Math.PI / 2])
-        if (footprint(p.id, p.x, p.y, 0.6, urban ? 23 : 15, angle))
-          item(0, p.x, p.y, 0.6, 0.055, urban ? 23 : 15, 0x79756a, angle, 0.05);
-
       // Sparse orchard edges as well as layered forest groups make cities feel settled.
       const trees =
         p.terrain === "forest"
@@ -827,8 +1074,17 @@ export function createScenery(scene: THREE.Scene) {
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
       mesh.computeBoundingSphere();
     });
+    stats.emptyProvinces = Object.keys(housesByProvince).filter(
+      (id) => housesByProvince[id] === 0,
+    );
   }
   return {
+    get stats(): Readonly<SceneryStats> {
+      return stats;
+    },
+    get houses(): readonly SceneryHouse[] {
+      return houses;
+    },
     update,
     setQuality(value: GraphicsQuality) {
       quality = value;
@@ -851,12 +1107,23 @@ export function createScenery(scene: THREE.Scene) {
           distance < 1800;
     },
     dispose() {
+      if (disposed) return;
+      disposed = true;
       scene.remove(group);
       meshes.forEach((m) => m.dispose());
       geometries.forEach((g) => g.dispose());
       material.dispose();
       roofMaterial.dispose();
       detailMaterial.dispose();
+      houses.length = 0;
+      stats.houses = 0;
+      stats.housesByProvince = {};
+      stats.emptyProvinces = [];
+      railSegments.clear();
+      boundarySegments.clear();
+      fallbackSites.clear();
+      fallbackCandidates.clear();
+      current = null;
     },
   };
 }

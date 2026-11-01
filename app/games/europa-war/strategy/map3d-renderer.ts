@@ -12,8 +12,18 @@ import {
   provinceOutline,
 } from "./map3d-geometry";
 import { createScenery } from "./map3d-scenery";
-import { createUnitModels, UNIT_LABEL_HEIGHT } from "./map3d-units";
+import {
+  createUnitModels,
+  UNIT_LABEL_HEIGHT,
+  type UnitFormation,
+} from "./map3d-units";
+import {
+  detectFormationCaptures,
+  formationCombat,
+  type FormationCapture,
+} from "./map3d-unit-events";
 import { createRailways } from "./map3d-railways";
+import { createTerrainSurfaceSampler } from "./map3d-surface";
 import {
   armyMapPosition,
   visibleFormations,
@@ -48,7 +58,8 @@ type Overlay = {
   position: THREE.Vector3;
   kind: "capital" | "army" | "city" | "sea";
 };
-type Formation = {
+type CaptureVisual = FormationCapture & { elapsed: number };
+type Formation = UnitFormation & {
   armies: Army[];
   position: THREE.Vector3;
   from: THREE.Vector3;
@@ -57,7 +68,9 @@ type Formation = {
   moving: boolean;
   tint: number;
   overlay: Overlay;
+  captureEvent?: CaptureVisual;
 };
+const CAPTURE_DURATION = 6000;
 const TERRAIN_COLORS = {
   plains: 0x819370,
   urban: 0x9b927b,
@@ -68,8 +81,6 @@ const TERRAIN_COLORS = {
 };
 const HALF_X = MAP.width / 2,
   HALF_Z = MAP.height / 2;
-const point = (x: number, z: number, lift = 0) =>
-  new THREE.Vector3(x - HALF_X, heightAt(x, z) + lift, z - HALF_Z);
 const VEC = new THREE.Vector3();
 
 /** Presentation owns its buffers and camera; it never writes into the campaign. */
@@ -79,6 +90,7 @@ export class Map3DRenderer {
   private renderer: THREE.WebGLRenderer;
   private controls: OrbitControls;
   private terrain: ReturnType<typeof buildTerrain>;
+  private surfaceHeightAt = heightAt;
   private land: THREE.Mesh;
   private scenery: ReturnType<typeof createScenery>;
   private units: ReturnType<typeof createUnitModels>;
@@ -104,6 +116,9 @@ export class Map3DRenderer {
     THREE.MeshBasicMaterial
   >[] = [];
   private formations: Formation[] = [];
+  private captureEvents: CaptureVisual[] = [];
+  private lastUnitFrame = 0;
+  private unitAnimationActive = false;
   private overlays: Overlay[] = [];
   private props: Map3DState;
   private quality: GraphicsQuality;
@@ -176,6 +191,7 @@ export class Map3DRenderer {
       this.sun.shadow.normalBias = 0.7;
       this.scene.add(this.sun, this.sun.target);
       this.terrain = buildTerrain({ maxEdge: quality === "low" ? 24 : 18 });
+      this.surfaceHeightAt = createTerrainSurfaceSampler(this.terrain.geometry);
       const noiseData = new Uint8Array(64 * 64 * 4),
         random = visualRandom(64851);
       for (let i = 0; i < noiseData.length; i += 4) {
@@ -230,12 +246,12 @@ export class Map3DRenderer {
       this.sea.rotation.x = -Math.PI / 2;
       this.sea.position.y = -0.4;
       this.scene.add(this.sea);
-      this.scenery = createScenery(this.scene);
+      this.scenery = createScenery(this.scene, this.surfaceHeightAt);
       this.units = createUnitModels(
         this.scene,
-        (x, z) => heightAt(x + HALF_X, z + HALF_Z) + 0.12,
+        (x, z) => this.surfaceHeightAt(x + HALF_X, z + HALF_Z) + 0.12,
       );
-      this.railways = createRailways(this.scene);
+      this.railways = createRailways(this.scene, this.surfaceHeightAt);
       this.scene.add(this.routes, this.markers);
       this.controls = new OrbitControls(this.camera, this.canvas);
       this.controls.enableDamping = true;
@@ -323,6 +339,7 @@ export class Map3DRenderer {
     this.sun.shadow.mapSize.set(preset.shadows || 512, preset.shadows || 512);
     this.sun.shadow.needsUpdate = true;
     this.scenery.setQuality(value);
+    this.publishCityCoverage();
     this.railways.setQuality(value);
     this.sea.material.uniforms.detail.value = value === "low" ? 0 : 1;
     this.canvas.dataset.quality = value;
@@ -332,11 +349,39 @@ export class Map3DRenderer {
     if (this.disposed) return;
     const old = this.props;
     this.props = state;
-    const changedWorld = this.worldRef !== state.world;
+    const previousWorld = this.worldRef;
+    const changedWorld = previousWorld !== state.world;
     this.worldRef = state.world;
     if (changedWorld || old.mode !== state.mode) this.colorMap();
     if (changedWorld) {
+      if (
+        !previousWorld ||
+        previousWorld.player !== state.world.player ||
+        state.world.day < previousWorld.day ||
+        state.world.day > previousWorld.day + 1
+      )
+        this.captureEvents.length = 0;
+      const arrivals = detectFormationCaptures(previousWorld, state.world);
+      this.captureEvents.push(
+        ...arrivals.map((event) => ({ ...event, elapsed: 0 })),
+      );
+      this.captureEvents = this.captureEvents
+        .filter(
+          (event) =>
+            event.elapsed < CAPTURE_DURATION &&
+            state.world.provinces[event.province]?.controller ===
+              event.country &&
+            state.world.armies.some(
+              (army) =>
+                event.armyIds.includes(army.id) &&
+                army.strength > 0 &&
+                army.province === event.province &&
+                !army.move,
+            ),
+        )
+        .slice(-32);
       this.scenery.update(state.world);
+      this.publishCityCoverage();
       this.railways.update(state.world);
     }
     if (
@@ -356,6 +401,21 @@ export class Map3DRenderer {
     )
       this.updateRoutes();
     this.markDirty();
+  }
+  private point(x: number, z: number, lift = 0) {
+    return new THREE.Vector3(
+      x - HALF_X,
+      this.surfaceHeightAt(x, z) + lift,
+      z - HALF_Z,
+    );
+  }
+  private publishCityCoverage() {
+    this.canvas.dataset.emptyCityProvinces = JSON.stringify(
+      this.scenery.stats.emptyProvinces,
+    );
+    this.canvas.dataset.cityHouseCounts = JSON.stringify(
+      this.scenery.stats.housesByProvince,
+    );
   }
   private colorMap() {
     const { world, mode } = this.props;
@@ -452,7 +512,7 @@ export class Map3DRenderer {
       if (!p) continue;
       const overlay = this.overlay(
         `${capitals.has(id) ? "★ " : ""}${p.name}`,
-        point(p.x, p.y, 4),
+        this.point(p.x, p.y, 4),
         capitals.has(id) ? "capital" : "city",
         () => this.props.onSelect(id, false),
       );
@@ -465,10 +525,11 @@ export class Map3DRenderer {
     this.formations = visibleFormations(world).map((armies, index) => {
       const army = armies[0],
         p = armyMapPosition(army),
-        target = point(p.x, p.y, 0.12),
+        target = this.point(p.x, p.y, 0.12),
         key = armies.map((a) => a.id).join(",");
-      // A tiny deterministic offset separates armies sharing a province without moving their true location.
-      target.x += ((index % 3) - 1) * 1.8;
+      // Idle miniatures use the same compact footprint reserved by city scenery.
+      // Moving formations can be separated without clearing more city buildings.
+      if (army.move) target.x += ((index % 3) - 1) * 1.8;
       const position = previous.get(key) ?? target.clone();
       const overlay = this.overlay(
         `${armies.some((a) => a.type.includes("Tank")) ? "▰" : "×"} ${armies.length}`,
@@ -500,15 +561,43 @@ export class Map3DRenderer {
       );
       const to = army.move ? GEOGRAPHY[army.move.to] : null,
         origin = GEOGRAPHY[army.province];
+      const battle = formationCombat(world, armies);
+      const combat = battle
+        ? {
+            key: battle.key,
+            target: this.point(battle.target.x, battle.target.y, 0.12),
+          }
+        : undefined;
+      const captureEvent =
+        !army.move && !combat
+          ? this.captureEvents.find(
+              (event) =>
+                event.province === army.province &&
+                event.country === army.country &&
+                armies.some((member) => event.armyIds.includes(member.id)),
+            )
+          : undefined;
       return {
         armies,
         position: position.clone(),
         from: position.clone(),
         target,
-        moving: !!army.move,
-        angle: to ? Math.atan2(to.x - origin.x, to.y - origin.y) : Math.PI,
+        moving: !!army.move && !combat,
+        angle: combat
+          ? Math.atan2(combat.target.x - target.x, combat.target.z - target.z)
+          : to
+            ? Math.atan2(to.x - origin.x, to.y - origin.y)
+            : Math.PI,
         tint: new THREE.Color(world.countries[army.country].color).getHex(),
         overlay,
+        combat,
+        captureEvent,
+        capture: captureEvent
+          ? {
+              key: captureEvent.key,
+              progress: captureEvent.elapsed / CAPTURE_DURATION,
+            }
+          : undefined,
       };
     });
     const player = world.countries[world.player];
@@ -535,7 +624,7 @@ export class Map3DRenderer {
         }),
       );
       ring.rotation.x = -Math.PI / 2;
-      ring.position.copy(point(province.x, province.y, 1.4));
+      ring.position.copy(this.point(province.x, province.y, 1.4));
       this.markers.add(ring);
       this.battleRings.push(ring);
       const positions = [];
@@ -556,7 +645,7 @@ export class Map3DRenderer {
           depthWrite: false,
         }),
       );
-      smoke.position.copy(point(province.x, province.y));
+      smoke.position.copy(this.point(province.x, province.y));
       this.markers.add(smoke);
     }
     if (mode === "naval")
@@ -610,7 +699,7 @@ export class Map3DRenderer {
           body.rotation.x = Math.PI / 2;
           const wings = new THREE.Mesh(new THREE.BoxGeometry(8, 0.3, 1.5), mat);
           plane.add(body, wings);
-          plane.position.copy(point(p.x, p.y, 18));
+          plane.position.copy(this.point(p.x, p.y, 18));
           this.markers.add(plane);
         }
       }
@@ -645,8 +734,8 @@ export class Map3DRenderer {
         for (let j = 0; j < 8; j++) {
           const t = j / 8,
             u = (j + 1) / 8;
-          const p = point(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, 3);
-          const q = point(a.x + (b.x - a.x) * u, a.y + (b.y - a.y) * u, 3);
+          const p = this.point(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, 3);
+          const q = this.point(a.x + (b.x - a.x) * u, a.y + (b.y - a.y) * u, 3);
           positions.push(p.x, p.y, p.z, q.x, q.y, q.z);
         }
       }
@@ -658,6 +747,17 @@ export class Map3DRenderer {
     );
   }
   private updateUnitMatrices(now: number) {
+    const active = !this.props.paused && !this.reduced && !document.hidden;
+    const elapsed =
+      active && this.unitAnimationActive
+        ? Math.max(0, Math.min(100, now - this.lastUnitFrame))
+        : 0;
+    this.lastUnitFrame = now;
+    this.unitAnimationActive = active;
+    for (const event of this.captureEvents) event.elapsed += elapsed;
+    this.captureEvents = this.captureEvents.filter(
+      (event) => event.elapsed < CAPTURE_DURATION,
+    );
     const blend =
       this.props.paused || this.reduced
         ? 1
@@ -671,10 +771,17 @@ export class Map3DRenderer {
     );
     this.visibleUnits.length = 0;
     for (const formation of this.formations) {
+      if (formation.capture && formation.captureEvent) {
+        formation.capture.progress =
+          formation.captureEvent.elapsed / CAPTURE_DURATION;
+        if (formation.capture.progress >= 1) formation.capture = undefined;
+      }
       formation.position.lerpVectors(formation.from, formation.target, blend);
       formation.position.y =
-        heightAt(formation.position.x + HALF_X, formation.position.z + HALF_Z) +
-        0.12;
+        this.surfaceHeightAt(
+          formation.position.x + HALF_X,
+          formation.position.z + HALF_Z,
+        ) + 0.12;
       formation.overlay.position.copy(formation.position).y +=
         UNIT_LABEL_HEIGHT;
       if (
@@ -694,7 +801,7 @@ export class Map3DRenderer {
   focusProvince(id: string, distance = 220) {
     const p = GEOGRAPHY[id];
     if (!p) return;
-    const target = point(p.x, p.y);
+    const target = this.point(p.x, p.y);
     this.controls.target.copy(target);
     this.camera.position
       .copy(target)
@@ -932,6 +1039,9 @@ export class Map3DRenderer {
       }
       this.canvas.dataset.ready = "true";
       this.canvas.dataset.railEdges = String(this.railways.stats.edges);
+      this.canvas.dataset.railProvinces = JSON.stringify(
+        this.railways.stats.provinces,
+      );
       this.canvas.dataset.trainCount = String(this.railways.stats.trains);
       this.canvas.dataset.trainCountries = JSON.stringify(
         this.railways.stats.countries,
@@ -942,6 +1052,18 @@ export class Map3DRenderer {
       this.canvas.dataset.unitInstances = String(this.units.stats.instances);
       this.canvas.dataset.infantryModels = String(this.units.stats.infantry);
       this.canvas.dataset.vehicleModels = String(this.units.stats.vehicles);
+      this.canvas.dataset.tankModels = String(this.units.stats.tanks);
+      this.canvas.dataset.artilleryModels = String(this.units.stats.artillery);
+      this.canvas.dataset.truckModels = String(this.units.stats.trucks);
+      this.canvas.dataset.combatFormations = String(
+        this.units.stats.combatFormations,
+      );
+      this.canvas.dataset.muzzleFlashes = String(
+        this.units.stats.muzzleFlashes,
+      );
+      this.canvas.dataset.shells = String(this.units.stats.shells);
+      this.canvas.dataset.impacts = String(this.units.stats.impacts);
+      this.canvas.dataset.captures = String(this.units.stats.captures);
       this.canvas.dataset.modelDetail = String(this.units.stats.detail);
       this.canvas.dataset.cameraDistance = this.camera.position
         .distanceTo(this.controls.target)
@@ -986,6 +1108,7 @@ export class Map3DRenderer {
     this.controls?.removeEventListener("change", this.markDirty);
     this.controls?.dispose();
     this.clearMarkers();
+    this.captureEvents.length = 0;
     this.pointerCancel();
     this.units?.dispose();
     this.railways?.dispose();

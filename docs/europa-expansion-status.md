@@ -292,3 +292,91 @@ doğrulanmadı; sahte `document.hidden` değişikliğiyle test sonucu üretilmed
 Modellerin kaliteye göre çizim bütçesi vardır. Bu çalışma fiziksel telefon
 ve Windows ekran kartlarında 60 FPS doğrulaması değildir. Trenler mevcut
 altyapıyı görselleştirir; yeni bir ikmal/taşıma envanteri oluşturmaz.
+
+
+## Aşama 3 — Oyuncuya bağlı raylar, şehir kapsaması ve birlik animasyonları
+
+Bu güncelleme, yukarıdaki Aşama 2'nin bütün ülkelerde tren gösterme ve en fazla
+üç birlik minyatürü kullanma davranışını kullanıcının yeni isteğiyle değiştirir.
+Önceki aşamanın test sayıları o sürümün tarihsel sonuçlarıdır.
+
+- Yalnız oyuncunun kontrolünde olup kendi başkentine raylarla bağlanan ağ
+  çizilir. Müttefik veya askerî geçiş arazisi yeterli değildir. Kopuk işgal
+  cepleri gizlidir; koridor da ele geçirilince bağlanır, kaybedilince kaldırılır.
+- Ray kenarları şehir düğümlerinde ortak kesitle birleşir; tren vagonlarının
+  yönü ön/arka aks doğrultusunu izler. Harita yuvarlamasından kaynaklanan çok
+  küçük sınır boşlukları yalnız doğrulanmış kara komşuluklarında onarılır.
+  Deniz geçişi veya yeni oynanış komşuluğu oluşturulmaz.
+- Geniş harita incelemesinde bulunan, rayların arazi üçgenlerine gömülerek
+  kopuk görünmesi giderildi. Ray/tren, birlik ve bina yüksekliği artık
+  aynı çizilen arazi yüzeyinden, sahneye ait mekânsal indeksle örneklenir.
+  Çizim ayrıntısı değişse de analitik arazi yaklaşımıyla ayrışmaz.
+- Şehir ortasındaki birbirine dik bağımsız yol çubukları kaldırıldı. Dar
+  illerde kara, ray ve birlik gövdeleri arasında gerçek bina yerleşimi aranır.
+- Birlik simgeleri grup sayısına göre 1: piyade; 2: tank+piyade;
+  3: top+piyade+tank; 4+: kamyon+piyade+top+tank kullanır. Düşükte ve uzakta
+  da bu sayılar korunur. Gerçek birlik türleri/ekipmanı, seçim, hareket ve
+  savaş hesapları değiştirilmez.
+- Yürüyüş, palet/tekerlek, namlu geri tepmesi, top mermisi yayı, isabet,
+  kamyon desteği ve bayrak kaldırma animasyonları ayrıldı. Ateş yalnız
+  gerçek savaş katılımcılarına; bayrak gerçek askerî varış ve düşman bölgesi
+  kontrol değişimine bağlıdır. Geri çekilen birlikler ateş animasyonu yapmaz.
+  Bir günde başlayan ve biten hızlı birlik hareketleri de desteklenir.
+  İlk atış muharebeye girişte başlar; düşük kare hızında kısa savaşın
+  global animasyon döngüsünün bekleme kısmına denk gelmesi önlenir.
+- Birlik animasyonları duraklatmada ve azaltılmış harekette donar. Ortam
+  trenleri önceki isteğe uygun biçimde duraklatılmış seferde yürümeye devam
+  eder. Kayıt yükleme/yeni sefer görsel geçmişi sıfırlar. Görseller simülasyon
+  verisini veya rastgeleliğini değiştirmez.
+
+Bu aşama görsel birlik sayısını gerçek envantere dönüştürmez; yeni savaş,
+ikmal kapasitesi veya yük teslimatı sistemi eklemez. Yukarıdaki kapsam
+sınırları geçerlidir.
+
+### Aşama 3 doğrulaması — 1 Kasım 2026
+
+- `npm run test:europa`: **371/371** geçti. Yeni/güncellenen görsel paket;
+  15 ağ, 16 ray görüntüleme, 11 birlik modeli, 11 gerçek savaş/fetih olayı,
+  7 arazi yüzeyi ve 7 şehir sahnesi testi içerir. İlk tam çalıştırmada bulunan iki kıyı
+  çatısı hatası giderildi. Görsel incelemede bulunan araziye gömülme de
+  düzeltilerek bütün paket yeniden çalıştırıldı. Tarayıcıdaki kısa muharebe
+  kontrolünün ortaya çıkardığı geç başlayan ilk atış düzeltildi; 2 FPS ve
+  bir saatlik eski görsel saatle yeni regresyon testi eklendi.
+- `npm run build`: son düzeltilmiş kaynakla üretim derlemesi ve TypeScript
+  doğrulaması geçti. Proje ayarı bu komutta lint çalıştırmaz.
+- Şehirler Düşük ayarda 29 ülkenin her biri oyuncu seçilerek, Türkiye'de
+  ayrıca dört kalite düzeyinde doğrulandı: her durumda **447/447** ilde
+  gerçek bina örneği var. Altı dar ülke örneğinde çatı/ray geçişleri ayrıca
+  denetlendi. Türkiye sahnesinde Düşükte 3.472, Ultrada 4.925 bina bulunur;
+  şehir sahnesi 13 instanced çizim grubunu kullanır.
+- Ray ağı 29 oyuncu seçimi ayrı ayrı taranarak 388 bağlantıdaki 145.306
+  noktada doğrulandı. Bunlar aynı anda gösterilen yabancı hatlar değildir.
+  Türkiye'de 45 bağlı kenarın 5'inde sınır yuvarlama onarımı var; en büyük
+  aralık 0,058 harita birimi. Gerçek deniz ayrımları rayla köprülenmez.
+- Çizilen araziye karşı bağımsız geometri testinde ray üçgenlerinin
+  18 ayrıntısında 283.643, 24 ayrıntısında 285.323 iç noktası kontrol edildi;
+  zeminin altında kalan örnek yok. Gerçek tekerlek örnekleri zorlu
+  Diyarbakır–Van geçişinde 301 animasyon karesinde denetlendi. Yerel ray
+  yatağı profili ray, travers ve tren yön/yükseklik hesabında ortaktır.
+- Kamera aynı ray kümesini göstermeye devam ettiğinde geometri yeniden
+  üretilmez; kısmen değişen görünümde ortak kenarların yüzey profilleri
+  yeniden kullanılır. İlgili Node ölçümünde aynı 45 kenarı gösteren bölme
+  geçişi yaklaşık 50 ms'den 0,26–2,24 ms'ye indi. Bu ölçüm cihaz FPS'i değildir.
+- Gerçek WebGL önizlemesinde dört minyatür, havadaki top mermisi ve bayrak
+  kumaşının iki kamera yönünden görünürlüğü incelendi. Oyun ekranında
+  Ankara'daki tren/binalar ve 1/2/3/4/12 grup simgeleri ayrıca görüntülendi.
+- Son üretim derlemesinde `scripts/test-europa-models-browser.cjs`
+  **18/18**, `scripts/test-europa-3d-browser.cjs` **19/19** geçti. Masaüstü
+  ve mobil emülasyonda gerçek WebGL kullanıldı; iki raporda da sayfa hatası,
+  konsol hatası ve başarısız istek sayısı sıfırdır.
+- Tarayıcıda bağlı işgal koridorunun kazanılması/kaybedilmesi, yabancı
+  hatların gizlenmesi, gerçek dört tümenli savaşta iki tarafın hasar alması,
+  top mermisi ve bütün saldıranların şehre varıp bayrak kaldırması doğrulandı.
+  Kısa savaş senaryosu ilk atış düzeltmesinden sonra süresi uzatılmadan geçti.
+  Mobil iki parmak yakınlaştırma, grup emirleri, komutan yerleştirme, kayıt,
+  çevrimdışı devam ve WebGL kaybından güvenli geri dönüş de geçti.
+- Son oyun görüntülerinde ülke boyunca ray birleşimleri, masaüstü/mobil
+  dört minyatür düzeni, gerçek çatışma ve fetih görünümü incelendi.
+
+Bu ölçümler fiziksel telefon veya Windows ekran kartlarında 60 FPS garantisi
+vermez; tarayıcı doğrulaması yazılımsal WebGL ve mobil emülasyon kullanır.

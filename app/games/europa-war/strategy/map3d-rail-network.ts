@@ -1,10 +1,14 @@
 import { containsProvincePoint, provincePolygons } from "./map3d-geometry";
-import { friendly, GEOGRAPHY } from "./world";
+import { GEOGRAPHY } from "./world";
 import type { World } from "./types";
 
 export interface RailPoint {
   x: number;
   y: number;
+}
+export interface RailSeam {
+  polygon: RailPoint[];
+  maxGap: number;
 }
 export interface RailRoute {
   /** Country whose capital-connected railway supports this visual itinerary. */
@@ -21,18 +25,267 @@ export interface RailNetwork {
     to: string;
     points: RailPoint[];
     local?: boolean;
+    seams?: RailSeam[];
   }>;
   routes: RailRoute[];
   stations: Array<{ province: string; point: RailPoint }>;
   omittedConnections: number;
+  /** Edges crossing explicitly validated sub-pixel map rounding seams. */
+  repairedConnections?: number;
 }
 
 const MAX_SAMPLE_DISTANCE = 0.7;
 const MAX_GRID_CELLS = 8000;
 const anchors = new Map<string, RailPoint>();
 const paths = new Map<string, RailPoint[] | null>();
+const seamCache = new Map<string, RailSeam[]>();
+const pathRepairs = new Map<string, RailSeam[]>();
 const distance = (a: RailPoint, b: RailPoint) =>
   Math.hypot(a.x - b.x, a.y - b.y);
+
+function inRing(
+  point: RailPoint,
+  ring: readonly RailPoint[],
+  includeBoundary = true,
+) {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const a = ring[j],
+      b = ring[i],
+      dx = b.x - a.x,
+      dy = b.y - a.y;
+    const length2 = dx * dx + dy * dy;
+    const t = Math.max(
+      0,
+      Math.min(
+        1,
+        ((point.x - a.x) * dx + (point.y - a.y) * dy) / (length2 || 1),
+      ),
+    );
+    if ((point.x - a.x - dx * t) ** 2 + (point.y - a.y - dy * t) ** 2 < 1e-14)
+      return includeBoundary;
+    if (
+      a.y > point.y !== b.y > point.y &&
+      point.x < ((b.x - a.x) * (point.y - a.y)) / (b.y - a.y) + a.x
+    )
+      inside = !inside;
+  }
+  return inside;
+}
+
+const ringBounds = new WeakMap<
+  readonly RailPoint[],
+  { left: number; right: number; top: number; bottom: number }
+>();
+function bounds(ring: readonly RailPoint[]) {
+  let cached = ringBounds.get(ring);
+  if (!cached) {
+    cached = {
+      left: Math.min(...ring.map((point) => point.x)),
+      right: Math.max(...ring.map((point) => point.x)),
+      top: Math.min(...ring.map((point) => point.y)),
+      bottom: Math.max(...ring.map((point) => point.y)),
+    };
+    ringBounds.set(ring, cached);
+  }
+  return cached;
+}
+function ringsOverlapInterior(
+  a: readonly RailPoint[],
+  b: readonly RailPoint[],
+) {
+  const aa = bounds(a),
+    bb = bounds(b);
+  if (
+    aa.right <= bb.left ||
+    bb.right <= aa.left ||
+    aa.bottom <= bb.top ||
+    bb.bottom <= aa.top
+  )
+    return false;
+  if (
+    a.some((point) => inRing(point, b, false)) ||
+    b.some((point) => inRing(point, a, false))
+  )
+    return true;
+  const midpointInside = (
+    ring: readonly RailPoint[],
+    other: readonly RailPoint[],
+  ) =>
+    ring.some((point, i) => {
+      const next = ring[(i + 1) % ring.length];
+      return inRing(
+        { x: (point.x + next.x) / 2, y: (point.y + next.y) / 2 },
+        other,
+        false,
+      );
+    });
+  if (midpointInside(a, b) || midpointInside(b, a)) return true;
+  // The seam is convex. Coincident strips can share every edge/vertex while
+  // their interiors still overlap; vertex/crossing tests alone miss that.
+  const center = {
+    x: a.reduce((sum, point) => sum + point.x, 0) / a.length,
+    y: a.reduce((sum, point) => sum + point.y, 0) / a.length,
+  };
+  if (inRing(center, a, false) && inRing(center, b, false)) return true;
+  const cross = (from: RailPoint, to: RailPoint, point: RailPoint) =>
+    (to.x - from.x) * (point.y - from.y) - (to.y - from.y) * (point.x - from.x);
+  for (let i = 0; i < a.length; i++)
+    for (let j = 0; j < b.length; j++) {
+      const p = a[i],
+        q = a[(i + 1) % a.length],
+        r = b[j],
+        s = b[(j + 1) % b.length];
+      if (
+        cross(p, q, r) * cross(p, q, s) < -1e-12 &&
+        cross(r, s, p) * cross(r, s, q) < -1e-12
+      )
+        return true;
+    }
+  return false;
+}
+
+export function railEdgeContainsPoint(
+  edge: Pick<RailNetwork["edges"][number], "from" | "to" | "seams">,
+  point: RailPoint,
+): boolean {
+  return (
+    containsProvincePoint(edge.from, point.x, point.y) ||
+    containsProvincePoint(edge.to, point.x, point.y) ||
+    !!edge.seams?.some((seam) => inRing(point, seam.polygon))
+  );
+}
+
+/** Repairs only a narrowly bounded rounding seam between opposite land sides.
+ * No coast-wide buffer is applied; callers must establish real land adjacency. */
+export function cartographicRailSeams(
+  a0: RailPoint,
+  a1: RailPoint,
+  b0: RailPoint,
+  b1: RailPoint,
+  options: {
+    adjacent: boolean;
+    landA: (point: RailPoint) => boolean;
+    landB: (point: RailPoint) => boolean;
+    blocked?: (point: RailPoint) => boolean;
+    blockers?: readonly (readonly RailPoint[])[];
+  },
+): RailSeam[] {
+  if (!options.adjacent) return [];
+  const length = distance(a0, a1),
+    otherLength = distance(b0, b1);
+  if (Math.min(length, otherLength) < 1.5) return [];
+  const ux = (a1.x - a0.x) / length,
+    uy = (a1.y - a0.y) / length;
+  const bx = b1.x - b0.x,
+    by = b1.y - b0.y;
+  if (Math.abs(ux * by - uy * bx) / otherLength > 0.01) return [];
+  const projection = (point: RailPoint) =>
+    (point.x - a0.x) * ux + (point.y - a0.y) * uy;
+  const startB = projection(b0),
+    endB = projection(b1);
+  const start = Math.max(0, Math.min(startB, endB)),
+    end = Math.min(length, Math.max(startB, endB));
+  if (end - start < 1.5) return [];
+  const first = (t: number) => ({ x: a0.x + ux * t, y: a0.y + uy * t });
+  const second = (t: number) => ({
+    x: b0.x + (bx * (t - startB)) / (endB - startB),
+    y: b0.y + (by * (t - startB)) / (endB - startB),
+  });
+  const gap = (t: number) => {
+    const a = first(t),
+      b = second(t);
+    return (b.x - a.x) * -uy + (b.y - a.y) * ux;
+  };
+  const d0 = gap(start),
+    d1 = gap(end);
+  if (Math.max(Math.abs(d0), Math.abs(d1)) > 0.15 + 1e-9) return [];
+  const cuts = [
+    start,
+    ...(d0 * d1 < 0 ? [start + ((end - start) * -d0) / (d1 - d0)] : []),
+    end,
+  ];
+  const seams: RailSeam[] = [];
+  for (let index = 1; index < cuts.length; index++) {
+    const from = cuts[index - 1],
+      to = cuts[index];
+    if (to - from < 1.5 || Math.abs(gap((from + to) / 2)) < 1e-6) continue;
+    const polygon = [first(from), first(to), second(to), second(from)];
+    if (options.blockers?.some((ring) => ringsOverlapInterior(polygon, ring)))
+      continue;
+    let valid = true;
+    for (const factor of [0.1, 0.5, 0.9]) {
+      const t = from + (to - from) * factor,
+        a = first(t),
+        b = second(t);
+      const middle = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      const left = { x: middle.x - uy * 0.3, y: middle.y + ux * 0.3 };
+      const right = { x: middle.x + uy * 0.3, y: middle.y - ux * 0.3 };
+      if (
+        options.landA(middle) ||
+        options.landB(middle) ||
+        options.blocked?.(middle) ||
+        !(
+          (options.landA(left) && options.landB(right)) ||
+          (options.landB(left) && options.landA(right))
+        )
+      ) {
+        valid = false;
+        break;
+      }
+    }
+    if (valid)
+      seams.push({
+        polygon,
+        maxGap: Math.max(Math.abs(gap(from)), Math.abs(gap(to))),
+      });
+  }
+  return seams;
+}
+
+export function findRailSeamRepairs(from: string, to: string): RailSeam[] {
+  if (
+    !GEOGRAPHY[from]?.neighbors.some(
+      (neighbor) => neighbor.id === to && !neighbor.sea,
+    )
+  )
+    return [];
+  const key = [from, to].sort().join(":");
+  const cached = seamCache.get(key);
+  if (cached) return cached;
+  const first = provincePolygons(from),
+    second = provincePolygons(to);
+  const holes = [...first, ...second].flatMap((part) => part.holes);
+  const blockers = [
+    ...holes,
+    ...Object.keys(GEOGRAPHY)
+      .filter((id) => id !== from && id !== to)
+      .flatMap((id) => provincePolygons(id).map((part) => part.outer)),
+  ];
+  const boundary = (parts: ReturnType<typeof provincePolygons>) =>
+    parts.flatMap((part) =>
+      part.outer.map(
+        (point, i) => [point, part.outer[(i + 1) % part.outer.length]] as const,
+      ),
+    );
+  const landA = (point: RailPoint) =>
+    containsProvincePoint(from, point.x, point.y);
+  const landB = (point: RailPoint) =>
+    containsProvincePoint(to, point.x, point.y);
+  const result: RailSeam[] = [];
+  for (const [a0, a1] of boundary(first))
+    for (const [b0, b1] of boundary(second))
+      result.push(
+        ...cartographicRailSeams(a0, a1, b0, b1, {
+          adjacent: true,
+          landA,
+          landB,
+          blockers,
+        }),
+      );
+  seamCache.set(key, result);
+  return result;
+}
 
 /** A bounded quadratic fillet, accepted only when its complete polyline can
  * travel on the same permitted land as the original edge. Tight coasts keep
@@ -132,16 +385,25 @@ function anchor(id: string): RailPoint | null {
   return best;
 }
 
-function landSegment(ids: readonly string[]) {
+function landSegment(ids: readonly string[], seams: readonly RailSeam[] = []) {
   const inside = (p: RailPoint) =>
-    ids.some((id) => containsProvincePoint(id, p.x, p.y));
-  const boundaries = ids.flatMap((id) =>
-    provincePolygons(id).flatMap((part) =>
-      [part.outer, ...part.holes].flatMap((ring) =>
-        ring.map((point, i) => [point, ring[(i + 1) % ring.length]] as const),
+    ids.some((id) => containsProvincePoint(id, p.x, p.y)) ||
+    seams.some((seam) => inRing(p, seam.polygon));
+  const boundaries = [
+    ...ids.flatMap((id) =>
+      provincePolygons(id).flatMap((part) =>
+        [part.outer, ...part.holes].flatMap((ring) =>
+          ring.map((point, i) => [point, ring[(i + 1) % ring.length]] as const),
+        ),
       ),
     ),
-  );
+    ...seams.flatMap((seam) =>
+      seam.polygon.map(
+        (point, i) =>
+          [point, seam.polygon[(i + 1) % seam.polygon.length]] as const,
+      ),
+    ),
+  ];
   return (start: RailPoint, end: RailPoint) => {
     const steps = Math.max(
       1,
@@ -208,20 +470,41 @@ function edgePath(from: string, to: string): RailPoint[] | null {
   const a = anchor(from),
     b = anchor(to);
   if (!a || !b) return null;
+  let seams: RailSeam[] = [];
   const inside = (point: RailPoint) =>
     containsProvincePoint(from, point.x, point.y) ||
-    containsProvincePoint(to, point.x, point.y);
-  const segment = landSegment([from, to]);
+    containsProvincePoint(to, point.x, point.y) ||
+    seams.some((seam) => inRing(point, seam.polygon));
+  const strictSegment = landSegment([from, to]);
+  let segment = strictSegment;
   const save = (result: RailPoint[] | null) => {
     const rounded = result && roundRailCorners(result, segment);
     paths.set(key, rounded && (from < to ? rounded : [...rounded].reverse()));
+    pathRepairs.set(
+      key,
+      rounded &&
+        !rounded.slice(1).every((point, i) => strictSegment(rounded[i], point))
+        ? seams
+        : [],
+    );
     return rounded;
   };
   if (segment(a, b)) return save([a, b]);
+  seams = findRailSeamRepairs(from, to);
+  if (seams.length) {
+    segment = landSegment([from, to], seams);
+    if (segment(a, b)) return save([a, b]);
+  }
   const first = provincePolygons(from).flatMap((p) => p.outer);
   const second = provincePolygons(to).flatMap((p) => p.outer);
   const vertices = new Set(second.map((p) => `${p.x}:${p.y}`));
   const portals = first.filter((p) => vertices.has(`${p.x}:${p.y}`));
+  portals.push(
+    ...seams.map((seam) => ({
+      x: seam.polygon.reduce((sum, p) => sum + p.x, 0) / seam.polygon.length,
+      y: seam.polygon.reduce((sum, p) => sum + p.y, 0) / seam.polygon.length,
+    })),
+  );
   portals.sort(
     (p, q) => distance(a, p) + distance(p, b) - distance(a, q) - distance(q, b),
   );
@@ -327,12 +610,13 @@ export function buildRailNetwork(
     routes: [],
     stations: [],
     omittedConnections: 0,
+    repairedConnections: 0,
   };
   const player = world.countries[countryId];
   if (!player) return network;
   const eligible = (id: string) =>
     world.provinces[id]?.buildings.rail > 0 &&
-    friendly(world, player.id, world.provinces[id].controller);
+    world.provinces[id].controller === player.id;
   if (!eligible(player.capital) || !anchor(player.capital)) return network;
   const queue = [player.capital];
   const parent = new Map<string, { id: string; points: RailPoint[] }>();
@@ -361,7 +645,14 @@ export function buildRailNetwork(
       seen.add(edge.id);
       queue.push(edge.id);
       parent.set(edge.id, { id: from, points: path });
-      network.edges.push({ from, to: edge.id, points: path });
+      const seams = pathRepairs.get(key) ?? [];
+      network.edges.push({
+        from,
+        to: edge.id,
+        points: path,
+        ...(seams.length ? { seams } : {}),
+      });
+      if (seams.length) network.repairedConnections!++;
     }
   }
   // Through-country itineraries use exactly the same connected tree edges as
@@ -452,216 +743,52 @@ export function buildRailNetwork(
   return network;
 }
 
-/** All inputs which can change global physical tracks, stations or access.
- * Economies, game date, army positions and the selected player do not affect it. */
-export function railNetworkSignature(world: World): string {
+/** Only player-controlled rail provinces can affect this live graph. Foreign
+ * economy, diplomacy, game time and troop movement never invalidate it. */
+function playerRailInputs(world: World): string {
   return [
-    ...Object.keys(world.countries)
-      .sort()
-      .map((id) => {
-        const country = world.countries[id];
-        return `${id}:${country.capital}:${country.subjectOf ?? ""}:${[...country.allies].sort().join(",")}:${[...country.access].sort().join(",")}:${[...country.wars].sort().join(",")}`;
-      }),
-    ...Object.values(world.provinces).map(
-      (p) => `${p.id}:${p.controller}:${p.buildings.rail}:${p.buildings.hub}`,
-    ),
+    world.player,
+    world.countries[world.player]?.capital ?? "",
+    ...Object.values(world.provinces)
+      .filter(
+        (province) =>
+          province.controller === world.player && province.buildings.rail > 0,
+      )
+      .map((province) => `${province.id}:${+(province.buildings.hub > 0)}`),
   ].join("|");
 }
 
-let globalCache: { signature: string; network: RailNetwork } | undefined;
-const localTracks = new Map<string, RailPoint[] | null>();
+let playerCache:
+  | { inputs: string; signature: string; network: RailNetwork }
+  | undefined;
 
-/** Countries with only one rail province or an island capital still have a
- * local railway. It is an internal station track, never a fabricated neighbor
- * connection. Its entire 3.6-unit corridor must fit inside the real province. */
-function localCapitalTrack(id: string): RailPoint[] | null {
-  if (localTracks.has(id)) return localTracks.get(id)!;
-  const center = anchor(id);
-  if (!center) return null;
-  const polygons = provincePolygons(id);
-  const vertices = polygons.flatMap((part) =>
-    [part.outer, ...part.holes].flat(),
-  );
-  const seeds: RailPoint[] = [center];
-  for (const part of [...polygons].sort(
-    (a, b) => b.outer.length - a.outer.length,
-  )) {
-    const left = Math.min(...part.outer.map((point) => point.x)),
-      right = Math.max(...part.outer.map((point) => point.x));
-    const top = Math.min(...part.outer.map((point) => point.y)),
-      bottom = Math.max(...part.outer.map((point) => point.y));
-    for (let row = 0; row < 6 && seeds.length < 64; row++)
-      for (let col = 0; col < 6 && seeds.length < 64; col++) {
-        const point = {
-          x: left + ((col + 0.5) * (right - left)) / 6,
-          y: top + ((row + 0.5) * (bottom - top)) / 6,
-        };
-        if (containsProvincePoint(id, point.x, point.y)) seeds.push(point);
-      }
-  }
-  const corridor = 1.8;
-  const candidates: Array<{
-    a: RailPoint;
-    b: RailPoint;
-    ux: number;
-    uy: number;
-    length: number;
-    score: number;
-  }> = [];
-  for (const seed of seeds)
-    for (let angle = 0; angle < 16; angle++) {
-      const ux = Math.cos((angle * Math.PI) / 16),
-        uy = Math.sin((angle * Math.PI) / 16);
-      const across = (along: number) =>
-        [-corridor, 0, corridor].every((offset) =>
-          containsProvincePoint(
-            id,
-            seed.x + ux * along - uy * offset,
-            seed.y + uy * along + ux * offset,
-          ),
-        );
-      if (!across(0)) continue;
-      const extent = (sign: number) => {
-        let length = 0;
-        for (let step = 1; step <= 38; step++) {
-          if (!across(step * sign)) break;
-          length = step;
-        }
-        return Math.max(0, length - 0.25);
-      };
-      const back = extent(-1),
-        forward = extent(1),
-        length = back + forward;
-      if (length < 8) continue;
-      const a = { x: seed.x - ux * back, y: seed.y - uy * back },
-        b = { x: seed.x + ux * forward, y: seed.y + uy * forward };
-      candidates.push({
-        a,
-        b,
-        ux,
-        uy,
-        length,
-        score: length - distance(seed, center) * 0.1,
-      });
-    }
-  candidates.sort((a, b) => b.score - a.score);
-  const safe = landSegment([id]);
-  for (const candidate of candidates.slice(0, 96)) {
-    const { a, b, ux, uy, length } = candidate;
-    const leftA = { x: a.x - uy * corridor, y: a.y + ux * corridor };
-    const leftB = { x: b.x - uy * corridor, y: b.y + ux * corridor };
-    const rightA = { x: a.x + uy * corridor, y: a.y - ux * corridor };
-    const rightB = { x: b.x + uy * corridor, y: b.y - ux * corridor };
-    if (
-      ![
-        [a, b],
-        [leftA, leftB],
-        [rightA, rightB],
-        [leftA, rightA],
-        [leftB, rightB],
-      ].every(([from, to]) => safe(from, to))
-    )
-      continue;
-    // Four safe sides alone could enclose a water hole. Any boundary vertex
-    // strictly inside the strip rejects that case too.
-    if (
-      vertices.some((point) => {
-        const dx = point.x - a.x,
-          dy = point.y - a.y;
-        const along = dx * ux + dy * uy,
-          across = -dx * uy + dy * ux;
-        return (
-          along > 1e-6 &&
-          along < length - 1e-6 &&
-          Math.abs(across) < corridor - 1e-6
-        );
-      })
-    )
-      continue;
-    const result = [a, b];
-    localTracks.set(id, result);
-    return result;
-  }
-  localTracks.set(id, null);
-  return null;
+/** Shared read-only live scene graph. It never includes allied/access-only
+ * territory, disconnected occupied pockets or decorative local shuttles. */
+export function buildPlayerRailNetwork(world: World): RailNetwork {
+  const inputs = playerRailInputs(world);
+  if (playerCache?.inputs === inputs) return playerCache.network;
+  const network = buildRailNetwork(world);
+  const signature = [
+    world.player,
+    ...network.edges.map(
+      (edge) =>
+        `${edge.from}:${edge.to}:${edge.points.map((point) => `${point.x},${point.y}`).join(";")}`,
+    ),
+    ...network.stations.map(
+      (station) =>
+        `station:${station.province}:${station.point.x},${station.point.y}`,
+    ),
+    ...network.routes.map((route) => `route:${route.ids.join(",")}`),
+  ].join("|");
+  playerCache = { inputs, signature, network };
+  return network;
 }
 
-/** Shared read-only presentation graph: each country's real capital-connected
- * network participates, independent of which country the human selected.
- * Physical tracks/stations are deduplicated; every valid country gets its first
- * itinerary before any country receives secondary routes (64-route ceiling). */
-export function buildGlobalRailNetwork(world: World): RailNetwork {
-  const signature = railNetworkSignature(world);
-  if (globalCache?.signature === signature) return globalCache.network;
-  const network: RailNetwork = {
-    edges: [],
-    routes: [],
-    stations: [],
-    omittedConnections: 0,
-  };
-  const edges = new Map<string, RailNetwork["edges"][number]>();
-  const stations = new Map<string, RailNetwork["stations"][number]>();
-  const countryRoutes: RailRoute[][] = [];
-  for (const id of Object.keys(world.countries).sort()) {
-    const country = buildRailNetwork(world, id);
-    const capital = world.countries[id].capital;
-    if (
-      !country.routes.length &&
-      world.provinces[capital]?.buildings.rail > 0 &&
-      friendly(world, id, world.provinces[capital].controller)
-    ) {
-      const points = localCapitalTrack(capital);
-      if (points) {
-        country.edges.push({ from: capital, to: capital, points, local: true });
-        country.routes.push({
-          country: id,
-          local: true,
-          ids: [capital],
-          points,
-          length: distance(points[0], points[1]),
-        });
-        const point = {
-          x: (points[0].x + points[1].x) / 2,
-          y: (points[0].y + points[1].y) / 2,
-        };
-        const station = country.stations.find(
-          (station) => station.province === capital,
-        );
-        if (station) station.point = point;
-        else country.stations.push({ province: capital, point });
-      }
-    }
-    network.omittedConnections += country.omittedConnections;
-    if (country.routes.length) countryRoutes.push(country.routes);
-    for (const edge of country.edges) {
-      const reversed = edge.from > edge.to;
-      const from = reversed ? edge.to : edge.from,
-        to = reversed ? edge.from : edge.to;
-      const key = `${from}:${to}`;
-      if (!edges.has(key))
-        edges.set(key, {
-          from,
-          to,
-          points: reversed ? [...edge.points].reverse() : edge.points,
-          ...(edge.local ? { local: true } : {}),
-        });
-    }
-    for (const station of country.stations)
-      stations.set(station.province, station);
-  }
-  network.edges = [...edges.values()].sort(
-    (a, b) => a.from.localeCompare(b.from) || a.to.localeCompare(b.to),
-  );
-  network.stations = [...stations.values()].sort((a, b) =>
-    a.province.localeCompare(b.province),
-  );
-  for (let round = 0; round < 10 && network.routes.length < 64; round++)
-    for (const routes of countryRoutes) {
-      if (routes[round]) network.routes.push(routes[round]);
-      if (network.routes.length === 64) break;
-    }
-  globalCache = { signature, network };
-  return network;
+/** Actual connected paths/stations only: capturing an isolated rail pocket
+ * can re-evaluate connectivity, but does not rebuild unchanged scene batches. */
+export function playerRailNetworkSignature(world: World): string {
+  buildPlayerRailNetwork(world);
+  return playerCache!.signature;
 }
 
 /** Distance is clamped. Heading follows map x/y in radians; the train renderer

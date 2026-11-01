@@ -165,14 +165,19 @@ whole equipment items and saves already-paid work between days;
 [the production guide](docs/europa-production.md) documents capacity, resource,
 legacy-save, and civil-war accounting.
 
-Larger infantry miniatures now carry helmets, rifles and field equipment;
-tanks, trucks and artillery have distinct detailed models. Nearby formations
-show up to three representative divisions. Denser city blocks and industrial
-scenery use instanced rendering and distance-based detail. Animated freight
-trains in all countries with valid rail routes follow capital-connected
-friendly infrastructure and disappear
-when that connection is cut; this is a visualisation of existing railways,
-not a new cargo or train-inventory simulation. See
+Larger infantry miniatures carry helmets, rifles and field equipment. Formation
+counts use one infantry for 1 division, infantry + tank for 2, add artillery
+for 3 and a truck for 4+. The same silhouettes remain at every quality and
+zoom; actual division types, equipment, selection and orders remain unchanged.
+Movement, actual combat (including arcing artillery shells) and military
+capture animations are distinct and freeze with the campaign or reduced motion.
+All valid city regions receive buildings; isolated cross-shaped street bars
+have been removed. Scenery and miniature parts use instanced rendering.
+Only player-controlled, capital-connected railway infrastructure and trains
+are visible. Captured pockets join when their rail corridor is also captured,
+and disappear if cut off again. Foreign/allied tracks remain hidden. Train
+motion continues while the campaign is paused, but respects reduced motion.
+This visualisation does not add cargo deliveries or a train inventory. See
 [railway behaviour and budgets](docs/europa-railways.md). The focused WebGL
 regression is `node scripts/test-europa-models-browser.cjs`.
 
