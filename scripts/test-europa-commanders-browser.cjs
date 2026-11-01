@@ -158,6 +158,10 @@ function fixture({
         isMobile: mobile,
         hasTouch: mobile,
       });
+      // This suite exercises the retained SVG map; 3D has a separate integration suite.
+      await context.addInitScript(() =>
+        localStorage.setItem("xarmy-europa-map-view-v1", "2d"),
+      );
       const page = (activePage = await context.newPage());
       page.setDefaultTimeout(15000);
       page.on("pageerror", (error) => pageErrors.push(error.message));
@@ -209,13 +213,11 @@ function fixture({
       const load = async (f, name) => {
         await pause();
         await tab("Kayıtlar");
-        await page
-          .getByLabel("Sefer kayıt dosyası")
-          .setInputFiles({
-            name: `${name}.json`,
-            mimeType: "application/json",
-            buffer: Buffer.from(encodeSave(f.world)),
-          });
+        await page.getByLabel("Sefer kayıt dosyası").setInputFiles({
+          name: `${name}.json`,
+          mimeType: "application/json",
+          buffer: Buffer.from(encodeSave(f.world)),
+        });
         await page
           .getByRole("heading", { name: "Komuta merkezi", exact: true })
           .waitFor();

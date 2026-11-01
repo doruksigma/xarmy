@@ -431,10 +431,13 @@ test("Kabine ve ulusal odaklar açıklanan gerçek ekonomik sonuçları üretir"
   builder.countries.turkey.cabinet.economy = "builder";
   economyDay(w);
   economyDay(builder);
-  assert.ok(
-    w.countries.turkey.equipment.rifle >
-      builder.countries.turkey.equipment.rifle,
-  );
+  const investedRifles = (world: typeof w) =>
+    world.countries.turkey.equipment.rifle +
+    (world.countries.turkey.production.find(
+      (line) => line.equipment === "rifle",
+    )?.progress ?? 0) /
+      EQUIPMENT.rifle.cost;
+  assert.ok(investedRifles(w) > investedRifles(builder));
   w.countries.turkey.focuses = ["industry"];
   w = order(w, { type: "focus", id: "etatism" });
   w.countries.turkey.focus!.progress = 69;

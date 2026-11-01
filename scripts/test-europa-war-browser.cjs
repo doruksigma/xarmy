@@ -83,6 +83,10 @@ function fixture({ weak = false, defended = true } = {}) {
     viewport: { width: 1440, height: 1000 },
     hasTouch: true,
   });
+  // This suite exercises the retained SVG map; 3D has a separate integration suite.
+  await context.addInitScript(() =>
+    localStorage.setItem("xarmy-europa-map-view-v1", "2d"),
+  );
   const page = await context.newPage();
   page.setDefaultTimeout(15000);
   page.on("pageerror", (e) => pageErrors.push(e.message));

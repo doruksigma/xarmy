@@ -1,10 +1,12 @@
 "use client";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import WarMap, { type MapMode } from "./strategy/WarMap";
 import WarPanels, { Meter, number, TABS, type Tab } from "./strategy/WarPanels";
 import CommanderBar from "./strategy/CommanderBar";
+import MapPresentationBoundary from "./strategy/MapPresentationBoundary";
 import { applyAction, createWorld } from "./strategy/engine";
 import { dateLabel, GEOGRAPHY, MAP, surrender } from "./strategy/world";
 import {
@@ -19,6 +21,17 @@ import { useSimulation } from "./strategy/useSimulation";
 import { useSaveSlots } from "./strategy/useSaveSlots";
 import type { Action, OffensivePlan, World } from "./strategy/types";
 import styles from "./europa.module.css";
+
+const load3DMap = () => import("./strategy/WarMap3D");
+const WarMap3D = dynamic(load3DMap, {
+  ssr: false,
+  loading: () => (
+    <div className={styles.mapLoading} role="status">
+      3D arazi hazırlanıyor…
+    </div>
+  ),
+});
+const MAP_VIEW_KEY = "xarmy-europa-map-view-v1";
 
 function Saves({
   world,
@@ -132,6 +145,22 @@ export default function EuropaWarClient() {
     null,
   );
   const [campaignRevision, setCampaignRevision] = useState(0);
+  const [mapView, setMapView] = useState<"3d" | "2d">("3d");
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(MAP_VIEW_KEY) === "2d") setMapView("2d");
+    } catch {
+      /* The presentation also works without storage permission. */
+    }
+  }, []);
+  const changeMapView = useCallback((view: "3d" | "2d") => {
+    setMapView(view);
+    try {
+      localStorage.setItem(MAP_VIEW_KEY, view);
+    } catch {
+      /* Optional preference. */
+    }
+  }, []);
   const [setup, setSetup] = useState(true),
     [choice, setChoice] = useState("turkey"),
     [scenario, setScenario] = useState<World["mode"]>("historical"),
@@ -174,7 +203,7 @@ export default function EuropaWarClient() {
     },
     [setSimulationPaused],
   );
-  const offline = useOfflinePack();
+  const offline = useOfflinePack(load3DMap);
   const lastAuto = useRef(-1),
     lastHiddenSave = useRef(-1);
   const preview = useMemo(
@@ -419,6 +448,29 @@ export default function EuropaWarClient() {
     },
     [setup, shown, order, armyId, selectedArmyIds, command],
   );
+  const onMapOrder = useCallback(
+    (id: string) => {
+      if (setup || transitionPending.current) return;
+      if (order) {
+        onProvince(id);
+        return;
+      }
+      if (!selectedArmyIds.length) {
+        say("Önce kendi tümenlerini seç; ardından hedef bölgeye sağ tıkla.");
+        return;
+      }
+      if (command({ type: "moveGroup", armies: selectedArmyIds, to: id }))
+        setSelected(id);
+    },
+    [setup, order, onProvince, selectedArmyIds, command, say],
+  );
+  const on3DUnavailable = useCallback(
+    (reason: string) => {
+      changeMapView("2d");
+      say(reason);
+    },
+    [changeMapView, say],
+  );
   function beginOrder(value: "move" | "paradrop" | "front" | "offensive") {
     if (value === "move" && !selectedArmyIds.length) {
       say("Hareket emri vermek için kendi tümenlerini seç.");
@@ -464,6 +516,7 @@ export default function EuropaWarClient() {
         <Link
           className={styles.brand}
           href="/"
+          prefetch={false}
           aria-label="XARMY oyunlarına dön"
           onClick={async (event) => {
             if (
@@ -594,33 +647,77 @@ export default function EuropaWarClient() {
                       : "Dünya değişiyor."}
               </h1>
             </div>
-            <label>
-              Harita görünümü
-              <select
-                aria-label="Harita görünümü"
-                value={mode}
-                onChange={(e) => setMode(e.target.value as MapMode)}
+            <div className={styles.mapPresentation}>
+              <div
+                className={styles.mapViewButtons}
+                role="group"
+                aria-label="Harita çizimi"
               >
-                <option value="political">Siyasi</option>
-                <option value="military">Askerî</option>
-                <option value="terrain">Arazi</option>
-                <option value="supply">İkmal</option>
-                <option value="air">Hava harekâtı</option>
-                <option value="naval">Deniz harekâtı</option>
-              </select>
-            </label>
+                <button
+                  type="button"
+                  aria-pressed={mapView === "3d"}
+                  onClick={() => changeMapView("3d")}
+                >
+                  3D arazi
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={mapView === "2d"}
+                  onClick={() => changeMapView("2d")}
+                >
+                  2D siyasi harita
+                </button>
+              </div>
+              <label>
+                Harita görünümü
+                <select
+                  aria-label="Harita görünümü"
+                  value={mode}
+                  onChange={(e) => setMode(e.target.value as MapMode)}
+                >
+                  <option value="political">Siyasi</option>
+                  <option value="military">Askerî</option>
+                  <option value="terrain">Arazi</option>
+                  <option value="supply">İkmal</option>
+                  <option value="air">Hava harekâtı</option>
+                  <option value="naval">Deniz harekâtı</option>
+                </select>
+              </label>
+            </div>
           </div>
-          <WarMap
-            world={shown}
-            selected={selected}
-            armyId={armyId}
-            armyIds={selectedArmyIds}
-            mode={mode}
-            onSelect={onProvince}
-            onArmies={onArmies}
-            ordering={!!order}
-            draft={frontPoints}
-          />
+          {mapView === "3d" ? (
+            <MapPresentationBoundary
+              key={`${mapView}:${campaignRevision}`}
+              onUnavailable={on3DUnavailable}
+            >
+              <WarMap3D
+                world={shown}
+                selected={selected}
+                armyId={armyId}
+                armyIds={selectedArmyIds}
+                mode={mode}
+                onSelect={onProvince}
+                onArmies={onArmies}
+                ordering={!!order}
+                draft={frontPoints}
+                onOrder={onMapOrder}
+                onUnavailable={on3DUnavailable}
+                paused={paused || setup}
+              />
+            </MapPresentationBoundary>
+          ) : (
+            <WarMap
+              world={shown}
+              selected={selected}
+              armyId={armyId}
+              armyIds={selectedArmyIds}
+              mode={mode}
+              onSelect={onProvince}
+              onArmies={onArmies}
+              ordering={!!order}
+              draft={frontPoints}
+            />
+          )}
           {order && (
             <div className={styles.orderBanner}>
               {order === "front" || order === "offensive"
@@ -966,7 +1063,7 @@ export default function EuropaWarClient() {
               Sınırlar yaklaşık, bölgeler şehir merkezlidir. Harita: Natural
               Earth.
             </p>
-            <Link className={styles.textButton} href="/">
+            <Link className={styles.textButton} href="/" prefetch={false}>
               ← XARMY oyunları
             </Link>
           </section>

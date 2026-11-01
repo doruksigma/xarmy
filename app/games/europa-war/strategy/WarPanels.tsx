@@ -21,6 +21,7 @@ import {
   UNITS,
 } from "./catalog";
 import { CONSCRIPTION, ECONOMIES } from "./economy";
+import { productionPlan } from "./production";
 import { diplomaticAcceptance } from "./diplomacy";
 import { airPower, intelChance } from "./operations";
 import { researchDays, researchSlots } from "./politics";
@@ -190,6 +191,16 @@ export default function WarPanels({
   const own = useMemo(
     () => w.armies.filter((a) => a.country === c.id),
     [w.armies, c.id],
+  );
+  const productionPreview = useMemo(
+    () =>
+      new Map(
+        (tab === "economy" ? productionPlan(w, c) : []).map((step) => [
+          step.equipment,
+          step,
+        ]),
+      ),
+    [w, c, tab],
   );
   const selection = useMemo(() => new Set(armyIds), [armyIds]);
   const commanderCounts = useMemo(() => {
@@ -827,13 +838,20 @@ export default function WarPanels({
         <h3>Üretim hatları</h3>
         <p>
           ± ile fabrika ayır. Kaynak yoksa üretim yavaşlar. Aynı hat çalıştıkça
-          verimlilik artar.
+          verimlilik artar. Yalnızca tamamlanan tam adetler depoya girer; kalan
+          üretim puanı ve harcanan malzeme hatta korunur. Fabrikayı sıfıra
+          indirmek devam eden işi duraklatır.
         </p>
         {Object.entries(EQUIPMENT).map(([id, d]) => {
           const line = c.production.find((p) => p.equipment === id),
-            locked = d.tech && !c.tech.includes(d.tech);
+            locked = d.tech && !c.tech.includes(d.tech),
+            preview = productionPreview.get(id as Equipment);
           return (
-            <div className={styles.production} key={id}>
+            <div
+              className={styles.production}
+              key={id}
+              data-testid={`production-${id}`}
+            >
               <div>
                 <strong>{d.name}</strong>
                 <small>
@@ -846,11 +864,34 @@ export default function WarPanels({
                         ? "Tersane"
                         : "Askerî fabrika"}
                 </small>
+                {line && preview && (
+                  <small data-testid={`production-progress-${id}`}>
+                    Etkin{" "}
+                    {preview.activeFactories.toLocaleString("tr-TR", {
+                      maximumFractionDigits: 1,
+                    })}
+                    /{line.factories} {d.naval ? "tersane" : "fabrika"} ·
+                    Biriken{" "}
+                    {(line.progress ?? 0).toLocaleString("tr-TR", {
+                      maximumFractionDigits: 2,
+                    })}
+                    /{d.cost} puan
+                    <br />
+                    {preview.blocked
+                      ? {
+                          paused: "Hat duraklatıldı; biriken iş korunuyor.",
+                          capacity: "Etkin üretim kapasitesi yok.",
+                          resources: "Gerekli kaynak bulunmuyor.",
+                          storage: "Depoda tam bir ekipman için yer yok.",
+                        }[preview.blocked]
+                      : `Mevcut stokla tahmin: ${preview.completed} adet/gün · ${preview.work.toLocaleString("tr-TR", { maximumFractionDigits: 2 })} puan/gün`}
+                  </small>
+                )}
               </div>
               <div className={styles.stepper}>
                 <button
                   aria-label={`${d.name} fabrika azalt`}
-                  disabled={!line}
+                  disabled={!line || line.factories <= 0}
                   onClick={() =>
                     command({
                       type: "production",

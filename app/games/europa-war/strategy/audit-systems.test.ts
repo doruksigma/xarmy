@@ -75,7 +75,21 @@ for (const naval of [false, true])
     rejected(w, { type: "production", equipment, factories: 1 });
     const stock = w.countries.uk.equipment[other];
     economyDay(w);
+    assert.ok(
+      (w.countries.uk.production[0].progress ?? 0) > 0 ||
+        w.countries.uk.equipment[other] > stock,
+    );
+    for (
+      let day = 0;
+      day < 100 && w.countries.uk.equipment[other] === stock;
+      day++
+    )
+      economyDay(w);
     assert.ok(w.countries.uk.equipment[other] > stock);
+    assert.equal(
+      w.countries.uk.equipment[other] - stock,
+      Math.floor(w.countries.uk.equipment[other] - stock),
+    );
     assert.ok(validateWorld(w));
   });
 
@@ -191,7 +205,16 @@ test("Gün ilerletme araştırmayı bitirir, açılan üretim ekipman ve tümen 
   w.countries.turkey.equipment.lightTank = 0;
   w = order(w, { type: "production", equipment: "lightTank", factories: 1 });
   w = advanceDay(w);
+  assert.equal(w.countries.turkey.equipment.lightTank, 0);
+  assert.ok((w.countries.turkey.production[0].progress ?? 0) > 0);
+  for (
+    let day = 0;
+    day < 30 && w.countries.turkey.equipment.lightTank === 0;
+    day++
+  )
+    w = advanceDay(w);
   assert.ok(w.countries.turkey.equipment.lightTank > 0);
+  assert.ok(Number.isInteger(w.countries.turkey.equipment.lightTank));
   rejected(w, { type: "recruit", unit: "lightTank", province: "turkey-0" });
   for (const [equipment, amount] of Object.entries(UNITS.lightTank.equipment))
     w.countries.turkey.equipment[equipment as Equipment] = amount;
@@ -668,12 +691,15 @@ for (const equipment of Object.keys(EQUIPMENT) as Equipment[])
     economyDay(baseline);
     economyDay(w);
     const produced = w.countries.turkey.equipment[equipment];
-    assert.ok(produced > 0);
+    const invested =
+      produced + (w.countries.turkey.production[0].progress ?? 0) / def.cost;
+    assert.ok(Number.isInteger(produced));
+    assert.ok(invested > 0);
     for (const [resource, amount] of Object.entries(def.inputs)) {
       const used =
         baseline.countries.turkey.stock[resource as Resource] -
         w.countries.turkey.stock[resource as Resource];
-      assert.ok(Math.abs(used - produced * amount) < 1e-8);
+      assert.ok(Math.abs(used - invested * amount) < 1e-8);
     }
     for (
       let i = 0;

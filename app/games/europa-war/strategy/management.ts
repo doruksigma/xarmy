@@ -8,6 +8,7 @@ import {
 } from "./catalog";
 import { airNavalAction, quickAirOrder, quickNavalOrder } from "./airnaval";
 import { economyAction } from "./economy";
+import { PRODUCTION_BALANCE } from "./economy-balance";
 import { politicsAction, researchSlots } from "./politics";
 import {
   capacity,
@@ -153,8 +154,15 @@ export function manage(
           equipment: equipment as Equipment,
           factories,
           efficiency:
-            old.find((l) => l.equipment === equipment)?.efficiency ?? 0.2,
+            old.find((l) => l.equipment === equipment)?.efficiency ??
+            PRODUCTION_BALANCE.startingEfficiency,
+          progress: old.find((l) => l.equipment === equipment)?.progress ?? 0,
         });
+      // Reassigning factories must not erase material-backed partial items.
+      // Unselected lines remain paused and resume from their stored work.
+      for (const line of old)
+        if (!allocations[line.equipment] && (line.progress ?? 0) > 0)
+          c.production.push({ ...line, factories: 0 });
     }
     if (!c.construction.length && c.treasury > 230) {
       const weak = armies.find(

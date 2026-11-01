@@ -1,5 +1,8 @@
 import { tradeRoute } from "./trade-routes";
 import { BUILDINGS, EQUIPMENT, UNITS } from "./catalog";
+import { ECONOMIES, PRODUCTION_BALANCE } from "./economy-balance";
+import { applyProduction } from "./production";
+export { ECONOMIES } from "./economy-balance";
 import {
   addArmy,
   atWar,
@@ -13,16 +16,6 @@ import {
 } from "./world";
 import type { Action, Country, Equipment, Resource, World } from "./types";
 
-export const ECONOMIES = {
-  civilian: { name: "Sivil ekonomi", construction: 1, output: 1, tax: 1 },
-  partial: {
-    name: "Kısmi seferberlik",
-    construction: 0.85,
-    output: 1.25,
-    tax: 0.9,
-  },
-  war: { name: "Savaş ekonomisi", construction: 0.7, output: 1.6, tax: 0.75 },
-};
 export const CONSCRIPTION = {
   volunteer: { name: "Gönüllü ordu", fraction: 0.015 },
   limited: { name: "Sınırlı zorunlu hizmet", fraction: 0.035 },
@@ -109,9 +102,14 @@ export function economyAction(w: World, c: Country, a: Action): boolean {
       c.production.push({
         equipment: a.equipment,
         factories: a.factories,
-        efficiency: 0.2,
+        efficiency: PRODUCTION_BALANCE.startingEfficiency,
+        progress: 0,
       });
-    c.production = c.production.filter((p) => p.factories > 0);
+    // Zero factories pauses paid work. Removing it would silently destroy the
+    // resources already invested in the incomplete equipment item.
+    c.production = c.production.filter(
+      (p) => p.factories > 0 || (p.progress ?? 0) > 0,
+    );
     return true;
   }
   if (a.type === "recruit") {
@@ -278,38 +276,7 @@ export function economyDay(w: World) {
       c.stock.fuel,
       500 + provinces.reduce((n, p) => n + p.buildings.refinery * 300, 0),
     );
-    let availableMilitary = capacity(w, c.id, "military"),
-      availableDock = capacity(w, c.id, "dock");
-    for (const line of c.production) {
-      const def = EQUIPMENT[line.equipment];
-      let factories = Math.min(
-        line.factories,
-        def.naval ? availableDock : availableMilitary,
-      );
-      if (def.naval) availableDock -= factories;
-      else availableMilitary -= factories;
-      let amount =
-        (factories *
-          3 *
-          line.efficiency *
-          law.output *
-          (c.advisor === "industry" ? 1.1 : 1) *
-          (c.cabinet.economy === "producer" ? 1.12 : 1) *
-          (1 +
-            (c.tech.includes("industry1") ? 0.15 : 0) +
-            (c.tech.includes("industry2") ? 0.2 : 0))) /
-        def.cost;
-      for (const [r, needed] of Object.entries(def.inputs))
-        amount = Math.min(amount, c.stock[r as Resource] / needed);
-      for (const [r, needed] of Object.entries(def.inputs))
-        c.stock[r as Resource] = Math.max(
-          0,
-          c.stock[r as Resource] - amount * needed,
-        );
-      c.equipment[line.equipment] += amount;
-      if (factories && amount > 0)
-        line.efficiency = clamp(line.efficiency + 0.002, 0, 0.95);
-    }
+    applyProduction(w, c);
     const build = c.construction[0];
     if (build && w.provinces[build.province].controller === c.id) {
       build.progress += Math.max(
@@ -345,7 +312,11 @@ export function economyDay(w: World) {
     for (const r of Object.keys(c.stock) as Resource[])
       c.stock[r] = clamp(c.stock[r], 0, 100000);
     for (const r of Object.keys(c.equipment) as Equipment[])
-      c.equipment[r] = clamp(c.equipment[r], 0, 100000);
+      c.equipment[r] = clamp(
+        c.equipment[r],
+        0,
+        PRODUCTION_BALANCE.equipmentStockLimit,
+      );
     if (w.day % 7 === 0) {
       c.history.push({
         day: w.day,

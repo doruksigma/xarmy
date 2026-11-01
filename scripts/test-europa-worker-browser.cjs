@@ -28,11 +28,17 @@ fs.mkdirSync(output, { recursive: true });
     const context = await browser.newContext({
       viewport: { width: 1440, height: 1000 },
     });
-    context.on("requestfailed", (request) => networkFailures.push({
-      url: request.url(),
-      type: request.resourceType(),
-      error: request.failure()?.errorText,
-    }));
+    // This suite exercises the retained SVG map; 3D has a separate integration suite.
+    await context.addInitScript(() =>
+      localStorage.setItem("xarmy-europa-map-view-v1", "2d"),
+    );
+    context.on("requestfailed", (request) =>
+      networkFailures.push({
+        url: request.url(),
+        type: request.resourceType(),
+        error: request.failure()?.errorText,
+      }),
+    );
     let workers = [];
     const attach = (nextPage) => {
       page = nextPage;
@@ -251,11 +257,15 @@ fs.mkdirSync(output, { recursive: true });
     const workerAssets = await worker.evaluate(() => {
       const location = new URL(self.location.href);
       const entry = location.searchParams.get("entry");
-      return [...new Set([
-        location.href,
-        ...(entry ? [new URL(entry, location).href] : []),
-        ...performance.getEntriesByType("resource").map((resource) => resource.name),
-      ])];
+      return [
+        ...new Set([
+          location.href,
+          ...(entry ? [new URL(entry, location).href] : []),
+          ...performance
+            .getEntriesByType("resource")
+            .map((resource) => resource.name),
+        ]),
+      ];
     });
     const terrainUrl = await page
       .locator('[data-testid="terrain-overlay"]')
@@ -335,12 +345,19 @@ fs.mkdirSync(output, { recursive: true });
     );
     console.log(JSON.stringify(result));
   } catch (error) {
-    fs.writeFileSync(path.join(output, "failure.json"), JSON.stringify({
-      error: error.message,
-      checks,
-      pageErrors: errors,
-      networkFailures,
-    }, null, 2));
+    fs.writeFileSync(
+      path.join(output, "failure.json"),
+      JSON.stringify(
+        {
+          error: error.message,
+          checks,
+          pageErrors: errors,
+          networkFailures,
+        },
+        null,
+        2,
+      ),
+    );
     if (page && !page.isClosed()) {
       await page
         .screenshot({ path: path.join(output, "failure.png") })

@@ -1,1 +1,1 @@
-export const EUROPA_OFFLINE_VERSION = "europa-offline-v3";
+export const EUROPA_OFFLINE_VERSION = "europa-offline-v4";

@@ -103,7 +103,11 @@ export const countrySchema: Record<
   stock: values(["iron", "steel", "oil", "aluminum", "rubber", "fuel"]),
   equipment: values(Object.keys(EQUIPMENT)),
   production: arr(
-    shape({ equipment, factories: num(100), efficiency: num(1) }),
+    shapeWithOptionalField(
+      { equipment, factories: num(100), efficiency: num(1) },
+      "progress",
+      num(1000),
+    ),
     20,
   ),
   construction: arr(shape({ ...project, province, building }), 8),
@@ -457,6 +461,11 @@ function validateWithRegions(
     if (
       new Set(c.production.map((p) => p.equipment)).size !==
         c.production.length ||
+      c.production.some(
+        (line) =>
+          !Number.isInteger(line.factories) ||
+          (line.progress ?? 0) >= EQUIPMENT[line.equipment].cost,
+      ) ||
       new Set(c.tech).size !== c.tech.length ||
       c.agents + c.missions.length > 5 ||
       c.air.wings.some(

@@ -19,6 +19,10 @@ mkdirSync(output, { recursive: true });
     const context = await browser.newContext({
       viewport: { width: 1440, height: 1000 },
     });
+    // This suite exercises the retained SVG map; 3D has a separate integration suite.
+    await context.addInitScript(() =>
+      localStorage.setItem("xarmy-europa-map-view-v1", "2d"),
+    );
     page = await context.newPage();
     const errors = [],
       requests = [];

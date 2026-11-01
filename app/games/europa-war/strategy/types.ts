@@ -98,6 +98,8 @@ export interface Production {
   equipment: Equipment;
   factories: number;
   efficiency: number;
+  /** Material-backed work toward the next whole item. Missing in legacy saves. */
+  progress?: number;
 }
 export interface Project {
   id: string;

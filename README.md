@@ -149,6 +149,29 @@ groups migrate without losing troops or their existing movement orders.
 See [the Turkish commander guide](docs/europa-commanders.md) for controls,
 movement rules, save compatibility, and regression checks.
 
+## Europa War 3D and production foundation
+
+The campaign now opens in a Three.js terrain view with the same 447 province
+IDs and simulation as the retained **2D siyasi harita** view. Use **3D arazi**
+to return, drag to pan, scroll/pinch to zoom, middle-drag to orbit, and right-click
+to order selected divisions. Touch users can use the existing army target-order
+buttons. Quality presets change presentation costs without changing battle
+calculations. WebGL failure returns to the 2D view without discarding the campaign.
+
+The relief and miniature scenery are procedural strategic representations,
+not a measured elevation atlas or authored historical models. See
+[the 3D controls](docs/europa-3d.md) and [geometry provenance](docs/europa-3d-geometry.md). Production now finishes
+whole equipment items and saves already-paid work between days;
+[the production guide](docs/europa-production.md) documents capacity, resource,
+legacy-save, and civil-war accounting.
+
+The larger expansion remains staged: [the supplied specification](docs/europa-expansion-spec.md)
+and [the implementation status](docs/europa-expansion-status.md) distinguish the
+existing systems, this stage, and the unfinished hourly/world-scenario/design
+and logistics work. Run `npm run test:europa`; the real WebGL regression is
+`node scripts/test-europa-3d-browser.cjs` against a local production server with
+Playwright and Chromium installed. Legacy map browser suites explicitly use 2D.
+
 ## Getting Started
 
 First, run the development server:

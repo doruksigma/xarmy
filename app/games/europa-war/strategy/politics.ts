@@ -168,6 +168,14 @@ export function startCivilWar(
     r.equipment[e] *= 0.4;
     c.equipment[e] *= 0.6;
   }
+  // Partial equipment is material-backed value too: cloning a production
+  // line must not duplicate the resources already invested in it.
+  for (let i = 0; i < c.production.length; i++) {
+    const progress = c.production[i].progress;
+    if (progress === undefined) continue;
+    r.production[i].progress = progress * 0.4;
+    c.production[i].progress = progress * 0.6;
+  }
   r.wars = [];
   r.allies = [];
   r.access = [];

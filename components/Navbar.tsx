@@ -15,6 +15,8 @@ const nav = [
 
 export default function Navbar() {
   const pathname = usePathname() ?? "";
+  // The full-screen offline campaign must not preload unrelated online games.
+  const prefetch = pathname.startsWith("/games/europa-war") ? false : undefined;
   const [open, setOpen] = useState(false);
   const menuButton = useRef<HTMLButtonElement>(null);
 
@@ -39,6 +41,7 @@ export default function Navbar() {
         <Link
           key={item.href}
           href={item.href}
+          prefetch={prefetch}
           aria-current={active ? "page" : undefined}
           onClick={() => setOpen(false)}
           className={`${mobile ? "px-4 py-3 text-sm" : "px-3 py-2 text-xs"} rounded-lg transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-lime-200 ${active ? "bg-emerald-300/10 text-emerald-100" : "text-slate-300 hover:bg-slate-800 hover:text-white"}`}
@@ -54,6 +57,7 @@ export default function Navbar() {
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3">
         <Link
           href="/"
+          prefetch={prefetch}
           className="inline-flex shrink-0 items-center gap-2.5 rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-lime-200"
           aria-label="XARMY Arena ana sayfa"
         >

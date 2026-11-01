@@ -51,6 +51,10 @@ fs.mkdirSync(output, { recursive: true });
     const context = await browser.newContext({
       viewport: { width: 1440, height: 1000 },
     });
+    // This suite exercises the retained SVG map; 3D has a separate integration suite.
+    await context.addInitScript(() =>
+      localStorage.setItem("xarmy-europa-map-view-v1", "2d"),
+    );
     context.on("requestfailed", (request) =>
       networkFailures.push({
         url: request.url(),
@@ -551,10 +555,9 @@ fs.mkdirSync(output, { recursive: true });
         else delete document.hidden;
       }
     });
-    assert.deepEqual(
-      await page.evaluate(() => window.__europaSaveWork.puts),
-      [{ slot: "auto-2", day: 80 }],
-    );
+    assert.deepEqual(await page.evaluate(() => window.__europaSaveWork.puts), [
+      { slot: "auto-2", day: 80 },
+    ]);
     const heldDate = await page.getByTestId("game-date").textContent();
     assert.equal(
       await page

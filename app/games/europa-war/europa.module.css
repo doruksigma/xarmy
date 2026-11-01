@@ -368,6 +368,43 @@
   font-size: 11px;
   letter-spacing: 0;
 }
+.mapPresentation {
+  display: grid;
+  justify-items: end;
+  gap: 9px;
+  flex: none;
+}
+.mapViewButtons {
+  display: flex;
+  gap: 4px;
+}
+.mapViewButtons button {
+  padding: 6px 9px;
+  font-size: 10px;
+  background: #14271fee;
+}
+.mapViewButtons button[aria-pressed="true"] {
+  color: #f5e6b6;
+  border-color: #a5a375;
+  background: #46513c;
+}
+.mapLoading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  background: #152c33;
+  color: #d9bc80;
+}
+@media (max-width: 700px) {
+  .mapViewButtons button {
+    padding: 6px;
+    font-size: 9px;
+  }
+  .mapPresentation {
+    gap: 6px;
+  }
+}
 .mapControls {
   position: absolute;
   bottom: 87px;

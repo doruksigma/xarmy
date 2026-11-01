@@ -5,10 +5,11 @@ import vm from "node:vm";
 import { GET } from "../sw.js/route";
 import { GET as workerBootstrapGET } from "../simulation-worker.js/route";
 import manifest from "./map-assets.json";
+import { EUROPA_OFFLINE_VERSION as VERSION } from "./offline-protocol";
 
 const ORIGIN = "https://game.example";
 const PAGE = "/games/europa-war";
-const VERSION = "europa-offline-v3";
+const ICON = "/favicon.ico";
 const MAIN = "/_next/static/chunks/main-v1.js";
 const STYLE = "/_next/static/css/game-v1.css";
 const WORKER = "/_next/static/chunks/simulation-v1.js";
@@ -118,6 +119,7 @@ async function harness() {
   resource(BOOTSTRAP, "bootstrap-v1", "application/javascript");
   resource(SHARED, "shared-v1", "application/javascript");
   resource(manifest.terrain.url, "terrain-v1", "image/webp");
+  resource(ICON, "site-icon", "image/x-icon");
   const fetch = async (input: Resource) => {
     const url = absolute(input);
     fetched.push(url);
@@ -198,10 +200,10 @@ test("Offline worker announces its protocol version through the request's messag
   assert.equal(replies[0].terrain, manifest.terrain.url);
 });
 
-test("A complete offline pack includes worker entry, worker chunks, terrain and page assets", async () => {
+test("A complete offline pack includes worker entry, worker chunks, terrain, site icon and page assets", async () => {
   const h = await harness();
   assertReply(await h.message(cacheMessage()), "EUROPA_READY");
-  for (const path of [PAGE, MAIN, STYLE, BOOTSTRAP, WORKER, SHARED, manifest.terrain.url]) {
+  for (const path of [PAGE, MAIN, STYLE, BOOTSTRAP, WORKER, SHARED, manifest.terrain.url, ICON]) {
     assert.ok(h.fetched.includes(absolute(path)), `The pack must download ${path}`);
   }
   h.goOffline();
@@ -213,6 +215,7 @@ test("A complete offline pack includes worker entry, worker chunks, terrain and 
     [WORKER, "worker-v1"],
     [SHARED, "shared-v1"],
     [manifest.terrain.url, "terrain-v1"],
+    [ICON, "site-icon"],
   ]) {
     const response = await h.request(path, path === PAGE ? "navigate" : undefined);
     assert.equal(response?.status, 200, path);
@@ -307,8 +310,8 @@ test("A worker asset report without its scoped bootstrap cannot claim offline re
   })), "EUROPA_FAILED");
 });
 
-test("Worker, shared chunk, terrain and page download failures never report READY", async () => {
-  for (const failed of [BOOTSTRAP, WORKER, SHARED, manifest.terrain.url, PAGE]) {
+test("Worker, shared chunk, terrain, site icon and page download failures never report READY", async () => {
+  for (const failed of [BOOTSTRAP, WORKER, SHARED, manifest.terrain.url, ICON, PAGE]) {
     const h = await harness();
     h.responses.delete(absolute(failed));
     assertReply(await h.message(cacheMessage()), "EUROPA_FAILED");
@@ -379,6 +382,7 @@ test("A failed upgrade preserves the previous complete offline page and worker",
   assert.equal(await (await h.request(MAIN))?.text(), "main-v1");
   assert.equal(await (await h.request(WORKER))?.text(), "worker-v1");
   assert.equal(await (await h.request(manifest.terrain.url))?.text(), "terrain-v1");
+  assert.equal(await (await h.request(ICON))?.text(), "site-icon");
   await assert.rejects(h.request(nextMain), /Network unavailable/);
 });
 
@@ -421,16 +425,20 @@ test("A deployment changing during download cannot mix new HTML with an older as
   assert.equal(await (await h.request(WORKER))?.text(), "worker-v1");
 });
 
-test("An older installed pack remains available while the new pack is unavailable", async () => {
-  const h = await harness();
-  const old = await h.caches.open("xarmy-europa-offline-v1");
-  await old.put(PAGE, new Response("legacy-page", { headers: { "Content-Type": "text/html" } }));
-  await old.put(MAIN, new Response("legacy-main"));
-  h.failures.add(absolute(WORKER));
-  assertReply(await h.message(cacheMessage()), "EUROPA_FAILED");
-  h.goOffline();
-  assert.equal(await (await h.request(PAGE, "navigate"))?.text(), "legacy-page");
-  assert.equal(await (await h.request(MAIN))?.text(), "legacy-main");
+test("Worker or site icon download failures preserve the older installed playable pack", async () => {
+  for (const failed of [WORKER, ICON]) {
+    const h = await harness();
+    const old = await h.caches.open("xarmy-europa-offline-v1");
+    await old.put(PAGE, new Response("legacy-page", { headers: { "Content-Type": "text/html" } }));
+    await old.put(MAIN, new Response("legacy-main"));
+    h.failures.add(absolute(failed));
+    assertReply(await h.message(cacheMessage()), "EUROPA_FAILED");
+    assert.equal(await h.caches.has("xarmy-europa-offline-v1"), true);
+    assert.equal((await h.caches.keys()).some((name) => name.startsWith("xarmy-europa-pack-v2-")), false);
+    h.goOffline();
+    assert.equal(await (await h.request(PAGE, "navigate"))?.text(), "legacy-page", failed);
+    assert.equal(await (await h.request(MAIN))?.text(), "legacy-main", failed);
+  }
 });
 
 test("Successful upgrades retain two complete packs and failed upgrades preserve them", async () => {
@@ -479,5 +487,9 @@ test("The game worker does not intercept unrelated pages, requests or external a
   h.goOffline();
   assert.equal(await h.request("/account", "navigate"), undefined);
   assert.equal(await h.request("/api/private"), undefined);
+  assert.equal(await h.request("/favicon.ico?private=1"), undefined);
+  assert.equal(await h.request("/favicon.ico/private"), undefined);
+  assert.equal(await h.request("/icons/favicon.ico"), undefined);
+  assert.equal(await h.request("https://other.example/favicon.ico"), undefined);
   assert.equal(await h.request("https://other.example/_next/static/chunk.js"), undefined);
 });

@@ -114,7 +114,7 @@ async function currentOfflineWorker(
   throw new Error("Current offline worker unavailable");
 }
 
-export function useOfflinePack() {
+export function useOfflinePack(loadPresentation?: () => Promise<unknown>) {
   const [status, setStatus] = useState("Sefer bu cihazda çalışır.");
   useEffect(() => {
     if (
@@ -134,7 +134,12 @@ export function useOfflinePack() {
     async function prepare() {
       try {
         // Wait before declaring readiness: workers do not appear in script tags.
-        const workerAssets = await simulationAssets(signal);
+        const [workerAssets] = await Promise.all([
+          simulationAssets(signal),
+          // Include lazy presentation chunks before advertising offline readiness.
+          // Loading modules does not create a WebGL context or change the world.
+          loadPresentation?.(),
+        ]);
         const registration = await navigator.serviceWorker.register(
           "/games/europa-war/sw.js",
           { scope: "/games/europa-war", updateViaCache: "none" },
@@ -174,6 +179,6 @@ export function useOfflinePack() {
     }
     void prepare();
     return () => cancellation.abort();
-  }, []);
+  }, [loadPresentation]);
   return status;
 }
