@@ -1,5 +1,14 @@
 # Satranç işlev denetimi — 23 Ekim 2026
 
+## 1 Kasım 2026 — düşünme süreleri
+
+Oynayan botların hamle başına süre bütçeleri kolay (`easy`) için 500 ms,
+orta için 1000 ms, güçlü için 2000 ms olarak güncellendi. Eğitmenin bağımsız
+analiz süresi korunuyor. 104/104 birim testi ve 7/7 temel tarayıcı kontrolü geçti.
+`scripts/test-chess-timing-browser.cjs` gerçek üretim işçisini ve Stockfish
+WASM motorunu kullanarak sırasıyla yaklaşık 523 / 1002 / 2068 ms ölçtü;
+üçü de yasal hamle üretti. İlk dosya indirme süresi bu ölçüme dahil değildir.
+
 ## Kapsam ve ilk sonuç
 
 Satranç istemcisi, Stockfish bağlantısı, eğitmen/maç analizi, oda API'leri ve
@@ -10,7 +19,7 @@ için otomatik regresyon testleridir.
 
 | Özellik                     | Doğrulama                                                                                                                                              |
 | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Kötü / orta / güçlü botlar  | Derinlik 1 / 10; güçlü botta yapay derinlik sınırı yok, hamle başına 8 saniye hesap; UCI komutları ve yasal hamle denetimi test edildi.                |
+| Kötü / orta / güçlü botlar  | 1 Kasım güncellemesi: hamle başına 0,5 / 1 / 2 saniye hesap; yapay derinlik sınırı yok. Süre ayarları ve yasal hamle denetimi test edildi.                |
 | Eğitmenin güçlü önerisi     | Oynayan bot ayarından bağımsız tam güç analizi; öneri değiştirildiğinde eşit veya daha iyi ölçüm şartı test edildi.                                    |
 | Hatanın açıklanması         | Oynanan/en iyi hamle aynı kökten ve aynı tamamlanan derinlikte ölçülür; vezir kaybı, matı kaçırma, mat tehdidi ve kısa Türkçe açıklamalar test edildi. |
 | Analiz doğruluğu            | Ölçülemeyen konuma iyi not verilmez; siyahın değerlendirme yönü ve her iki oyuncunun hamle geçmişi test edildi.                                        |

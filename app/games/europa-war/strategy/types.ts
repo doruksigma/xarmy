@@ -87,6 +87,12 @@ export interface General {
   trait: "attack" | "defense" | "logistics";
   skill: number;
   xp: number;
+  /** No front means this commander issues no automatic movement orders. */
+  front?: {
+    target: string;
+    stance: "defend" | "attack";
+    assignments: Record<string, string>;
+  };
 }
 export interface Production {
   equipment: Equipment;
@@ -151,6 +157,7 @@ export interface Country {
   capitulated: boolean;
   victor: string | null;
   generals: General[];
+  autoAssignCommanders?: boolean;
   advisor: "industry" | "science" | "army";
   automation: {
     economy: boolean;
@@ -342,6 +349,11 @@ export interface PeaceConference {
   status: "open" | "closed";
 }
 export type Action =
+  | { type: "commanderAutoAssign"; enabled: boolean }
+  | { type: "commanderDeploy"; general: string; target: string }
+  | { type: "commanderStance"; general: string; stance: "defend" | "attack" }
+  | { type: "commanderRecall"; general: string }
+  | { type: "commanderCreate" }
   | { type: "difficulty"; value: World["difficulty"] }
   | { type: "automation"; area: keyof Country["automation"]; enabled: boolean }
   | { type: "autoPlan"; area: keyof Country["automation"] }

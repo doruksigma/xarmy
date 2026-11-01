@@ -1,0 +1,245 @@
+.bar {
+  position: relative;
+  flex: none;
+  min-width: 0;
+  z-index: 7;
+  border-top: 1px solid #737254;
+  background: #12201b;
+  box-shadow: 0 -5px 25px #0003;
+  padding: 8px 16px calc(8px + env(safe-area-inset-bottom, 0px));
+}
+.toolbar {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  min-height: 29px;
+  margin-bottom: 5px;
+}
+.toolbar > strong {
+  color: #d9bc80;
+  font-size: 9px;
+  letter-spacing: 1.7px;
+}
+.bar .toolbar > button {
+  margin-left: auto;
+  padding: 5px 10px;
+  font-size: 11px;
+}
+.autoAssign {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #c8d0bd;
+  font-size: 11px;
+  cursor: pointer;
+}
+.autoAssign input {
+  accent-color: #d9bc80;
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+.roster {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  overscroll-behavior-x: contain;
+  padding-bottom: 2px;
+}
+.bar .card {
+  display: flex;
+  align-items: center;
+  flex: 0 0 176px;
+  padding: 4px;
+  text-align: left;
+  gap: 8px;
+  border-color: #4c5944;
+  background: #1b2a22;
+}
+.bar .card[aria-expanded="true"] {
+  background: #364431;
+  border-color: #d9bc80;
+}
+.portrait {
+  width: 44px;
+  flex: none;
+  overflow: hidden;
+  border: 1px solid #8f8b68;
+  border-radius: 2px;
+}
+.portrait svg,
+.largePortrait svg {
+  width: 100%;
+  display: block;
+}
+.cardText {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.cardText strong {
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cardText > span {
+  font-size: 10px;
+  color: #e6d6af;
+  font-variant-numeric: tabular-nums;
+}
+.cardText > small {
+  font-size: 9px;
+  color: #aebb9f;
+}
+.capacityHint {
+  align-self: center;
+  flex: 0 0 230px;
+  padding: 0 10px;
+  font-size: 10px;
+  color: #9ea995;
+  line-height: 1.7;
+}
+.panel {
+  position: absolute;
+  left: 16px;
+  bottom: calc(100% + 8px);
+  width: min(460px, calc(100% - 32px));
+  max-height: min(530px, calc(100dvh - 250px));
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  background: #17251efc;
+  border: 1px solid #8a8861;
+  box-shadow: 0 10px 35px #0009;
+  border-radius: 6px;
+  padding: 16px;
+}
+.heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.heading > div:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+}
+.bar .heading small {
+  font-size: 8px;
+  letter-spacing: 1.2px;
+  color: #d9bc80;
+}
+.bar .heading h3 {
+  margin: 4px 0;
+  font-size: 17px;
+}
+.heading span {
+  color: #b3bca4;
+  font-size: 11px;
+}
+.largePortrait {
+  width: 48px;
+  flex: none;
+  border: 1px solid #918866;
+}
+.bar .heading > button {
+  align-self: flex-start;
+  padding: 5px 10px;
+  font-size: 20px;
+}
+.actions,
+.orders {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+.actions > button,
+.orders > button {
+  flex: 1;
+  min-height: 38px;
+}
+.orders > button[aria-pressed="true"] {
+  border-color: #d9bc80;
+  background: #46513c;
+  color: #f4e6bf;
+}
+.bar .panel p {
+  margin: 10px 0 0;
+  color: #aebda8;
+  font-size: 11px;
+}
+.bar .panel .notice {
+  color: #d9bc80;
+}
+.borderPicker {
+  border-top: 1px solid #42523d;
+  margin-top: 12px;
+}
+.countries {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 10px;
+}
+.bar .countries button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  min-height: 50px;
+  text-align: left;
+  font-size: 11px;
+}
+.bar .countries small {
+  display: block;
+  margin-top: 3px;
+  font-size: 9px;
+}
+.flag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 31px;
+  height: 28px;
+  border: 1px solid #d5d0b370;
+  border-radius: 3px;
+  font-size: 17px;
+}
+@media (max-width: 700px) {
+  .bar {
+    padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
+  }
+  .toolbar {
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+  .toolbar > strong {
+    display: none;
+  }
+  .bar .toolbar > button {
+    font-size: 10px;
+    white-space: nowrap;
+    min-height: 30px;
+  }
+  .autoAssign {
+    font-size: 10px;
+    line-height: 1.35;
+  }
+  .bar .card {
+    flex-basis: 158px;
+    gap: 6px;
+  }
+  .portrait {
+    width: 38px;
+  }
+  .cardText strong {
+    font-size: 10px;
+  }
+  .panel {
+    left: 8px;
+    width: calc(100% - 16px);
+    padding: 12px;
+    max-height: calc(100dvh - 235px);
+  }
+}

@@ -40,8 +40,9 @@ SharedArrayBuffer or cross-origin isolation. Reviews arrive progressively while
 the UI remains usable. Search depth and evaluation are measured by Stockfish;
 device speed and the allotted thinking time still limit how deeply it searches.
 Normal bot games offer **Güçlü**, **Orta**, or **Kötü**. All use Stockfish at
-Skill Level 20 with `UCI_LimitStrength=false`: Kötü searches to depth 1, Orta
-to depth 10, and Güçlü searches without a depth cap for 8 seconds per move.
+Skill Level 20 with `UCI_LimitStrength=false`: Kötü thinks for 0.5 seconds,
+Orta for 1 second, and Güçlü for 2 seconds per move, without artificial depth
+caps. These are engine search budgets; the first engine download is separate.
 There are no random replacement moves or forced opening candidates. Training
 always uses Güçlü and has no difficulty selector. Its default recommendation
 is the engine's best move from an independent full-strength, uncapped-depth
@@ -133,6 +134,20 @@ the repository root (Node.js 24):
 npm run test:chess
 npm exec tsc -- --noEmit --incremental false
 ```
+
+## Europa War commanders
+
+Open `/games/europa-war` and use a portrait in the bottom commander bar. Each
+commander holds at most 12 divisions. Optional automatic recruitment assignment
+fills available slots, then creates an idle commander when all rosters are full.
+Choose **Sınırlara yerleştir** and a neighboring country's flag for balanced
+deployment. **Savun** holds the border; **Saldır** advances only against that
+country and requires a declared war. Unassigned commanders receive no automatic
+front orders. Orders and memberships persist through saves; legacy oversized
+groups migrate without losing troops or their existing movement orders.
+
+See [the Turkish commander guide](docs/europa-commanders.md) for controls,
+movement rules, save compatibility, and regression checks.
 
 ## Getting Started
 

@@ -1,4 +1,5 @@
 import { airSupport } from "./airnaval";
+import { commanderOrderAllows } from "./commander-roster";
 import { addWarScore, openConference } from "./conference";
 import { equipmentNeeds } from "./planning";
 import { seaEdgeOpen } from "./military-assets";
@@ -308,6 +309,7 @@ export function resolveLandDay(w: World) {
         edge = GEOGRAPHY[a.province].neighbors.find((e) => e.id === next);
       if (
         !edge ||
+        !commanderOrderAllows(w, a, next) ||
         (!friendly(w, a.country, w.provinces[next].controller) &&
           !atWar(w, a.country, w.provinces[next].controller)) ||
         (edge.sea && !seaEdgeOpen(w, a.country, a.province, next))
@@ -339,6 +341,7 @@ export function resolveLandDay(w: World) {
         (e) => e.id === a.move!.to,
       )?.sea;
       if (
+        !commanderOrderAllows(w, a, a.move.to) ||
         (!friendly(w, a.country, controller) &&
           !atWar(w, a.country, controller)) ||
         (a.move.kind !== "paradrop" &&
@@ -420,7 +423,14 @@ export function resolveLandDay(w: World) {
   }
   for (const { to, armies } of groups.values()) {
     // An earlier battle may have killed or routed members of this group.
-    const attackers = armies.filter((a) => a.strength > 0 && a.move?.to === to);
+    const attackers = armies.filter((a) => {
+      if (a.strength <= 0 || a.move?.to !== to) return false;
+      if (commanderOrderAllows(w, a, to)) return true;
+      a.move = null;
+      a.route = [];
+      delete a.marchGroup;
+      return false;
+    });
     const first = attackers[0];
     if (!first) continue;
     const p = w.provinces[to],

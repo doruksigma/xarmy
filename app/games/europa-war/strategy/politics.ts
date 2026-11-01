@@ -188,6 +188,10 @@ export function startCivilWar(
     recruitment: false,
     operations: false,
   };
+  // The new country's AI must choose its own fronts. Cloning the loyalist
+  // commander's foreign assignment would override rebel orders every day.
+  r.autoAssignCommanders = false;
+  for (const general of r.generals) delete general.front;
   r.air.wings = [];
   r.navy.ships = [];
   for (const wing of [...c.air.wings])

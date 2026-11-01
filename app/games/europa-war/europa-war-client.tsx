@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import WarMap, { type MapMode } from "./strategy/WarMap";
 import WarPanels, { Meter, number, TABS, type Tab } from "./strategy/WarPanels";
+import CommanderBar from "./strategy/CommanderBar";
 import { applyAction, createWorld } from "./strategy/engine";
 import { dateLabel, GEOGRAPHY, MAP, surrender } from "./strategy/world";
 import {
@@ -325,16 +326,31 @@ export default function EuropaWarClient() {
         setWorld(result.world);
         const count = "armies" in a ? new Set(a.armies).size : 1,
           movementOrder =
-            ["move", "moveGroup", "paradrop", "front"].includes(a.type) ||
-            (a.type === "plan" && a.kind === "start"),
+            [
+              "move",
+              "moveGroup",
+              "paradrop",
+              "front",
+              "commanderDeploy",
+            ].includes(a.type) ||
+            (a.type === "plan" && a.kind === "start") ||
+            (a.type === "commanderStance" && a.stance === "attack"),
           feedback =
-            a.type === "haltGroup"
-              ? `${count} tümen için hareket durduruldu; savunma emri verildi.`
-              : a.type === "moveGroup"
-                ? `${count} tümen için hareket emri hazır.`
-                : movementOrder
-                  ? "Emir hazır."
-                  : "Emir uygulandı.";
+            a.type === "commanderDeploy"
+              ? "Komutanın tümenleri seçtiğin ülkenin sınırına dengeli yerleşecek."
+              : a.type === "commanderStance"
+                ? a.stance === "attack"
+                  ? "Komutan yalnızca atandığı ülkeye karşı taarruza geçti."
+                  : "Komutan savunmaya geçti; düşman topraklarına ilerlemeyecek."
+                : a.type === "commanderRecall"
+                  ? "Komutanın sınır görevi kaldırıldı. Tümenleri yeni emir bekliyor."
+                  : a.type === "haltGroup"
+                    ? `${count} tümen için hareket durduruldu; savunma emri verildi.`
+                    : a.type === "moveGroup"
+                      ? `${count} tümen için hareket emri hazır.`
+                      : movementOrder
+                        ? "Emir hazır."
+                        : "Emir uygulandı.";
         setMessage(
           feedback +
             (paused && movementOrder
@@ -800,6 +816,21 @@ export default function EuropaWarClient() {
           </aside>
         )}
       </div>
+      {!setup && (
+        <CommanderBar
+          key={`commanders:${campaignRevision}:${shown.player}`}
+          world={shown}
+          disabled={transition !== null}
+          paused={paused}
+          command={command}
+          onSelect={(ids) => {
+            setArmyIds(ids);
+            setOrder(null);
+            setFrontPoints([]);
+            setPanel(false);
+          }}
+        />
+      )}
       {setup && (
         <div className={styles.setupShade}>
           <section

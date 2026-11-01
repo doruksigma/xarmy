@@ -1,4 +1,10 @@
 import { conferenceAction, conferencesDay } from "./conference";
+import {
+  assignCommander,
+  cleanupCommanders,
+  commanderAction,
+  commandersDay,
+} from "./commanders";
 import { managementAction, managementDay } from "./management";
 import { detachArmy, planningAction, planningDay } from "./planning";
 import { aiDay } from "./ai";
@@ -105,12 +111,7 @@ export function applyAction(
           a.stance = "hold";
         }
         if (action.type === "general") {
-          requireRule(
-            action.general === null ||
-              c.generals.some((g) => g.id === action.general),
-            "Komutan bulunamadı.",
-          );
-          a.general = action.general;
+          assignCommander(w, c, a, action.general);
         }
         if (action.type === "move" || action.type === "moveGroup") {
           requireRule(w.provinces[action.to], "Hedef eyalet bulunamadı.");
@@ -164,7 +165,8 @@ export function applyAction(
       diplomaticAction(w, c, action.target, action.kind);
     else
       requireRule(
-        conferenceAction(w, c, action) ||
+        commanderAction(w, c, action) ||
+          conferenceAction(w, c, action) ||
           managementAction(w, c, action) ||
           planningAction(w, c, action) ||
           economyAction(w, c, action) ||
@@ -172,6 +174,7 @@ export function applyAction(
           operationsAction(w, c, action),
         "İşlem tanınmadı.",
       );
+    cleanupCommanders(w);
     return { world: w, error: null };
   } catch (error) {
     return {
@@ -205,6 +208,7 @@ export function advanceDay(world: World): World {
     });
   }
   w.fronts = w.fronts.filter((f) => f.armies.length > 0);
+  commandersDay(w);
   resolveLandDay(w);
   for (const p of w.plans)
     p.armies = p.armies.filter((id) =>
@@ -217,6 +221,7 @@ export function advanceDay(world: World): World {
     );
   w.fronts = w.fronts.filter((f) => f.armies.length);
   conferencesDay(w);
+  cleanupCommanders(w);
   w.tension = clamp(w.tension - 0.002);
   return w;
 }

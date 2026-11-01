@@ -565,7 +565,9 @@ test("Kolay zorluk mevcut seferde çalışır ve kayda taşınır", () => {
   const a = w.armies.find((a) => a.country === w.player)!;
   const baseline = combatPower(w, a, true, a.province);
   w = order(w, { type: "difficulty", value: "easy" });
-  assert.equal(combatPower(w, a, true, a.province), baseline * 1.5);
+  assert.ok(
+    Math.abs(combatPower(w, a, true, a.province) - baseline * 1.5) < 1e-8,
+  );
   assert.equal(decodeSave(encodeSave(w)).difficulty, "easy");
   w = order(w, { type: "difficulty", value: "hard" });
   assert.ok(

@@ -1,4 +1,5 @@
 import { manage } from "./management";
+import { assignAvailableCommander } from "./commander-roster";
 import { seaEdgeOpen } from "./military-assets";
 import { focusTree, TECHNOLOGIES } from "./catalog";
 import { diplomaticAcceptance, diplomaticAction } from "./diplomacy";
@@ -256,7 +257,13 @@ export function aiDay(w: World) {
       : [];
     for (const a of armies) {
       if (a.move || a.route.length) continue;
-      if (!a.general) a.general = c.generals[a.type === "infantry" ? 0 : 1].id;
+      if (!a.general)
+        assignAvailableCommander(
+          w,
+          c,
+          a,
+          c.generals[a.type === "infantry" ? 0 : 1].id,
+        );
       const adjacent = GEOGRAPHY[a.province].neighbors.filter(
           (e) =>
             !e.sea ||

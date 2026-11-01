@@ -27,13 +27,12 @@ export interface BotEngine {
   playMove(options: StockfishPlaySearch): Promise<StockfishMoveResult>;
 }
 
-// Every level uses the same unhandicapped engine. Only the two lower levels
-// cap search depth. Hard searches freely until its per-move thinking time ends,
-// rather than returning a move from an artificially restricted opening book.
+// Every level searches freely at full skill. The user's selected level sets
+// the per-move thinking budget, independently of the initial engine download.
 export const BOT_LEVELS = {
-  easy: { skillLevel: 20, depth: 1 },
-  medium: { skillLevel: 20, depth: 10 },
-  hard: { skillLevel: 20, movetime: 8_000 },
+  easy: { skillLevel: 20, movetime: 500 },
+  medium: { skillLevel: 20, movetime: 1_000 },
+  hard: { skillLevel: 20, movetime: 2_000 },
 } satisfies Record<
   BotDifficulty,
   Pick<StockfishPlaySearch, "skillLevel" | "depth" | "movetime">
@@ -73,7 +72,7 @@ export async function searchBotMove(
   }
 }
 
-/** Stockfish at the selected thinking depth, with no random-move fallback. */
+/** Stockfish at the selected thinking time, with no random-move fallback. */
 export async function chooseBotMove(
   fen: string,
   difficulty: BotDifficulty = "hard",

@@ -1084,8 +1084,7 @@ export default function ChessArena() {
                         <option value="easy">Kötü</option>
                       </select>
                       <p className="mt-2 text-xs leading-5 text-slate-400">
-                        Kötü kısa düşünür, orta daha ileriyi hesaplar, güçlü tüm
-                        gücüyle oynar.
+                        Kötü 0,5 saniye, orta 1 saniye, güçlü 2 saniye düşünür.
                       </p>
                     </>
                   )}

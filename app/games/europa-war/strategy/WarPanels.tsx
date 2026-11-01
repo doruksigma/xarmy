@@ -25,6 +25,7 @@ import { diplomaticAcceptance } from "./diplomacy";
 import { airPower, intelChance } from "./operations";
 import { researchDays, researchSlots } from "./politics";
 import { armyMovementWarnings, armyStatus } from "./army-status";
+import { COMMANDER_CAPACITY } from "./commander-roster";
 import {
   capacity,
   controlled,
@@ -191,6 +192,13 @@ export default function WarPanels({
     [w.armies, c.id],
   );
   const selection = useMemo(() => new Set(armyIds), [armyIds]);
+  const commanderCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const army of own)
+      if (army.general)
+        counts.set(army.general, (counts.get(army.general) ?? 0) + 1);
+    return counts;
+  }, [own]);
   const selectedArmies = own.filter((a) => selection.has(a.id)),
     selectedIds = selectedArmies.map((a) => a.id),
     colocated = own.filter((unit) => unit.province === (a?.province ?? p.id)),
@@ -552,8 +560,16 @@ export default function WarPanels({
               >
                 <option value="">Komutan atanmadı</option>
                 {c.generals.map((g) => (
-                  <option key={g.id} value={g.id}>
-                    {g.name} · Seviye {g.skill} ·{" "}
+                  <option
+                    key={g.id}
+                    value={g.id}
+                    disabled={
+                      g.id !== a.general &&
+                      (commanderCounts.get(g.id) ?? 0) >= COMMANDER_CAPACITY
+                    }
+                  >
+                    {g.name} · {commanderCounts.get(g.id) ?? 0}/
+                    {COMMANDER_CAPACITY} tümen · Seviye {g.skill} ·{" "}
                     {g.trait === "defense"
                       ? "Savunma"
                       : g.trait === "attack"

@@ -16,7 +16,8 @@ import {
   UNITS,
   focusTree,
 } from "./catalog";
-import { GEOGRAPHY, MAP, event } from "./world";
+import { GEOGRAPHY, MAP, event, uid } from "./world";
+import { COMMANDER_CAPACITY, MAX_COMMANDERS } from "./commander-roster";
 import type { Building, Country, World } from "./types";
 
 type Validator = (value: unknown) => boolean;
@@ -76,7 +77,10 @@ const countries = arr(str, 60),
   values = (keys: string[], max = 1e9) =>
     shape(Object.fromEntries(keys.map((k) => [k, num(max)])));
 const project = { id: str, progress: num(), total: num(1e7, 0.01) };
-export const countrySchema: Record<keyof Country, Validator> = {
+export const countrySchema: Record<
+  Exclude<keyof Country, "autoAssignCommanders">,
+  Validator
+> = {
   id: str,
   name: str,
   color: (v) => typeof v === "string" && /^#[\da-fA-F]{6}$/.test(v),
@@ -120,14 +124,22 @@ export const countrySchema: Record<keyof Country, Validator> = {
   capitulated: bool,
   victor: nullable(str),
   generals: arr(
-    shape({
-      id: str,
-      name: str,
-      trait: one(["attack", "defense", "logistics"]),
-      skill: num(6),
-      xp: num(100),
-    }),
-    10,
+    shapeWithOptionalField(
+      {
+        id: str,
+        name: str,
+        trait: one(["attack", "defense", "logistics"]),
+        skill: num(6),
+        xp: num(100),
+      },
+      "front",
+      shape({
+        target: str,
+        stance: one(["defend", "attack"]),
+        assignments: record(province, COMMANDER_CAPACITY),
+      }),
+    ),
+    MAX_COMMANDERS,
   ),
   advisor: one(["industry", "science", "army"]),
   automation: shape({
@@ -205,7 +217,10 @@ const worldFields: Record<string, Validator> = {
   seed: num(4294967295),
   serial: num(),
   tension: num(100),
-  countries: record(shape(countrySchema), 60),
+  countries: record(
+    shapeWithOptionalField(countrySchema, "autoAssignCommanders", bool),
+    60,
+  ),
   provinces: record(
     shape({
       id: province,
@@ -336,6 +351,7 @@ const schema = shape(worldFields);
 function validateWithRegions(
   value: unknown,
   regionIds: readonly string[],
+  allowLegacyCommanderOverflow = false,
 ): value is World {
   if (!schema(value)) return false;
   const w = value as World,
@@ -362,7 +378,45 @@ function validateWithRegions(
     )
   )
     return false;
+  const armiesById = new Map(w.armies.map((army) => [army.id, army]));
+  const generalCounts = new Map<string, Map<string, number>>();
+  for (const army of w.armies) {
+    if (army.general === null) continue;
+    let counts = generalCounts.get(army.country);
+    if (!counts) generalCounts.set(army.country, (counts = new Map()));
+    counts.set(army.general, (counts.get(army.general) ?? 0) + 1);
+  }
   for (const c of Object.values(w.countries)) {
+    const legacyCommanders =
+      allowLegacyCommanderOverflow &&
+      !Object.hasOwn(c, "autoAssignCommanders") &&
+      c.generals.every((general) => !Object.hasOwn(general, "front"));
+    if (
+      new Set(c.generals.map((general) => general.id)).size !==
+        c.generals.length ||
+      c.generals.some((general) => {
+        if (
+          !legacyCommanders &&
+          (generalCounts.get(c.id)?.get(general.id) ?? 0) > COMMANDER_CAPACITY
+        )
+          return true;
+        if (!general.front) return false;
+        if (!has(general.front.target) || general.front.target === c.id)
+          return true;
+        return Object.entries(general.front.assignments).some(
+          ([id, provinceId]) => {
+            const army = armiesById.get(id);
+            return (
+              !army ||
+              army.country !== c.id ||
+              army.general !== general.id ||
+              !Object.hasOwn(w.provinces, provinceId)
+            );
+          },
+        );
+      })
+    )
+      return false;
     const regionRefs = [
       c.capital,
       ...c.construction.map((p) => p.province),
@@ -431,7 +485,7 @@ function validateWithRegions(
           (id) => !Object.hasOwn(w.provinces, id),
         ) ||
         new Set(a.support).size !== a.support.length ||
-        (a.general &&
+        (a.general !== null &&
           !w.countries[a.country].generals.some((g) => g.id === a.general)),
     )
   )
@@ -511,6 +565,104 @@ const legacyRegion = (p: (typeof MAP.provinces)[number]) =>
 const oldRegionIds = MAP.provinces
   .filter((p) => legacyRegion(p) === p.id)
   .map((p) => p.id);
+
+/** Old saves had no general capacity. Split only validated legacy groups;
+ * modern, malformed commander orders must never be silently repaired. */
+function migrateCommanderCapacity(value: unknown): unknown {
+  if (
+    !object(value) ||
+    !object(value.countries) ||
+    !Array.isArray(value.armies)
+  )
+    return value;
+  const counts = new Map<string, Map<string, number>>();
+  for (const army of value.armies) {
+    if (
+      !object(army) ||
+      typeof army.country !== "string" ||
+      typeof army.general !== "string"
+    )
+      continue;
+    let country = counts.get(army.country);
+    if (!country) counts.set(army.country, (country = new Map()));
+    country.set(army.general, (country.get(army.general) ?? 0) + 1);
+  }
+  const legacyCountries = Object.values(value.countries).filter(
+    (country) =>
+      object(country) &&
+      !Object.hasOwn(country, "autoAssignCommanders") &&
+      Array.isArray(country.generals) &&
+      country.generals.every(
+        (general) => object(general) && !Object.hasOwn(general, "front"),
+      ),
+  );
+  const overflowing = legacyCountries.some((country) => {
+    if (
+      !object(country) ||
+      typeof country.id !== "string" ||
+      !Array.isArray(country.generals)
+    )
+      return false;
+    const sizes = counts.get(country.id);
+    return country.generals.some(
+      (general) =>
+        object(general) &&
+        typeof general.id === "string" &&
+        (sizes?.get(general.id) ?? 0) > COMMANDER_CAPACITY,
+    );
+  });
+  if (!overflowing) return value;
+  const regionIds =
+    object(value.provinces) &&
+    Object.keys(value.provinces).length === oldRegionIds.length
+      ? oldRegionIds
+      : MAP.provinces.map((p) => p.id);
+  if (!validateWithRegions(value, regionIds, true))
+    throw new Error("Geçersiz eski komutan kaydı");
+  const w = structuredClone(value);
+  const used = new Set(
+    Object.values(w.countries).flatMap((c) => c.generals.map((g) => g.id)),
+  );
+  for (const c of Object.values(w.countries)) {
+    if (
+      Object.hasOwn(c, "autoAssignCommanders") ||
+      c.generals.some((g) => g.front)
+    )
+      continue;
+    for (const general of [...c.generals]) {
+      const members = w.armies.filter(
+        (a) => a.country === c.id && a.general === general.id,
+      );
+      if (members.length <= COMMANDER_CAPACITY) continue;
+      c.autoAssignCommanders = false;
+      for (
+        let i = COMMANDER_CAPACITY;
+        i < members.length;
+        i += COMMANDER_CAPACITY
+      ) {
+        if (c.generals.length >= MAX_COMMANDERS)
+          throw new Error("Eski komutan kaydı kapasite sınırını aşıyor");
+        let id: string;
+        do {
+          id = uid(w, "general");
+        } while (used.has(id));
+        used.add(id);
+        c.generals.push({
+          ...general,
+          id,
+          name: `${general.name.slice(0, 400)} · ${c.generals.length + 1}. komuta`,
+        });
+        for (const army of members.slice(i, i + COMMANDER_CAPACITY))
+          army.general = id;
+      }
+    }
+  }
+  event(
+    w,
+    "Eski komutan grupları 12 tümen kapasitesine ayrıldı. Tümenler ve mevcut emirleri korundu; yeni komutanlara sınır atayabilirsin.",
+  );
+  return w;
+}
 
 /** Upgrade complete, validated regional saves; never fill holes in a damaged city save. */
 function migrateCityRegions(value: unknown): unknown {
@@ -715,7 +867,7 @@ export function migrateLegacy(value: unknown): World {
   w.conferences = [];
   w.warScore = {};
   w.difficulty = "easy";
-  const expanded = migrateCityRegions(w);
+  const expanded = migrateCityRegions(migrateCommanderCapacity(w));
   if (!validateWorld(expanded)) throw new Error("Geçersiz eski sefer");
   for (const c of Object.values(expanded.countries)) {
     initializeAssets(expanded, c);
@@ -743,7 +895,7 @@ export function decodeSave(text: string): World {
   let world: unknown = data.world;
   try {
     if (data.version === 1) world = migrateLegacy(world);
-    else world = migrateCityRegions(world);
+    else world = migrateCityRegions(migrateCommanderCapacity(world));
   } catch {
     throw new Error("Eski kayıt bozuk; mevcut seferin değiştirilmedi.");
   }

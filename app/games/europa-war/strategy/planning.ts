@@ -22,7 +22,18 @@ export function equipmentNeeds(a: Army): Partial<Record<Equipment, number>> {
 }
 export function detachArmy(w: World, id: string) {
   const army = w.armies.find((a) => a.id === id);
-  if (army) delete army.marchGroup;
+  if (army) {
+    delete army.marchGroup;
+    const general = w.countries[army.country].generals.find(
+      (g) => g.id === army.general,
+    );
+    // An explicit individual/front/paradrop order takes this division out of
+    // commander automation; an idle general's existing combat bonus is kept.
+    if (general?.front) {
+      delete general.front.assignments[id];
+      army.general = null;
+    }
+  }
   for (const f of w.fronts) f.armies = f.armies.filter((x) => x !== id);
   for (const p of w.plans) p.armies = p.armies.filter((x) => x !== id);
 }

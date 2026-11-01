@@ -164,7 +164,10 @@ mkdirSync(output, { recursive: true });
       initial.countries.turkey.equipment[originalWing.model],
     );
     assert.equal(deployed.countries.turkey.navy.ships[0].mission, "escort");
-    const mapMode = page.getByLabel("Harita görünümü", { exact: true });
+    const mapMode = page.getByRole("combobox", {
+      name: "Harita görünümü",
+      exact: true,
+    });
     await mapMode.selectOption("air");
     const airCounter = page.getByRole("button", {
       name: new RegExp(`^${escapeRegExp(newWing.name)},`),

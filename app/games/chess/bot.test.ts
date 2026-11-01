@@ -30,10 +30,7 @@ for (const difficulty of ["easy", "medium", "hard"] satisfies BotDifficulty[]) {
       positionCommand: "position startpos",
     });
     assert.equal(result.move, "e2e4");
-    assert.equal(
-      result.depth,
-      difficulty === "easy" ? 1 : difficulty === "medium" ? 10 : 23,
-    );
+    assert.equal(result.depth, 23);
     assert.equal(result.nodes, 123456);
     assert.equal(seen[0].positionCommand, "position startpos");
     assert.deepEqual(seen[0], {
@@ -43,10 +40,10 @@ for (const difficulty of ["easy", "medium", "hard"] satisfies BotDifficulty[]) {
     });
   });
 }
-test("easy and medium cap depth at 1 and 10; hard has no depth or strength handicap", () => {
-  assert.deepEqual(BOT_LEVELS.easy, { skillLevel: 20, depth: 1 });
-  assert.deepEqual(BOT_LEVELS.medium, { skillLevel: 20, depth: 10 });
-  assert.deepEqual(BOT_LEVELS.hard, { skillLevel: 20, movetime: 8000 });
+test("easy, medium, and hard use 0.5, 1, and 2 second budgets without depth or strength handicaps", () => {
+  assert.deepEqual(BOT_LEVELS.easy, { skillLevel: 20, movetime: 500 });
+  assert.deepEqual(BOT_LEVELS.medium, { skillLevel: 20, movetime: 1000 });
+  assert.deepEqual(BOT_LEVELS.hard, { skillLevel: 20, movetime: 2000 });
 });
 test("black preserves the complete position history for repetition and legality", async () => {
   const game = new Chess();
@@ -106,7 +103,7 @@ test("engine failures stay visible instead of using a weak substitute", async ()
   );
 });
 
-test("easy uses the engine's actual depth-one choice rather than a random legal move", async () => {
+test("easy searches for half a second and uses the engine's actual move rather than random play", async () => {
   const game = new Chess();
   ["e4", "e5", "Nf3", "Qh4"].forEach((move) => game.move(move));
   const seen: StockfishPlaySearch[] = [];
@@ -114,10 +111,10 @@ test("easy uses the engine's actual depth-one choice rather than a random legal 
     engine: engine("f3h4", seen),
   });
   assert.equal(result.move, "f3h4");
-  assert.equal(result.depth, 1);
+  assert.equal(result.depth, 23);
   assert.equal(seen.length, 1);
-  assert.equal(seen[0].depth, 1);
-  assert.equal(seen[0].movetime, undefined);
+  assert.equal(seen[0].depth, undefined);
+  assert.equal(seen[0].movetime, 500);
   assert.equal(seen[0].searchMoves, undefined);
 });
 

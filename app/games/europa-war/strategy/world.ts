@@ -1,6 +1,7 @@
 import data from "./map-data.json";
 import { initializeAssets, seaEdgeOpen, shipPower } from "./military-assets";
 import { UNITS } from "./catalog";
+import { assignAvailableCommander } from "./commander-roster";
 import type { Army, Country, GameEvent, Terrain, World } from "./types";
 
 export const MAP = data;
@@ -187,6 +188,8 @@ export function addArmy(
     support: [],
   };
   w.armies.push(army);
+  if (w.countries[country].autoAssignCommanders)
+    assignAvailableCommander(w, w.countries[country], army);
   return army;
 }
 export function createWorld(
@@ -347,6 +350,7 @@ export function createWorld(
         },
       ],
       advisor: "industry",
+      autoAssignCommanders: d.id === player,
       automation: {
         economy: false,
         research: false,
