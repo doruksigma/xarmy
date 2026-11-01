@@ -1,4 +1,5 @@
 import { Chess } from "chess.js";
+import type { EngineStage } from "./engine-lifecycle";
 import {
   StockfishClient,
   type StockfishMoveResult,
@@ -12,13 +13,16 @@ export interface BotRequest {
   requestId: number;
   positionCommand?: string;
 }
-export interface BotResponse {
-  move: string | null;
-  requestId: number;
-  depth?: number;
-  engine?: "Stockfish 17.1";
-  error?: string;
-}
+export type BotResponse =
+  | {
+      kind?: undefined;
+      move: string | null;
+      requestId: number;
+      depth?: number;
+      engine?: "Stockfish 17.1";
+      error?: string;
+    }
+  | { requestId: number; kind: "status"; stage: EngineStage };
 export interface BotEngine {
   playMove(options: StockfishPlaySearch): Promise<StockfishMoveResult>;
 }

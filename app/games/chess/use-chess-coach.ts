@@ -3,6 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Chess, Color } from "chess.js";
 import type { CoachResponse, MoveReview, PositionAdvice } from "./coach";
+import {
+  ENGINE_SEARCH_TIMEOUT_MS,
+  ENGINE_UI_STARTUP_TIMEOUT_MS,
+  type EngineStage,
+} from "./engine-lifecycle";
 
 export type ReviewedMove = MoveReview & { ply: number };
 
@@ -24,11 +29,13 @@ export function useChessCoach({
   const playerTurn = game.turn() === playerColor;
   const [advice, setAdvice] = useState<PositionAdvice | null>(null);
   const [hintLoading, setHintLoading] = useState(false);
+  const [hintStage, setHintStage] = useState<EngineStage>("loading");
   const [hintError, setHintError] = useState<string | null>(null);
   const [hintRetry, setHintRetry] = useState(0);
   const [reviews, setReviews] = useState<ReviewedMove[]>([]);
   const [progress, setProgress] = useState({ completed: 0, total: 0 });
   const [analyzing, setAnalyzing] = useState(false);
+  const [reviewStage, setReviewStage] = useState<EngineStage>("loading");
   const [reviewError, setReviewError] = useState<string | null>(null);
   const [reviewRetry, setReviewRetry] = useState(0);
   const [reviewOpen, setReviewOpen] = useState(false);
@@ -64,11 +71,14 @@ export function useChessCoach({
     if (!playerTurn) return;
     let alive = true;
     let completed = false;
+    let engineReady = false;
     let worker: Worker | null = null;
+    let timeout: ReturnType<typeof setTimeout>;
     const requestId = ++requestCounter.current;
     const fail = () => {
       if (!alive) return;
       alive = false;
+      clearTimeout(timeout);
       worker?.terminate();
       if (hintWorker.current === worker) hintWorker.current = null;
       setHintLoading(false);
@@ -76,8 +86,9 @@ export function useChessCoach({
         "Stockfish önerisi hazırlanamadı. Güvenilir bir ölçüm için yeniden deneyebilir veya hamleni yapabilirsin.",
       );
     };
-    const timeout = setTimeout(fail, 75_000);
+    timeout = setTimeout(fail, ENGINE_UI_STARTUP_TIMEOUT_MS);
     setHintLoading(true);
+    setHintStage("loading");
     try {
       worker =
         hintWorker.current ??
@@ -87,6 +98,15 @@ export function useChessCoach({
       hintWorker.current = worker;
       worker.onmessage = ({ data }: MessageEvent<CoachResponse>) => {
         if (!alive || data.requestId !== requestId) return;
+        if (data.kind === "status") {
+          if (data.stage === "thinking" && !engineReady) {
+            engineReady = true;
+            setHintStage("thinking");
+            clearTimeout(timeout);
+            timeout = setTimeout(fail, ENGINE_SEARCH_TIMEOUT_MS);
+          }
+          return;
+        }
         if (data.kind === "error") {
           fail();
           return;
@@ -143,7 +163,9 @@ export function useChessCoach({
     setReviewOpen(true);
     setSelectedPly(playerColor === "b" && moves.length > 1 ? 1 : 0);
     setAnalyzing(true);
+    setReviewStage("loading");
     let alive = true;
+    let engineReady = false;
     let worker: Worker | undefined;
     let watchdog: ReturnType<typeof setTimeout>;
     const accumulated: ReviewedMove[] = [];
@@ -158,24 +180,32 @@ export function useChessCoach({
         "Analiz tamamlanamadı. Tahtayı incelemeye devam edebilir veya yeniden deneyebilirsin.",
       );
     };
-    const watch = () => {
+    const watch = (delay: number) => {
       clearTimeout(watchdog);
-      watchdog = setTimeout(fail, accumulated.length === 0 ? 90_000 : 45_000);
+      watchdog = setTimeout(fail, delay);
     };
-    watch();
+    watch(ENGINE_UI_STARTUP_TIMEOUT_MS);
     try {
       worker = new Worker(new URL("./coach.worker.ts", import.meta.url), {
         type: "module",
       });
       worker.onmessage = ({ data }: MessageEvent<CoachResponse>) => {
         if (!alive || data.requestId !== requestId) return;
+        if (data.kind === "status") {
+          if (data.stage === "thinking" && !engineReady) {
+            engineReady = true;
+            setReviewStage("thinking");
+            watch(90_000);
+          }
+          return;
+        }
         if (data.kind === "error") {
           fail();
           return;
         }
         if (data.kind === "progress") {
-          watch();
           accumulated.push(data.review);
+          watch(45_000);
           setReviews([...accumulated]);
           setProgress({ completed: data.completed, total: data.total });
         }
@@ -233,6 +263,7 @@ export function useChessCoach({
   return {
     advice: advice?.fen === fen ? advice : null,
     hintLoading,
+    hintStage,
     hintError,
     retryHint: () => {
       alternativeRequest.current = null;
@@ -249,6 +280,7 @@ export function useChessCoach({
     reviews,
     progress,
     analyzing,
+    reviewStage,
     reviewError,
     selectedPly,
     selectPly,

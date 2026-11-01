@@ -1,11 +1,14 @@
 /* Exercise real Stockfish workers and two local HTTP room clients against a
-   production build. Set CHESS_BASE_URL, CHESS_CHROMIUM, CHESS_ARTIFACT_DIR. */
+   production build. Set CHESS_BASE_URL, CHESS_CHROMIUM, CHESS_ARTIFACT_DIR.
+   CHESS_BROWSER_SUITE can select core or recovery; the default runs both. */
 const assert = require("node:assert/strict");
 const { mkdirSync, writeFileSync } = require("node:fs");
 const path = require("node:path");
 const { chromium } = require("playwright");
 const base = process.env.CHESS_BASE_URL || "http://localhost:3000";
 const output = process.env.CHESS_ARTIFACT_DIR || "/tmp/xarmy-chess-browser";
+const suite = process.env.CHESS_BROWSER_SUITE || "all";
+assert.ok(["all", "core", "recovery"].includes(suite));
 assert.ok(
   ["localhost", "127.0.0.1", "[::1]"].includes(new URL(base).hostname),
   "Room audit creates local test games; use a local server.",
@@ -62,7 +65,142 @@ mkdirSync(output, { recursive: true });
     await target.getByRole("button", { name: "Oyuna başla" }).waitFor();
     assert.equal(await target.getByTestId("chess-review-panel").count(), 0);
   };
-  try {
+  const recoveryChecks = async () => {
+    // Only the first download is deliberately failed. Retries must use the
+    // actual engine binary and produce a legal move / measured suggestion.
+    for (const mode of ["bot", "coach"]) {
+      page = await makePage();
+      const context = page.context();
+      let failedDownloads = 0;
+      let successfulDownloads = 0;
+      context.on("requestfinished", (request) => {
+        if (request.url().endsWith("/stockfish/engine/stockfish.wasm"))
+          successfulDownloads += 1;
+      });
+      await context.route("**/stockfish/engine/stockfish.wasm", (route) => {
+        if (failedDownloads === 0) {
+          failedDownloads += 1;
+          return route.abort("failed");
+        }
+        return route.continue();
+      });
+      if (mode === "bot") {
+        await page.getByLabel("Bot seviyesi").selectOption("easy");
+        await page
+          .getByRole("button", { name: "♚ Siyah", exact: true })
+          .click();
+      } else {
+        await page
+          .getByRole("button", { name: "✦ Yapay zekâ eğitmeni", exact: true })
+          .click();
+      }
+      await page.getByRole("button", { name: "Oyuna başla" }).click();
+      const retry = page.getByRole("button", {
+        name: mode === "bot" ? "Tekrar dene" : "Öneriyi tekrar hazırla",
+        exact: true,
+      });
+      await retry.waitFor({ timeout: 15000 });
+      assert.equal(failedDownloads, 1);
+      assert.equal(successfulDownloads, 0);
+      await retry.click();
+      if (mode === "bot") {
+        await page
+          .getByTestId("game-status")
+          .filter({ hasText: "Sıra sende" })
+          .waitFor({ timeout: 35000 });
+        assert.equal(
+          await page.getByTestId("move-history").getByRole("row").count(),
+          2,
+        );
+      } else {
+        await page.getByTestId("trainer-best-move").waitFor({ timeout: 35000 });
+        assert.ok(
+          (await page.getByTestId("trainer-explanation").textContent()).length >
+            15,
+        );
+      }
+      assert.equal(await retry.count(), 0);
+      assert.ok(
+        successfulDownloads >= 1,
+        "retry must finish a real WASM download",
+      );
+      passed(
+        `${mode}: failed engine download shows retry; retry uses real Stockfish successfully`,
+      );
+      await context.close();
+    }
+
+    // Hold a real download while the player exits. Releasing that request must
+    // not produce a late bot move or advice in a different mode.
+    for (const mode of ["bot", "coach"]) {
+      page = await makePage();
+      const context = page.context();
+      let heldRoute;
+      let notifyHeld;
+      const held = new Promise((resolve) => {
+        notifyHeld = resolve;
+      });
+      await context.route("**/stockfish/engine/stockfish.wasm", (route) => {
+        heldRoute = route;
+        notifyHeld();
+      });
+      if (mode === "bot") {
+        await page.getByLabel("Bot seviyesi").selectOption("easy");
+        await page
+          .getByRole("button", { name: "♚ Siyah", exact: true })
+          .click();
+      } else {
+        await page
+          .getByRole("button", { name: "✦ Yapay zekâ eğitmeni", exact: true })
+          .click();
+      }
+      await page.getByRole("button", { name: "Oyuna başla" }).click();
+      let heldTimeout;
+      try {
+        await Promise.race([
+          held,
+          new Promise((_, reject) => {
+            heldTimeout = setTimeout(
+              () => reject(new Error("Engine download did not start")),
+              15000,
+            );
+          }),
+        ]);
+      } finally {
+        clearTimeout(heldTimeout);
+      }
+      const loading =
+        mode === "bot"
+          ? page.getByTestId("game-status")
+          : page.getByTestId("trainer-advice");
+      assert.match(await loading.textContent(), /Satranç motoru hazırlanıyor/);
+      await resign(page);
+      await page
+        .getByRole("button", { name: "Oyundan çık", exact: true })
+        .click();
+      await page
+        .getByRole("button", { name: "♚ Arkadaşınla oyna", exact: true })
+        .click();
+      await heldRoute.continue().catch(() => {}); // Worker may already be terminated.
+      await page.waitForTimeout(1500);
+      assert.equal(
+        await page.getByTestId("move-history").getByRole("row").count(),
+        0,
+      );
+      assert.equal(await page.getByTestId("trainer-advice").count(), 0);
+      assert.equal(await page.getByTestId("chess-review-panel").count(), 0);
+      assert.equal(await page.getByRole("main").getByRole("alert").count(), 0);
+      assert.match(
+        await page.getByTestId("game-status").textContent(),
+        /Tahta hazır/,
+      );
+      passed(
+        `${mode}: exiting during engine download cancels pending work before switching to online`,
+      );
+      await context.close();
+    }
+  };
+  const coreChecks = async () => {
     page = await makePage();
     assert.deepEqual(
       await page.getByLabel("Bot seviyesi").locator("option").allTextContents(),
@@ -297,6 +435,10 @@ mkdirSync(output, { recursive: true });
     });
     assert.equal(rejected.status(), 409);
     passed("cancelling a waiting room prevents later joins");
+  };
+  try {
+    if (suite !== "recovery") await coreChecks();
+    if (suite !== "core") await recoveryChecks();
     assert.deepEqual(errors, []);
     assert.ok(
       workers.some((url) => url.endsWith("/stockfish/engine/stockfish.js")),

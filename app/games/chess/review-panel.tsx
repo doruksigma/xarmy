@@ -13,6 +13,7 @@ export type ChessReviewPanelProps = {
   onShowPlayed: (show: boolean) => void;
   progress: { completed: number; total: number };
   analyzing: boolean;
+  preparing: boolean;
   error: string | null;
   onRetry: () => void;
   onClose: () => void;
@@ -77,6 +78,7 @@ export default function ChessReviewPanel({
   onShowPlayed,
   progress,
   analyzing,
+  preparing,
   error,
   onRetry,
   onClose,
@@ -156,7 +158,9 @@ export default function ChessReviewPanel({
           <div className="mb-2 flex justify-between gap-2 text-xs text-slate-400">
             <span role="status">
               {analyzing
-                ? "Hamleler inceleniyor…"
+                ? preparing
+                  ? "Satranç motoru hazırlanıyor…"
+                  : "Hamleler inceleniyor…"
                 : error
                   ? "Analiz durakladı"
                   : "Analiz tamamlandı"}
@@ -477,7 +481,9 @@ export default function ChessReviewPanel({
           </p>
           <p className="mt-1">
             {analyzing
-              ? "Bu hamle inceleniyor…"
+              ? preparing
+                ? "Satranç motoru hazırlanıyor… İlk açılış bağlantına göre biraz sürebilir. Hazır olunca hamleler incelenecek."
+                : "Bu hamle inceleniyor…"
               : error
                 ? "Bu hamle incelenemedi. Tekrar deneyebilirsin."
                 : "Bu hamle için analiz bekleniyor."}

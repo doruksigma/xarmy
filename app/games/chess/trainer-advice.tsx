@@ -26,6 +26,7 @@ function matingLine(advice: PositionAdvice | null): string[] {
 export default function TrainerAdvice({
   advice,
   loading,
+  preparing,
   error,
   playerTurn,
   canPlay,
@@ -35,6 +36,7 @@ export default function TrainerAdvice({
 }: {
   advice: PositionAdvice | null;
   loading: boolean;
+  preparing: boolean;
   error: string | null;
   playerTurn: boolean;
   canPlay: boolean;
@@ -64,7 +66,9 @@ export default function TrainerAdvice({
         </p>
       ) : loading ? (
         <p className="animate-pulse text-sm leading-6 text-slate-300">
-          En iyi hamleyi ve nedenini inceliyorum…
+          {preparing
+            ? "Satranç motoru hazırlanıyor… İlk açılış bağlantına göre biraz sürebilir."
+            : "En iyi hamleyi ve nedenini inceliyorum…"}
         </p>
       ) : error ? (
         <div role="alert">

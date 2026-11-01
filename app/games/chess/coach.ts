@@ -6,6 +6,7 @@ import {
   type Square,
 } from "chess.js";
 import { openingCandidates } from "./openings";
+import type { EngineStage } from "./engine-lifecycle";
 
 /** Scores always belong to the player who is about to move at the root. */
 export type EngineScore = { type: "cp" | "mate"; value: number };
@@ -100,6 +101,7 @@ export type CoachRequest =
       playerColor?: Color;
     };
 export type CoachResponse =
+  | { requestId: number; kind: "status"; stage: EngineStage }
   | { requestId: number; kind: "hint"; advice: PositionAdvice }
   | {
       requestId: number;

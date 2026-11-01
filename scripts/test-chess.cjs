@@ -40,6 +40,7 @@ try {
       process.execPath,
       [
         "--test",
+        path.join(root, "scripts", "prepare-stockfish.test.cjs"),
         ...sources.map((source) =>
           path.join(output, source.replace(/\.ts$/, ".js")),
         ),

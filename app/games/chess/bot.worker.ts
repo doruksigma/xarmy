@@ -8,7 +8,18 @@ const worker = self as unknown as {
 let engine: StockfishClient | undefined;
 worker.onmessage = async ({ data }) => {
   try {
+    worker.postMessage({
+      requestId: data.requestId,
+      kind: "status",
+      stage: "loading",
+    });
     engine ??= new StockfishClient();
+    await engine.ready;
+    worker.postMessage({
+      requestId: data.requestId,
+      kind: "status",
+      stage: "thinking",
+    });
     const result = await searchBotMove(data.fen, data.difficulty, {
       engine,
       positionCommand: data.positionCommand,

@@ -17,6 +17,11 @@ import ColorDraw from "./color-draw";
 import { createMateLine } from "./review-playback";
 import styles from "./chess-arena.module.css";
 import type { BotDifficulty, BotResponse } from "./bot";
+import {
+  ENGINE_SEARCH_TIMEOUT_MS,
+  ENGINE_UI_STARTUP_TIMEOUT_MS,
+  type EngineStage,
+} from "./engine-lifecycle";
 import type { RoomView } from "@/lib/chess-room";
 
 type GameMode = "bot" | "online" | "coach";
@@ -142,6 +147,7 @@ export default function ChessArena() {
   const [botColor, setBotColor] = useState<Color>("w");
   const [botResigned, setBotResigned] = useState(false);
   const [botThinking, setBotThinking] = useState(false);
+  const [botStage, setBotStage] = useState<EngineStage>("loading");
   const [matePlayback, setMatePlayback] = useState<{
     key: string;
     step: number;
@@ -303,6 +309,7 @@ export default function ChessArena() {
     if (game.turn() === botColor) return;
     const requestId = ++botRequest.current;
     let finished = false;
+    let engineReady = false;
     let worker: Worker | null = null;
     let timeout: ReturnType<typeof setTimeout> | undefined;
     const fail = () => {
@@ -322,6 +329,7 @@ export default function ChessArena() {
         });
       workerRef.current = worker;
       setBotThinking(true);
+      setBotStage("loading");
       setBotError(false);
       worker.onmessage = ({ data }: MessageEvent<BotResponse>) => {
         if (
@@ -330,6 +338,15 @@ export default function ChessArena() {
           activeMode.current !== mode
         )
           return;
+        if (data.kind === "status") {
+          if (data.stage === "thinking" && !engineReady) {
+            engineReady = true;
+            setBotStage("thinking");
+            clearTimeout(timeout);
+            timeout = setTimeout(fail, ENGINE_SEARCH_TIMEOUT_MS);
+          }
+          return;
+        }
         if (data.error || !data.move) {
           fail();
           return;
@@ -355,13 +372,13 @@ export default function ChessArena() {
         .history({ verbose: true })
         .map((move) => `${move.from}${move.to}${move.promotion ?? ""}`)
         .join(" ");
+      timeout = setTimeout(fail, ENGINE_UI_STARTUP_TIMEOUT_MS);
       worker.postMessage({
         fen: game.fen(),
         difficulty: playingDifficulty,
         requestId,
         positionCommand: `position startpos${moves ? ` moves ${moves}` : ""}`,
       });
-      timeout = setTimeout(fail, 75_000);
     } catch {
       fail();
     }
@@ -522,7 +539,7 @@ export default function ChessArena() {
           ? "Oyunu terk ettin · Bot kazandı"
           : (localResult(game) ?? "Oyun bitti");
   } else if (isActive)
-    status = `${botThinking ? "Bot düşünüyor…" : game.turn() === playerColor ? "Sıra sende" : mode !== "online" ? "Botun sırası" : "Arkadaşının sırası"}${game.isCheck() ? " · Şah!" : ""}`;
+    status = `${botThinking ? (botStage === "loading" ? "Satranç motoru hazırlanıyor…" : "Bot düşünüyor…") : game.turn() === playerColor ? "Sıra sende" : mode !== "online" ? "Botun sırası" : "Arkadaşının sırası"}${game.isCheck() ? " · Şah!" : ""}`;
 
   const squareStyles = useMemo(() => {
     const styles: Record<string, CSSProperties> = {};
@@ -824,7 +841,7 @@ export default function ChessArena() {
               <div className="ml-auto flex shrink-0 flex-col items-end gap-1">
                 {botThinking && (
                   <span className="animate-pulse text-xs text-emerald-300">
-                    Düşünüyor…
+                    {botStage === "loading" ? "Hazırlanıyor…" : "Düşünüyor…"}
                   </span>
                 )}
                 {isActive && (
@@ -983,6 +1000,7 @@ export default function ChessArena() {
             <TrainerAdvice
               advice={coach.advice}
               loading={coach.hintLoading}
+              preparing={coach.hintStage === "loading"}
               error={coach.hintError}
               playerTurn={game.turn() === playerColor}
               onRetry={coach.retryHint}
@@ -1287,6 +1305,12 @@ export default function ChessArena() {
             <p data-testid="game-status" className="text-sm font-semibold">
               {status}
             </p>
+            {botThinking && botStage === "loading" && (
+              <p className="mt-2 text-xs leading-5 text-slate-400">
+                İlk açılış bağlantına göre biraz sürebilir. Hazır olunca bot
+                hamlesini yapacak.
+              </p>
+            )}
             {isFinished && !showReview && (
               <button
                 className={`${secondary} mt-3 w-full`}
@@ -1321,6 +1345,7 @@ export default function ChessArena() {
               }}
               progress={coach.progress}
               analyzing={coach.analyzing}
+              preparing={coach.reviewStage === "loading"}
               error={coach.reviewError}
               onRetry={coach.retryReview}
               onClose={() => {

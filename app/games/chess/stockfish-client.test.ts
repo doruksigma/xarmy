@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, test } from "node:test";
 import { StockfishClient } from "./stockfish-client";
+import { ENGINE_STARTUP_TIMEOUT_MS } from "./engine-lifecycle";
 
 class FakeWorker {
   static instances: FakeWorker[] = [];
@@ -308,6 +309,89 @@ test("startup errors reject ready, stop the worker, and do not silently change e
   await rejected;
   assert.equal(FakeWorker.instances.at(-1)!.terminated, true);
   await assert.rejects(client.analyze({ fen, depth: 14 }), /could not load/);
+});
+
+test("a slow cold download can finish after the old UI and engine deadlines, then play and analyze", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const client = new StockfishClient();
+  clients.push(client);
+  const worker = FakeWorker.instances.at(-1)!;
+  const playing = client.playMove({ fen, depth: 1, skillLevel: 20 });
+  const analyzing = client.analyze({ fen, movetime: 8000 });
+  await tick();
+  t.mock.timers.tick(100_000);
+  await tick();
+  assert.equal(worker.terminated, false);
+  assert.equal(
+    worker.messages.some((command) => command.startsWith("go ")),
+    false,
+  );
+  worker.emit("uciok");
+  worker.emit("readyok");
+  await tick();
+  assert.equal(worker.messages.at(-1), "go depth 1");
+  worker.emit("info depth 1 score cp 25 nodes 40 pv e2e4");
+  worker.emit("bestmove e2e4");
+  assert.equal((await playing).bestMove, "e2e4");
+  await tick();
+  assert.equal(worker.messages.at(-1), "go movetime 8000");
+  worker.emit("info depth 20 score cp 30 nodes 200000 pv e2e4 e7e5");
+  worker.emit("bestmove e2e4");
+  assert.equal((await analyzing).score.value, 30);
+  t.mock.timers.tick(ENGINE_STARTUP_TIMEOUT_MS);
+  assert.equal(worker.terminated, false, "ready cancels the startup watchdog");
+});
+
+test("an engine that never loads still times out and rejects queued work", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const client = new StockfishClient();
+  clients.push(client);
+  const readyRejected = assert.rejects(
+    client.ready,
+    /initialization timed out/,
+  );
+  const searchRejected = assert.rejects(
+    client.analyze({ fen, depth: 14 }),
+    /initialization timed out/,
+  );
+  t.mock.timers.tick(ENGINE_STARTUP_TIMEOUT_MS);
+  await readyRejected;
+  await searchRejected;
+  assert.equal(FakeWorker.instances.at(-1)!.terminated, true);
+});
+
+test("cancelling during download cannot later start a stale search", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const client = new StockfishClient();
+  clients.push(client);
+  const worker = FakeWorker.instances.at(-1)!;
+  const rejected = assert.rejects(
+    client.playMove({ fen, depth: 1, skillLevel: 20 }),
+    { name: "AbortError" },
+  );
+  client.terminate();
+  worker.emit("uciok");
+  worker.emit("readyok");
+  t.mock.timers.tick(ENGINE_STARTUP_TIMEOUT_MS);
+  await rejected;
+  assert.equal(worker.terminated, true);
+  assert.equal(
+    worker.messages.some((command) => command.startsWith("go ")),
+    false,
+  );
+});
+
+test("slow-start allowance does not extend a hung search", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { client, worker } = await readyClient();
+  const rejected = assert.rejects(
+    client.playMove({ fen, movetime: 8000, skillLevel: 20 }),
+    /search timed out/,
+  );
+  await tick();
+  t.mock.timers.tick(30_000);
+  await rejected;
+  assert.equal(worker.terminated, true);
 });
 
 test("invalid newlines and invalid root searchmoves never reach the engine", async () => {

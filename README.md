@@ -64,9 +64,16 @@ the finished game and stored room session so a new game starts with a clean boar
 `npm ci` installs Stockfish 17.1.0 from the existing lockfile. Both `npm run dev`
 and `npm run build` automatically run `npm run prepare:stockfish`, copying the
 matching lite single-threaded JavaScript and WASM files into the ignored
-`public/stockfish/engine/` directory. Vercel therefore prepares the engine during
-its normal build; no manual file upload or additional service is needed. If
-running Next.js directly instead of the npm scripts, prepare these assets first.
+`public/stockfish/engine/` directory. The Next configuration also verifies and
+prepares the matching files, so direct `next build`, `next dev`, and `next start`
+commands cannot skip this step. Valid assets are left unchanged. No manual file
+upload or additional service is needed.
+
+The first engine download has a separate, bounded startup deadline for slower
+connections. The interface shows preparation until the engine is ready, then
+starts the normal move or analysis deadline. `npm run test:chess` covers this
+lifecycle and clean-build asset preparation; see
+[the engine fix notes](docs/chess-engine-fix.md) for reproduction details.
 
 Stockfish is distributed under GPLv3. The full license and exact corresponding
 source links are served at `/stockfish/LICENSE.txt` and `/stockfish/SOURCE.md`;

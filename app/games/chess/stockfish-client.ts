@@ -1,3 +1,5 @@
+import { ENGINE_STARTUP_TIMEOUT_MS } from "./engine-lifecycle";
+
 /** Stockfish 17.1 lite NNUE, running in a single-threaded classic WASM worker. */
 export type StockfishScore = { type: "cp" | "mate"; value: number };
 
@@ -67,9 +69,9 @@ export class StockfishClient {
     this.worker = new Worker("/stockfish/engine/stockfish.js");
     this.startupTimer = setTimeout(() => {
       this.fail(
-        new Error("Stockfish engine could not start within 60 seconds"),
+        new Error("Stockfish engine download or initialization timed out"),
       );
-    }, 60_000);
+    }, ENGINE_STARTUP_TIMEOUT_MS);
     this.worker.onmessage = ({ data }: MessageEvent<unknown>) => {
       if (typeof data === "string") {
         for (const line of data.split(/\r?\n/)) this.onLine(line.trim());
