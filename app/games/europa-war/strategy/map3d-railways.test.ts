@@ -410,8 +410,42 @@ test("Aynı şehirde birleşen fiziksel rayların uç kesitleri ortak noktaları
 test("Lokomotif şehir bağlantısından geçerken gövde yönü aniden sıçramaz", () => {
   const world = corridorFixture();
   world.provinces["turkey-city-16"].controller = "turkey";
+  // Extend the real line to Samsun: the complete consist must fit before the
+  // Kastamonu bend. The shorter three-city route starts the locomotive after
+  // that bend and used to pass this test solely through terrain pitch changes.
+  world.provinces["turkey-6"].buildings.rail = 1;
+  const network = buildPlayerRailNetwork(world);
+  assert.equal(network.routes.length, 1);
+  const route = network.routes[0];
+  const junction = network.edges
+    .find((edge) => edge.to === "turkey-city-16")!
+    .points.at(-1)!;
+  const index = route.points.findIndex(
+    (point) => Math.hypot(point.x - junction.x, point.y - junction.y) < 1e-6,
+  );
+  assert.ok(index > 0 && index < route.points.length - 1);
+  const direction = (point: { x: number; y: number }) =>
+    new THREE.Vector2(point.x - junction.x, point.y - junction.y).normalize();
+  const incoming = direction(route.points[index - 1]);
+  const outgoing = direction(route.points[index + 1]);
+  const expectedTurn = Math.acos(
+    THREE.MathUtils.clamp(-incoming.dot(outgoing), -1, 1),
+  );
+  assert.ok(
+    expectedTurn > 0.3,
+    "Fixture must contain a meaningful horizontal bend",
+  );
+  const before = new THREE.Vector2(junction.x, junction.y).addScaledVector(
+    incoming,
+    6,
+  );
+  const after = new THREE.Vector2(junction.x, junction.y).addScaledVector(
+    outgoing,
+    6,
+  );
   const scene = new THREE.Scene(),
-    railways = createRailways(scene);
+    // Isolate horizontal junction smoothing from decorative relief/pitch.
+    railways = createRailways(scene, () => 0);
   railways.update(world);
   const mesh = scene.getObjectByName(
     "detailed-train-locomotive",
@@ -421,11 +455,29 @@ test("Lokomotif şehir bağlantısından geçerken gövde yönü aniden sıçram
     scale = new THREE.Vector3(),
     angle = new THREE.Quaternion();
   let previous: THREE.Quaternion | undefined,
-    total = 0;
+    total = 0,
+    nearestBefore = Infinity,
+    nearestAfter = Infinity;
   for (let frame = 0; frame <= 500; frame++) {
     railways.animate(frame / 10, { ...running, paused: true });
+    assert.equal(mesh.count, 1);
     mesh.getMatrixAt(0, matrix);
     matrix.decompose(position, angle, scale);
+    angle.normalize();
+    nearestBefore = Math.min(
+      nearestBefore,
+      Math.hypot(
+        position.x + MAP.width / 2 - before.x,
+        position.z + MAP.height / 2 - before.y,
+      ),
+    );
+    nearestAfter = Math.min(
+      nearestAfter,
+      Math.hypot(
+        position.x + MAP.width / 2 - after.x,
+        position.z + MAP.height / 2 - after.y,
+      ),
+    );
     if (previous) {
       const change = angle.angleTo(previous);
       assert.ok(change < 0.3, `Şehir geçişinde ani gövde dönüşü: ${change}`);
@@ -433,7 +485,14 @@ test("Lokomotif şehir bağlantısından geçerken gövde yönü aniden sıçram
     }
     previous = angle.clone();
   }
-  assert.ok(total > 0.1);
+  assert.ok(
+    nearestBefore < 0.5 && nearestAfter < 0.5,
+    "The locomotive must actually cross both sides of the junction",
+  );
+  assert.ok(
+    total >= expectedTurn,
+    "The body must follow the real horizontal turn, not merely change terrain pitch",
+  );
   railways.dispose();
 });
 

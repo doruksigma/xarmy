@@ -97,24 +97,24 @@ export const SEA_ZONES: Record<
 > = {
   atlantic: {
     name: "Atlantik",
-    x: 230,
-    y: 380,
+    x: 140,
+    y: 500,
     neighbors: ["north", "mediterranean"],
   },
   north: {
     name: "Kuzey Denizi",
-    x: 520,
-    y: 300,
+    x: 440,
+    y: 350,
     neighbors: ["atlantic", "baltic"],
   },
-  baltic: { name: "Baltık Denizi", x: 720, y: 320, neighbors: ["north"] },
+  baltic: { name: "Baltık Denizi", x: 663, y: 353, neighbors: ["north"] },
   mediterranean: {
     name: "Akdeniz",
-    x: 650,
-    y: 795,
+    x: 652,
+    y: 816,
     neighbors: ["atlantic", "black"],
   },
-  black: { name: "Karadeniz", x: 1000, y: 625, neighbors: ["mediterranean"] },
+  black: { name: "Karadeniz", x: 844, y: 629, neighbors: ["mediterranean"] },
 };
 export const SUPPORT: Record<
   SupportType,

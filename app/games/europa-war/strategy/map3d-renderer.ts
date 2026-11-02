@@ -26,7 +26,18 @@ import {
   type ResolvedFormationCombat,
 } from "./map3d-unit-events";
 import { createRailways } from "./map3d-railways";
+import { createAirNavalVisuals } from "./map3d-airnaval";
 import { createTerrainSurfaceSampler } from "./map3d-surface";
+import {
+  countryLabelSignature,
+  countryMapLabels,
+  type CountryMapLabel,
+} from "./map3d-country-labels";
+import {
+  configureCartographicTerrain,
+  createPoliticalBorders,
+  CARTOGRAPHIC_TERRAINS,
+} from "./map3d-cartography";
 import {
   armyMapPosition,
   visibleFormations,
@@ -47,6 +58,7 @@ export interface Map3DState {
   onSelect: (id: string, append: boolean) => void;
   onArmies: (ids: string[], append?: boolean) => void;
   onOrder?: (id: string) => void;
+  onTheater?: (theater: "air" | "naval") => void;
 }
 export interface Map3DMetrics {
   continuous: boolean;
@@ -56,6 +68,7 @@ export interface Map3DMetrics {
   geometries: number;
   textures: number;
 }
+export type MapViewpoint = "strategic" | "perspective";
 type Overlay = {
   element: HTMLButtonElement;
   position: THREE.Vector3;
@@ -92,14 +105,6 @@ type Formation = UnitFormation & {
 };
 const CAPTURE_DURATION = 6000;
 const RESOLVED_COMBAT_DURATION = 1800;
-const TERRAIN_COLORS = {
-  plains: 0x819370,
-  urban: 0x9b927b,
-  mountain: 0x8c8e80,
-  forest: 0x526f54,
-  marsh: 0x688976,
-  desert: 0xc8b487,
-};
 const HALF_X = MAP.width / 2,
   HALF_Z = MAP.height / 2;
 const VEC = new THREE.Vector3();
@@ -116,6 +121,7 @@ export class Map3DRenderer {
   private scenery: ReturnType<typeof createScenery>;
   private units: ReturnType<typeof createUnitModels>;
   private railways: ReturnType<typeof createRailways>;
+  private airNaval: ReturnType<typeof createAirNavalVisuals>;
   private unitFrustum = new THREE.Frustum();
   private unitProjection = new THREE.Matrix4();
   private unitBounds = new THREE.Sphere();
@@ -142,6 +148,13 @@ export class Map3DRenderer {
   private lastUnitFrame = 0;
   private unitAnimationActive = false;
   private overlays: Overlay[] = [];
+  private countryLabels: {
+    element: HTMLSpanElement;
+    label: CountryMapLabel;
+    position: THREE.Vector3;
+  }[] = [];
+  private countrySignature = "";
+  private viewpoint: MapViewpoint = "strategic";
   private props: Map3DState;
   private quality: GraphicsQuality;
   private observer: ResizeObserver;
@@ -172,6 +185,8 @@ export class Map3DRenderer {
   private worldRef: World | null = null;
   private borderMaterial: THREE.LineBasicMaterial;
   private terrainMaterial: THREE.MeshStandardMaterial;
+  private cartography: ReturnType<typeof configureCartographicTerrain>;
+  private politicalBorders: ReturnType<typeof createPoliticalBorders>;
   private coastMaterial = new THREE.MeshStandardMaterial({
     color: 0x686957,
     roughness: 0.95,
@@ -234,6 +249,7 @@ export class Map3DRenderer {
         bumpMap: this.noise,
         bumpScale: 0.32,
       });
+      this.cartography = configureCartographicTerrain(this.terrainMaterial);
       this.land = new THREE.Mesh(this.terrain.geometry, this.terrainMaterial);
       this.land.receiveShadow = true;
       this.scene.add(this.land);
@@ -255,6 +271,10 @@ export class Map3DRenderer {
       );
       borders.renderOrder = 2;
       this.scene.add(borders);
+      this.politicalBorders = createPoliticalBorders(
+        this.scene,
+        this.surfaceHeightAt,
+      );
       this.sea = new THREE.Mesh(
         new THREE.PlaneGeometry(4000, 3400),
         new THREE.ShaderMaterial({
@@ -276,6 +296,7 @@ export class Map3DRenderer {
         (x, z) => this.surfaceHeightAt(x + HALF_X, z + HALF_Z) + 0.12,
       );
       this.railways = createRailways(this.scene, this.surfaceHeightAt);
+      this.airNaval = createAirNavalVisuals(this.scene, this.surfaceHeightAt);
       this.scene.add(this.routes, this.markers);
       this.controls = new OrbitControls(this.camera, this.canvas);
       this.controls.enableDamping = true;
@@ -307,6 +328,7 @@ export class Map3DRenderer {
         }
       });
       this.setQuality(quality);
+      this.canvas.dataset.viewpoint = this.viewpoint;
       this.resize();
       this.update(state);
       this.focusProvince(
@@ -466,8 +488,11 @@ export class Map3DRenderer {
         )
         .slice(-32);
       this.scenery.update(state.world);
+      this.updateCountryLabels();
+      this.politicalBorders.update(state.world);
       this.publishCityCoverage();
       this.railways.update(state.world);
+      this.airNaval.update(state.world);
     }
     if (
       changedWorld ||
@@ -502,8 +527,59 @@ export class Map3DRenderer {
       this.scenery.stats.housesByProvince,
     );
   }
+  private updateCountryLabels() {
+    const signature = countryLabelSignature(this.props.world);
+    if (signature === this.countrySignature) return;
+    this.countrySignature = signature;
+    this.countryLabels.forEach(({ element }) => element.remove());
+    this.countryLabels = countryMapLabels(this.props.world).map((label) => {
+      const element = document.createElement("span");
+      element.className = "map3d-country-label";
+      element.textContent = label.name.toLocaleUpperCase("tr-TR");
+      element.dataset.mapCountry = label.country;
+      element.setAttribute("aria-hidden", "true");
+      this.labels.prepend(element);
+      return { element, label, position: this.point(label.x, label.y, 3) };
+    });
+  }
+  private drawCountryLabels() {
+    const distance = this.camera.position.distanceTo(this.controls.target);
+    const occupied: { x: number; y: number; w: number; h: number }[] = [];
+    for (const { element, label, position } of this.countryLabels) {
+      VEC.copy(position).project(this.camera);
+      const x = ((VEC.x + 1) * this.width) / 2;
+      const y = ((1 - VEC.y) * this.height) / 2 - 20;
+      const font = THREE.MathUtils.clamp(
+        11 + (label.extent / distance) * 16,
+        11,
+        23,
+      );
+      const width = label.name.length * font * 0.68 + 12;
+      const enoughSpace = (label.extent * this.height) / distance > width * 0.5;
+      const visible =
+        distance > 300 &&
+        VEC.z > -1 &&
+        VEC.z < 1 &&
+        x > width / 2 &&
+        x < this.width - width / 2 &&
+        y > 35 &&
+        y < this.height - 35 &&
+        (enoughSpace || label.country === this.props.world.player) &&
+        !occupied.some(
+          (box) =>
+            Math.abs(box.x - x) < (box.w + width) / 2 &&
+            Math.abs(box.y - y) < box.h,
+        );
+      element.style.display = visible ? "" : "none";
+      if (!visible) continue;
+      element.style.fontSize = `${font.toFixed(1)}px`;
+      element.style.transform = `translate(${x.toFixed(1)}px,${y.toFixed(1)}px) translate(-50%,-50%)`;
+      occupied.push({ x, y, w: width, h: font + 12 });
+    }
+  }
   private colorMap() {
     const { world, mode } = this.props;
+    this.cartography.setMode(mode);
     const network =
       mode === "supply" ? supplyNetwork(world, world.player) : null;
     const color = new THREE.Color(),
@@ -512,7 +588,10 @@ export class Map3DRenderer {
       const province = world.provinces[p.id],
         country = world.countries[province.controller];
       if (!country) continue;
-      terrain.setHex(TERRAIN_COLORS[p.terrain as keyof typeof TERRAIN_COLORS]);
+      terrain.setHex(
+        CARTOGRAPHIC_TERRAINS[p.terrain as keyof typeof CARTOGRAPHIC_TERRAINS]
+          .color,
+      );
       if (mode === "terrain") color.copy(terrain);
       else if (mode === "supply" && province.controller === world.player) {
         const value = localSupply(world, world.player, p.id, network!);
@@ -585,7 +664,7 @@ export class Map3DRenderer {
       ]),
     );
     this.clearMarkers();
-    const { world, selected, armyIds, mode } = this.props;
+    const { world, selected, armyIds } = this.props;
     const chosen = new Set(armyIds);
     const capitals = new Set(
       Object.values(world.countries)
@@ -745,63 +824,17 @@ export class Map3DRenderer {
       smoke.position.copy(this.point(province.x, province.y));
       this.markers.add(smoke);
     }
-    if (mode === "naval")
-      for (const [id, zone] of Object.entries(SEA_ZONES)) {
-        const ships = Object.values(world.countries)
-          .filter(
-            (c) =>
-              c.id === world.player ||
-              world.countries[world.player].allies.includes(c.id) ||
-              world.countries[world.player].intel[c.id]?.expires > world.day,
-          )
-          .flatMap((c) => c.navy.ships)
-          .filter((s) => s.zone === id && s.mission !== "idle");
-        if (!ships.length) continue;
+    // Model clocks advance only when a frame will actually be rendered. An
+    // eager update here used to consume short muzzle flashes before drawing.
+    if (this.props.mode === "naval")
+      for (const zone of Object.values(SEA_ZONES)) {
         this.overlay(
-          `${zone.name} · ${ships.length} gemi`,
-          new THREE.Vector3(zone.x - HALF_X, 3, zone.y - HALF_Z),
+          zone.name.toLocaleUpperCase("tr-TR"),
+          new THREE.Vector3(zone.x - HALF_X, 2, zone.y - HALF_Z - 35),
           "sea",
           () => {},
         ).element.disabled = true;
-        const hull = new THREE.Mesh(
-          new THREE.ConeGeometry(3, 13, 4),
-          new THREE.MeshStandardMaterial({
-            color: 0x9faea5,
-            roughness: 0.55,
-            metalness: 0.6,
-          }),
-        );
-        hull.rotation.x = Math.PI / 2;
-        hull.position.set(zone.x - HALF_X, 1.7, zone.y - HALF_Z);
-        this.markers.add(hull);
       }
-    if (mode === "air")
-      for (const c of Object.values(world.countries)) {
-        if (
-          c.id !== world.player &&
-          !world.countries[world.player].allies.includes(c.id) &&
-          !(world.countries[world.player].intel[c.id]?.expires > world.day)
-        )
-          continue;
-        for (const wing of c.air.wings) {
-          if (wing.mission === "idle") continue;
-          const p = GEOGRAPHY[wing.target];
-          const plane = new THREE.Group();
-          const mat = new THREE.MeshStandardMaterial({
-            color: 0xd4cfb5,
-            metalness: 0.3,
-            roughness: 0.5,
-          });
-          const body = new THREE.Mesh(new THREE.ConeGeometry(0.9, 6, 5), mat);
-          body.rotation.x = Math.PI / 2;
-          const wings = new THREE.Mesh(new THREE.BoxGeometry(8, 0.3, 1.5), mat);
-          plane.add(body, wings);
-          plane.position.copy(this.point(p.x, p.y, 18));
-          this.markers.add(plane);
-        }
-      }
-    // Model clocks advance only when a frame will actually be rendered. An
-    // eager update here used to consume short muzzle flashes before drawing.
   }
   private updateRoutes() {
     if (this.selection) {
@@ -958,9 +991,7 @@ export class Map3DRenderer {
     if (!p) return;
     const target = this.point(p.x, p.y);
     this.controls.target.copy(target);
-    this.camera.position
-      .copy(target)
-      .add(new THREE.Vector3(0, distance * 0.82, distance * 0.68));
+    this.camera.position.copy(target).add(this.viewOffset(distance));
     this.controls.update();
     this.markDirty();
   }
@@ -973,7 +1004,27 @@ export class Map3DRenderer {
   reset() {
     this.controls.target.set(0, 0, 0);
     const distance = this.width / this.height < 0.8 ? 1550 : 1100;
-    this.camera.position.set(0, distance * 0.88, distance * 0.7);
+    this.camera.position.copy(this.viewOffset(distance));
+    this.controls.update();
+    this.markDirty();
+  }
+  private viewOffset(distance: number) {
+    return (
+      this.viewpoint === "strategic"
+        ? new THREE.Vector3(0, 0.98, 0.22)
+        : new THREE.Vector3(0, 0.82, 0.68)
+    )
+      .normalize()
+      .multiplyScalar(distance);
+  }
+  setViewpoint(viewpoint: MapViewpoint) {
+    if (this.disposed) return;
+    this.viewpoint = viewpoint;
+    const distance = this.camera.position.distanceTo(this.controls.target);
+    this.camera.position
+      .copy(this.controls.target)
+      .add(this.viewOffset(distance));
+    this.canvas.dataset.viewpoint = viewpoint;
     this.controls.update();
     this.markDirty();
   }
@@ -1174,7 +1225,31 @@ export class Map3DRenderer {
         distance: this.camera.position.distanceTo(this.controls.target),
         focus: this.controls.target,
       });
+      this.airNaval.animate(now, {
+        paused: !!this.props.paused,
+        reduced: this.reduced,
+        quality: this.quality,
+        camera: this.camera,
+      });
+      const theater = this.airNaval.stats();
+      this.canvas.dataset.aircraftModels = String(theater.aircraft);
+      this.canvas.dataset.shipModels = String(theater.ships);
+      this.canvas.dataset.movingAircraft = String(theater.movingAircraft);
+      this.canvas.dataset.movingShips = String(theater.movingShips);
+      this.canvas.dataset.airCombats = String(theater.airCombats);
+      this.canvas.dataset.navalCombats = String(theater.navalCombats);
+      this.canvas.dataset.bombingRuns = String(theater.bombingRuns);
+      this.canvas.dataset.theaterEffects = String(theater.effects);
+      this.canvas.dataset.theaterConfirmedEvents = String(
+        theater.confirmedEvents,
+      );
+      this.canvas.dataset.theaterPositions = JSON.stringify(theater.positions);
+      this.canvas.dataset.theaterAnimationTime = String(theater.animationTime);
       this.renderer.render(this.scene, this.camera);
+      this.drawCountryLabels();
+      this.canvas.dataset.politicalBorderStats = JSON.stringify(
+        this.politicalBorders.stats,
+      );
       this.canvas.dataset.renderedFrames = String(++this.renderedFrames);
       this.frameCount++;
       for (const item of this.overlays) {
@@ -1272,12 +1347,17 @@ export class Map3DRenderer {
     this.controls?.removeEventListener("change", this.markDirty);
     this.controls?.dispose();
     this.clearMarkers();
+    this.countryLabels.forEach(({ element }) => element.remove());
+    this.countryLabels = [];
     this.captureEvents.length = 0;
     this.resolvedCombats.length = 0;
     this.pointerCancel();
     this.units?.dispose();
     this.railways?.dispose();
+    this.airNaval?.dispose();
     this.scenery?.dispose();
+    this.politicalBorders?.dispose();
+    this.cartography?.dispose();
     this.terrain?.dispose();
     this.terrainMaterial?.dispose();
     this.coastMaterial.dispose();

@@ -2,7 +2,8 @@
    the browser. Fixtures are generated outside it and loaded using normal save
    import; commands and observations use the actual UI and manual save.
    Run against a local production build, with Playwright and Chromium installed.
-   Optional EUROPA_BASE_URL, EUROPA_CHROMIUM, EUROPA_ARTIFACT_DIR, EUROPA_SKIP_PERF=1. */
+   Optional EUROPA_BASE_URL, EUROPA_CHROMIUM, EUROPA_ARTIFACT_DIR, EUROPA_SKIP_PERF=1,
+   EUROPA_DEVICE=desktop|mobile for a focused rerun; default checks both. */
 const assert = require("node:assert/strict");
 const { advanceClockHours } = require("./europa-browser-clock.cjs");
 const { mkdirSync, readFileSync, writeFileSync } = require("node:fs");
@@ -33,6 +34,12 @@ const {
 const base = process.env.EUROPA_BASE_URL || "http://localhost:3000";
 const output = process.env.EUROPA_ARTIFACT_DIR || "/tmp/xarmy-europa-3d";
 assert.ok(["localhost", "127.0.0.1", "[::1]"].includes(new URL(base).hostname));
+const requestedDevice = process.env.EUROPA_DEVICE;
+assert.ok(
+  requestedDevice === undefined ||
+    ["desktop", "mobile"].includes(requestedDevice),
+  "EUROPA_DEVICE must be desktop or mobile when provided",
+);
 mkdirSync(output, { recursive: true });
 
 function fixture() {
@@ -97,10 +104,14 @@ function fixture() {
     console.log("PASS " + name);
   };
   try {
-    for (const [label, viewport, mobile] of [
+    const devices = [
       ["desktop", { width: 1440, height: 1000 }, false],
       ["mobile", { width: 390, height: 844 }, true],
-    ]) {
+    ].filter(
+      ([label]) => requestedDevice === undefined || label === requestedDevice,
+    );
+    assert.ok(devices.length, "At least one browser device must be tested");
+    for (const [label, viewport, mobile] of devices) {
       const context = await browser.newContext({
         viewport,
         isMobile: mobile,
@@ -373,12 +384,33 @@ function fixture() {
           "Renderer exposes actual camera distance for gesture diagnostics",
         );
         const session = await context.newCDPSession(page);
-        const center = await point();
+        // Unit badges and HUD controls intentionally receive their own input.
+        // Choose a clear map strip through public DOM hit testing so both
+        // fingers exercise the canvas, rather than pinching a unit button.
+        const center = await canvas.evaluate((element) => {
+          const box = element.getBoundingClientRect();
+          for (const row of [0.72, 0.62, 0.52, 0.42, 0.32]) {
+            for (const col of [0.5, 0.45, 0.55]) {
+              const x = box.left + box.width * col;
+              const y = box.top + box.height * row;
+              let clear = true;
+              for (let dx = -80; dx <= 80; dx += 5) {
+                if (document.elementFromPoint(x + dx, y) !== element) {
+                  clear = false;
+                  break;
+                }
+              }
+              if (clear) return { x, y };
+            }
+          }
+          return null;
+        });
+        assert.ok(center, "A real pinch needs an unobstructed canvas strip");
         const touches = (spread) => [
           {
             id: 1,
             x: center.x - spread,
-            y: center.y + 40,
+            y: center.y,
             radiusX: 4,
             radiusY: 4,
             force: 1,
@@ -386,7 +418,7 @@ function fixture() {
           {
             id: 2,
             x: center.x + spread,
-            y: center.y + 40,
+            y: center.y,
             radiusX: 4,
             radiusY: 4,
             force: 1,
@@ -687,9 +719,12 @@ function fixture() {
         await page.evaluate(() => window.__restoreMap3dAudit());
         await page.getByTestId("war-map").waitFor();
         assert.deepEqual(await save("after-constructor-failure"), beforeLoss);
-        await click(
-          page.getByRole("button", { name: "3D arazi", exact: true }),
-        );
+        // Software WebGL may take longer to acknowledge the first input after
+        // deliberately losing and recreating contexts. Keep the real click
+        // and all readiness/state assertions; allow this one restart to settle.
+        await page
+          .getByRole("button", { name: "3D arazi", exact: true })
+          .click({ timeout: 90000 });
         await ready();
         passed(
           "desktop: failed 3D construction releases the allocated WebGL context; campaign survives and 3D can restart",

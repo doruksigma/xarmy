@@ -7,6 +7,7 @@ import {
 } from "three";
 import type { ColorRepresentation } from "three";
 import map from "./map-data.json";
+import { CARTOGRAPHIC_TERRAINS } from "./map3d-cartography-palette";
 
 type Point = { x: number; y: number };
 export type PolygonPart = { outer: Point[]; holes: Point[][] };
@@ -191,7 +192,9 @@ function heightGrid() {
         0.15 * Math.cos(y * 0.13 - x * 0.045);
       const rolling = 1.1 + Math.sin(x * 0.023) * Math.cos(y * 0.027) * 0.85;
       grid[row * COLS + col] =
-        1.5 + rolling + (1 - Math.exp(-influence * 1.1)) * (12 + ridge * 21);
+        0.25 +
+        rolling * 0.55 +
+        (1 - Math.exp(-influence * 1.1)) * (12 + ridge * 21);
     }
   heights = grid;
   return grid;
@@ -298,6 +301,7 @@ export function buildTerrain(options: { maxEdge?: number } = {}): TerrainMesh {
   const positions: number[] = [],
     normals: number[] = [],
     colors: number[] = [],
+    terrainTypes: number[] = [],
     uv: number[] = [],
     borders: number[] = [];
   const faceProvinceIds: string[] = [];
@@ -314,6 +318,7 @@ export function buildTerrain(options: { maxEdge?: number } = {}): TerrainMesh {
     c: Point,
     id: string,
     color: Color,
+    terrainType: number,
   ) => {
     if (faceProvinceIds.length >= MAX_FACES)
       throw new Error("3D arazi ayrıntı bütçesini aşıyor.");
@@ -328,6 +333,7 @@ export function buildTerrain(options: { maxEdge?: number } = {}): TerrainMesh {
       const length = Math.hypot(dx, 1, dz);
       normals.push(-dx / length, 1 / length, -dz / length);
       colors.push(color.r, color.g, color.b);
+      terrainTypes.push(terrainType);
       uv.push(p.x / WIDTH, 1 - p.y / HEIGHT);
     }
     faceProvinceIds.push(id);
@@ -356,7 +362,16 @@ export function buildTerrain(options: { maxEdge?: number } = {}): TerrainMesh {
           bc = distance2(b, c),
           ca = distance2(c, a);
         if (Math.max(ab, bc, ca) <= maxEdge * maxEdge) {
-          pushTriangle(a, b, c, province.id, color);
+          pushTriangle(
+            a,
+            b,
+            c,
+            province.id,
+            color,
+            CARTOGRAPHIC_TERRAINS[
+              province.terrain as keyof typeof CARTOGRAPHIC_TERRAINS
+            ].index,
+          );
           continue;
         }
         if (ab >= bc && ab >= ca) {
@@ -386,6 +401,10 @@ export function buildTerrain(options: { maxEdge?: number } = {}): TerrainMesh {
   geometry.setAttribute("position", new Float32BufferAttribute(positions, 3));
   geometry.setAttribute("normal", new Float32BufferAttribute(normals, 3));
   geometry.setAttribute("color", new Float32BufferAttribute(colors, 3));
+  geometry.setAttribute(
+    "terrainType",
+    new Float32BufferAttribute(terrainTypes, 1),
+  );
   geometry.setAttribute("uv", new Float32BufferAttribute(uv, 2));
   geometry.computeBoundingSphere();
   geometry.computeBoundingBox();

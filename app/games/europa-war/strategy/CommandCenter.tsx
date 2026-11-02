@@ -1,4 +1,7 @@
 "use client";
+import { useState } from "react";
+import ActionPreview from "./ActionPreview";
+import EasyCommandGuide from "./EasyCommandGuide";
 import { advice, AUTOMATION } from "./management";
 import { BUILDINGS, focusTree, TECHNOLOGIES } from "./catalog";
 import { controlled, dateLabel, GEOGRAPHY } from "./world";
@@ -12,11 +15,29 @@ export default function CommandCenter({
   world: w,
   command,
   onTab,
+  simple = false,
+  paused = true,
+  onResume,
+  onDiplomacy,
+  onShowMap,
+  selectedGeneralId,
+  onSelectedGeneralChange,
 }: {
   world: World;
-  command: (a: Action) => void;
+  command: (a: Action) => boolean | void;
   onTab: (tab: Tab) => void;
+  simple?: boolean;
+  paused?: boolean;
+  onResume?: () => void;
+  onDiplomacy?: (target: string) => void;
+  onShowMap?: () => void;
+  selectedGeneralId?: string;
+  onSelectedGeneralChange?: (id: string) => void;
 }) {
+  const [previewArea, setPreviewArea] =
+    useState<keyof Country["automation"]>("research");
+  const [automationOpen, setAutomationOpen] = useState(true);
+  const [costPreviewOpen, setCostPreviewOpen] = useState(false);
   const c = w.countries[w.player],
     priorities = advice(w);
   const armies = w.armies.filter((a) => a.country === c.id),
@@ -30,19 +51,19 @@ export default function CommandCenter({
       <p className={styles.subtitle}>
         Ülkenin yönünü sen belirle. Ayrıntıları istediğin zaman aç.
       </p>
-      <div className={styles.commandStats}>
-        {[
-          ["Bölge", controlled(w, c.id).length],
-          ["Tümen", armies.length],
-          ["Uçak", Math.floor(wings)],
-          ["Gemi", c.navy.ships.length],
-        ].map(([label, n]) => (
-          <div key={label}>
-            <strong>{n}</strong>
-            <span>{label}</span>
-          </div>
-        ))}
-      </div>
+      {simple && (
+        <EasyCommandGuide
+          world={w}
+          command={command}
+          paused={paused}
+          onResume={onResume}
+          onDiplomacy={onDiplomacy ?? (() => onTab("diplomacy"))}
+          onArmy={() => onTab("army")}
+          onShowMap={onShowMap}
+          selectedGeneralId={selectedGeneralId}
+          onSelectedGeneralChange={onSelectedGeneralChange}
+        />
+      )}
       <label className={styles.field}>
         Zorluk
         <select
@@ -67,38 +88,59 @@ export default function CommandCenter({
               : "Birliklerin %15 daha az muharebe gücüyle savaşır."}
         </small>
       </label>
-      <h3>Önce bunlara bak</h3>
-      <div className={styles.priorities}>
-        {priorities.map((p, i) => (
-          <article key={p.id} className={styles.priority}>
-            <span className={styles.priorityNumber}>
-              {String(i + 1).padStart(2, "0")}
-            </span>
-            <div>
-              <h4>{p.title}</h4>
-              <p>{p.reason}</p>
-              <div className={styles.buttonRow}>
-                {p.action && (
-                  <button
-                    className={styles.primary}
-                    onClick={() => command(p.action!)}
-                  >
-                    {p.id === "stability"
-                      ? "Destek programını uygula"
-                      : "Önerilen planı uygula"}
-                  </button>
-                )}
-                <button onClick={() => onTab(p.tab)}>İncele →</button>
-              </div>
+      <details className={styles.fold} open={!simple}>
+        <summary>Ülke durumu ve öneriler</summary>
+        <div className={styles.commandStats}>
+          {[
+            ["Bölge", controlled(w, c.id).length],
+            ["Tümen", armies.length],
+            ["Uçak", Math.floor(wings)],
+            ["Gemi", c.navy.ships.length],
+          ].map(([label, n]) => (
+            <div key={label}>
+              <strong>{n}</strong>
+              <span>{label}</span>
             </div>
-          </article>
-        ))}
-      </div>
-      <details className={styles.fold} open>
+          ))}
+        </div>
+        <h3>Önce bunlara bak</h3>
+        <div className={styles.priorities}>
+          {priorities.map((p, i) => (
+            <article key={p.id} className={styles.priority}>
+              <span className={styles.priorityNumber}>
+                {String(i + 1).padStart(2, "0")}
+              </span>
+              <div>
+                <h4>{p.title}</h4>
+                <p>{p.reason}</p>
+                <div className={styles.buttonRow}>
+                  {p.action && (
+                    <button
+                      className={styles.primary}
+                      onClick={() => command(p.action!)}
+                    >
+                      {p.id === "stability"
+                        ? "Destek programını uygula"
+                        : "Önerilen planı uygula"}
+                    </button>
+                  )}
+                  <button onClick={() => onTab(p.tab)}>İncele →</button>
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
+      </details>
+      <details
+        className={styles.fold}
+        open
+        onToggle={(event) => setAutomationOpen(event.currentTarget.open)}
+      >
         <summary>Yönetim yardımcısı</summary>
         <p>
-          Açtığın alan haftada bir ihtiyaçlara göre yönetilir. Harcamalar kendi
-          kaynaklarından yapılır. İstediğin anda kapatabilirsin.
+          Açtığın alan hemen, ardından haftada bir ihtiyaçlara göre yönetilir.
+          Araştırma, inşa ve eğitim için kendi kaynaklarını harcar. İstediğin
+          anda kapatabilirsin; başlamış işler kuyrukta kalır.
         </p>
         {(
           Object.entries(AUTOMATION) as [keyof Country["automation"], string][]
@@ -125,6 +167,40 @@ export default function CommandCenter({
           Savaş ilanı, barış koşulları ve siyasi yönetim değişimi her zaman
           senin kararın.
         </p>
+        <details
+          className={styles.fold}
+          onToggle={(event) => setCostPreviewOpen(event.currentTarget.open)}
+        >
+          <summary>Yardımcı harcamalarını önizle</summary>
+          <label className={styles.field}>
+            Önizlenecek alan
+            <select
+              aria-label="Önizlenecek yardım alanı"
+              value={previewArea}
+              onChange={(event) =>
+                setPreviewArea(
+                  event.target.value as keyof Country["automation"],
+                )
+              }
+            >
+              {Object.entries(AUTOMATION).map(([area, name]) => (
+                <option key={area} value={area}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </label>
+          {automationOpen && costPreviewOpen && (
+            <ActionPreview
+              world={w}
+              action={{ type: "automation", area: previewArea, enabled: true }}
+            />
+          )}
+          <p className={styles.hint}>
+            Bu alanı şimdi açmanın kaynak etkisini gösterir. Gelecek haftaların
+            harcamaları ihtiyaçlarına göre değişir.
+          </p>
+        </details>
       </details>
       <details className={styles.fold}>
         <summary>

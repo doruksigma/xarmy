@@ -22,6 +22,21 @@
   pointer-events: none;
   overflow: hidden;
 }
+.labels :global(.map3d-country-label) {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  white-space: nowrap;
+  color: #242a25;
+  font-family: Georgia, "Times New Roman", serif;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-shadow:
+    0 1px 1px #e9e1c9b3,
+    0 -1px 1px #e9e1c988;
+  opacity: 0.9;
+}
 .labels :global(.map3d-label) {
   position: absolute;
   left: 0;
@@ -43,6 +58,15 @@
   font-size: 11px;
   color: #fff1cb;
   background: #1729239c;
+}
+.labels :global(.map3d-label[data-kind="sea"]) {
+  background: transparent;
+  box-shadow: none;
+  color: #a4c2c2;
+  letter-spacing: 0.16em;
+  font-size: 11px;
+  font-style: italic;
+  pointer-events: none;
 }
 .labels :global(.map3d-label[data-kind="army"]) {
   font-weight: bold;
@@ -91,6 +115,32 @@
   width: 190px;
   z-index: 3;
 }
+.theater {
+  position: absolute;
+  top: 155px;
+  left: 28px;
+  display: grid;
+  gap: 5px;
+  width: 230px;
+  padding: 12px;
+  border: 1px solid #7e8b79;
+  background: #172821eb;
+  color: #e5e2ca;
+  border-radius: 4px;
+  font-size: 11px;
+}
+.theater strong {
+  letter-spacing: 0.12em;
+  font-size: 10px;
+}
+.theater small {
+  color: #b5c0af;
+  line-height: 1.4;
+}
+.root .theater button {
+  font-size: 11px;
+  padding: 7px;
+}
 .search input {
   width: 100%;
   border: 1px solid #607068;
@@ -133,12 +183,12 @@
   letter-spacing: 1px;
   display: flex;
   align-items: flex-start;
-  gap: 8px;
+  gap: 6px;
 }
 .quality select {
   display: block;
   margin-top: 5px;
-  min-width: 100px;
+  min-width: 86px;
   padding: 5px;
   background: #152923e8;
   border: 1px solid #53674d;
@@ -242,6 +292,13 @@
   white-space: nowrap;
 }
 @media (max-width: 700px) {
+  .theater {
+    left: 14px;
+    top: 152px;
+    width: min(195px, 54vw);
+    font-size: 10px;
+    padding: 9px;
+  }
   .search {
     left: 14px;
     top: 105px;
@@ -282,6 +339,11 @@
   }
 }
 @media (max-height: 500px) {
+  .theater {
+    top: 108px;
+    left: 14px;
+    width: 185px;
+  }
   .search {
     top: 65px;
   }

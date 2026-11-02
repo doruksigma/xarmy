@@ -6,6 +6,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import WarMap, { type MapMode } from "./strategy/WarMap";
 import WarPanels, { Meter, number, TABS, type Tab } from "./strategy/WarPanels";
 import CommanderBar from "./strategy/CommanderBar";
+import CommandCenter from "./strategy/CommandCenter";
+import { EasyPlayMode } from "./strategy/EasyCommandGuide";
+import {
+  EASY_PLAY_PREFERENCE,
+  easyPresentationPreference,
+} from "./strategy/easy-play";
 import MapPresentationBoundary from "./strategy/MapPresentationBoundary";
 import { createWorld } from "./strategy/engine";
 import { createCommand, executeCommand } from "./strategy/commands";
@@ -142,17 +148,31 @@ function Saves({
 }
 export default function EuropaWarClient() {
   const router = useRouter();
+  const panelBodyRef = useRef<HTMLDivElement>(null);
   const transitionPending = useRef(false);
   const [transition, setTransition] = useState<"saving" | "loading" | null>(
     null,
   );
   const [campaignRevision, setCampaignRevision] = useState(0);
   const [mapView, setMapView] = useState<"3d" | "2d">("3d");
+  const [simple, setSimple] = useState(true);
+  const [guideGeneralId, setGuideGeneralId] = useState("");
   useEffect(() => {
     try {
       if (localStorage.getItem(MAP_VIEW_KEY) === "2d") setMapView("2d");
+      setSimple(
+        easyPresentationPreference(localStorage.getItem(EASY_PLAY_PREFERENCE)),
+      );
     } catch {
       /* The presentation also works without storage permission. */
+    }
+  }, []);
+  const changePresentation = useCallback((value: boolean) => {
+    setSimple(value);
+    try {
+      localStorage.setItem(EASY_PLAY_PREFERENCE, value ? "easy" : "advanced");
+    } catch {
+      /* The guide also works without storing a preference. */
     }
   }, []);
   const changeMapView = useCallback((view: "3d" | "2d") => {
@@ -215,6 +235,11 @@ export default function EuropaWarClient() {
   const shown = world && !setup ? world : preview,
     c = shown.countries[shown.player],
     chosen = preview.countries[choice];
+  useEffect(() => {
+    // A new panel starts at its heading; simulation snapshots never interrupt
+    // reading or scrolling inside the current panel.
+    if (panelBodyRef.current) panelBodyRef.current.scrollTop = 0;
+  }, [tab, campaignRevision, shown.player, panel]);
   const selectedArmies = useMemo(() => {
     const own = new Map(
       shown.armies.filter((a) => a.country === c.id).map((a) => [a.id, a]),
@@ -268,7 +293,11 @@ export default function EuropaWarClient() {
   }, [say, setPaused, current]);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if ((e.target as HTMLElement).closest("input,select,textarea,button,a"))
+      if (
+        (e.target as HTMLElement).closest(
+          "input,select,textarea,button,a,summary,[contenteditable='true']",
+        )
+      )
         return;
       if (e.code === "Space" && !setup) {
         e.preventDefault();
@@ -289,6 +318,7 @@ export default function EuropaWarClient() {
     setPaused(true);
     setSelected(w.countries[w.player].capital);
     setArmyIds([]);
+    setGuideGeneralId("");
     setOrder(null);
     setFrontPoints([]);
     setAttackArmies([]);
@@ -708,6 +738,10 @@ export default function EuropaWarClient() {
                 onOrder={onMapOrder}
                 onUnavailable={on3DUnavailable}
                 paused={paused || setup}
+                onTheater={() => {
+                  setTab("operations");
+                  setPanel(true);
+                }}
               />
             </MapPresentationBoundary>
           ) : (
@@ -859,7 +893,16 @@ export default function EuropaWarClient() {
                 ×
               </button>
             </div>
-            <div className={styles.panelBody}>
+            <div ref={panelBodyRef} className={styles.panelBody}>
+              {!setup && (
+                <EasyPlayMode
+                  simple={simple}
+                  onChange={(value) => {
+                    changePresentation(value);
+                    setTab("command");
+                  }}
+                />
+              )}
               {message && (
                 <div role="status" className={styles.notice}>
                   <span>{message}</span>
@@ -871,7 +914,24 @@ export default function EuropaWarClient() {
                   </button>
                 </div>
               )}
-              {tab === "saves" && world ? (
+              {tab === "command" ? (
+                <CommandCenter
+                  key={`command:${campaignRevision}:${shown.player}`}
+                  world={shown}
+                  command={command}
+                  onTab={setTab}
+                  simple={simple}
+                  paused={paused}
+                  onResume={() => setPaused(false)}
+                  onShowMap={() => setPanel(false)}
+                  selectedGeneralId={guideGeneralId}
+                  onSelectedGeneralChange={setGuideGeneralId}
+                  onDiplomacy={(country) => {
+                    setTarget(country);
+                    setTab("diplomacy");
+                  }}
+                />
+              ) : tab === "saves" && world ? (
                 <Saves
                   world={world}
                   onLoadSaved={restoreSaved}
@@ -930,6 +990,10 @@ export default function EuropaWarClient() {
           command={command}
           onSelect={(ids) => {
             setArmyIds(ids);
+            const general = shown.armies.find((army) =>
+              ids.includes(army.id),
+            )?.general;
+            if (general) setGuideGeneralId(general);
             setOrder(null);
             setFrontPoints([]);
             setPanel(false);
@@ -952,6 +1016,14 @@ export default function EuropaWarClient() {
               Bir ulusun geleceğini yönet.
               <br />
               Sanayini kur, diplomasiyi şekillendir, cephelerini savun.
+            </p>
+            <EasyPlayMode simple={simple} onChange={changePresentation} />
+            <p className={styles.hint}>
+              {simple
+                ? "Kolay yönetim, komutan ve sınır emirlerinde adım adım yol gösterir. İstersen ayrıntıları her an açabilirsin."
+                : "Ülke istatistikleri ve ayrıntılı öneriler doğrudan gösterilir. İstediğin zaman kolay yönetime dönebilirsin."}{" "}
+              Bu seçim zorluğu veya oyun kurallarını değiştirmez; yardımcılara
+              kendin izin verirsin.
             </p>
             <div className={styles.scenarioTag}>
               II. DÜNYA SAVAŞI DÖNEMİ <span>01 OCAK 1936</span>

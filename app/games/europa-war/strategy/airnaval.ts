@@ -73,6 +73,10 @@ function orderWing(
     !["strategic", "naval"].includes(a.mission) || atWar(w, c.id, t.controller),
     "Saldırı görevi düşman eyaletine yöneltilmeli.",
   );
+  requireRule(
+    a.mission !== "naval" || GEOGRAPHY[a.target].port,
+    "Deniz saldırısı için düşman limanı seç.",
+  );
   const distance = Math.hypot(
     GEOGRAPHY[base].x - GEOGRAPHY[a.target].x,
     GEOGRAPHY[base].y - GEOGRAPHY[a.target].y,
@@ -150,9 +154,15 @@ export function wingEfficiency(
   wing: AirWing,
   loads?: Record<string, number>,
 ) {
+  const controller = w.provinces[wing.target].controller,
+    hostile = atWar(w, c.id, controller);
   if (
     !friendly(w, c.id, w.provinces[wing.base].controller) ||
-    !w.provinces[wing.base].buildings.airfield
+    !w.provinces[wing.base].buildings.airfield ||
+    (wing.mission !== "idle" &&
+      ((!friendly(w, c.id, controller) && !hostile) ||
+        (["strategic", "naval"].includes(wing.mission) && !hostile) ||
+        (wing.mission === "naval" && !GEOGRAPHY[wing.target].port)))
   )
     return 0;
   const distance = Math.hypot(
@@ -191,7 +201,15 @@ export function regionalAirPower(
       Math.hypot(
         GEOGRAPHY[a.target].x - GEOGRAPHY[province].x,
         GEOGRAPHY[a.target].y - GEOGRAPHY[province].y,
-      ) < 180,
+      ) < 180 &&
+      // The regional mission radius cannot extend an aircraft's flight range.
+      // Ground support, interception and paradrops need reach to the actual
+      // affected province, not only to the nearby assigned mission marker.
+      Math.hypot(
+        GEOGRAPHY[a.base].x - GEOGRAPHY[province].x,
+        GEOGRAPHY[a.base].y - GEOGRAPHY[province].y,
+      ) <=
+        AIRCRAFT[a.model].range * (c.tech.includes("aviation3") ? 1.2 : 1),
   );
   if (!relevant.length) return 0;
   loads ??= baseLoads(w);
@@ -458,8 +476,13 @@ export function airNavalDay(w: World) {
         wing.readiness = clamp(wing.readiness + 6);
         continue;
       }
-      const controller = w.provinces[wing.target].controller;
-      if (!friendly(w, c.id, controller) && !atWar(w, c.id, controller)) {
+      const controller = w.provinces[wing.target].controller,
+        hostile = atWar(w, c.id, controller);
+      if (
+        (!friendly(w, c.id, controller) && !hostile) ||
+        (["strategic", "naval"].includes(wing.mission) && !hostile) ||
+        (wing.mission === "naval" && !GEOGRAPHY[wing.target].port)
+      ) {
         wing.mission = "idle";
         continue;
       }
@@ -476,7 +499,6 @@ export function airNavalDay(w: World) {
         escort = power(c.id, wing.target);
       const interception = clamp((escort + 10) / (enemy + 10), 0.15, 1);
       const target = w.provinces[wing.target];
-      const hostile = atWar(w, c.id, controller);
       const flak = hostile ? target.buildings.antiAir : 0;
       wing.count = Math.max(
         0,

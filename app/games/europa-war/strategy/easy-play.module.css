@@ -1,0 +1,124 @@
+.mode {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+  padding: 4px;
+  margin: 0 0 14px;
+  border: 1px solid #435447;
+  background: #101c18;
+  border-radius: 7px;
+}
+.mode button {
+  min-height: 40px;
+  font-size: 12px;
+  padding: 8px 6px;
+  border-color: transparent;
+  background: transparent;
+}
+.mode button[aria-pressed="true"] {
+  color: #f6e4ba;
+  border-color: #8e875e;
+  background: #354332;
+}
+.guide {
+  min-width: 0;
+  margin: 14px 0;
+  padding: 15px;
+  border: 1px solid #627052;
+  border-radius: 7px;
+  background: linear-gradient(150deg, #29382a, #18261f 75%);
+}
+.guide > header {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.guide > header > span {
+  color: #e2c48a;
+  font-size: 25px;
+}
+.guide > header h3 {
+  margin: 0;
+  color: #efe4c9;
+}
+.guide .step {
+  padding-top: 14px;
+  margin-top: 14px;
+  border-top: 1px solid #43513c;
+  min-width: 0;
+}
+.step > strong {
+  display: block;
+  font-size: 12px;
+  color: #dfcca1;
+  margin-bottom: 8px;
+}
+.guide label {
+  display: grid;
+  gap: 6px;
+  font-size: 11px;
+  color: #c8d1bf;
+}
+.guide select {
+  min-width: 0;
+  max-width: 100%;
+}
+.guide .actions,
+.guide .neighbors {
+  display: grid;
+  gap: 7px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 10px 0;
+}
+.guide button {
+  min-height: 42px;
+  min-width: 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.guide .primary,
+.guide button[aria-pressed="true"] {
+  color: #f6e4ba;
+  background: #46523b;
+  border-color: #a39669;
+}
+.guide .wide {
+  width: 100%;
+  margin-top: 8px;
+}
+.guide .neighbors button {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 8px;
+  text-align: left;
+}
+.neighbors span:first-child {
+  flex-shrink: 0;
+  font-size: 18px;
+}
+.guide .status {
+  padding: 9px 10px;
+  border-left: 3px solid #c7b778;
+  background: #12221b;
+  color: #dce2c8;
+}
+.guide .subtle {
+  background: transparent;
+}
+.guide details > summary {
+  cursor: pointer;
+  padding: 8px 0;
+  color: #cbbd96;
+}
+.setupNote {
+  margin-bottom: 15px;
+}
+@media (max-width: 420px) {
+  .guide {
+    padding: 12px;
+  }
+  .mode button {
+    font-size: 11px;
+  }
+}

@@ -69,10 +69,18 @@ const STAGING = UNIT_DISPLAY_LAYOUTS[4].map((slot) => {
     bottom: -slot.z + body.rear + 0.1,
   };
 });
-const TOWN_SLOTS = Array.from({ length: 24 * 24 }, (_, i) => ({
-  dx: ((i % 24) - 11.5) * 3.15,
-  dz: (Math.floor(i / 24) - 11.5) * 3.15,
-})).sort((a, b) => Math.hypot(a.dx, a.dz) - Math.hypot(b.dx, b.dz));
+// Staggered wards follow gently bending streets instead of repeating an
+// identical square lattice in every province. They remain stable on reload.
+const TOWN_SLOTS = Array.from({ length: 24 * 24 }, (_, i) => {
+  const row = Math.floor(i / 24),
+    col = i % 24;
+  const x = (col - 11.5) * 3.4 + (row % 2) * 1.35;
+  const z = (row - 11.5) * 3.7;
+  return {
+    dx: x + Math.sin(z * 0.13) * 2.2,
+    dz: z + Math.sin(x * 0.12) * 1.1,
+  };
+}).sort((a, b) => Math.hypot(a.dx, a.dz) - Math.hypot(b.dx, b.dz));
 const RAIL_CLEARANCE =
   (TRAIN_DIMENSIONS.locomotive.width * TRAIN_WORLD_SCALE) / 2 + 0.33;
 
@@ -284,7 +292,7 @@ function hangarRoof() {
     .translate(0, -0.5, 0);
 }
 
-/** Original miniature town kits. All details share thirteen instanced batches. */
+/** Original European settlement kits. All details share thirteen instanced batches. */
 export function createScenery(
   scene: THREE.Scene,
   groundHeightAt: (x: number, y: number) => number = heightAt,
@@ -575,7 +583,7 @@ export function createScenery(
           ) * 1.65,
         ),
       );
-      const orientation = random() > 0.5 ? Math.PI / 2 : 0;
+      const orientation = random() * Math.PI;
       const rotate = (dx: number, dz: number) => ({
         x: p.x + Math.cos(orientation) * dx + Math.sin(orientation) * dz,
         z: p.y - Math.sin(orientation) * dx + Math.cos(orientation) * dz,
@@ -628,17 +636,24 @@ export function createScenery(
           );
         const width = (urban ? 1.8 : 1.45) + random() * 0.55;
         const depth = width * (0.85 + random() * 0.25);
-        const height = urban ? 3.5 + random() * 3.4 : 1.8 + random() * 1.3;
-        const tint = [0xcbbf9d, 0xc3b6a0, 0xb5b5a4, 0xc3a78d, 0xd5c7ad][
+        const height = urban ? 2.6 + random() * 2.3 : 1.4 + random() * 1.1;
+        const tint = [0xa8a18d, 0xaea596, 0x999d93, 0xa39380, 0xb5ad98][
           Math.floor(random() * 5)
         ];
-        const roofTint = [0x805644, 0x6b6256, 0x76534b, 0x555f61][
+        const roofTint = [0x795b4b, 0x6b6256, 0x735b52, 0x555f61][
           Math.floor(random() * 4)
         ];
         const keep = random(),
           hasChimney = random() > 0.45;
         if (
           !clearSite(
+            point.x,
+            point.z,
+            width + 0.35,
+            depth + 0.35,
+            orientation,
+          ) ||
+          !separateHouse(
             point.x,
             point.z,
             width + 0.35,
@@ -751,14 +766,17 @@ export function createScenery(
           point.x,
           point.z,
           width,
-          urban ? 0.8 : 1.1,
+          urban ? 0.55 : 0.8,
           depth,
           roofTint,
           orientation,
           lift + height,
         );
         if (hasChimney) {
-          const chimneyPoint = rotate(slot.dx + 0.35, slot.dz + 0.24);
+          const chimneyPoint = {
+            x: point.x + Math.cos(orientation) * width * 0.2,
+            z: point.z - Math.sin(orientation) * width * 0.2,
+          };
           item(
             0,
             chimneyPoint.x,
@@ -900,7 +918,7 @@ export function createScenery(
           size,
           size * (pineTree ? 1.65 : 1.08),
           size,
-          pineTree ? 0x3b6447 : 0x526f40,
+          pineTree ? 0x445d45 : 0x657453,
           0,
           size * 0.5,
         );

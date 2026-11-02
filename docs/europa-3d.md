@@ -58,8 +58,8 @@ tamamını değiştirmek yerine küçük işaretlerde gösterilir. Şehirlerde e
 Sanayi yapıları mevcut bina sayılarına, hasarlı görünüm bölge hasarına ve
 vinçler gerçek inşaat kuyruğuna bağlıdır. Birlik konumu simülasyonun ilerleme
 değerinden yumuşatılır; bu animasyon varış veya fetih hesabı yapmaz. Savaş
-işaretleri gerçek muharebelere bağlıdır. Uçak/gemi işaretleri mevcut görev
-durumunu temsil eder; ayrıntılı model veya fizik simülasyonu değildir.
+işaretleri gerçek muharebelere bağlıdır. Hava ve deniz modellerinin görev,
+hareket ve hasar bağlantısı aşağıda açıklanır.
 
 Aynı konum ve hareket hedefini paylaşan tümenler sayılı tek seçim işaretinde
 toplanır. Bir tümen piyadeyle, iki tümen piyade ve tankla, üç tümen
@@ -115,3 +115,61 @@ Bu görsel katman; tam dünya haritası, karargâh/kolordu
 zinciri, modüler tasarımcılar, ortak kapasiteli lojistik akışı veya yüksek
 çözünürlüklü sanat varlıkları üretmiş sayılmaz. Tam kapsamın başlangıç
 durumu ve aşama sonuçları [durum belgesinde](europa-expansion-status.md).
+
+## Stratejik atlas ve kolay yönetim
+
+Varsayılan kamera **Stratejik** üst görünümüdür. **Harita bakışı → Yakın
+görünüm** minyatürleri eğimli kamerayla gösterir; seçim, harita kaydırma,
+yakınlaştırma ve bütün emirler iki bakışta da aynıdır. Bakış tercihi cihazda
+saklanır, sefer sonucunu değiştirmez.
+
+Yeni kartografik yüzey, orman lekeleri, dağ taramaları ve yüzey dokusunu
+prosedürel olarak çizer. Ülke sınırları ve savaş cepheleri eyaletin güncel
+kontrolünden türetilir; kontrol değişmedikçe geometrileri yeniden kurulmaz.
+Geniş görünümde ülke adları en büyük bağlantılı toprak parçasına yerleşir,
+birbirinin üstüne gelenler gizlenir. Başkent ve seçili şehir adları korunur.
+Kıyı kabartısı alçaltılmış, şehirlerde birbirinin kopyası kare yerleşimler
+yerine farklı açılarda sokak dokuları kullanılmıştır. Bu özgün çizim HOI4
+görsellerini veya oyun dosyalarını içermez; coğrafi veri hâlâ mevcut Avrupa
+haritasıdır, yeni dünya atlası değildir.
+
+**Kolay yönetim**, komutan → komşu sınır → savun/saldır adımlarını gösterir.
+**Tüm ayrıntılar** ile diğer yönetim araçlarına erişim korunur. Bu tercih
+rakip zorluğunu değiştirmez ve kendiliğinden kaynak harcamaz. İsteğe bağlı
+yönetim yardımcıları oyuncunun açtığı alanlarda gerçek komutları uygular.
+Hava/deniz haritalarında kuvvet özeti ve ilgili emir ekranına kısayol bulunur.
+
+## Hava ve deniz görevlerinin görünümü
+
+Avcı, bombardıman, yüzey savaş gemisi, uçak gemisi ve denizaltı için özgün,
+birleştirilmiş geometriler kullanılır. Bir uçak modeli bir gerçek filoyu temsil
+eder; uçak sayısı kadar nesne oluşturulmaz. Gemiler gerçek filo kayıtlarından
+üretilir. Görüş alanı elemesi, kaliteye göre model/efekt sınırları ve ortak
+instanced tamponlar çizim yükünü sınırlar.
+
+Aktif uçaklar atanmış görev bölgelerinde uçar, gemiler atanmış deniz bölgesinde
+hareket eder ve su izi bırakır. Simülasyon ayrı bir gemi rotası/koordinatı
+tutmadığı için denizdeki izler temsili görev devriyeleridir. Hasar ve sonuç
+hesaplamazlar. Gizli düşman üsleri uçuş yolu üzerinden açığa çıkarılmaz;
+uzak bilinmeyen filolar görünmez. Bu mevcut görünürlük kurallarının devamıdır,
+yeni ve tam bir savaş sisi/istihbarat sistemi değildir.
+
+Gerçek gün sınırındaki uçak kaybı, bombardıman hasarı ve gemi hasarıyla
+doğrulanan olaylar kısa hava çatışması, bomba, top mermisi ve su isabeti
+gösterimleri oluşturur. Yükleme, aynı saatte verilen emir veya kopan ikmal
+nedeniyle yıpranma kendi başına bir çatışma gösterimi başlatmaz. Görüntüdeki
+hareket ve efektler duraklatma/azaltılmış hareket sırasında ilerlemez.
+Hava/deniz hasar çözümü hâlâ günlüktür; bu çalışma saatlik, eşzamanlı bir hava
+ve deniz motoru ya da tam muharebe olay defteri eklemez.
+
+Beş deniz bölgesinin ortak 2D/3D merkezleri açık suya yerleştirilmiştir.
+Devriye alanı, geminin bütün gövdesi ve su iziyle birlikte kıyıların içinde
+kalacak şekilde sınırlandırılır; Baltık ve Karadeniz'de model ölçeği buna
+uyarlanır. Bu sınırlar coğrafi poligonlarla test edilir, her karede kıyı
+araması yapılmaz. Saatlik dünya güncellemeleri animasyon saatini sıfırlamaz;
+düşük kare hızında da hareket devam eder. Duraklatıp devam etmek, beklenen
+süreyi animasyona birden eklemez.
+
+Arka arkaya oluşturulan filo/gemi kimlikleri birbirine yakın animasyon
+evrelerine yığılmaz. Görsel evre karıştırması yükleme sonrası deterministiktir;
+seferin rastgelelik akışını tüketmez veya savaş sonuçlarını değiştirmez.

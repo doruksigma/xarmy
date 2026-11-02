@@ -21,6 +21,9 @@ Savaşın arazi etkileri mevcut simülasyon verisinden hesaplanır.
 - Kara tek birleşik, indekssiz `BufferGeometry` içinde çizilir. Her üçgenin
   bölge kimliği ve her bölgenin köşe aralığı saklanır. Raycaster'ın gördüğü
   üçgen doğrudan seçilecek hareket bölgesini verir.
+- Köşelerdeki `terrainType` özniteliği özgün kartografik shader'a orman,
+  bataklık, çöl ve diğer arazi türlerini bildirir. Yüzey taramaları oynanış
+  için yeni arazi oluşturmaz; kaynak türlerini görselleştirir.
 - Ülke kontrolü veya harita modu değişince yalnız köşe renkleri değişir;
   arazi geometrisi yeniden kurulmaz. Sınır ve seçili bölge çizgileri aynı
   yükseklik fonksiyonunu kullanır.
@@ -32,6 +35,11 @@ Savaşın arazi etkileri mevcut simülasyon verisinden hesaplanır.
   konturlarından oluşturulur: 22.074 ek üçgen. Su düzlemi `y = −0,4` seviyesindedir.
   Bu yüzey kara tıklamasına katılmaz; ülke içindeki gömülü yüzler oyun sınırı
   veya hareket engeli oluşturmaz.
+- Güncel siyasi sınır ve cephe çizimi ayrı, tek çizim çağrılı birleşik
+  şerit geometrisidir. Aynı ülkenin iç eyalet çizgileriyle kıyılar ayrılır;
+  savaş/kontrol değişimi bu katmanı yeniler, saat ve birlik hareketi yenilemez.
+  Düz arazi kıyıları yaklaşık birim yüksekliğe indirilmiştir; dağ kabartısı
+  korunur. Bütün model yerleşimleri yeni gerçek yüzeyden tekrar örneklenir.
 
 ## API
 

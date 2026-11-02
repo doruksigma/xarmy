@@ -216,6 +216,72 @@ hesap maliyeti eski günlük motordan yüksektir. Worker hâlâ tam sonuç düny
 aktarır; durum farkı aktarımı, ayrı RNG akışları ve tüm platformlar için sabit
 noktalı aritmetik tamamlanmış değildir.
 
+## Devam çalışması: stratejik atlas, hava/deniz görünümü ve kolay yönetim
+
+- `map3d-cartography.ts`, `map3d-geometry.ts`: özgün prosedürel yüzey,
+  orman/dağ dokusu, alçaltılmış kıyı kabartısı ve güncel kontrole bağlı belirgin
+  ülke/cephe sınırları. Sınır geometrisi saat ilerlediğinde yeniden kurulmaz.
+- `map3d-country-labels.ts`, `WarMap3D.tsx`: ülkenin bağlantılı topraklarına
+  yerleşen, yakınlaştırmaya göre seyrekleşen ülke adları; üstten stratejik ve
+  eğimli yakın kamera arasında geçiş. Kamera geçişi yakınlaştırmayı veya seferi
+  değiştirmez. Başkent ve seçili şehir isimleri, 447 bölgenin seçimi korunur.
+- `map3d-scenery.ts`: tekrarlanan kare yerleşimler yerine kıvrımlı, şaşırtmalı
+  şehir dokuları; daha alçak taş/arduvaz yapılar. Bütün kalite seviyelerinde
+  her bölgeye bina ve ray/birlik alanını koruyan yerleşim devam eder.
+- `map3d-airnaval*.ts`: ayrı avcı/bombardıman/yüzey gemisi/uçak gemisi/denizaltı
+  modelleri; gerçek görevlerden hareket, doğrulanmış hasardan kısa çatışma ve
+  isabet gösterimi. Kayıt yüklemek veya ikmal yıpranması ateş efekti üretmez.
+  Uzak gizli araçlar ve görünmeyen düşman üsleri açığa çıkarılmaz. Temsili
+  devriye yolları ayrı bir fiziksel konum veya yeni hasar hesabı değildir.
+- `map3d-naval-space.ts`: ortak deniz merkezleri ve gövde/su izi dahil
+  kıyıyı aşmayan devriye alanları. Coğrafi sınır denetimleri testte yapılır;
+  kare başına poligon taraması eklenmez. Saatlik görüntü güncellemelerinin
+  düşük FPS'de uçak/gemi animasyonunu sürekli sıfırlaması da giderildi.
+  Ardışık kimlikli filoların aynı görsel evrede üst üste yığılması, seferin
+  rastgelelik akışına dokunmayan deterministik evre dağılımıyla düzeltildi.
+- `airnaval.ts`: hava etkisi artık etkilediği bölgenin gerçek menzilini de
+  doğrular. İç bölgeye deniz saldırısı reddedilir; eski geçersiz görev yakıt
+  veya hasar üretmeden durur. Ele geçirilen/tarafsız hale gelen hedefe
+  saldırı devam etmez.
+- `EasyCommandGuide.tsx`, `easy-play.ts`, `CommandCenter.tsx`: varsayılan
+  kolay yönetim, gerçek komutan → kara komşusu sınırı → savun/saldır zinciri.
+  Otomatik atama 12 tümen sınırına uyar; sınır görevi savaş ilan etmez.
+  Reddedilen emir başarı sayılmaz. Ayrıntılı ekranlar korunur; görünüm
+  değişimi zorluğu, kaydı veya kaynakları değiştirmez. Yardımcı yönetimin
+  isteğe bağlı maliyet/uygunluk önizlemesi ve hava/deniz emir kısayolları vardır.
+
+**Bu çalışmanın motor doğrulaması:** Tam Europa regresyonu **521/521** geçti;
+1936–1945 seferi ve düzeltilmiş demiryolu dönüş testi buna dahildir. Sonradan
+eklenen düşük FPS, açık deniz sınırı ve görsel evre düzeltmeleri, ilgili
+hava/deniz görsel paketinde **15/15** testle ayrıca doğrulandı. Bu iki sayı
+örtüşen testleri de içerir; yeni testlerin tamamının uzun regresyon içinde tekrar çalıştırıldığı
+anlamına gelmez. Satranç **118/118**, Battle Royale **21/21**, Color Hide
+**39/39** geçti. Son kaynaklarla üretim derlemesi, TypeScript ve lint geçti.
+
+**Tarayıcı doğrulaması:** `test-europa-theater-browser.cjs` ile atlas, kolay
+komuta ve gerçek hava/deniz sonuçları için **22/22** kontrol geçti.
+`test-europa-3d-browser.cjs` son derlemede **10 masaüstü + 9 mobil** kontrolü
+tamamladı; mobil bölüm ayrı tekrar koşusunda doğrulandı. Birlik etiketine denk
+gelen sabit pinch koordinatları yerine, iki parmağın da gerçek canvas alanına
+bastığı DOM hit-test ile doğrulanır. Kasıtlı WebGL kaybından sonraki tek yeniden
+açılış adımında yazılımsal çizim için 90 saniyelik tıklama süresi tanınır;
+sefer eşitliği ve kaynak temizliği kontrolleri korunur.
+`test-europa-commanders-browser.cjs` masaüstü/mobil **8/8** geçti. İlk koşudaki
+gün sonu zaman aşımı aynı kayıtla temiz tarayıcıda tekrarlanmadı; motor hesabı
+ayrıca 59 ms ölçüldü ve oyunun 20 saniyelik koruma süresi değiştirilmedi.
+Bu koşular Chromium/SwiftShader ve mobil emülasyon kullanır; 3D performans
+örneklemesi atlandı, fiziksel telefon veya 60 FPS sonucu iddia edilmez.
+Son görsel evre düzeltmesinden sonra `EUROPA_THEATER_ONLY=1` ile gerçek
+hareket, gün sonu hasarı/efektleri, duraklatma, azaltılmış hareket ve kayıt
+yükleme kontrolleri ayrıca **10/10** geçti. Son masaüstü ve mobil çatışma
+ekranları görsel olarak incelendi; tarayıcı/konsol hatası bildirilmedi.
+
+**Kapsam sınırı:** Coğrafya mevcut Avrupa veri paketidir; HOI4 harita dosyaları
+kopyalanmamıştır ve doğrulanmış yeni dünya/1939 atlası oluşturulmamıştır.
+Hava/deniz sonuçları günlük hesaplanır. Ortak savaş sisi, tam savaş olay
+defteri, eşzamanlı saatlik hava/deniz çözümü, modüler tasarımcılar ve aşağıdaki
+tabloda belirtilen diğer açık işler bu aşamada tamamlanmış sayılmaz.
+
 ## 1–100 kapsamı: mevcut temel ve kalan işler
 
 Dosya adları aksi belirtilmedikçe `app/games/europa-war/strategy/` altındadır.

@@ -4,6 +4,7 @@ import {
   Map3DRenderer,
   type Map3DState,
   type Map3DMetrics,
+  type MapViewpoint,
 } from "./map3d-renderer";
 import { GRAPHICS_QUALITY, type GraphicsQuality } from "./map3d-visuals";
 import { GEOGRAPHY, MAP } from "./world";
@@ -12,6 +13,15 @@ import styles from "./map3d.module.css";
 
 const QUALITY_KEY = "xarmy-europa-3d-quality-v1";
 const MOTION_KEY = "xarmy-europa-3d-motion-v1";
+const VIEW_KEY = "xarmy-europa-3d-view-v1";
+const initialViewpoint = (): MapViewpoint => {
+  try {
+    if (localStorage.getItem(VIEW_KEY) === "perspective") return "perspective";
+  } catch {
+    /* Camera preferences remain optional. */
+  }
+  return "strategic";
+};
 type MotionPreference = "system" | "full" | "reduced";
 const initialMotionPreference = (): MotionPreference => {
   try {
@@ -49,6 +59,7 @@ function WarMap3D(
   const live = useRef(props);
   live.current = props;
   const [quality, setQuality] = useState<GraphicsQuality>(initialQuality);
+  const [viewpoint, setViewpoint] = useState<MapViewpoint>(initialViewpoint);
   const [motionPreference, setMotionPreference] = useState<MotionPreference>(
     initialMotionPreference,
   );
@@ -96,6 +107,12 @@ function WarMap3D(
     renderer.current?.update(props);
   }, [props]);
   useEffect(() => {
+    renderer.current?.setViewpoint(viewpoint);
+    try {
+      localStorage.setItem(VIEW_KEY, viewpoint);
+    } catch {}
+  }, [viewpoint]);
+  useEffect(() => {
     renderer.current?.setQuality(quality);
     try {
       localStorage.setItem(QUALITY_KEY, quality);
@@ -120,6 +137,9 @@ function WarMap3D(
         .slice(0, 7)
     : [];
   const selected = GEOGRAPHY[props.selected];
+  const ownCountry = props.world.countries[props.world.player];
+  const theater =
+    props.mode === "air" || props.mode === "naval" ? props.mode : null;
   const onDemand =
     reducedMotion ||
     (props.paused && quality === "low" && !metrics?.continuous);
@@ -133,6 +153,28 @@ function WarMap3D(
         aria-label="3D strateji haritası. Sürükle: kaydır; tekerlek: yakınlaştır; orta tuş: döndür; Shift sürükle: tümen seç; sağ tık: seçili birliğe emir."
       />
       <div ref={labels} className={styles.labels} />
+      {theater && (
+        <div className={styles.theater} data-testid="map3d-theater-summary">
+          <strong>
+            {theater === "air" ? "HAVA HAREKÂTI" : "DENİZ HAREKÂTI"}
+          </strong>
+          <span>
+            {theater === "air"
+              ? `${ownCountry.air.wings.reduce((n, wing) => n + wing.count, 0)} uçak · ${ownCountry.air.wings.filter((wing) => wing.mission !== "idle" && wing.count > 0).length} filoya görev atandı`
+              : `${ownCountry.navy.ships.filter((ship) => ship.health > 0).length} gemi · ${ownCountry.navy.ships.filter((ship) => ship.mission !== "idle" && ship.health > 0).length} gemiye görev atandı`}
+          </span>
+          <small>
+            {theater === "air"
+              ? "Görev için üs, hedef ve yeterli yakıt gerekir."
+              : "Devriye, koruma ve baskın için erişilebilir deniz bölgesi seç."}
+          </small>
+          {props.onTheater && (
+            <button type="button" onClick={() => props.onTheater?.(theater)}>
+              {theater === "air" ? "Hava emirlerini aç" : "Deniz emirlerini aç"}
+            </button>
+          )}
+        </div>
+      )}
       <div className={styles.search}>
         <label>
           <span className={styles.srOnly}>Şehir bul</span>
@@ -178,6 +220,17 @@ function WarMap3D(
         )}
       </div>
       <div className={styles.quality}>
+        <label>
+          BAKIŞ
+          <select
+            aria-label="Harita bakışı"
+            value={viewpoint}
+            onChange={(e) => setViewpoint(e.target.value as MapViewpoint)}
+          >
+            <option value="strategic">Stratejik</option>
+            <option value="perspective">Yakın görünüm</option>
+          </select>
+        </label>
         <label>
           GRAFİK{" "}
           <select
