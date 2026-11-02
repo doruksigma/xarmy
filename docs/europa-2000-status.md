@@ -23,7 +23,7 @@ iddia edilmez. Kod incelemesi, çalışma zamanı doğrulamasının yerini tutma
   sürümünün tarihsel kaydıdır ve burada değiştirilmez. Sonradan eklenen 3D
   sistemler yeni değerlendirmeye dahildir.
 
-## Bu iterasyon: ilk bağımlılık grubu
+## İlk bağımlılık grubu: komut ve kayıt temeli
 
 Şartnamenin 99. bölümü önce komut, zaman, veri ve kayıt temelinde gerçek kod
 değişikliği ve test ister. Bu iterasyonda bunun **komut ve kayıt** kısmı
@@ -36,7 +36,7 @@ uygulandı; bütün oyuncu emirleri bu yola bağlandı:
    aynı kimliğin başka içerikle kullanımını reddetme ve yapılandırılmış sonuç.
 3. Kaynak değişimini ve uygunluk nedenini durum değiştirmeden hesaplayan
    önizleme; inşaat ve tümen eğitimi ekranında isteğe bağlı maliyet/uygunluk
-   görünümü. Komuta merkezinde son 12 oyuncu emri, tarih ve uygun emirlerde
+   görünümü. Komuta merkezinde ülkenin son 12 emri, tarih ve uygun emirlerde
    hedef şehir, tümen sayısı/ismi veya komutan adı gösterilir.
 4. `storage.ts`: isteğe bağlı, sürümlü komut durumu için sıkı şema ve referans
    kontrolü; eski kayıtların korunması, yükleme sonrası tekrar emirle kaynak
@@ -44,23 +44,25 @@ uygulandı; bütün oyuncu emirleri bu yola bağlandı:
 
 **Açık sınırlar:** `advanceDay` hâlâ günlük çalışır. Komut zamanı için
 `day * 24` kullanılması yalnız gün sınırını numaralandırır; saatlik hareket,
-ekonomi veya muharebe çözümü uygulanmış değildir. AI ve yardımcı yönetimin
-bütün kararları henüz komut zarfından geçmez. Genel sevkiyat/varlık hareket
+ekonomi veya muharebe çözümü uygulanmış değildir. Genel sevkiyat/varlık hareket
 defteri, farklı RNG akışları ve tüm muharebelerin eşzamanlı çözümü de bu
-iterasyonun tamamlanmış çıktıları değildir.
+çalışmanın tamamlanmış çıktıları değildir. AI ve yardımcı yönetimin emir
+yoluna taşınması aşağıdaki devam çalışmasında uygulanmıştır.
 
 **Emir sözleşmesi:** Kimlik `ülke:sıra` biçimindedir. Ülke başına son uygulanan
 sıra korunur; yalnız başarılı emir sırayı tüketir. Reddedilen emir değiştirilmemiş
 seferi döndürür ve koşullar düzeltilince yeniden denenebilir. Aynı kimlik ve aynı
 içerik ikinci kez uygulanmaz; farklı içerik çatışma olarak reddedilir. Son 64
 makbuz ve toplam 128 Ki karakterlik eylem verisi tutulur (tek eylem en fazla
-64 Ki karakter); eski makbuz silinse de ülkenin sıra sayacı silinmez. Günlük tam
+64 Ki karakter). Diğer ülkelerin emirleri öncelikle budanarak oyuncu ülkesinin
+son 12 emrine yer ayrılır; toplam karakter sınırı her durumda korunur. Eski
+makbuz silinse de ülkenin sıra sayacı silinmez. Günlük tam
 replay değildir. `trustedActorCountryId` çağıran uygulamadan gelir, gelen emirden
 alınmaz; bu yerel tek oyunculu protokol bir çevrimiçi kimlik doğrulama servisi
 değildir. Önizleme sadece açıldığında, mevcut dünya kopyası üzerinde aynı
 kurallarla çalışır; uygulama anındaki kontrolün yerine geçmez.
 
-**Doğrulama:** Son tam regresyon 411/411, odaklı komut/kayıt çalışması 30/30
+**Önceki aşamanın doğrulaması:** Tam regresyon 411/411, odaklı komut/kayıt çalışması 30/30
 geçti. Üretim derlemesi ve TypeScript denetimi geçti. Gerçek Chromium'da
 masaüstü (1440×1000) ve dokunmatik mobil görünüm (390×844) için 14 yeni
 komut/önizleme/kayıt/worker kontrolü ile 8 mevcut komutan/sınır/taarruz/eğitim
@@ -71,13 +73,73 @@ emülasyondur, fiziksel telefon veya donanım FPS garantisi değildir.
   Normal kayıt içe aktarma, gerçek butonlar ve dışa aktarılan yerel kayıtlar
   kullanılır; React durumuna gizli test erişimi eklenmez.
 - Komutan regresyonu: `scripts/test-europa-commanders-browser.cjs`.
-- Lint yapılandırması derleme çıktısıyla bozulmuştu; geçerli ESLint 9 / Next
-  uyumluluk yapılandırması ve doğrudan `@eslint/eslintrc` geliştirme bağımlılığı
-  ile onarıldı. Değişen oyun dosyalarının lint denetimi temizdir. Proje genelinde
-  `npm run lint` 46 mevcut hata nedeniyle hâlâ başarısızdır; bunlar başka oyunlar
-  ve bu aşamada değiştirilmeyen modüllerdeki kullanılmayan değişkenler, `any`
-  türleri ve bağlantı kurallarıdır. Genel lint geçti denmez. Üretim derlemesi
-  mevcut proje ayarı gereği lint denetimini atlar; lint ayrıca çalıştırıldı.
+- Önceki aşamada lint yapılandırması onarıldı, fakat proje genelinde 46 hata
+  kaldı. Aşağıdaki devam çalışmasında bu hatalar ve hook uyarıları giderildi.
+
+## Devam çalışması: 46 lint hatası ve ortak AI emirleri
+
+- Satranç API yanıtları `unknown` üzerinden doğrulanır; bozuk sağlayıcı
+  yanıtları için regresyonlar eklendi. Worker iletişimi açık türlerle tanımlandı.
+  Online odada aynı sürümün tekrarlanan yoklamaları seçili taşı sıfırlamaz.
+- Europa harita callback bağımlılıkları düzeltildi. 3D sahne tek kez kurulur;
+  kalite ve azaltılmış hareket değişimleri mevcut sahneye uygulanır. Color Hide
+  renk eşitlemesi yalnız ilgili renk bileşenlerini izler.
+- Kullanılmayan kod ve gereksiz `any` türleri temizlendi; site içi bağlantılar
+  Next bağlantı bileşenine taşındı. Lint kuralları susturulmadı. Derlemede lint'i
+  atlayan `ignoreDuringBuilds` ayarı kaldırıldı.
+- AI araştırma, odak, ekonomi, diplomasi, asker eğitimi, komutan atama ve
+  hareket emirleri artık oyuncuyla aynı doğrulanan ülke komutlarını kullanır.
+  Kaynak maliyeti, yetki, önkoşul ve kapasite denetimleri atlanamaz. Aynı emir
+  yeniden gönderildiğinde ekipman veya insan gücü ikinci kez harcanmaz.
+- Yönetim yardımcısı üretim kapasitesini önce fazla hatlardan geri alır,
+  ardından uygun hatlara tahsis eder. Araştırması bulunmayan mevcut bir hat
+  azaltılabilir/durdurulabilir; yeni hat veya artış için teknoloji gerekir.
+  Önceden ödenmiş üretim ilerlemesi korunur. Hava ve deniz görevleri de aynı
+  uygunluk denetiminden geçer; reddedilen görev kısmi değişiklik bırakmaz.
+- Worker için Immer ile yalnız değişen yolları kopyalayan atomik yürütme
+  eklendi. Dış dünya kimliği korunur; ülke/birlik referansları emirlerden sonra
+  yenilenir. Kullanıcıya açık değişmez API ve önizleme derin kopya yalıtımını
+  korur. İç içe yardımcı planı tek dış emir olarak kaydedilir.
+- Aynı başlangıç, hedef ve duruşa sahip AI birlikleri en fazla 512 tümenlik
+  gruplarla emir alır; her tümenin bağımsız rotası ve muharebe durumu
+  korunur. Düşük organizasyonla savunma hareketi yalnız dost rotadan geçebilir.
+  Bütün dünya için gereksiz komutan temizliği ve ilgisiz birimleri taslak
+  nesnesine dönüştüren aramalar azaltıldı.
+- Yardımcı yönetim değişmeyen hava/deniz görevlerini tekrar yayımlamaz; yeni
+  araçlar, yeni hedefler ve değişen başkentler emir almaya devam eder. Keşif ve
+  stratejik bombardıman görevleri haftalık toplu emirle gereksiz yere
+  sıfırlanmaz. İkmal limanını kaybeden veya boğazı kapanan gemiler, intikal
+  tamamlanınca geçerli bir limana yeniden bağlanabilir.
+- Toplu donanma emri liman listesini tek kez çıkarır; her gemi için yakıt,
+  boğaz, rota ve intikal denetimi sürer. 24 gemilik regresyonda eyalet listesi
+  iki kez taranır (hedef kıyı ve kendi limanları); gemi başına tekrarlanmaz.
+
+Bu değişiklikler günlük AI karar yolunu kapsar. Saatlik takvim, ortak savaş
+sisi/gözlem modeli ve eşzamanlı muharebe çözümü uygulanmış sayılmaz.
+
+**Son doğrulama (2 Kasım 2026):** Europa 450/450, satranç 118/118,
+Battle Royale 21/21 ve Color Hide 39/39 test geçti. Europa paketi 1936'dan
+1945 sonuna uzanan 3.653 günlük tarihsel seferi ve ara kayıt doğrulamalarını da
+çalıştırır. Proje genelinde ESLint hata/uyarı sayısı sıfırdır; üretim derlemesi
+artık lint ve TypeScript denetimlerini de uygular.
+
+Gerçek Chromium üzerinde 58 kontrol geçti: komut/önizleme/kayıt/worker 14,
+komutan/sınır/emir 8, canlı harita katmanları ve kaydırma/yakınlaştırma 6,
+3D WebGL/kalite/toplu hareket/ele geçirme/çevrimdışı devam/kurtarma 19,
+satranç botu/analiz/iki istemcili oda/kurtarma 11. Tarayıcı paketlerinde hata
+yoktur; harita ekran görüntüleri incelendi. Mobil ölçümler dokunmatik tarayıcı
+emülasyonudur, fiziksel telefon testi değildir. Bu çalışmada 60 FPS veya tüm
+cihazlarda takılmasız oynanış garantisi verilmez. Yeni atomik emirlerin CPU
+maliyeti vardır; azaltılan gereksiz taramalar bütün seferlerde toplam sürenin
+eski sürümden kısa olduğunu tek başına kanıtlamaz.
+
+- `scripts/test-europa-command-protocol-browser.cjs`
+- `scripts/test-europa-commanders-browser.cjs`
+- `scripts/test-europa-map-render-browser.cjs` (güncel seçim alanı ve yeniden
+  boyutlandırmadan sonra tekerlek/sürükleme kontrolü dahil)
+- `scripts/test-europa-3d-browser.cjs` (`EUROPA_SKIP_PERF=1`; donanım karşılaştırması
+  yapılmadan işlev kontrolleri çalıştırıldı)
+- `scripts/test-chess-browser.cjs`
 
 ## 1–100 kapsamı: mevcut temel ve kalan işler
 
@@ -89,7 +151,7 @@ yerine kullanılamaz.
 | Bölümler / sistem | Mevcut çalışan temel ve kod karşılığı | Kalan ana bağımlılık veya kapsam |
 | --- | --- | --- |
 | 01–03 Hedef, kapsam, mimari | Tek oyunculu yerel kampanya; TypeScript alan modülleri, React arayüzü ve worker (`engine.ts`, `types.ts`). | Doğrulanmış HOI4 kaynak eşlemesi ve bütün katmanları kapsayan kabul ölçütleri tamamlanmadı. |
-| 04–07 Dünya, komut, saat, worker | Kimlikli dünya, tohumlu günlük adım, atomik komut temeli, tek bekleyen worker isteği (`world.ts`, `engine.ts`, `simulation.ts`); yeni komut işi yukarıda. | Saatlik takvim, eşzamanlı çözüm, ayrı RNG akışları, genel varlık hareket defteri, bütün AI kararlarının komut yoluna taşınması ve durum farkı aktarımı yok. |
+| 04–07 Dünya, komut, saat, worker | Kimlikli dünya, tohumlu günlük adım, atomik komut temeli, tek bekleyen worker isteği (`world.ts`, `engine.ts`, `simulation.ts`); yeni komut işi yukarıda. | Saatlik takvim, eşzamanlı çözüm, ayrı RNG akışları, genel varlık hareket defteri ve durum farkı aktarımı yok. Günlük AI emirleri ortak doğrulama yoluna taşındı. |
 | 08–10 Senaryo, tarih, coğrafya | 1936 başlangıcı, ülke/zorluk/tarihsel yönelim, 29 ülke ve 447 hareket bölgesi; kara/deniz komşulukları (`map-data.json`, `world.ts`). | Ayrı 1939 senaryosu; kaynaklarıyla doğrulanmış küresel tarihsel sınırlar/karakterler; daha ayrıntılı eyalet–hareket bölgesi ve geçiş veri katmanları. |
 | 11–12 3D arazi, şehir, tesis | Gerçek 3D arazi, su, şehir/tesis dekoru ve tekrarlı nesneler (`map3d-geometry.ts`, `map3d-scenery.ts`, `map3d-renderer.ts`). | Bütün coğrafyayı kapsayan ayrıntılı varlık seti, bölgesel varlık yükleme ve istenen tüm yüksek ayrıntı düzeyleri yok; mevcut modeller prosedüreldir. |
 | 13–14 Kamera, seçim, harita modları | Kaydırma/yakınlaştırma, dokunma, şehir/birlik seçimi, küçük harita ve siyasi/askerî veri görünümleri (`WarMap3D.tsx`, `WarMap.tsx`, `useMapCamera.ts`). | Tam kutu seçimi ve şartnamedeki bütün tematik veri katmanları; yeni gözlem/ikmal modelleri tamamlandıkça bunlara bağlı kaplamalar. |
@@ -117,20 +179,19 @@ yerine kullanılamaz.
 | 78–82 Avrupa büyük güçleri ve Asya paketleri | Avrupa ülkeleri için genel ağaç; Almanya, Sovyetler, Britanya, Fransa ve İtalya ek odakları (`catalog.ts`). | Bölümlerde sayılan bütün ülkeler, parlamento/kurum rekabeti/özerklik/sürgün/birleşme içerikleri ve kaynaklı ülke paketleri tamamlanmadı. |
 | 83–84 Türkiye ve Balkanlar | Türkiye sanayileşme, modernizasyon, Montrö, Balkan güvenliği ve tarafsızlık odakları (`catalog.ts`, `national.ts`). | Ayrıntılı iç gruplar, diplomatik boğaz rejimi, lisans/pazar bağlantıları ve ödüllerin inşaat/üretim/teslim süreçlerine dönüşmesi. Mevcut Montrö odağı tahkimat/ilişki etkisidir. |
 | 85–90 Nordikler, diğer bölgeler, genel içerik | Haritada bulunan küçük ülkeler ortak ekonomi/araştırma/diplomasi/ordu döngüsünü kullanır (`map-data.json`, `catalog.ts`). | Bütün dünya ülkeleri, özgün bölgesel yollar, oluşturulabilir devletler, koşullu birleşme/bağımsızlık içerikleri ve kaynaklı envanter raporu. |
-| 91–92 Stratejik/operasyonel AI | Haftaya dağıtılmış tehdit/ekonomi/araştırma, yerel güç ve ikmale göre saldırı/geri çekilme (`ai.ts`, `management.ts`). | Kalıcı hedef/histerezis, ayrıştırılmış karar puanı, ortak gözlem modeli, başarısızlıktan yeniden planlama ve birleşik çıkarma. Mevcut AI kesin düşman durumunu okuyabilir. |
+| 91–92 Stratejik/operasyonel AI | Haftaya dağıtılmış tehdit/ekonomi/araştırma, yerel güç ve ikmale göre saldırı/geri çekilme; oyuncuyla ortak atomik komutlar (`ai.ts`, `management.ts`, `commands.ts`). | Kalıcı hedef/histerezis, ayrıştırılmış karar puanı, ortak gözlem modeli, başarısızlıktan yeniden planlama ve birleşik çıkarma. Mevcut AI kesin düşman durumunu okuyabilir. |
 | 93 Kayıt ve tekrar oynatma | Sürüm/geçiş/boyut/şema/referans denetimi, yerel yuvalar ve IndexedDB otomatik kayıt (`storage.ts`, `storage-browser.ts`). | Tam komut günlüğü+snapshot replay, oyun/senaryo/içerik hash başlığı, içerik paketi doğrulaması. Sınırlı, doğrulanan komut makbuzları bu iterasyonda eklendi. |
 | 94 Performans ve paketleme | Dört gerçek kalite seviyesi, instancing/görünürlük sınırları, FPS/geometri/doku ölçümü, worker ve çevrimdışı paket; WebGL kaybında 2D dönüş (`map3d-renderer.ts`, `offline-assets.ts`). | Otomatik WebGL geri yükleme, bölgesel varlık yükleme, saatlik sim maliyeti ve 10 yıllık bellek/perf değerlendirmesi. Ayardaki 60 FPS hedefi donanım garantisi değildir. |
 | 95 Erişilebilirlik ve öğretici | Türkçe paneller, dokunma/klavye erişimi, sistem veya kullanıcı tercihli azaltılmış hareket (`WarMap3D.tsx`, `WarPanels.tsx`). | İngilizce/anahtarlı yerelleştirme, değiştirilebilir tuşlar, ayrıntılı UI ölçeği, ansiklopedi ve gerçek eylemlerle ilerleyen öğreticiler. |
 | 96 Raporlar ve kampanya sonu | Ekonomik geçmiş grafikleri ve olay günlüğü (`WarPanels.tsx`, `types.ts`). | Aylık muhasebe raporu, birim/gemi tarihçesi, ölçülen kampanya hedefleri/başarımlar, zaman çizelgesi ve rapor dışa aktarımı. |
-| 97–98 Değişmezler ve uçtan uca test | Motor, stok, savaş, AI, kayıt, worker ve harita regresyonları; çok ülkeyle 90 günlük kampanya testleri (`advanced.test.ts`, `campaign-scenarios.test.ts`, `simulation.test.ts`). | Yeni saatlik/sevkiyat/kapasiteli ikmal/HQ/proje sistemleri henüz yok; bunların bütünleşik kabul testleri geçti denemez. Genel property testleri ve 10 yıllık stres ölçümü de ayrı iştir. |
+| 97–98 Değişmezler ve uçtan uca test | Motor, stok, savaş, AI, kayıt, worker ve harita regresyonları; çok ülkeyle 90 günlük ve 1936–1945 tarihsel kampanya testleri (`advanced.test.ts`, `campaign-scenarios.test.ts`, `engine.test.ts`, `simulation.test.ts`). | Yeni saatlik/sevkiyat/kapasiteli ikmal/HQ/proje sistemleri henüz yok; bunların bütünleşik kabul testleri geçti denemez. Genel property testleri ve fiziksel cihazlarda uzun sefer bellek/FPS profili ayrı iştir. |
 | 99–100 Teslim ve referanslar | Bağımlılığa göre uygulama sırası bu belgede; özgün şartname değişmeden arşivlendi. | Sonraki modülleri ayrı kabul etme ve kaynakların bağımsız doğrulanması. Bütün özellikler tamamlandı veya canlıya dağıtıldı iddiası yok. |
 
 ## Sonraki bağımlılık sırası
 
-1. Aynı komut yolunu AI ve yardımcı yönetime taşı; performans bütçesini ölç.
-2. Saatlik zaman geçişini sürümlü kayıt ve mevcut günlük API uyumuyla tasarla;
+1. Saatlik zaman geçişini sürümlü kayıt ve mevcut günlük API uyumuyla tasarla;
    tüm cephelerin başlangıç durumundan sıra bağımsız hasar çözümünü test et.
-3. Personel/ekipman sürümü, rezervasyon, sevkiyat ve paylaşılan ikmal kapasitesini
+2. Personel/ekipman sürümü, rezervasyon, sevkiyat ve paylaşılan ikmal kapasitesini
    ortak muhasebeye bağla. Tasarımcılar, HQ, hava/deniz harekâtı ve ülke paketleri
    bu temeli atlayarak bağımsız ödül veya dekor olarak eklenmemeli.
 

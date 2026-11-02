@@ -188,10 +188,11 @@ test("Eski 29 tümenli komutan 12/12/5 olarak ayrılır, birlikler ve yürüyü�
     (g) => members.filter((a) => a.general === g.id).length,
   );
   assert.deepEqual(sizes.filter(Boolean), [12, 12, 5]);
-  const stripGeneral = ({
-    general: _general,
-    ...army
-  }: World["armies"][number]) => army;
+  const stripGeneral = (army: World["armies"][number]) => {
+    const result = { ...army };
+    Reflect.deleteProperty(result, "general");
+    return result;
+  };
   assert.deepEqual(
     loaded.armies.map(stripGeneral),
     original.armies.map(stripGeneral),

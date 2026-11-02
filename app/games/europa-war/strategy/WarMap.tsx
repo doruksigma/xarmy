@@ -319,10 +319,10 @@ function WarMap({
   const { view, liveView, setView, moveView, finish, overviewRef, canvasSize } =
     useMapCamera(svg, () => fitCamera(MAP.width / MAP.height));
   const viewportRect = useRef<DOMRect | null>(null);
-  function readViewport() {
+  const readViewport = useCallback(() => {
     return (viewportRect.current ??=
       svg.current!.parentElement!.getBoundingClientRect());
-  }
+  }, []);
   const [search, setSearch] = useState("");
   const [mapDetails, setMapDetails] = useState<MapDetails>({
     terrain: true,
@@ -427,10 +427,13 @@ function WarMap({
   );
   const detailed = view.w < 1000,
     close = view.w < 650;
-  const visible = (id: string) =>
-    id === world.player ||
-    player.allies.includes(id) ||
-    player.intel[id]?.expires > world.day;
+  const visible = useCallback(
+    (id: string) =>
+      id === world.player ||
+      player.allies.includes(id) ||
+      player.intel[id]?.expires > world.day,
+    [world.player, world.day, player.allies, player.intel],
+  );
   const formations = useMemo(() => {
     const out = new Map<string, typeof world.armies>();
     const battleProvinces = new Set(world.battles.map((b) => b.province));
@@ -566,20 +569,27 @@ function WarMap({
           country.air.wings.map((wing) => ({ wing, country })),
         )
         .find(({ wing }) => wing.id === wingId),
-    [world, wingId],
+    [world, wingId, visible],
   );
-  function zoom(factor: number, point?: DOMPoint, gesture = false) {
-    (gesture ? moveView : setView)((v) => {
-      const w = zoomWidth(v.w * factor, v.w / v.h),
-        h = (w * v.h) / v.w;
-      return constrainCamera({
-        x: point ? point.x - ((point.x - v.x) * w) / v.w : v.x + (v.w - w) / 2,
-        y: point ? point.y - ((point.y - v.y) * h) / v.h : v.y + (v.h - h) / 2,
-        w,
-        h,
+  const zoom = useCallback(
+    (factor: number, point?: DOMPoint, gesture = false) => {
+      (gesture ? moveView : setView)((v) => {
+        const w = zoomWidth(v.w * factor, v.w / v.h),
+          h = (w * v.h) / v.w;
+        return constrainCamera({
+          x: point
+            ? point.x - ((point.x - v.x) * w) / v.w
+            : v.x + (v.w - w) / 2,
+          y: point
+            ? point.y - ((point.y - v.y) * h) / v.h
+            : v.y + (v.h - h) / 2,
+          w,
+          h,
+        });
       });
-    });
-  }
+    },
+    [moveView, setView],
+  );
   useEffect(() => {
     const el = svg.current;
     if (!el) return;
@@ -649,7 +659,7 @@ function WarMap({
       window.removeEventListener("scroll", invalidateViewport, true);
       el.removeEventListener("wheel", wheel);
     };
-  }, []);
+  }, [canvasSize, liveView, setView, zoom, readViewport]);
   function focusPlayer() {
     const p = GEOGRAPHY[player.capital];
     setView((v) => {
@@ -966,8 +976,7 @@ function WarMap({
         })}
         <g pointerEvents="none" data-testid="urban-centers">
           {MAP.provinces.map((p) => {
-            const country = world.countries[world.provinces[p.id].controller],
-              capital = capitals.has(p.id),
+            const capital = capitals.has(p.id),
               label = cityLabels.get(p.id),
               markerSize = counterScale;
             if (!capital && !detailed && p.vp < 4 && p.id !== selected)
@@ -1670,7 +1679,8 @@ function WarMap({
       player,
       selected,
       armyId,
-      armyIds,
+      selectedArmies,
+      visible,
       countryLabels,
       cityLabels,
       capitals,

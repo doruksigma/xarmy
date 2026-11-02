@@ -1,6 +1,7 @@
 import type { Action } from "./types";
 
 export const COMMAND_RECEIPT_LIMIT = 64;
+export const COMMAND_PLAYER_RECEIPT_RESERVE = 12;
 export const COMMAND_ACTION_MAX_CHARS = 65_536;
 export const COMMAND_HISTORY_MAX_CHARS = 131_072;
 export const COMMAND_SUMMARY_MAX_CHARS = 500;
@@ -185,8 +186,14 @@ const actionValidators: Record<Action["type"], Validator> = {
   decision: actionShape({ id: safeId }, { target: safeId }),
   front: actionShape({ provinces: ids, armies: ids }),
   deleteFront: actionShape({ id: safeId }),
-  move: actionShape({ army: safeId, to: safeId }, { append: bool }),
-  moveGroup: actionShape({ armies: ids, to: safeId }, { append: bool }),
+  move: actionShape(
+    { army: safeId, to: safeId },
+    { append: bool, stance: one("hold", "advance") },
+  ),
+  moveGroup: actionShape(
+    { armies: ids, to: safeId },
+    { append: bool, stance: one("hold", "advance") },
+  ),
   halt: actionShape({ army: safeId }),
   haltGroup: actionShape({ armies: ids }),
   general: actionShape({ army: safeId, general: nullableId }),

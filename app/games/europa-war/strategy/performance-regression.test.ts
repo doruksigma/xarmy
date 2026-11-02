@@ -35,12 +35,18 @@ test("Stacked divisions keep individual supply modifiers and refresh next day", 
     );
   const supplied = expected();
   resolveLandDay(w);
-  assert.deepEqual(armies.map((a) => a.supply), supplied);
+  assert.deepEqual(
+    armies.map((a) => a.supply),
+    supplied,
+  );
 
   w.provinces[c.capital].controller = "poland";
   const cutOff = expected();
   resolveLandDay(w);
-  assert.deepEqual(armies.map((a) => a.supply), cutOff);
+  assert.deepEqual(
+    armies.map((a) => a.supply),
+    cutOff,
+  );
   assert.ok(armies[0].supply < supplied[0]);
 });
 
@@ -69,10 +75,12 @@ test("AI divisions reusing a route retain independent orders", () => {
   const w = createWorld("turkey");
   declareWar(w, "germany", "poland");
   w.armies = [];
-  const first = addArmy(w, "germany", "germany-0"),
+  let first = addArmy(w, "germany", "germany-0"),
     second = addArmy(w, "germany", "germany-0");
   w.day = (7 - (Object.keys(w.countries).indexOf("germany") % 7)) % 7;
   aiDay(w);
+  first = w.armies.find((army) => army.id === first.id)!;
+  second = w.armies.find((army) => army.id === second.id)!;
   assert.ok(first.route.length > 0);
   assert.deepEqual(first.route, second.route);
   assert.notEqual(first.route, second.route);

@@ -1,4 +1,5 @@
 import { EQUIPMENT, UNITS } from "./catalog";
+import { current, isDraft } from "immer";
 import { SUPPORT } from "./advanced-catalog";
 import { combatPower, routeTo } from "./land";
 import {
@@ -21,7 +22,11 @@ export function equipmentNeeds(a: Army): Partial<Record<Equipment, number>> {
   return needs;
 }
 export function detachArmy(w: World, id: string) {
-  const army = w.armies.find((a) => a.id === id);
+  // Search a plain view before touching the chosen draft. Iterating a draft
+  // array otherwise creates one Proxy per unrelated division for each order.
+  const list = isDraft(w.armies) ? current(w.armies) : w.armies;
+  const index = list.findIndex((army) => army.id === id);
+  const army = index >= 0 ? w.armies[index] : undefined;
   if (army) {
     delete army.marchGroup;
     const general = w.countries[army.country].generals.find(

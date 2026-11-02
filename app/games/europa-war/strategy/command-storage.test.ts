@@ -123,7 +123,13 @@ test("Emir kaydı RNG tohumu ve sonraki günlerin deterministik sonucunu korur",
     loaded = advanceDay(loaded);
   }
   assert.deepEqual(loaded, uninterrupted);
-  assert.deepEqual(loaded.commandState, world.commandState);
+  assert.deepEqual(
+    loaded.commandState!.receipts.filter(
+      (receipt) => receipt.issuerCountryId === world.player,
+    ),
+    world.commandState!.receipts,
+    "Diğer ülkelerin yeni emirleri oyuncunun yakın emir geçmişini silmez",
+  );
 });
 
 test("Birden çok ülkenin emir sıra sayacı ayrı korunur", () => {

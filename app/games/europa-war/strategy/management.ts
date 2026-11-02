@@ -6,15 +6,14 @@ import {
   TECHNOLOGIES,
   UNITS,
 } from "./catalog";
-import { airNavalAction, quickAirOrder, quickNavalOrder } from "./airnaval";
-import { economyAction } from "./economy";
-import { PRODUCTION_BALANCE } from "./economy-balance";
-import { politicsAction, researchSlots } from "./politics";
+import { researchSlots } from "./politics";
+import { portZone, seaRoute } from "./military-assets";
 import {
   capacity,
   controlled,
   dateOf,
   event,
+  friendly,
   GEOGRAPHY,
   localSupply,
   requireRule,
@@ -38,20 +37,24 @@ export function manage(
   w: World,
   c: Country,
   area: keyof Country["automation"],
+  submit: (action: Action) => boolean,
 ) {
-  const attempt = (action: Action) => {
-    try {
-      return (
-        economyAction(w, c, action) ||
-        politicsAction(w, c, action) ||
-        airNavalAction(w, c, action)
-      );
-    } catch {
-      return false;
-    }
+  const countryId = c.id;
+  let lands = controlled(w, countryId),
+    armies = w.armies.filter((army) => army.country === countryId);
+  const refresh = () => {
+    c = w.countries[countryId];
+    lands = controlled(w, countryId);
+    armies = w.armies.filter((army) => army.country === countryId);
   };
-  const lands = controlled(w, c.id),
-    armies = w.armies.filter((a) => a.country === c.id);
+  refresh();
+  const attempt = (action: Action) => {
+    const accepted = submit(action);
+    // A successful atomic command can replace country/army/province objects.
+    // Later recommendations must use committed resources and queue lengths.
+    refresh();
+    return accepted;
+  };
   if (!lands.length) return;
   if (area === "research") {
     const priority = c.wars.length
@@ -146,23 +149,25 @@ export function manage(
         const e = ranked[0].e;
         allocations[e] = (allocations[e] ?? 0) + 1;
       }
-      c.production = c.production.filter(
-        (l) => !!EQUIPMENT[l.equipment].naval !== naval,
-      );
-      for (const [equipment, factories] of Object.entries(allocations))
-        c.production.push({
-          equipment: equipment as Equipment,
-          factories,
-          efficiency:
-            old.find((l) => l.equipment === equipment)?.efficiency ??
-            PRODUCTION_BALANCE.startingEfficiency,
-          progress: old.find((l) => l.equipment === equipment)?.progress ?? 0,
-        });
-      // Reassigning factories must not erase material-backed partial items.
-      // Unselected lines remain paused and resume from their stored work.
-      for (const line of old)
-        if (!allocations[line.equipment] && (line.progress ?? 0) > 0)
-          c.production.push({ ...line, factories: 0 });
+      // Free every surplus allocation before requesting any increase. A lost
+      // factory can leave several old lines over capacity; partial reductions
+      // are legal through the same production command used by the player.
+      for (const line of old) {
+        const wanted = allocations[line.equipment] ?? 0;
+        if (line.factories > wanted)
+          attempt({
+            type: "production",
+            equipment: line.equipment,
+            factories: wanted,
+          });
+      }
+      for (const [equipment, factories] of Object.entries(allocations)) {
+        const model = equipment as Equipment;
+        const current =
+          c.production.find((line) => line.equipment === model)?.factories ?? 0;
+        if (current < factories)
+          attempt({ type: "production", equipment: model, factories });
+      }
     }
     if (!c.construction.length && c.treasury > 230) {
       const weak = armies.find(
@@ -243,10 +248,83 @@ export function manage(
             GEOGRAPHY[c.capital].y - GEOGRAPHY[w.countries[b].capital].y,
           ),
       )[0];
-    quickAirOrder(w, c, target ? "support" : "idle", target ?? c.id);
-    quickNavalOrder(w, c, target ? "raid" : "patrol", target ?? c.id);
-    for (const wing of c.air.wings) {
-      if (target && ["strategicBomber", "reconPlane"].includes(wing.model))
+    const airMission = target ? "support" : "idle",
+      countryTarget = target ?? c.id;
+    // Compare actual orders, not just the country summary: a newly formed wing
+    // still needs its first mission. Special wings keep their final individual
+    // orders instead of being reset to idle by a redundant weekly bulk order.
+    if (
+      c.air.wings.length > 0 &&
+      (c.air.mission !== airMission ||
+        c.air.target !== countryTarget ||
+        c.air.wings.some((wing) => {
+          if (target && ["strategicBomber", "reconPlane"].includes(wing.model))
+            return false;
+          const wanted =
+            airMission === "idle"
+              ? "idle"
+              : AIRCRAFT[wing.model].missions.includes(airMission)
+                ? airMission
+                : wing.model === "fighter"
+                  ? "superiority"
+                  : "idle";
+          return (
+            wing.mission !== wanted ||
+            wing.target !==
+              (wanted === "idle"
+                ? wing.base
+                : w.countries[countryTarget].capital)
+          );
+        }))
+    )
+      attempt({ type: "air", mission: airMission, target: countryTarget });
+    const navyMission = target ? "raid" : "patrol",
+      coast = controlled(w, countryTarget).find((p) => GEOGRAPHY[p.id].port),
+      zone = coast ? portZone(coast.id) : c.navy.zone;
+    const homeRoutes = new Map<string, boolean>();
+    if (
+      c.navy.ships.length > 0 &&
+      (c.navy.mission !== navyMission ||
+        c.navy.target !== countryTarget ||
+        c.navy.ships.some((ship) => {
+          if (
+            ship.zone !== zone ||
+            ship.mission !==
+              (navyMission === "raid" && ship.model !== "submarine"
+                ? "escort"
+                : navyMission)
+          )
+            return true;
+          // A matching mission still needs a reachable friendly supply port.
+          // Let the shared order choose an owned replacement after transit;
+          // suppressing that order would strand the fleet after a conquest.
+          if (ship.transit) return false;
+          const home = w.provinces[ship.port];
+          if (
+            !home ||
+            ship.port === "ussr-13" ||
+            !friendly(w, c.id, home.controller)
+          )
+            return true;
+          const routeKey = `${ship.port}:${ship.zone}`;
+          if (!homeRoutes.has(routeKey))
+            homeRoutes.set(
+              routeKey,
+              !!seaRoute(w, c.id, portZone(ship.port), ship.zone),
+            );
+          return !homeRoutes.get(routeKey);
+        }))
+    )
+      attempt({ type: "navy", mission: navyMission, target: countryTarget });
+    for (const id of c.air.wings.map((wing) => wing.id)) {
+      const wing = c.air.wings.find((candidate) => candidate.id === id)!;
+      if (
+        target &&
+        ["strategicBomber", "reconPlane"].includes(wing.model) &&
+        (wing.target !== w.countries[target].capital ||
+          wing.mission !==
+            (wing.model === "reconPlane" ? "recon" : "strategic"))
+      )
         attempt({
           type: "wing",
           id: wing.id,
@@ -256,7 +334,12 @@ export function manage(
     }
   }
 }
-export function managementAction(w: World, c: Country, a: Action): boolean {
+export function managementAction(
+  w: World,
+  c: Country,
+  a: Action,
+  submit: (action: Action) => boolean,
+): boolean {
   if (a.type === "automation" || a.type === "autoPlan") {
     requireRule(
       Object.hasOwn(AUTOMATION, a.area),
@@ -264,8 +347,8 @@ export function managementAction(w: World, c: Country, a: Action): boolean {
     );
     if (a.type === "automation") {
       c.automation[a.area] = a.enabled;
-      if (a.enabled) manage(w, c, a.area);
-    } else manage(w, c, a.area);
+      if (a.enabled) manage(w, c, a.area, submit);
+    } else manage(w, c, a.area, submit);
     event(
       w,
       `${AUTOMATION[a.area]}: ${a.type === "autoPlan" ? "mevcut kaynaklarla plan uygulandı" : a.enabled ? "yardımcı yönetimi açıldı" : "manuel yönetime geçildi"}.`,
@@ -291,11 +374,20 @@ export function managementAction(w: World, c: Country, a: Action): boolean {
   }
   return false;
 }
-export function managementDay(w: World) {
-  const c = w.countries[w.player];
+export function managementDay(
+  w: World,
+  submit: (issuer: string, action: Action) => boolean,
+) {
+  const countryId = w.player;
+  let c = w.countries[countryId];
   if (c.capitulated || w.day % 7 !== 0) return;
-  for (const area of Object.keys(AUTOMATION) as (keyof Country["automation"])[])
-    if (c.automation[area]) manage(w, c, area);
+  for (const area of Object.keys(
+    AUTOMATION,
+  ) as (keyof Country["automation"])[]) {
+    c = w.countries[countryId];
+    if (c.automation[area])
+      manage(w, c, area, (action) => submit(countryId, action));
+  }
 }
 
 export interface Advice {

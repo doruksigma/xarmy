@@ -1,4 +1,8 @@
-import { applyCountryAction } from "./action-engine";
+import {
+  applyCountryAction,
+  dispatchCountryAction,
+  transactWorldInPlace,
+} from "./action-engine";
 import { BUILDINGS, UNITS } from "./catalog";
 import { GEOGRAPHY } from "./world";
 import {
@@ -7,10 +11,12 @@ import {
   isValidProtocolCommand,
   COMMAND_HISTORY_MAX_CHARS,
   COMMAND_RECEIPT_LIMIT,
+  COMMAND_PLAYER_RECEIPT_RESERVE,
   COMMAND_SUMMARY_MAX_CHARS,
   COMMAND_TICKS_PER_DAY,
   type ProtocolCommand,
   type CommandReceipt,
+  type CommandState,
 } from "./command-types";
 import type { Action, Arsenal, World } from "./types";
 
@@ -248,7 +254,48 @@ function checkCommand(
   return null;
 }
 
-export function executeCommand(
+function stateWithReceipt(world: World, receipt: CommandReceipt): CommandState {
+  // This bounded metadata calculation happens on plain state, outside Immer.
+  // Walking 64 historical action trees through draft proxies on every AI order
+  // is unnecessary; only the new cursor map and receipt array are changed.
+  const state: CommandState = {
+    version: 1,
+    cursors: {
+      ...world.commandState?.cursors,
+      [receipt.issuerCountryId]: receipt.sequence,
+    },
+    receipts: [...(world.commandState?.receipts ?? []), receipt],
+  };
+  // Automated countries must not immediately evict the player's last few orders.
+  // Preserve chronological order and each issuer's newest receipt/cursor pair.
+  const protectedIds = new Set(
+    state.receipts
+      .filter((entry) => entry.issuerCountryId === world.player)
+      .slice(-COMMAND_PLAYER_RECEIPT_RESERVE)
+      .map((entry) => entry.commandId),
+  );
+  let size = state.receipts.reduce(
+    // Key order does not change the serialized length of validated actions.
+    // Sorting is required for duplicate identity, not for this memory budget.
+    (total, entry) => total + JSON.stringify(entry.action).length,
+    0,
+  );
+  while (
+    state.receipts.length > COMMAND_RECEIPT_LIMIT ||
+    size > COMMAND_HISTORY_MAX_CHARS
+  ) {
+    const eligible = state.receipts.findIndex(
+      (entry) => !protectedIds.has(entry.commandId),
+    );
+    // The byte cap is a hard bound even if the protected player orders alone exceed it.
+    const removed = state.receipts.splice(eligible < 0 ? 0 : eligible, 1)[0];
+    size -= JSON.stringify(removed.action).length;
+  }
+  return state;
+}
+
+/** Worker/AI path: atomic copy-on-write commit preserves the outer world identity. */
+export function executeCommandInPlace(
   world: World,
   command: unknown,
   trustedActorCountryId: string,
@@ -256,42 +303,40 @@ export function executeCommand(
   const checked = checkCommand(world, command, trustedActorCountryId);
   if (checked) return checked;
   const valid = command as ProtocolCommand;
-  const applied = applyCountryAction(
-    world,
-    valid.issuerCountryId,
-    valid.action,
-  );
-  if (applied.error) return rejected(world, "RULE_REJECTED", applied.error);
-  const state = applied.world.commandState ?? {
-    version: 1 as const,
-    cursors: {},
-    receipts: [],
-  };
   const receipt: CommandReceipt = {
     ...structuredClone(valid),
     sequence: commandSequence(valid.commandId, valid.issuerCountryId)!,
     appliedTick: commandTick(world),
     summary: describeAction(world, valid.issuerCountryId, valid.action),
   };
-  state.cursors[valid.issuerCountryId] = receipt.sequence;
-  state.receipts.push(receipt);
-  let size = state.receipts.reduce(
-    (total, r) => total + canonicalAction(r.action).length,
-    0,
-  );
-  while (
-    state.receipts.length > COMMAND_RECEIPT_LIMIT ||
-    size > COMMAND_HISTORY_MAX_CHARS
-  ) {
-    size -= canonicalAction(state.receipts.shift()!.action).length;
-  }
-  applied.world.commandState = state;
+  const nextState = stateWithReceipt(world, receipt);
+  const result = transactWorldInPlace(world, (draft) => {
+    dispatchCountryAction(draft, valid.issuerCountryId, valid.action);
+    draft.commandState = nextState;
+  });
+  if (result.error) return rejected(world, "RULE_REJECTED", result.error);
   return {
-    world: applied.world,
+    world,
     status: "applied",
     code: "APPLIED",
     message: `${receipt.summary} uygulandı.`,
   };
+}
+
+/** Public immutable API retains deep result isolation for existing callers and previews. */
+export function executeCommand(
+  world: World,
+  command: unknown,
+  trustedActorCountryId: string,
+): CommandResult {
+  const checked = checkCommand(world, command, trustedActorCountryId);
+  if (checked) return checked;
+  const result = executeCommandInPlace(
+    structuredClone(world),
+    command,
+    trustedActorCountryId,
+  );
+  return result.status === "rejected" ? { ...result, world } : result;
 }
 
 /** Same authorization and domain rules as execution, without publishing a world or receipt. */

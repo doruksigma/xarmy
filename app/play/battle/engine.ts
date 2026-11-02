@@ -18,7 +18,6 @@ import type {
 } from "./types";
 import {
   WEAPONS,
-  RARITY_COLORS,
   RARITY_MULTIPLIER,
   applyDamage,
   advanceFall,
@@ -70,7 +69,6 @@ type ReplayFrame = {
     alive: boolean;
   }[];
 };
-const UP = new THREE.Vector3(0, 1, 0);
 const BOT_COUNT = 23;
 
 export function createGame(
@@ -1870,7 +1868,9 @@ export function createGame(
         } else if (value.fire === false) lastFire = false;
         if (value.lookX) input.lookX += value.lookX;
         if (value.lookY) input.lookY += value.lookY;
-        const { lookX: _x, lookY: _y, ...rest } = value;
+        const rest = { ...value };
+        delete rest.lookX;
+        delete rest.lookY;
         Object.assign(input, rest);
       },
       setQuality(q) {

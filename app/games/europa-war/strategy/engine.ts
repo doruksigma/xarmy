@@ -9,6 +9,7 @@ import { operationsDay } from "./operations";
 import { politicsDay } from "./politics";
 import { clamp, friendly } from "./world";
 import { applyCountryAction } from "./action-engine";
+import { createCommand, executeCommandInPlace } from "./commands";
 import type { Action, World } from "./types";
 export { createWorld } from "./world";
 
@@ -26,7 +27,12 @@ export function advanceDay(world: World): World {
   politicsDay(w);
   operationsDay(w);
   aiDay(w);
-  managementDay(w);
+  managementDay(
+    w,
+    (issuer, action) =>
+      executeCommandInPlace(w, createCommand(w, action, issuer), issuer)
+        .status === "applied",
+  );
   planningDay(w);
   for (const front of w.fronts) {
     const points = front.provinces.filter((id) =>

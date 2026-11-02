@@ -5,17 +5,14 @@ import { equipmentNeeds } from "./planning";
 import { seaEdgeOpen } from "./military-assets";
 import { TERRAINS, UNITS } from "./catalog";
 import {
-  addArmy,
   atWar,
   clamp,
   event,
   friendly,
   GEOGRAPHY,
   localSupply,
-  seaOpen,
   supplyNetwork,
   surrender,
-  uid,
 } from "./world";
 import type { Army, World } from "./types";
 

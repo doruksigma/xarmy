@@ -1,3 +1,4 @@
+import { createCommand, executeCommandInPlace } from "./commands";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { applyAction } from "./engine";
@@ -212,12 +213,24 @@ test("Fabrika tahsisini sıfırlamak ücretli işi duraklatır; yeniden tahsis a
 });
 
 test("Yapay zekâ yeni tahsislerinde aynı modelin ilerlemesini ve devre dışı ürünün ücretli işini korur", () => {
-  const { world, country } = factoryWorld(2, 0);
+  const { world } = factoryWorld(2, 0);
+  let country = world.countries.turkey;
   country.production = [
     { equipment: "rifle", factories: 1, efficiency: 0.6, progress: 0.4 },
     { equipment: "heavyTank", factories: 1, efficiency: 0.4, progress: 2.5 },
   ];
-  manage(world, country, "economy");
+  manage(
+    world,
+    country,
+    "economy",
+    (action) =>
+      executeCommandInPlace(
+        world,
+        createCommand(world, action, country.id),
+        country.id,
+      ).status !== "rejected",
+  );
+  country = world.countries.turkey;
   const rifle = country.production.find((line) => line.equipment === "rifle")!;
   const tank = country.production.find(
     (line) => line.equipment === "heavyTank",

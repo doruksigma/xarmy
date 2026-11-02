@@ -75,11 +75,13 @@ export function economyAction(w: World, c: Country, a: Action): boolean {
       Number.isInteger(a.factories) && a.factories >= 0 && a.factories <= 100,
       "Geçersiz fabrika sayısı.",
     );
+    const line = c.production.find((p) => p.equipment === a.equipment);
     requireRule(
-      !def.tech || c.tech.includes(def.tech),
+      (line && a.factories <= line.factories) ||
+        !def.tech ||
+        c.tech.includes(def.tech),
       "Bu ekipman için teknoloji araştırması gerekir.",
     );
-    const line = c.production.find((p) => p.equipment === a.equipment);
     const used = c.production
       .filter(
         (p) =>

@@ -395,8 +395,20 @@ export type Action =
   | { type: "decision"; id: string; target?: string }
   | { type: "front"; provinces: string[]; armies: string[] }
   | { type: "deleteFront"; id: string }
-  | { type: "move"; army: string; to: string; append?: boolean }
-  | { type: "moveGroup"; armies: string[]; to: string; append?: boolean }
+  | {
+      type: "move";
+      army: string;
+      to: string;
+      append?: boolean;
+      stance?: "hold" | "advance";
+    }
+  | {
+      type: "moveGroup";
+      armies: string[];
+      to: string;
+      append?: boolean;
+      stance?: "hold" | "advance";
+    }
   | { type: "halt"; army: string }
   | { type: "haltGroup"; armies: string[] }
   | { type: "general"; army: string; general: string | null }

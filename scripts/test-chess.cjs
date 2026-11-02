@@ -5,6 +5,7 @@ const path = require("node:path");
 const root = path.resolve(__dirname, "..");
 const output = mkdtempSync(path.join(root, "node_modules", ".chess-tests-"));
 const sources = [
+  "app/api/chess-coach/route.test.ts",
   "lib/chess-room.test.ts",
   "lib/chess-room-store.test.ts",
   "app/games/chess/bot.test.ts",

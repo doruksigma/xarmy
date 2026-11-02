@@ -533,7 +533,11 @@ function Arena({
     input.current.seq = Math.max(input.current.seq, me.lastInputSeq);
   }, [room, me.lastInputSeq]);
   useEffect(() => {
-    setPaint(me.paint);
+    setPaint({
+      head: me.paint.head,
+      body: me.paint.body,
+      legs: me.paint.legs,
+    });
   }, [me.paint.head, me.paint.body, me.paint.legs]);
   useEffect(() => {
     if (room.phase !== "hiding") {

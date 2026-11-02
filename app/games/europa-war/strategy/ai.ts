@@ -1,11 +1,11 @@
 import { manage } from "./management";
-import { assignAvailableCommander } from "./commander-roster";
+import { COMMANDER_CAPACITY } from "./commander-roster";
+import { createCommand, executeCommandInPlace } from "./commands";
 import { seaEdgeOpen } from "./military-assets";
 import { focusTree, TECHNOLOGIES } from "./catalog";
-import { diplomaticAcceptance, diplomaticAction } from "./diplomacy";
-import { economyAction } from "./economy";
-import { combatPower, routeTo } from "./land";
-import { politicsAction, researchSlots } from "./politics";
+import { diplomaticAcceptance } from "./diplomacy";
+import { combatPower } from "./land";
+import { researchSlots } from "./politics";
 import {
   atWar,
   controlled,
@@ -15,27 +15,33 @@ import {
   militaryPower,
   supplyNetwork,
 } from "./world";
-import type { Army, World } from "./types";
+import type { Action, Army, World } from "./types";
 
 /** AI decisions use stocks, local force ratios, supply, diplomatic threats and
  * research prerequisites. No hidden resources or random auto-capture. */
 export function aiDay(w: World) {
-  for (const [index, c] of Object.values(w.countries).entries()) {
+  // IDs survive copy-on-write command publication; cached entity objects do not.
+  for (const [index, countryId] of Object.keys(w.countries).entries()) {
+    let c = w.countries[countryId];
     if (c.id === w.player || c.capitulated || (w.day + index) % 7 !== 0)
       continue;
-    const attempt = (fn: () => unknown) => {
-      try {
-        fn();
-      } catch (error) {
-        if (!(error instanceof Error)) throw error;
-      }
+    const submit = (action: Action): boolean => {
+      const result = executeCommandInPlace(
+        w,
+        createCommand(w, action, countryId),
+        countryId,
+      );
+      // Commands may replace this country and its armies. Never spend against
+      // an object from before the previous command or pass it into management.
+      c = w.countries[countryId];
+      return result.status === "applied" || result.status === "duplicate";
     };
-    const lands = controlled(w, c.id);
+    let lands = controlled(w, countryId);
     if (!lands.length) continue;
-    const armies = w.armies.filter((a) => a.country === c.id);
-    const threat = c.wars.length > 0;
+    const armies = () => w.armies.filter((army) => army.country === countryId);
+    const threat = () => c.wars.length > 0;
     if (c.research.length < researchSlots(c)) {
-      const priority = threat
+      const priority = threat()
         ? [
             "landDoctrine",
             "weapons1",
@@ -65,10 +71,7 @@ export function aiDay(w: World) {
           priority.includes(id) ? priority.indexOf(id) : 100;
         return rank(a.id) - rank(b.id) || a.year - b.year;
       });
-      if (options[0])
-        attempt(() =>
-          politicsAction(w, c, { type: "research", id: options[0].id }),
-        );
+      if (options[0]) submit({ type: "research", id: options[0].id });
     }
     if (!c.focus) {
       const focus = focusTree(c.id).find(
@@ -77,8 +80,7 @@ export function aiDay(w: World) {
           f.requires.every((id) => c.focuses.includes(id)) &&
           (!f.excludes || !c.focuses.includes(f.excludes)),
       );
-      if (focus)
-        attempt(() => politicsAction(w, c, { type: "focus", id: focus.id }));
+      if (focus) submit({ type: "focus", id: focus.id });
     }
     if (c.construction.length === 0 && c.treasury > 250) {
       const border = lands.find((p) =>
@@ -86,39 +88,37 @@ export function aiDay(w: World) {
           atWar(w, c.id, w.provinces[n.id].controller),
         ),
       );
-      const lowSupply = armies.find(
+      const lowSupply = armies().find(
         (a) => a.supply < 0.7 && w.provinces[a.province].controller === c.id,
       );
       const choice = lowSupply
         ? { province: lowSupply.province, building: "rail" as const }
         : c.stock.rubber < 20
           ? { province: c.capital, building: "synthetic" as const }
-          : threat && border && border.buildings.fort < 2
+          : threat() && border && border.buildings.fort < 2
             ? { province: border.id, building: "fort" as const }
             : {
                 province: lands.sort(
                   (a, b) => a.buildings.civil - b.buildings.civil,
                 )[0].id,
-                building: threat ? ("military" as const) : ("civil" as const),
+                building: threat() ? ("military" as const) : ("civil" as const),
               };
-      attempt(() => economyAction(w, c, { type: "build", ...choice }));
+      submit({ type: "build", ...choice });
     }
     // Share the finite-pool allocation with the player's optional assistant.
     // Deployed aircraft and ships count toward goals, so commissioning assets
     // cannot trigger endless replacement production and starve the land army.
-    manage(w, c, "economy");
-    if (threat && c.economy !== "war")
-      attempt(() => economyAction(w, c, { type: "economy", law: "war" }));
+    manage(w, c, "economy", submit);
+    if (threat() && c.economy !== "war")
+      submit({ type: "economy", law: "war" });
     if (c.manpower < 12000 && c.conscription !== "extensive")
-      attempt(() =>
-        economyAction(w, c, {
-          type: "conscription",
-          law: c.conscription === "volunteer" ? "limited" : "extensive",
-        }),
-      );
+      submit({
+        type: "conscription",
+        law: c.conscription === "volunteer" ? "limited" : "extensive",
+      });
     if (
       c.recruitment.length < 2 &&
-      armies.length < Math.min(32, lands.length * 3)
+      armies().length < Math.min(32, lands.length * 3)
     ) {
       const type =
         c.tech.includes("armor2") && c.equipment.mediumTank >= 45
@@ -128,13 +128,7 @@ export function aiDay(w: World) {
             : c.equipment.artillery >= 24
               ? "artillery"
               : "infantry";
-      attempt(() =>
-        economyAction(w, c, {
-          type: "recruit",
-          unit: type,
-          province: c.capital,
-        }),
-      );
+      submit({ type: "recruit", unit: type, province: c.capital });
     }
     for (const r of ["oil", "rubber", "steel"] as const)
       if (
@@ -153,14 +147,7 @@ export function aiDay(w: World) {
           )
           .sort((a, b) => b.stock[r] - a.stock[r])[0];
         if (seller && c.treasury > 100)
-          attempt(() =>
-            economyAction(w, c, {
-              type: "trade",
-              target: seller.id,
-              resource: r,
-              amount: 3,
-            }),
-          );
+          submit({ type: "trade", target: seller.id, resource: r, amount: 3 });
       }
     if (c.wars.length) {
       const strongest = [...c.wars].sort(
@@ -170,7 +157,7 @@ export function aiDay(w: World) {
         c.exhaustion > 45 &&
         militaryPower(w, c.id) < militaryPower(w, strongest) * 0.65
       )
-        attempt(() => diplomaticAction(w, c, strongest, "peace"));
+        submit({ type: "diplomacy", target: strongest, kind: "peace" });
       const ally = Object.values(w.countries).find(
         (t) =>
           t !== c &&
@@ -180,7 +167,8 @@ export function aiDay(w: World) {
           t.wars.some((id) => c.wars.includes(id)) &&
           diplomaticAcceptance(w, c.id, t.id) >= 55,
       );
-      if (ally) attempt(() => diplomaticAction(w, c, ally.id, "alliance"));
+      if (ally)
+        submit({ type: "diplomacy", target: ally.id, kind: "alliance" });
     } else if (
       w.mode === "alternative" &&
       !c.subjectOf &&
@@ -213,19 +201,18 @@ export function aiDay(w: World) {
           militaryPower(w, c.id) >
             enemyPower *
               (target.id === w.player && w.difficulty === "easy" ? 2.2 : 1.4) &&
-          armies.every((a) => a.supply > 0.6)
+          armies().every((a) => a.supply > 0.6)
         )
-          attempt(() =>
-            diplomaticAction(
-              w,
-              c,
-              target.id,
-              c.claims.includes(target.id) ? "war" : "justify",
-            ),
-          );
+          submit({
+            type: "diplomacy",
+            target: target.id,
+            kind: c.claims.includes(target.id) ? "war" : "justify",
+          });
       }
     }
-    manage(w, c, "operations");
+    manage(w, c, "operations", submit);
+    // Peace, alliances and asset orders can change access and controlled land.
+    lands = controlled(w, countryId);
     // Diplomacy and asset orders are settled before reusing this network.
     let network: Set<string> | undefined;
     const supplies = new Map<string, number>();
@@ -239,31 +226,77 @@ export function aiDay(w: World) {
     // strength remain fixed until the next country takes its turn.
     const byProvince = new Map<string, Army[]>(),
       ownCounts = new Map<string, number>(),
-      defenses = new Map<string, number>(),
-      routes = new Map<string, string[] | null>();
-    for (const a of w.armies) {
+      armyIndices = new Map<string, number>(),
+      commanderCounts = new Map<string, number>(),
+      defenses = new Map<string, number>();
+    for (const [armyIndex, a] of w.armies.entries()) {
       const at = byProvince.get(a.province);
       if (at) at.push(a);
       else byProvince.set(a.province, [a]);
-      if (a.country === c.id)
+      if (a.country === c.id) {
         ownCounts.set(a.province, (ownCounts.get(a.province) ?? 0) + 1);
+        armyIndices.set(a.id, armyIndex);
+        if (a.general)
+          commanderCounts.set(
+            a.general,
+            (commanderCounts.get(a.general) ?? 0) + 1,
+          );
+      }
     }
-    const borders = threat
-      ? controlled(w, c.id).filter((p) =>
+    const borders = threat()
+      ? lands.filter((p) =>
           GEOGRAPHY[p.id].neighbors.some((e) =>
             atWar(w, c.id, w.provinces[e.id].controller),
           ),
         )
       : [];
-    for (const a of armies) {
+    // Shared origins and goals use one atomic group order. This avoids opening
+    // a separate copy-on-write transaction for every stacked division.
+    const movements = new Map<
+      string,
+      { armies: string[]; to: string; stance: "hold" | "advance" }
+    >();
+    const queueMove = (
+      army: Army,
+      to: string,
+      stance: "hold" | "advance" = "advance",
+    ) => {
+      const key = `${army.province}:${to}:${stance}`;
+      const group = movements.get(key);
+      if (group) group.armies.push(army.id);
+      else movements.set(key, { armies: [army.id], to, stance });
+    };
+    // General and movement orders do not add, remove or reorder armies. Read
+    // the live array at its stable index after every copy-on-write command.
+    for (const [armyId, armyIndex] of armyIndices) {
+      let a = w.armies[armyIndex];
       if (a.move || a.route.length) continue;
-      if (!a.general)
-        assignAvailableCommander(
-          w,
-          c,
-          a,
-          c.generals[a.type === "infantry" ? 0 : 1].id,
-        );
+      if (!a.general) {
+        const preferred = c.generals[a.type === "infantry" ? 0 : 1];
+        let available =
+          preferred &&
+          (commanderCounts.get(preferred.id) ?? 0) < COMMANDER_CAPACITY
+            ? preferred.id
+            : c.generals.find(
+                (general) =>
+                  (commanderCounts.get(general.id) ?? 0) < COMMANDER_CAPACITY,
+              )?.id;
+        if (!available && submit({ type: "commanderCreate" }))
+          available = c.generals.at(-1)?.id;
+        if (
+          available &&
+          submit({ type: "general", army: armyId, general: available })
+        ) {
+          const assigned = w.armies[armyIndex].general;
+          if (assigned)
+            commanderCounts.set(
+              assigned,
+              (commanderCounts.get(assigned) ?? 0) + 1,
+            );
+        }
+        a = w.armies[armyIndex];
+        if (a.move || a.route.length) continue;
+      }
       const adjacent = GEOGRAPHY[a.province].neighbors.filter(
           (e) =>
             !e.sea ||
@@ -281,8 +314,7 @@ export function aiDay(w: World) {
           (enemies.length ||
             (a.supply < 0.35 && supplyAt(rear[0].id) > a.supply))
         ) {
-          a.route = [rear[0].id];
-          a.stance = "hold";
+          queueMove(a, rear[0].id, "hold");
         }
         continue;
       }
@@ -314,12 +346,11 @@ export function aiDay(w: World) {
           )
           .sort((l, r) => r.ratio * r.value - l.ratio * l.value);
         if (ranked[0]) {
-          a.route = [ranked[0].id];
-          a.stance = "advance";
+          queueMove(a, ranked[0].id);
         }
         continue;
       }
-      if (threat) {
+      if (threat()) {
         let border: (typeof borders)[number] | undefined,
           bestScore = Infinity;
         for (const p of borders) {
@@ -334,13 +365,23 @@ export function aiDay(w: World) {
             bestScore = score;
           }
         }
-        if (border) {
-          const key = `${a.province}:${border.id}`;
-          if (!routes.has(key)) routes.set(key, routeTo(w, a, border.id));
-          const route = routes.get(key);
-          if (route) a.route = [...route];
-        }
+        if (border && border.id !== a.province) queueMove(a, border.id);
       }
     }
+    // Even maximum-length persisted IDs stay below the command payload limit.
+    for (const group of movements.values())
+      for (let offset = 0; offset < group.armies.length; offset += 512) {
+        const ids = group.armies.slice(offset, offset + 512);
+        submit(
+          ids.length === 1
+            ? { type: "move", army: ids[0], to: group.to, stance: group.stance }
+            : {
+                type: "moveGroup",
+                armies: ids,
+                to: group.to,
+                stance: group.stance,
+              },
+        );
+      }
   }
 }

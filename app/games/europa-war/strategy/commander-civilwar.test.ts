@@ -26,7 +26,7 @@ test("İç savaş yeni ülkeye eski komutanın dış sınır emrini ve otomatik 
   const general = w.countries.spain.generals.find((g) => g.id === generalId)!;
   const parentSetting = w.countries.spain.autoAssignCommanders;
   startCivilWar(w, "spain", true);
-  const rebels = w.countries["spain-rebels"];
+  let rebels = w.countries["spain-rebels"];
   assert.ok(rebels);
   assert.equal(rebels.autoAssignCommanders, false);
   assert.ok(rebels.generals.every((g) => !g.front));
@@ -49,6 +49,7 @@ test("İç savaş yeni ülkeye eski komutanın dış sınır emrini ve otomatik 
   const index = Object.keys(w.countries).indexOf(rebels.id);
   w.day = (7 - (index % 7)) % 7;
   aiDay(w);
+  rebels = w.countries[rebels.id];
   assert.ok(rebels.research.length > 0);
   const rebelArmies = w.armies.filter((a) => a.country === rebels.id);
   assert.ok(rebelArmies.length >= 2);

@@ -61,7 +61,9 @@ fs.mkdirSync(output, { recursive: true });
     const tab = (name) => page.locator(`button[title="${name}"]`).click();
     const region = (id) => page.locator(`[data-province="${id}"]`);
     const mode = (value) =>
-      page.getByLabel("Harita görünümü", { exact: true }).selectOption(value);
+      page
+        .getByRole("combobox", { name: "Harita görünümü", exact: true })
+        .selectOption(value);
     const load = async (world) => {
       // Validate fixture as the real save format before sending it through the UI.
       const encoded = encodeSave(decodeSave(encodeSave(world)));
@@ -218,6 +220,42 @@ fs.mkdirSync(output, { recursive: true });
     );
     checks.push(
       "Keyboard activation uses the current selection handler after campaign/day changes; selected-city label and tab stop stay live",
+    );
+    const camera = () => page.getByTestId("war-map").getAttribute("viewBox");
+    const cameraChanges = (before) =>
+      page.waitForFunction(
+        (value) =>
+          document
+            .querySelector('[data-testid="war-map"]')
+            ?.getAttribute("viewBox") !== value,
+        before,
+      );
+    const viewportCenter = () =>
+      page.getByTestId("war-map").evaluate((svg) => {
+        const rect = svg.parentElement.getBoundingClientRect();
+        return {
+          x: rect.x + rect.width * 0.45,
+          y: rect.y + rect.height * 0.55,
+        };
+      });
+    for (const viewport of [
+      { width: 1440, height: 1000 },
+      { width: 1280, height: 900 },
+    ]) {
+      await page.setViewportSize(viewport);
+      const point = await viewportCenter();
+      await page.mouse.move(point.x, point.y);
+      const beforeZoom = await camera();
+      await page.mouse.wheel(0, -180);
+      await cameraChanges(beforeZoom);
+      const beforePan = await camera();
+      await page.mouse.down();
+      await page.mouse.move(point.x + 85, point.y + 35, { steps: 8 });
+      await page.mouse.up();
+      await cameraChanges(beforePan);
+    }
+    checks.push(
+      "Wheel zoom and pointer pan continue updating the camera after campaign changes and viewport resize",
     );
     await page.screenshot({ path: path.join(output, "live-map.png") });
     assert.deepEqual(errors, []);

@@ -7,7 +7,7 @@ import {
   GEOGRAPHY,
   requireRule,
 } from "./world";
-import type { Action, Country, World } from "./types";
+import type { Action, Building, Country, World } from "./types";
 
 export const DECISIONS = {
   publicWorks: {
@@ -90,15 +90,14 @@ export function decisionAction(w: World, c: Country, a: Action): boolean {
   return true;
 }
 export function nationalFocus(w: World, c: Country, id: string) {
-  const lands = controlled(w, c.id),
-    capital = w.provinces[c.capital];
+  const lands = controlled(w, c.id);
   const grantTech = (...ids: string[]) => {
     for (const id of ids) if (!c.tech.includes(id)) c.tech.push(id);
     c.research = c.research.filter((q) => !c.tech.includes(q.id));
   };
   const build = (
     province: string,
-    type: keyof typeof capital.buildings,
+    type: Building,
     count: number,
     max: number,
   ) => {

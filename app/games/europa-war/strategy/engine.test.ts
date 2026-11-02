@@ -1,3 +1,4 @@
+import { createCommand, executeCommandInPlace } from "./commands";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -99,7 +100,7 @@ test("İnşaat ve asker eğitimi zaman alır; insan gücü ve silahı peşin tü
   let w = createWorld("turkey");
   const manpower = w.countries.turkey.manpower,
     rifles = w.countries.turkey.equipment.rifle;
-  let r = applyAction(w, {
+  const r = applyAction(w, {
     type: "recruit",
     unit: "infantry",
     province: "turkey-0",
@@ -315,8 +316,8 @@ test("Askerî danışman ve lojistik komutanı savaş / ikmal değerlerini deği
   assert.ok(a.supply > supply);
 });
 test("Büyük sanayide otomatik üretim hat sınırına uyar ve kayıt yüklenebilir kalır", () => {
-  const w = createWorld("germany"),
-    c = w.countries.germany;
+  const w = createWorld("germany");
+  let c = w.countries.germany;
   const provinces = Object.values(w.provinces).filter(
     (p) => p.controller === c.id,
   );
@@ -326,7 +327,15 @@ test("Büyük sanayide otomatik üretim hat sınırına uyar ve kayıt yükleneb
     c.equipment[key] = 100000;
   c.equipment.rifle = 0;
   c.treasury = 0;
-  manage(w, c, "economy");
+  manage(
+    w,
+    c,
+    "economy",
+    (action) =>
+      executeCommandInPlace(w, createCommand(w, action, c.id), c.id).status !==
+      "rejected",
+  );
+  c = w.countries.germany;
   assert.equal(
     c.production.find((p) => p.equipment === "rifle")?.factories,
     100,

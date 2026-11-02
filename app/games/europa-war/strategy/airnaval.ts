@@ -1,5 +1,5 @@
-import { AIRCRAFT, AIR_MISSIONS, SEA_ZONES, SHIPS } from "./advanced-catalog";
-import { EQUIPMENT } from "./catalog";
+import { AIRCRAFT, SEA_ZONES, SHIPS } from "./advanced-catalog";
+import { current, isDraft } from "immer";
 import {
   portZone,
   seaRoute,
@@ -20,13 +20,123 @@ import {
 import type {
   Action,
   AirMission,
-  AirModel,
   AirWing,
   Country,
+  Province,
   SeaZone,
-  ShipModel,
+  Warship,
   World,
 } from "./types";
+
+/** Read IDs without creating drafts for every unrelated asset. current() also
+ * includes assets created earlier in the same transaction. */
+function findAsset(assets: AirWing[], id: string): AirWing | undefined;
+function findAsset(assets: Warship[], id: string): Warship | undefined;
+function findAsset(
+  assets: (AirWing | Warship)[],
+  id: string,
+): AirWing | Warship | undefined {
+  const values = isDraft(assets) ? current(assets) : assets;
+  const index = values.findIndex((asset) => asset.id === id);
+  return index < 0 ? undefined : assets[index];
+}
+function navalHomePorts(w: World, country: string): Province[] {
+  return controlled(w, country).filter(
+    (p) => GEOGRAPHY[p.id].port && p.id !== "ussr-13",
+  );
+}
+function orderWing(
+  w: World,
+  c: Country,
+  a: Extract<Action, { type: "wing" }>,
+  wing: AirWing | undefined,
+) {
+  requireRule(wing && w.provinces[a.target], "Kanat ve hedef eyalet seç.");
+  requireRule(
+    a.mission === "idle" || AIRCRAFT[wing.model].missions.includes(a.mission),
+    "Bu uçak modeli seçtiğin görevi yapamaz.",
+  );
+  const base = a.base ?? wing.base,
+    p = w.provinces[base],
+    t = w.provinces[a.target];
+  requireRule(
+    p && friendly(w, c.id, p.controller) && p.buildings.airfield > 0,
+    "Kullanılabilir hava üssü gerekli.",
+  );
+  requireRule(
+    a.mission === "idle" ||
+      friendly(w, c.id, t.controller) ||
+      atWar(w, c.id, t.controller),
+    "Tarafsız ülkeye askerî görev veremezsin.",
+  );
+  requireRule(
+    !["strategic", "naval"].includes(a.mission) || atWar(w, c.id, t.controller),
+    "Saldırı görevi düşman eyaletine yöneltilmeli.",
+  );
+  const distance = Math.hypot(
+    GEOGRAPHY[base].x - GEOGRAPHY[a.target].x,
+    GEOGRAPHY[base].y - GEOGRAPHY[a.target].y,
+  );
+  requireRule(
+    a.mission === "idle" ||
+      distance <=
+        AIRCRAFT[wing.model].range * (c.tech.includes("aviation3") ? 1.2 : 1),
+    "Hedef menzil dışında. Daha yakın bir hava üssüne taşı.",
+  );
+  if (wing.base !== base) wing.readiness = Math.max(0, wing.readiness - 30);
+  wing.base = base;
+  wing.target = a.target;
+  wing.mission = a.mission;
+  return true;
+}
+function orderShip(
+  w: World,
+  c: Country,
+  a: Extract<Action, { type: "ship" }>,
+  ship: Warship | undefined,
+  homePorts?: readonly Province[],
+) {
+  requireRule(
+    ship &&
+      SEA_ZONES[a.zone] &&
+      ["idle", "patrol", "raid", "escort"].includes(a.mission),
+    "Geçerli gemi, deniz bölgesi ve görev seç.",
+  );
+  requireRule(
+    a.mission !== "raid" || ship.model === "submarine",
+    "Konvoy baskınını denizaltıya ver.",
+  );
+  requireRule(!ship.transit, "Gemi hâlâ intikal ediyor.");
+  // Ownership cannot change during a bulk naval order. Reuse the eligible
+  // port list, while checking each ship's current route and remaining fuel.
+  const ports = homePorts ?? navalHomePorts(w, c.id);
+  const preferred = ports.find((p) => p.id === ship.port);
+  const home =
+    preferred && seaRoute(w, c.id, ship.zone, portZone(preferred.id))
+      ? preferred
+      : ports.find(
+          (p) =>
+            p !== preferred && seaRoute(w, c.id, ship.zone, portZone(p.id)),
+        );
+  requireRule(
+    home,
+    "Gemiye açık bir ikmal limanı gerekiyor. Düşmanın tuttuğu boğazı kontrol et.",
+  );
+  const to = a.mission === "idle" ? portZone(home.id) : a.zone;
+  const path = seaRoute(w, c.id, ship.zone, to);
+  requireRule(
+    path,
+    "Boğaz düşman kontrolünde; bu deniz bölgesine geçiş kapalı.",
+  );
+  const fuel = (path.length - 1) * 10 * SHIPS[ship.model].fuel;
+  requireRule(c.stock.fuel >= fuel, "İntikal için yeterli yakıt yok.");
+  c.stock.fuel -= fuel;
+  ship.port = home.id;
+  ship.zone = to;
+  ship.mission = a.mission;
+  ship.transit = (path.length - 1) * 3;
+  return true;
+}
 
 function baseLoads(w: World) {
   const loads: Record<string, number> = {};
@@ -142,49 +252,10 @@ export function airNavalAction(w: World, c: Country, a: Action): boolean {
     });
     return true;
   }
-  if (a.type === "wing") {
-    const wing = c.air.wings.find((x) => x.id === a.id);
-    requireRule(wing && w.provinces[a.target], "Kanat ve hedef eyalet seç.");
-    requireRule(
-      a.mission === "idle" || AIRCRAFT[wing.model].missions.includes(a.mission),
-      "Bu uçak modeli seçtiğin görevi yapamaz.",
-    );
-    const base = a.base ?? wing.base,
-      p = w.provinces[base],
-      t = w.provinces[a.target];
-    requireRule(
-      p && friendly(w, c.id, p.controller) && p.buildings.airfield > 0,
-      "Kullanılabilir hava üssü gerekli.",
-    );
-    requireRule(
-      a.mission === "idle" ||
-        friendly(w, c.id, t.controller) ||
-        atWar(w, c.id, t.controller),
-      "Tarafsız ülkeye askerî görev veremezsin.",
-    );
-    requireRule(
-      !["strategic", "naval"].includes(a.mission) ||
-        atWar(w, c.id, t.controller),
-      "Saldırı görevi düşman eyaletine yöneltilmeli.",
-    );
-    const distance = Math.hypot(
-      GEOGRAPHY[base].x - GEOGRAPHY[a.target].x,
-      GEOGRAPHY[base].y - GEOGRAPHY[a.target].y,
-    );
-    requireRule(
-      a.mission === "idle" ||
-        distance <=
-          AIRCRAFT[wing.model].range * (c.tech.includes("aviation3") ? 1.2 : 1),
-      "Hedef menzil dışında. Daha yakın bir hava üssüne taşı.",
-    );
-    if (wing.base !== base) wing.readiness = Math.max(0, wing.readiness - 30);
-    wing.base = base;
-    wing.target = a.target;
-    wing.mission = a.mission;
-    return true;
-  }
+  if (a.type === "wing")
+    return orderWing(w, c, a, findAsset(c.air.wings, a.id));
   if (a.type === "disbandWing") {
-    const wing = c.air.wings.find((x) => x.id === a.id);
+    const wing = findAsset(c.air.wings, a.id);
     requireRule(
       wing && friendly(w, c.id, w.provinces[wing.base].controller),
       "Uçakların üsse güvenle dönebilmesi gerekir.",
@@ -220,48 +291,13 @@ export function airNavalAction(w: World, c: Country, a: Action): boolean {
     });
     return true;
   }
-  if (a.type === "ship") {
-    const ship = c.navy.ships.find((s) => s.id === a.id);
-    requireRule(
-      ship &&
-        SEA_ZONES[a.zone] &&
-        ["idle", "patrol", "raid", "escort"].includes(a.mission),
-      "Geçerli gemi, deniz bölgesi ve görev seç.",
-    );
-    requireRule(
-      a.mission !== "raid" || ship.model === "submarine",
-      "Konvoy baskınını denizaltıya ver.",
-    );
-    requireRule(!ship.transit, "Gemi hâlâ intikal ediyor.");
-    const home = controlled(w, c.id)
-      .filter((p) => GEOGRAPHY[p.id].port && p.id !== "ussr-13")
-      .sort((l, r) => (l.id === ship.port ? -1 : r.id === ship.port ? 1 : 0))
-      .find((p) => seaRoute(w, c.id, ship.zone, portZone(p.id)));
-    requireRule(
-      home,
-      "Gemiye açık bir ikmal limanı gerekiyor. Düşmanın tuttuğu boğazı kontrol et.",
-    );
-    const to = a.mission === "idle" ? portZone(home.id) : a.zone;
-    const path = seaRoute(w, c.id, ship.zone, to);
-    requireRule(
-      path,
-      "Boğaz düşman kontrolünde; bu deniz bölgesine geçiş kapalı.",
-    );
-    const fuel = (path.length - 1) * 10 * SHIPS[ship.model].fuel;
-    requireRule(c.stock.fuel >= fuel, "İntikal için yeterli yakıt yok.");
-    c.stock.fuel -= fuel;
-    ship.port = home.id;
-    ship.zone = to;
-    ship.mission = a.mission;
-    ship.transit = (path.length - 1) * 3;
-    return true;
-  }
+  if (a.type === "ship")
+    return orderShip(w, c, a, findAsset(c.navy.ships, a.id));
   if (a.type === "carrierAircraft") {
-    const ship = c.navy.ships.find(
-      (s) => s.id === a.id && s.model === "carrier",
-    );
+    const ship = findAsset(c.navy.ships, a.id);
     requireRule(
       ship &&
+        ship.model === "carrier" &&
         ship.mission === "idle" &&
         !ship.transit &&
         friendly(w, c.id, w.provinces[ship.port].controller) &&
@@ -302,12 +338,17 @@ export function quickAirOrder(
             ? "superiority"
             : "idle";
     try {
-      airNavalAction(w, c, {
-        type: "wing",
-        id: wing.id,
-        mission: wanted,
-        target: wanted === "idle" ? wing.base : province,
-      });
+      orderWing(
+        w,
+        c,
+        {
+          type: "wing",
+          id: wing.id,
+          mission: wanted,
+          target: wanted === "idle" ? wing.base : province,
+        },
+        wing,
+      );
       // Escorts can accompany a mission, but do not make an unreachable
       // bombardment/support order successful on their own.
       if (wanted === mission && wing.count >= 1) assigned++;
@@ -325,16 +366,25 @@ export function quickNavalOrder(
 ) {
   const coast = controlled(w, target).find((p) => GEOGRAPHY[p.id].port);
   const zone = coast ? portZone(coast.id) : c.navy.zone;
+  const homePorts = navalHomePorts(w, c.id);
   let assigned = 0;
   for (const ship of c.navy.ships) {
     try {
-      airNavalAction(w, c, {
-        type: "ship",
-        id: ship.id,
-        zone,
-        mission:
-          mission === "raid" && ship.model !== "submarine" ? "escort" : mission,
-      });
+      orderShip(
+        w,
+        c,
+        {
+          type: "ship",
+          id: ship.id,
+          zone,
+          mission:
+            mission === "raid" && ship.model !== "submarine"
+              ? "escort"
+              : mission,
+        },
+        ship,
+        homePorts,
+      );
       // Escorting surface ships cannot stand in for an unavailable submarine
       // when the player specifically requested a convoy raid.
       if (ship.mission === mission) assigned++;

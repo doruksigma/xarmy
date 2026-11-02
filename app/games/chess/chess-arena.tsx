@@ -237,12 +237,25 @@ export default function ChessArena() {
     );
   }, []);
 
+  const appliedRoomPosition = useRef<{ code: string; version: number } | null>(
+    null,
+  );
   useEffect(() => {
-    if (!room) return;
+    if (!room) {
+      appliedRoomPosition.current = null;
+      return;
+    }
+    // Repeated polls of the same revision must not reset a selected piece.
+    if (
+      appliedRoomPosition.current?.code === room.code &&
+      appliedRoomPosition.current.version === room.version
+    )
+      return;
     const next = new Chess();
     room.moves.forEach((move) => next.move(move));
+    appliedRoomPosition.current = { code: room.code, version: room.version };
     saveGame(next);
-  }, [room?.code, room?.version, saveGame]);
+  }, [room, saveGame]);
 
   useEffect(() => {
     try {
@@ -526,7 +539,6 @@ export default function ChessArena() {
       (mode !== "online" || connection === "connected"),
   );
   const history = game.history();
-  const lastMove = displayedGame.history({ verbose: true }).at(-1);
   let status = "Tahta hazır. Bir oyun başlat.";
   if (mode === "online" && session && !room) status = "Odaya bağlanılıyor…";
   else if (mode === "online" && room?.status === "waiting")
@@ -542,6 +554,7 @@ export default function ChessArena() {
     status = `${botThinking ? (botStage === "loading" ? "Satranç motoru hazırlanıyor…" : "Bot düşünüyor…") : game.turn() === playerColor ? "Sıra sende" : mode !== "online" ? "Botun sırası" : "Arkadaşının sırası"}${game.isCheck() ? " · Şah!" : ""}`;
 
   const squareStyles = useMemo(() => {
+    const lastMove = displayedGame.history({ verbose: true }).at(-1);
     const styles: Record<string, CSSProperties> = {};
     if (lastMove)
       for (const square of [lastMove.from, lastMove.to])
@@ -566,7 +579,7 @@ export default function ChessArena() {
             styles[piece.square] = { backgroundColor: "rgba(239,68,68,.65)" };
         }
     return styles;
-  }, [game, displayedGame, selected, canMove, lastMove?.san]);
+  }, [game, displayedGame, selected, canMove]);
 
   async function makeMove(
     from: string,

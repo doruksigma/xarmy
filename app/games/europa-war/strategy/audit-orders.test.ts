@@ -309,7 +309,7 @@ test("Yapay zekâ cephe gerisinde ikmalsiz kalan tümeni komşu sağlıklı ikma
       p.neighbors.every((e) => GEOGRAPHY[e.id].country !== "poland") &&
       p.neighbors.some((e) => !e.sea && GEOGRAPHY[e.id].country === "germany"),
   )!;
-  const army = addArmy(w, "germany", origin.id);
+  let army = addArmy(w, "germany", origin.id);
   const p = w.provinces[origin.id];
   p.buildings.infra = 0;
   p.buildings.rail = 0;
@@ -321,6 +321,7 @@ test("Yapay zekâ cephe gerisinde ikmalsiz kalan tümeni komşu sağlıklı ikma
   const index = Object.keys(w.countries).indexOf(army.country);
   w.day = (7 - (index % 7)) % 7;
   aiDay(w);
+  army = w.armies.find((candidate) => candidate.id === army.id)!;
   assert.equal(
     army.route.length,
     1,
@@ -347,7 +348,7 @@ test("Yapay zekâ güçlü cepheye sonuçsuz saldırmaz; açılan zayıf komşu 
   const enemyCities = origin.neighbors
     .filter((e) => !e.sea && GEOGRAPHY[e.id].country === "poland")
     .map((e) => e.id);
-  const army = addArmy(w, "germany", origin.id);
+  let army = addArmy(w, "germany", origin.id);
   army.organization = 100;
   for (const province of enemyCities) {
     for (let division = 0; division < 4; division++) {
@@ -358,6 +359,7 @@ test("Yapay zekâ güçlü cepheye sonuçsuz saldırmaz; açılan zayıf komşu 
   const index = Object.keys(w.countries).indexOf(army.country);
   w.day = (7 - (index % 7)) % 7;
   aiDay(w);
+  army = w.armies.find((candidate) => candidate.id === army.id)!;
   assert.deepEqual(
     army.route,
     [],
@@ -369,6 +371,7 @@ test("Yapay zekâ güçlü cepheye sonuçsuz saldırmaz; açılan zayıf komşu 
   );
   w.day += 7;
   aiDay(w);
+  army = w.armies.find((candidate) => candidate.id === army.id)!;
   assert.deepEqual(army.route, [flank]);
   assert.equal(army.stance, "advance");
 });

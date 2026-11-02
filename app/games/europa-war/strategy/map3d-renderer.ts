@@ -1,7 +1,6 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { MAP, GEOGRAPHY, localSupply, supplyNetwork } from "./world";
-import { TERRAINS } from "./catalog";
 import { SEA_ZONES } from "./advanced-catalog";
 import type { World, Army } from "./types";
 import type { MapMode } from "./WarMap";

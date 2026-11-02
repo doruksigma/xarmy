@@ -58,6 +58,7 @@ function WarMap3D(
   const reducedMotion =
     motionPreference === "reduced" ||
     (motionPreference === "system" && systemReducedMotion);
+  const initialSceneSettings = useRef({ quality, reducedMotion });
   const [search, setSearch] = useState("");
   const [metrics, setMetrics] = useState<Map3DMetrics | null>(null);
   const [error, setError] = useState("");
@@ -69,15 +70,17 @@ function WarMap3D(
         canvas.current,
         labels.current,
         live.current,
-        quality,
+        initialSceneSettings.current.quality,
         setMetrics,
         (message) => {
           setError(message);
           live.current.onUnavailable?.(message);
         },
       );
-      renderer.current.setReducedMotion(reducedMotion);
-    } catch (error) {
+      renderer.current.setReducedMotion(
+        initialSceneSettings.current.reducedMotion,
+      );
+    } catch {
       const message =
         "Bu cihazda 3D harita başlatılamadı. Seferin korunuyor; 2D haritayla devam edebilirsin.";
       setError(message);
@@ -88,7 +91,6 @@ function WarMap3D(
       renderer.current = null;
     };
     // Build a single scene; updates below only change existing buffers.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useEffect(() => {
     renderer.current?.update(props);

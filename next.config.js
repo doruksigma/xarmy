@@ -5,9 +5,6 @@ require("./scripts/prepare-stockfish.cjs").prepareStockfish();
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
   webpack(config) {
     config.module.rules.push({
       test: /[/\\]europa-war[/\\]strategy[/\\]useSimulation\.ts$/,

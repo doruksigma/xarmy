@@ -84,13 +84,11 @@ function fixture(treasury = 10000) {
       const tab = (name) => click(page.locator(`button[title="${name}"]`));
       const load = async (world) => {
         await tab("Kayıtlar");
-        await page
-          .getByLabel("Sefer kayıt dosyası")
-          .setInputFiles({
-            name: "fixture.json",
-            mimeType: "application/json",
-            buffer: Buffer.from(encodeSave(world)),
-          });
+        await page.getByLabel("Sefer kayıt dosyası").setInputFiles({
+          name: "fixture.json",
+          mimeType: "application/json",
+          buffer: Buffer.from(encodeSave(world)),
+        });
         await page
           .getByRole("heading", { name: "Komuta merkezi", exact: true })
           .waitFor();
@@ -112,11 +110,9 @@ function fixture(treasury = 10000) {
         );
       };
       const preview = async () => {
-        const details = page
-          .locator("details")
-          .filter({
-            has: page.locator("summary", { hasText: /^Emir önizlemesi$/ }),
-          });
+        const details = page.locator("details").filter({
+          has: page.locator("summary", { hasText: /^Emir önizlemesi$/ }),
+        });
         await click(details.locator("summary"));
         await details.getByRole("status").waitFor();
         return details;
@@ -185,11 +181,9 @@ function fixture(treasury = 10000) {
         `${label}: training preview and real equipment/personnel deductions agree`,
       );
       await load(trained);
-      const history = page
-        .locator("details")
-        .filter({
-          has: page.locator("summary", { hasText: /^Verdiğin emirler$/ }),
-        });
+      const history = page.locator("details").filter({
+        has: page.locator("summary", { hasText: /^Ülkenin emirleri$/ }),
+      });
       await click(history.locator("summary"));
       assert.match(await history.innerText(), /İnşaat emri/);
       assert.match(await history.innerText(), /Tümen eğitimi/);
@@ -242,7 +236,21 @@ function fixture(treasury = 10000) {
       );
       const advanced = await save();
       assert.equal(advanced.day, continued.day + 1);
-      assert.deepEqual(advanced.commandState, continued.commandState);
+      assert.equal(
+        advanced.commandState.cursors.turkey,
+        continued.commandState.cursors.turkey,
+      );
+      assert.deepEqual(
+        advanced.commandState.receipts.filter(
+          (receipt) => receipt.issuerCountryId === "turkey",
+        ),
+        continued.commandState.receipts,
+      );
+      assert.ok(
+        Object.keys(advanced.commandState.cursors).some(
+          (issuer) => issuer !== "turkey",
+        ),
+      );
       passed(`${label}: real worker preserves command state across a day`);
       const broke = fixture(0);
       await load(broke);
@@ -266,13 +274,11 @@ function fixture(treasury = 10000) {
       );
       const corrupt = JSON.parse(encodeSave(trained));
       corrupt.world.commandState.receipts[0].action.extra = "invalid";
-      await page
-        .getByLabel("Sefer kayıt dosyası")
-        .setInputFiles({
-          name: "corrupt.json",
-          mimeType: "application/json",
-          buffer: Buffer.from(JSON.stringify(corrupt)),
-        });
+      await page.getByLabel("Sefer kayıt dosyası").setInputFiles({
+        name: "corrupt.json",
+        mimeType: "application/json",
+        buffer: Buffer.from(JSON.stringify(corrupt)),
+      });
       await page
         .getByText(/bozuk|eksik/)
         .first()

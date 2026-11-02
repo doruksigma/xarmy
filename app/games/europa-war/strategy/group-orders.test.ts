@@ -40,7 +40,7 @@ test("Toplu hareket bütün seçili tümenlere ayrı rota verir; her biri hedefe
     group[1].route,
     "Önbellekteki rota birlikler arasında paylaşılmaz",
   );
-  let current = decodeSave(encodeSave(result.world));
+  const current = decodeSave(encodeSave(result.world));
   for (
     let day = 0;
     day < 60 &&

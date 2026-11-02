@@ -10,9 +10,7 @@ import {
   dateOf,
   event,
   GEOGRAPHY,
-  random,
   requireRule,
-  uid,
 } from "./world";
 import type { Action, Country, Ideology, World } from "./types";
 

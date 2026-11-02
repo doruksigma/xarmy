@@ -17,6 +17,12 @@ type LichessEval = {
   bestMove: string | null;
 };
 
+function jsonObject(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
 async function fetchLichessCloudEval(fen: string): Promise<LichessEval> {
   const token = process.env.LICHESS_TOKEN;
   if (!token) return { evalCp: null, mate: null, bestMove: null };
@@ -33,8 +39,8 @@ async function fetchLichessCloudEval(fen: string): Promise<LichessEval> {
 
   if (!r.ok) return { evalCp: null, mate: null, bestMove: null };
 
-  const data: any = await r.json();
-  const pv0 = data?.pvs?.[0];
+  const data = jsonObject(await r.json());
+  const pv0 = jsonObject(Array.isArray(data?.pvs) ? data.pvs[0] : undefined);
 
   const evalCp: number | null = typeof pv0?.cp === "number" ? pv0.cp : null;
   const mate: number | null = typeof pv0?.mate === "number" ? pv0.mate : null;
@@ -44,7 +50,9 @@ async function fetchLichessCloudEval(fen: string): Promise<LichessEval> {
   return { evalCp, mate, bestMove };
 }
 
-function classifyJudgment(diffCpAbs: number): "ok" | "inaccuracy" | "mistake" | "blunder" {
+function classifyJudgment(
+  diffCpAbs: number,
+): "ok" | "inaccuracy" | "mistake" | "blunder" {
   if (diffCpAbs >= 300) return "blunder";
   if (diffCpAbs >= 150) return "mistake";
   if (diffCpAbs >= 60) return "inaccuracy";
@@ -57,21 +65,29 @@ export async function POST(req: Request) {
     const { fen, moveUci, moveSan, score, playerColor } = body;
 
     if (!fen || !moveUci || !playerColor) {
-      return NextResponse.json({ reason: "Eksik veri (fen/moveUci/playerColor)." }, { status: 400 });
+      return NextResponse.json(
+        { reason: "Eksik veri (fen/moveUci/playerColor)." },
+        { status: 400 },
+      );
     }
 
     const lichess = await fetchLichessCloudEval(fen);
 
     const scoreCpFromStockfish = Math.round((score || 0) * 100);
     const diffCpAbs =
-      lichess.evalCp === null ? 0 : Math.abs(lichess.evalCp - scoreCpFromStockfish);
+      lichess.evalCp === null
+        ? 0
+        : Math.abs(lichess.evalCp - scoreCpFromStockfish);
 
     const judgment =
       lichess.evalCp === null ? "ok" : classifyJudgment(diffCpAbs);
 
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
-      return NextResponse.json({ reason: "Sunucuda GEMINI_API_KEY tanımlı değil." }, { status: 500 });
+      return NextResponse.json(
+        { reason: "Sunucuda GEMINI_API_KEY tanımlı değil." },
+        { status: 500 },
+      );
     }
 
     const prompt = `
@@ -108,21 +124,29 @@ Net, öğretici, teşvik edici.
           contents: [{ parts: [{ text: prompt }] }],
           generationConfig: { temperature: 0.5, maxOutputTokens: 180 },
         }),
-      }
+      },
     );
 
     if (!r.ok) {
       const errText = await r.text();
       return NextResponse.json(
         { reason: "Gemini API hata verdi: " + errText.slice(0, 250) },
-        { status: 500 }
+        { status: 500 },
       );
     }
 
-    const data: any = await r.json();
+    const data = jsonObject(await r.json());
+    const candidate = jsonObject(
+      Array.isArray(data?.candidates) ? data.candidates[0] : undefined,
+    );
+    const parts = jsonObject(candidate?.content)?.parts;
     const text =
-      data?.candidates?.[0]?.content?.parts?.map((p: any) => p.text).join("") ||
-      "Açıklama üretilemedi.";
+      (Array.isArray(parts)
+        ? parts
+            .map((part: unknown) => jsonObject(part)?.text)
+            .filter((part): part is string => typeof part === "string")
+            .join("")
+        : "") || "Açıklama üretilemedi.";
 
     return NextResponse.json({
       reason: text.trim(),
@@ -133,10 +157,13 @@ Net, öğretici, teşvik edici.
         stockfishCp: scoreCpFromStockfish,
       },
     });
-  } catch (e: any) {
+  } catch (e: unknown) {
     return NextResponse.json(
-      { reason: "Sunucu hatası: " + (e?.message || "unknown") },
-      { status: 500 }
+      {
+        reason:
+          "Sunucu hatası: " + (e instanceof Error ? e.message : "unknown"),
+      },
+      { status: 500 },
     );
   }
 }

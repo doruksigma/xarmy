@@ -162,11 +162,10 @@ export default function CommandCenter({
           !c.recruitment.length && <p>Henüz bir iş başlatılmadı.</p>}
       </details>
       <details className={styles.fold}>
-        <summary>Verdiğin emirler</summary>
+        <summary>Ülkenin emirleri</summary>
         <p className={styles.hint}>
-          Son uygulanan emirlerin kayıt dosyasıyla birlikte saklanır.
-          Yardımcının ve diğer ülkelerin otomatik kararları bu listede yer
-          almaz.
+          Senin ve yönetim yardımcının son uygulanan emirleri kayıt dosyasıyla
+          birlikte saklanır. Bu liste yalnızca kendi ülkeni gösterir.
         </p>
         {!w.commandState?.receipts.some((r) => r.issuerCountryId === c.id) ? (
           <p>Henüz kayıtlı bir emrin yok.</p>

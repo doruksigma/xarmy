@@ -94,8 +94,7 @@ test("Otomatik kayıt kuyruğu tamamlanmayı, hata sonrası toparlanmayı ve esk
   });
   const storage = {
     getItem: (key: string) => local.get(key) ?? null,
-    setItem: (_key: string, _value: string) =>
-      assert.fail("Automatic saves must not write localStorage"),
+    setItem: () => assert.fail("Automatic saves must not write localStorage"),
   };
   install("localStorage", storage);
   install("window", events);

@@ -3,6 +3,7 @@ import {
   COMMANDER_CAPACITY,
   createCommander,
 } from "./commander-roster";
+import { current, isDraft } from "immer";
 import { atWar, event, friendly, GEOGRAPHY, requireRule } from "./world";
 import type { Action, Army, Country, General, World } from "./types";
 
@@ -13,7 +14,16 @@ export function commanderArmies(
   country: string,
   general: string,
 ): Army[] {
-  return w.armies.filter((a) => a.country === country && a.general === general);
+  if (!isDraft(w.armies))
+    return w.armies.filter(
+      (a) => a.country === country && a.general === general,
+    );
+  const list = current(w.armies);
+  const result: Army[] = [];
+  for (let index = 0; index < list.length; index++)
+    if (list[index].country === country && list[index].general === general)
+      result.push(w.armies[index]);
+  return result;
 }
 
 export function commanderBorders(

@@ -8,7 +8,6 @@ import {
   SHIPS,
   SUPPORT,
 } from "./advanced-catalog";
-import { EQUIPMENT } from "./catalog";
 import { wingEfficiency } from "./airnaval";
 import { provincePrice } from "./conference";
 import { DECISIONS } from "./decisions";
@@ -18,7 +17,6 @@ import type {
   Action,
   AirMission,
   AirModel,
-  Country,
   OffensivePlan,
   SeaZone,
   ShipModel,

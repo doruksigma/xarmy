@@ -2,6 +2,7 @@ import data from "./map-data.json";
 import { initializeAssets, seaEdgeOpen, shipPower } from "./military-assets";
 import { UNITS } from "./catalog";
 import { assignAvailableCommander } from "./commander-roster";
+import { current, isDraft } from "immer";
 import type { Army, Country, GameEvent, Terrain, World } from "./types";
 
 export const MAP = data;
@@ -41,7 +42,16 @@ export function event(
   w.events.length = Math.min(80, w.events.length);
 }
 export function controlled(w: World, c: string) {
-  return Object.values(w.provinces).filter((p) => p.controller === c);
+  if (!isDraft(w.provinces))
+    return Object.values(w.provinces).filter((p) => p.controller === c);
+  // Filter a current plain view, then return writable matching drafts. Reading
+  // every province through the draft would allocate hundreds of unrelated
+  // proxies for each small production or recruitment order. current() includes
+  // ownership changes made earlier in this transaction, unlike original().
+  const provinces = current(w.provinces);
+  return Object.values(provinces)
+    .filter((p) => p.controller === c)
+    .map((p) => w.provinces[p.id]);
 }
 export function capacity(
   w: World,

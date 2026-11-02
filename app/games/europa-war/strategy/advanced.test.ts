@@ -1,3 +1,4 @@
+import { createCommand, executeCommandInPlace } from "./commands";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { advanceDay, applyAction } from "./engine";
@@ -15,8 +16,7 @@ import { combatPower, resolveLandDay } from "./land";
 import { planningDay } from "./planning";
 import { economyDay } from "./economy";
 import { politicsDay } from "./politics";
-import { manage, managementDay } from "./management";
-import { aiDay } from "./ai";
+import { manage } from "./management";
 import { EQUIPMENT } from "./catalog";
 import { tradeRoute } from "./trade-routes";
 import { decodeSave, encodeSave, validateWorld } from "./storage";
@@ -46,12 +46,11 @@ function defeatPoland() {
 
 /** A genuine v1 shape, with deployed assets folded back into the old reserve-only model. */
 function legacyFixture() {
-  const old = JSON.parse(JSON.stringify(createWorld("turkey")));
+  const old: Omit<World, "version"> & { version: number } =
+    createWorld("turkey");
   old.version = 1;
-  delete old.difficulty;
-  delete old.plans;
-  delete old.conferences;
-  delete old.warScore;
+  for (const key of ["difficulty", "plans", "conferences", "warScore"])
+    Reflect.deleteProperty(old, key);
   const addedEquipment = [
     "strategicBomber",
     "reconPlane",
@@ -60,23 +59,21 @@ function legacyFixture() {
     "destroyer",
     "battleship",
   ];
-  for (const c of Object.values(old.countries) as any[]) {
+  for (const c of Object.values(old.countries)) {
     for (const wing of c.air.wings) c.equipment[wing.model] += wing.count;
     for (const ship of c.navy.ships) c.equipment[ship.model] += 1;
-    for (const key of addedEquipment) delete c.equipment[key];
-    delete c.automation;
-    delete c.cabinet;
-    delete c.decisions;
-    delete c.air.wings;
-    delete c.navy.ships;
-    delete c.navy.zone;
+    for (const key of addedEquipment) Reflect.deleteProperty(c.equipment, key);
+    for (const key of ["automation", "cabinet", "decisions"])
+      Reflect.deleteProperty(c, key);
+    Reflect.deleteProperty(c.air, "wings");
+    Reflect.deleteProperty(c.navy, "ships");
+    Reflect.deleteProperty(c.navy, "zone");
   }
-  for (const p of Object.values(old.provinces) as any[]) {
-    delete p.buildings.mine;
-    delete p.buildings.airfield;
-    delete p.buildings.antiAir;
+  for (const p of Object.values(old.provinces)) {
+    for (const key of ["mine", "airfield", "antiAir"])
+      Reflect.deleteProperty(p.buildings, key);
   }
-  for (const a of old.armies) delete a.support;
+  for (const a of old.armies) Reflect.deleteProperty(a, "support");
   return old;
 }
 
@@ -450,8 +447,8 @@ test("Kabine ve ulusal odaklar açıklanan gerçek ekonomik sonuçları üretir"
 });
 
 test("Yardımcı yönetim bütçe ve kapasite sınırlarına uyar; savaş veya rejim kararı vermez", () => {
-  const w = createWorld("turkey"),
-    c = w.countries.turkey;
+  const w = createWorld("turkey");
+  let c = w.countries.turkey;
   const ideology = c.ideology,
     wars = [...c.wars],
     cash = c.treasury;
@@ -460,8 +457,17 @@ test("Yardımcı yönetim bütçe ve kapasite sınırlarına uyar; savaş veya r
     "research",
     "recruitment",
     "operations",
-  ] as const)
-    manage(w, c, area);
+  ] as const) {
+    manage(
+      w,
+      c,
+      area,
+      (action) =>
+        executeCommandInPlace(w, createCommand(w, action, c.id), c.id)
+          .status !== "rejected",
+    );
+    c = w.countries.turkey;
+  }
   assert.equal(c.ideology, ideology);
   assert.deepEqual(c.wars, wars);
   assert.ok(c.treasury <= cash && c.treasury >= 0);
@@ -673,14 +679,22 @@ test("Deniz üzerindeki hava indirme donanma iznine takılmadan tamamlanır", ()
 });
 
 test("AI üretimi görevdeki uçakları stok gibi sayar; kara ordusu için üretimi korur", () => {
-  const w = createWorld("turkey"),
-    c = w.countries.germany;
+  const w = createWorld("turkey");
+  let c = w.countries.germany;
   const fighter = c.air.wings.find((a) => a.model === "fighter")!;
   fighter.count = fighter.size = 100;
   c.equipment.fighter = 0;
   c.equipment.rifle = 0;
   c.equipment.artillery = 0;
-  manage(w, c, "economy");
+  manage(
+    w,
+    c,
+    "economy",
+    (action) =>
+      executeCommandInPlace(w, createCommand(w, action, c.id), c.id).status !==
+      "rejected",
+  );
+  c = w.countries.germany;
   assert.equal(
     c.production.some((l) => l.equipment === "fighter"),
     false,

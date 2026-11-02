@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import {
   useEffect,
   useRef,
@@ -709,7 +710,9 @@ export default function PlayClient() {
       </div>
 
       <footer className={styles.footer}>
-        <a href="/">← Arenadan çık</a>
+        <Link href="/" prefetch={false}>
+          ← Arenadan çık
+        </Link>
         <span>
           <kbd>WASD</kbd> Hareket <kbd>Shift</kbd> Koş <kbd>Sağ tık</kbd> Nişan{" "}
           <kbd>O</kbd> Ayarlar
@@ -936,7 +939,9 @@ export default function PlayClient() {
               <i />
             </div>
           )}
-          <a href="/">← Arenadan çık</a>
+          <Link href="/" prefetch={false}>
+            ← Arenadan çık
+          </Link>
         </div>
       )}
       {end && !loading && (
@@ -979,7 +984,9 @@ export default function PlayClient() {
           >
             YENİ MAÇ →
           </button>
-          <a href="/">Arenadan çık</a>
+          <Link href="/" prefetch={false}>
+            Arenadan çık
+          </Link>
         </div>
       )}
     </div>

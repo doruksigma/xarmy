@@ -147,14 +147,15 @@ test("144 bölgeli kayıt 447 şehre taşınır; işgal ve tesisler korunur, esk
 });
 
 test("Canlı v1 biçimindeki 144 bölgeli sefer yeni hava/deniz ve şehir sistemine birlikte taşınır", () => {
-  const old: any = regionalFixture();
+  const old: Omit<World, "version"> & { version: number } = regionalFixture();
   old.version = 1;
   for (const k of ["difficulty", "plans", "conferences", "warScore"])
-    delete old[k];
-  for (const c of Object.values(old.countries) as any[]) {
+    Reflect.deleteProperty(old, k);
+  for (const c of Object.values(old.countries)) {
     for (const a of c.air.wings) c.equipment[a.model] += a.count;
     for (const s of c.navy.ships) c.equipment[s.model] += 1;
-    for (const k of ["automation", "cabinet", "decisions"]) delete c[k];
+    for (const k of ["automation", "cabinet", "decisions"])
+      Reflect.deleteProperty(c, k);
     for (const k of [
       "strategicBomber",
       "reconPlane",
@@ -163,14 +164,15 @@ test("Canlı v1 biçimindeki 144 bölgeli sefer yeni hava/deniz ve şehir sistem
       "destroyer",
       "battleship",
     ])
-      delete c.equipment[k];
-    delete c.air.wings;
-    delete c.navy.ships;
-    delete c.navy.zone;
+      Reflect.deleteProperty(c.equipment, k);
+    Reflect.deleteProperty(c.air, "wings");
+    Reflect.deleteProperty(c.navy, "ships");
+    Reflect.deleteProperty(c.navy, "zone");
   }
-  for (const p of Object.values(old.provinces) as any[])
-    for (const k of ["mine", "airfield", "antiAir"]) delete p.buildings[k];
-  for (const a of old.armies) delete a.support;
+  for (const p of Object.values(old.provinces))
+    for (const k of ["mine", "airfield", "antiAir"])
+      Reflect.deleteProperty(p.buildings, k);
+  for (const a of old.armies) Reflect.deleteProperty(a, "support");
   const w = decodeSave(
     JSON.stringify({ format: "xarmy-europa-1936", version: 1, world: old }),
   );

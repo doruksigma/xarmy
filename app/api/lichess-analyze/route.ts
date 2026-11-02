@@ -3,6 +3,12 @@ import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
+function jsonObject(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
 export async function POST(req: Request) {
   try {
     const { fen } = (await req.json()) as { fen?: string };
@@ -13,7 +19,10 @@ export async function POST(req: Request) {
 
     const token = process.env.LICHESS_TOKEN;
     if (!token) {
-      return NextResponse.json({ error: "LICHESS_TOKEN missing" }, { status: 500 });
+      return NextResponse.json(
+        { error: "LICHESS_TOKEN missing" },
+        { status: 500 },
+      );
     }
 
     // ✅ Lichess Cloud Eval aslında GET ile query param ister; POST da bazen çalışmayabilir.
@@ -36,9 +45,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: t.slice(0, 500) }, { status: 500 });
     }
 
-    const data: any = await res.json();
+    const data: unknown = await res.json();
 
-    const pv0 = data?.pvs?.[0];
+    const pvs = jsonObject(data)?.pvs;
+    const pv0 = jsonObject(Array.isArray(pvs) ? pvs[0] : undefined);
     const evalCp = typeof pv0?.cp === "number" ? pv0.cp : null;
     const mate = typeof pv0?.mate === "number" ? pv0.mate : null;
     const bestMove =
@@ -50,10 +60,10 @@ export async function POST(req: Request) {
       bestMove,
       raw: data,
     });
-  } catch (e: any) {
+  } catch (e: unknown) {
     return NextResponse.json(
-      { error: e?.message || "unknown error" },
-      { status: 500 }
+      { error: e instanceof Error ? e.message : "unknown error" },
+      { status: 500 },
     );
   }
 }
