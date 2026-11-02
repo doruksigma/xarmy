@@ -2,6 +2,7 @@
 import { advice, AUTOMATION } from "./management";
 import { BUILDINGS, focusTree, TECHNOLOGIES } from "./catalog";
 import { controlled, dateLabel, GEOGRAPHY } from "./world";
+import { hourLabel } from "./time";
 import { COMMAND_TICKS_PER_DAY } from "./command-types";
 import type { Action, Country, World } from "./types";
 import type { Tab } from "./WarPanels";
@@ -180,7 +181,11 @@ export default function CommandCenter({
                   <strong>{r.summary}</strong>
                   <br />
                   <small>
-                    {dateLabel(r.appliedTick / COMMAND_TICKS_PER_DAY)}
+                    {dateLabel(
+                      Math.floor(r.appliedTick / COMMAND_TICKS_PER_DAY),
+                    )}
+                    {" · "}
+                    {hourLabel(r.appliedTick)}
                   </small>
                 </li>
               ))}

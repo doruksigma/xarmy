@@ -3,6 +3,7 @@
    saves; fixture generation is outside the browser. No engine hooks.
    Optional EUROPA_BASE_URL, EUROPA_CHROMIUM, EUROPA_ARTIFACT_DIR. */
 const assert = require("node:assert/strict");
+const { advanceClockHours } = require("./europa-browser-clock.cjs");
 const { readFileSync, writeFileSync, mkdirSync } = require("node:fs");
 const path = require("node:path");
 const { chromium } = require("playwright");
@@ -22,7 +23,6 @@ const {
   createWorld,
   addArmy,
   GEOGRAPHY,
-  dateLabel,
 } = require("../app/games/europa-war/strategy/world.ts");
 const { declareWar } = require("../app/games/europa-war/strategy/diplomacy.ts");
 const {
@@ -187,7 +187,11 @@ function fixture() {
               .world,
         );
         decodeSave(
-          JSON.stringify({ format: "xarmy-europa-1936", version: 2, world: w }),
+          JSON.stringify({
+            format: "xarmy-europa-1936",
+            version: w.version,
+            world: w,
+          }),
         );
         if (name)
           writeFileSync(
@@ -476,7 +480,10 @@ function fixture() {
         );
         await pause();
         const advanced = await save("train-running");
-        assert.ok(advanced.day > pausedWorld.day);
+        assert.ok(
+          advanced.day * 24 + advanced.hour >
+            pausedWorld.day * 24 + pausedWorld.hour,
+        );
         passed(
           "desktop: trains also move while the actual simulation clock advances",
         );
@@ -764,16 +771,7 @@ function fixture() {
         );
         i++
       ) {
-        await click(
-          page.getByRole("button", { name: "Zamanı başlat", exact: true }),
-        );
-        await page.waitForFunction(
-          (old) =>
-            document.querySelector('[data-testid="game-date"]')?.textContent !==
-            old,
-          dateLabel(moved.day),
-        );
-        await pause();
+        await advanceClockHours(page, 24);
         moved = await save();
       }
       assert.equal(moved.provinces[f.target].controller, "turkey");

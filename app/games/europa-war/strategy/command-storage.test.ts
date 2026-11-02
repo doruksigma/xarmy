@@ -291,7 +291,7 @@ test("Gelecekteki, ters sıralı ve kesirli emir zamanları yüklenmez", () => {
       receipt.appliedTick = 0.5;
     },
     (receipt) => {
-      receipt.issuedTick = 1;
+      receipt.issuedTick = 1.5;
     },
     (receipt) => {
       receipt.appliedTick = Number.MAX_SAFE_INTEGER + 1;
@@ -421,6 +421,7 @@ test("Eski komutan kapasitesi taşınırken emir günlüğü korunur ve bozuk g�
 test("V1 sürüm etiketi yeni emir günlüğünün doğrulamasını atlatamaz", () => {
   const old = JSON.parse(JSON.stringify(createWorld("turkey")));
   old.version = 1;
+  delete old.hour;
   delete old.difficulty;
   delete old.plans;
   delete old.conferences;

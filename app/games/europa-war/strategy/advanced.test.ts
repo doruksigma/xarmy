@@ -49,6 +49,7 @@ function legacyFixture() {
   const old: Omit<World, "version"> & { version: number } =
     createWorld("turkey");
   old.version = 1;
+  Reflect.deleteProperty(old, "hour");
   for (const key of ["difficulty", "plans", "conferences", "warScore"])
     Reflect.deleteProperty(old, key);
   const addedEquipment = [
@@ -497,7 +498,7 @@ test("V1 kayıtları stokları çoğaltmadan taşınır; büyük yedekler kaybol
     JSON.stringify({ format: "xarmy-europa-1936", version: 1, world: old }),
   );
   const c = w.countries.turkey;
-  assert.equal(w.version, 2);
+  assert.equal(w.version, 3);
   assert.ok(validateWorld(w));
   assert.equal(
     c.equipment.fighter +

@@ -52,7 +52,7 @@ mkdirSync(output, { recursive: true });
       .waitFor({ timeout: 45000 });
     assert.equal(
       await page.locator('[data-testid="game-date"]').textContent(),
-      "1 Ocak 1936",
+      "1 Ocak 1936 · 00:00",
     );
     await page
       .getByRole("heading", { name: "Komuta merkezi", exact: true })
@@ -271,7 +271,7 @@ mkdirSync(output, { recursive: true });
     await page.waitForFunction(
       () =>
         document.querySelector('[data-testid="game-date"]').textContent !==
-        "1 Ocak 1936",
+        "1 Ocak 1936 · 00:00",
     );
     await page
       .getByRole("button", { name: "Zamanı duraklat", exact: true })
@@ -336,7 +336,7 @@ mkdirSync(output, { recursive: true });
     const restoredDate = await page
       .locator('[data-testid="game-date"]')
       .textContent();
-    assert.notEqual(restoredDate, "1 Ocak 1936");
+    assert.notEqual(restoredDate, "1 Ocak 1936 · 00:00");
     await page
       .getByRole("button", { name: "Zamanı başlat", exact: true })
       .click();
@@ -417,7 +417,7 @@ mkdirSync(output, { recursive: true });
     await page.waitForFunction(
       () =>
         document.querySelector('[data-testid="game-date"]').textContent !==
-        "1 Ocak 1936",
+        "1 Ocak 1936 · 00:00",
     );
     await page
       .getByRole("button", { name: "Zamanı duraklat", exact: true })

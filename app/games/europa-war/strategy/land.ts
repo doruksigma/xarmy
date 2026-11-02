@@ -127,27 +127,32 @@ function casualty(
   strength: number,
   org: number,
   combat = true,
+  elapsedDays = 1,
+  engagements = 1,
 ) {
   const actual = Math.min(a.strength, strength);
   a.strength = clamp(a.strength - actual);
   a.organization = clamp(a.organization - org);
   a.morale = clamp(a.morale - org * 0.25);
-  if (combat) a.experience = clamp(a.experience + 0.3);
+  if (combat)
+    a.experience = clamp(a.experience + 0.3 * elapsedDays * engagements);
   const c = w.countries[a.country];
-  c.casualties += Math.round((UNITS[a.type].men * actual) / 100);
+  c.casualties += (UNITS[a.type].men * actual) / 100;
   if (a.support.includes("hospital"))
-    c.manpower += Math.round(((UNITS[a.type].men * actual) / 100) * 0.2);
+    c.manpower += ((UNITS[a.type].men * actual) / 100) * 0.2;
   c.exhaustion = clamp(c.exhaustion + actual * 0.015);
   const g = c.generals.find((g) => g.id === a.general);
-  if (combat && g) {
-    g.xp = clamp(g.xp + 0.5, 0, 50);
-    if (g.xp >= 50 && g.skill < 6) {
-      g.xp -= 50;
-      g.skill++;
+  if (combat && g)
+    for (let engagement = 0; engagement < engagements; engagement++) {
+      g.xp = clamp(g.xp + 0.5 * elapsedDays, 0, 50);
+      if (g.xp >= 50 && g.skill < 6) {
+        g.xp -= 50;
+        g.skill++;
+      }
     }
-  }
 }
-function retreat(w: World, a: Army) {
+/** Select every retreat before moving any division, so one escape cannot block another. */
+function retreatDestination(w: World, a: Army) {
   const exits = GEOGRAPHY[a.province].neighbors.filter(
     (e) =>
       !e.sea &&
@@ -160,18 +165,21 @@ function retreat(w: World, a: Army) {
       ),
   );
   exits.sort(
-    (l, r) => localSupply(w, a.country, r.id) - localSupply(w, a.country, l.id),
+    (l, r) =>
+      localSupply(w, a.country, r.id) - localSupply(w, a.country, l.id) ||
+      compareIds(l.id, r.id),
   );
-  if (exits[0]) {
-    a.province = exits[0].id;
+  return exits[0]?.id;
+}
+function retreat(w: World, a: Army, destination: string | undefined) {
+  if (destination) {
+    a.province = destination;
     a.organization = Math.max(12, a.organization);
     a.move = null;
     a.route = [];
     a.entrenchment = 0;
   } else {
-    w.countries[a.country].casualties += Math.round(
-      (UNITS[a.type].men * a.strength) / 100,
-    );
+    w.countries[a.country].casualties += (UNITS[a.type].men * a.strength) / 100;
     a.strength = 0;
   }
   delete a.marchGroup;
@@ -185,10 +193,27 @@ export function inLandContact(w: World, a: Army) {
     GEOGRAPHY[a.province].neighbors.some((e) => e.id === to && !e.sea)
   );
 }
-export function resolveLandDay(w: World) {
-  const networks = Object.fromEntries(
-    Object.keys(w.countries).map((c) => [c, supplyNetwork(w, c)]),
-  );
+const compareIds = (left: string, right: string) =>
+  left < right ? -1 : left > right ? 1 : 0;
+
+/** Fixed simulation rates are expressed per day; one hour passes 1 / 24. */
+export function resolveLandStep(w: World, elapsedDays = 1) {
+  if (!Number.isFinite(elapsedDays) || elapsedDays < 0 || elapsedDays > 1)
+    throw new Error("Kara simülasyon adımı 0–1 gün arasında olmalı.");
+  if (elapsedDays === 0) return;
+  const orderedArmies = [...w.armies].sort((a, b) => compareIds(a.id, b.id));
+  if (!orderedArmies.length) {
+    w.battles = [];
+    resolveCapitulations(w);
+    return;
+  }
+  const troopCounts = new Map<string, Map<string, number>>();
+  for (const army of orderedArmies) {
+    const counts = troopCounts.get(army.province) ?? new Map<string, number>();
+    counts.set(army.country, (counts.get(army.country) ?? 0) + 1);
+    troopCounts.set(army.province, counts);
+  }
+  const networks = new Map<string, Set<string>>();
   // Positions and infrastructure do not change during the readiness pass.
   // Stacked divisions share its supply calculation, but retain their own
   // general, support and cabinet modifiers. Discard before resolving movement.
@@ -196,11 +221,24 @@ export function resolveLandDay(w: World) {
   const supplyAt = (country: string, province: string) => {
     let values = supplies.get(country);
     if (!values) supplies.set(country, (values = new Map()));
-    if (!values.has(province))
+    if (!values.has(province)) {
+      if (!networks.has(country))
+        networks.set(country, supplyNetwork(w, country));
       values.set(
         province,
-        localSupply(w, country, province, networks[country]),
+        localSupply(
+          w,
+          country,
+          province,
+          networks.get(country)!,
+          [...(troopCounts.get(province) ?? [])].reduce(
+            (total, [owner, count]) =>
+              total + (friendly(w, country, owner) ? count : 0),
+            0,
+          ),
+        ),
       );
+    }
     return values.get(province)!;
   };
   const previousBattles = w.battles;
@@ -221,13 +259,14 @@ export function resolveLandDay(w: World) {
       : null;
   };
   const marchStarts = new Map<string, number>();
+  const pendingMarches: Army[] = [];
   const occupants = new Map<string, Set<string>>();
-  for (const a of w.armies) {
+  for (const a of orderedArmies) {
     if (a.strength <= 0) continue;
     if (!occupants.has(a.province)) occupants.set(a.province, new Set());
     occupants.get(a.province)!.add(a.country);
   }
-  const engagements = w.armies.filter(
+  const engagements = orderedArmies.filter(
     (a) =>
       a.strength > 0 &&
       (inLandContact(w, a) ||
@@ -248,7 +287,7 @@ export function resolveLandDay(w: World) {
     attacked.get(to)!.add(a.country);
   }
   w.battles = [];
-  for (const a of w.armies) {
+  for (const a of orderedArmies) {
     if (a.strength <= 0) continue;
     const engaged =
       engagedIds.has(a.id) ||
@@ -267,14 +306,16 @@ export function resolveLandDay(w: World) {
       1,
     );
     if (a.supply < 0.25) {
-      casualty(w, a, 0.25, 2, false);
+      casualty(w, a, 0.25 * elapsedDays, 2 * elapsedDays, false);
     } else if (!engaged) {
-      a.organization = clamp(a.organization + (a.move ? 1 : 3) * a.supply);
-      a.morale = clamp(a.morale + 0.5 * a.supply);
+      a.organization = clamp(
+        a.organization + (a.move ? 1 : 3) * a.supply * elapsedDays,
+      );
+      a.morale = clamp(a.morale + 0.5 * a.supply * elapsedDays);
       if (a.strength < 100 && c.manpower > 0) {
         const needs = equipmentNeeds(a);
         let fraction = Math.min(
-          0.004 * a.supply,
+          0.004 * a.supply * elapsedDays,
           (100 - a.strength) / 100,
           c.manpower / d.men,
         );
@@ -293,14 +334,7 @@ export function resolveLandDay(w: World) {
         a.strength = clamp(a.strength + fraction * 100);
       }
     }
-    if (d.fuel && a.move)
-      c.stock.fuel = Math.max(
-        0,
-        c.stock.fuel -
-          d.fuel *
-            (c.tech.includes("engines") ? 0.85 : 1) *
-            (a.support.includes("logistics") ? 0.8 : 1),
-      );
+    if (a.strength <= 0) continue;
     if (!a.move && a.route.length) {
       const next = a.route[0],
         edge = GEOGRAPHY[a.province].neighbors.find((e) => e.id === next);
@@ -348,21 +382,43 @@ export function resolveLandDay(w: World) {
         a.move = null;
         a.route = [];
       } else {
-        // Slow the day's distance before applying fuel shortage. Subtracting
-        // from accumulated progress can cancel a fuel-starved unit's entire
-        // daily march and trap it even when withdrawing to friendly territory.
-        const supplySpeed =
-          a.supply < 0.25 ? Math.max(0.05, a.supply - 0.1) : a.supply;
         marchStarts.set(a.id, a.move.progress);
-        a.move.progress +=
-          supplySpeed * (d.fuel && c.stock.fuel <= 0 ? 0.3 : 1);
+        pendingMarches.push(a);
       }
-    } else a.entrenchment = clamp(a.entrenchment + 2, 0, 30);
+    } else a.entrenchment = clamp(a.entrenchment + 2 * elapsedDays, 0, 30);
+  }
+  // All motorized formations use the same remaining country fuel for this step.
+  // Otherwise whichever unit happened to be visited last would suffer the shortage alone.
+  const fuelCosts = new Map<string, number>();
+  for (const army of pendingMarches) {
+    if (army.strength <= 0 || !army.move) continue;
+    const country = w.countries[army.country];
+    const fuel =
+      UNITS[army.type].fuel *
+      (country.tech.includes("engines") ? 0.85 : 1) *
+      (army.support.includes("logistics") ? 0.8 : 1) *
+      elapsedDays;
+    fuelCosts.set(army.country, (fuelCosts.get(army.country) ?? 0) + fuel);
+  }
+  for (const [country, fuel] of fuelCosts)
+    w.countries[country].stock.fuel = Math.max(
+      0,
+      w.countries[country].stock.fuel - fuel,
+    );
+  for (const army of pendingMarches) {
+    // Apply shortage to this step's distance, never subtract accrued progress.
+    const speed =
+      army.supply < 0.25 ? Math.max(0.05, army.supply - 0.1) : army.supply;
+    const fuelFactor =
+      UNITS[army.type].fuel && w.countries[army.country].stock.fuel <= 0
+        ? 0.3
+        : 1;
+    army.move!.progress += speed * fuelFactor * elapsedDays;
   }
   // A group command is one formation, not a tank departing ahead of its infantry.
   // Independent orders and formations on different legs retain their own speed.
   const marches = new Map<string, Army[]>();
-  for (const a of w.armies) {
+  for (const a of orderedArmies) {
     const key = a.strength > 0 ? marchKey(a) : null;
     if (!key) continue;
     if (!marches.has(key)) marches.set(key, []);
@@ -397,157 +453,284 @@ export function resolveLandDay(w: World) {
       );
     return readyMarches.get(key)!;
   };
-  // Resolve one battle per attacking country and destination, with all forces together.
-  // Apply casualties to the same world transaction; simultaneous battles cannot overwrite each other.
-  const groups = new Map<string, { to: string; armies: Army[] }>();
-  for (const a of w.armies.filter(
-    (a) =>
-      a.strength > 0 &&
-      a.move &&
-      (a.move.progress >= a.move.days || inLandContact(w, a)),
-  )) {
-    const to = a.move!.to;
-    if (!atWar(w, a.country, w.provinces[to].controller)) {
-      if (readyToEnter(a)) {
-        a.province = to;
-        a.move = null;
-      }
+  // Read a coherent post-readiness snapshot without cloning the world: no unit,
+  // commander, ownership or war-score writes occur until every front is evaluated.
+  const groups = new Map<
+    string,
+    { country: string; to: string; armies: Army[] }
+  >();
+  const friendlyArrivals: Army[] = [];
+  const byProvince = new Map<string, Army[]>();
+  for (const army of orderedArmies) {
+    if (army.strength <= 0) continue;
+    const residents = byProvince.get(army.province) ?? [];
+    residents.push(army);
+    byProvince.set(army.province, residents);
+    if (
+      !army.move ||
+      (army.move.progress < army.move.days && !inLandContact(w, army))
+    )
+      continue;
+    const to = army.move.to;
+    if (!atWar(w, army.country, w.provinces[to].controller)) {
+      if (readyToEnter(army)) friendlyArrivals.push(army);
       continue;
     }
-    const key = `${a.country}:${to}`;
-    if (!groups.has(key)) groups.set(key, { to, armies: [] });
-    groups.get(key)!.armies.push(a);
+    const key = `${army.country}:${to}`;
+    if (!groups.has(key))
+      groups.set(key, { country: army.country, to, armies: [] });
+    groups.get(key)!.armies.push(army);
   }
-  for (const { to, armies } of groups.values()) {
-    // An earlier battle may have killed or routed members of this group.
-    const attackers = armies.filter((a) => {
-      if (a.strength <= 0 || a.move?.to !== to) return false;
-      if (commanderOrderAllows(w, a, to)) return true;
-      a.move = null;
-      a.route = [];
-      delete a.marchGroup;
-      return false;
-    });
-    const first = attackers[0];
-    if (!first) continue;
-    const p = w.provinces[to],
-      defender = p.controller;
-    // Another country may already have captured this destination today.
-    if (!atWar(w, first.country, defender)) {
-      for (const a of attackers) {
-        if (!friendly(w, a.country, defender)) {
-          a.move = null;
-          a.route = [];
-        } else if (readyToEnter(a)) {
-          a.province = to;
-          a.move = null;
-        }
-      }
-      continue;
+  const damage = new Map<
+    string,
+    {
+      strength: number;
+      organization: number;
+      engagements: number;
+      defended: boolean;
     }
-    const defenders = w.armies.filter(
-      (a) =>
-        a.province === to &&
-        a.strength > 0 &&
-        atWar(w, first.country, a.country),
+  >();
+  const addDamage = (
+    army: Army,
+    strength: number,
+    organization: number,
+    defended: boolean,
+  ) => {
+    const previous = damage.get(army.id) ?? {
+      strength: 0,
+      organization: 0,
+      engagements: 0,
+      defended: false,
+    };
+    previous.strength += strength;
+    previous.organization += organization;
+    previous.engagements++;
+    previous.defended ||= defended;
+    damage.set(army.id, previous);
+  };
+  const intents = [...groups.entries()]
+    .sort(([left], [right]) => compareIds(left, right))
+    .map(([id, group]) => {
+      const defenders = (byProvince.get(group.to) ?? []).filter((army) =>
+        atWar(w, group.country, army.country),
+      );
+      const powers = new Map(
+        group.armies.map((army) => [
+          army.id,
+          combatPower(w, army, true, group.to),
+        ]),
+      );
+      const attack = group.armies.reduce(
+        (sum, army) => sum + powers.get(army.id)!,
+        0,
+      );
+      const defense = defenders.reduce(
+        (sum, army) => sum + combatPower(w, army, false, group.to),
+        0,
+      );
+      const defender = w.provinces[group.to].controller;
+      const attackLoss =
+        clamp((defense / Math.max(1, attack)) * 1.3, 0.15, 6) * elapsedDays;
+      const defenseLoss =
+        clamp((attack / Math.max(1, defense)) * 1.5, 0.15, 7) * elapsedDays;
+      if (defenders.length) {
+        w.battles.push({
+          id,
+          province: group.to,
+          attacker: group.country,
+          defender,
+          started:
+            previousBattles.find((battle) => battle.id === id)?.started ??
+            w.day + (w.hour ?? 0) / 24,
+          attack,
+          defense,
+        });
+        for (const army of group.armies)
+          addDamage(army, attackLoss, attackLoss * 2.8, false);
+        for (const army of defenders)
+          addDamage(army, defenseLoss, defenseLoss * 3, true);
+      }
+      return { ...group, defender, defenders, powers, attackLoss, defenseLoss };
+    });
+  // A division fighting on several fronts takes their summed damage, capped by
+  // its actual remaining strength. A lethal hit cannot erase its already-planned fire.
+  for (const army of orderedArmies) {
+    const loss = damage.get(army.id);
+    if (loss)
+      casualty(
+        w,
+        army,
+        loss.strength,
+        loss.organization,
+        true,
+        elapsedDays,
+        loss.engagements,
+      );
+  }
+  for (const intent of intents) {
+    if (!intent.defenders.length) continue;
+    addWarScore(
+      w,
+      intent.country,
+      intent.defender,
+      intent.defenseLoss * intent.defenders.length,
     );
-    const attack = attackers.reduce(
-        (n, a) => n + combatPower(w, a, true, to),
+    addWarScore(
+      w,
+      intent.defender,
+      intent.country,
+      intent.attackLoss * intent.armies.length,
+    );
+    const exhausted = intent.armies.filter(
+      (army) => army.organization < 8 || army.strength < 15,
+    );
+    for (const army of exhausted) {
+      army.move = null;
+      army.route = [];
+      delete army.marchGroup;
+    }
+    const stopped = exhausted.filter((army) => army.strength > 0).length;
+    if (stopped && intent.country === w.player)
+      event(
+        w,
+        `${GEOGRAPHY[intent.to].name} taarruzunda ${stopped} tümen, düşük organizasyon veya ağır kayıplar nedeniyle durdu. Dinlenip takviye aldıktan sonra yeniden emir ver.`,
+        "war",
+      );
+  }
+  const retreats = orderedArmies
+    .filter(
+      (army) =>
+        army.strength > 0 &&
+        damage.get(army.id)?.defended &&
+        (army.organization < 10 || army.strength < 15),
+    )
+    .map((army) => ({ army, destination: retreatDestination(w, army) }));
+  for (const { army, destination } of retreats) retreat(w, army, destination);
+  readyMarches.clear();
+  const claims = new Map<
+    string,
+    { country: string; defender: string; armies: Army[]; power: number }[]
+  >();
+  for (const intent of intents) {
+    if (
+      orderedArmies.some(
+        (army) =>
+          army.province === intent.to &&
+          army.strength > 0 &&
+          atWar(w, intent.country, army.country),
+      )
+    )
+      continue;
+    const arrivals = intent.armies.filter(
+      (army) =>
+        army.strength > 0 && army.move?.to === intent.to && readyToEnter(army),
+    );
+    if (!arrivals.length) continue;
+    const candidates = claims.get(intent.to) ?? [];
+    candidates.push({
+      country: intent.country,
+      defender: intent.defender,
+      armies: arrivals,
+      power: arrivals.reduce(
+        (sum, army) => sum + intent.powers.get(army.id)!,
         0,
       ),
-      defense = defenders.reduce((n, a) => n + combatPower(w, a, false, to), 0);
-    if (defenders.length) {
-      w.battles.push({
-        id: `${first.country}:${to}`,
-        province: to,
-        attacker: first.country,
-        defender,
-        started:
-          previousBattles.find((b) => b.id === `${first.country}:${to}`)
-            ?.started ?? w.day,
-        attack,
-        defense,
-      });
-      const attackLoss = clamp((defense / Math.max(1, attack)) * 1.3, 0.15, 6),
-        defenseLoss = clamp((attack / Math.max(1, defense)) * 1.5, 0.15, 7);
-      addWarScore(w, first.country, defender, defenseLoss * defenders.length);
-      addWarScore(w, defender, first.country, attackLoss * attackers.length);
-      attackers.forEach((a) => casualty(w, a, attackLoss, attackLoss * 2.8));
-      defenders.forEach((a) => casualty(w, a, defenseLoss, defenseLoss * 3));
-      const exhausted = attackers.filter(
-        (a) => a.organization < 8 || a.strength < 15,
+    });
+    claims.set(intent.to, candidates);
+  }
+  // Simultaneous claims use surviving arriving force, then stable country IDs.
+  // A tie must finish rather than leave equal armies stalled outside an empty city.
+  const captures = [...claims.entries()]
+    .sort(([left], [right]) => compareIds(left, right))
+    .flatMap(([to, candidates]) => {
+      candidates.sort(
+        (left, right) =>
+          right.power - left.power || compareIds(left.country, right.country),
       );
-      for (const a of exhausted) {
-        a.move = null;
-        a.route = [];
-        delete a.marchGroup;
-      }
-      const stopped = exhausted.filter((a) => a.strength > 0).length;
-      if (stopped && first.country === w.player)
-        event(
-          w,
-          `${GEOGRAPHY[to].name} taarruzunda ${stopped} tümen, düşük organizasyon veya ağır kayıplar nedeniyle durdu. Dinlenip takviye aldıktan sonra yeniden emir ver.`,
-          "war",
-        );
-      for (const a of defenders)
-        if (a.organization < 10 || a.strength < 15) retreat(w, a);
+      return [{ to, ...candidates[0] }];
+    });
+  for (const capture of captures) {
+    const province = w.provinces[capture.to];
+    addWarScore(
+      w,
+      capture.country,
+      capture.defender,
+      GEOGRAPHY[capture.to].vp * 2,
+    );
+    province.controller = capture.country;
+    province.resistance = province.owner === capture.country ? 0 : 20;
+    province.compliance = 0;
+    province.damage = clamp(province.damage + 10);
+    for (const army of capture.armies) {
+      army.province = capture.to;
+      army.move = null;
     }
-    // Combat can remove a formation's slowest member from its current march.
-    readyMarches.clear();
-    if (
-      !w.armies.some(
-        (a) =>
-          a.province === to &&
-          a.strength > 0 &&
-          atWar(w, first.country, a.country),
-      ) &&
-      attackers.some((a) => a.strength > 0 && readyToEnter(a))
-    ) {
-      addWarScore(w, first.country, defender, GEOGRAPHY[to].vp * 2);
-      p.controller = first.country;
-      p.resistance = p.owner === first.country ? 0 : 20;
-      p.compliance = 0;
-      p.damage = clamp(p.damage + 10);
-      for (const a of attackers)
-        if (a.strength > 0 && readyToEnter(a)) {
-          a.province = to;
-          a.move = null;
-        }
-      if (first.country === w.player || defender === w.player)
-        event(
-          w,
-          `${GEOGRAPHY[to].name}, ${w.countries[first.country].name} kontrolüne geçti.`,
-          "war",
-        );
+    if (capture.country === w.player || capture.defender === w.player)
+      event(
+        w,
+        `${GEOGRAPHY[capture.to].name}, ${w.countries[capture.country].name} kontrolüne geçti.`,
+        "war",
+      );
+  }
+  // Friendly arrivals and allied participants see the final ownership update;
+  // they never enter a province another enemy has captured in the same step.
+  for (const army of [
+    ...friendlyArrivals,
+    ...intents.flatMap((intent) => intent.armies),
+  ]) {
+    if (army.strength <= 0 || !army.move || !readyToEnter(army)) continue;
+    const controller = w.provinces[army.move.to].controller;
+    if (friendly(w, army.country, controller)) {
+      army.province = army.move.to;
+      army.move = null;
+    } else if (!atWar(w, army.country, controller)) {
+      army.move = null;
+      army.route = [];
+      delete army.marchGroup;
     }
   }
   w.armies = w.armies.filter((a) => a.strength > 0);
   for (const a of w.armies) if (!a.move && !a.route.length) delete a.marchGroup;
-  for (const c of Object.values(w.countries))
-    if (!c.capitulated && c.wars.length && surrender(w, c.id) >= 80) {
-      const occupied = Object.values(w.provinces).filter(
-        (p) => p.owner === c.id && atWar(w, c.id, p.controller),
-      );
-      const scores: Record<string, number> = {};
-      for (const p of occupied)
-        scores[p.controller] = (scores[p.controller] ?? 0) + GEOGRAPHY[p.id].vp;
-      const victor = Object.keys(scores).sort(
-        (a, b) => scores[b] - scores[a],
-      )[0];
-      if (!victor) continue;
-      c.capitulated = true;
-      c.victor = victor;
-      w.armies = w.armies.filter((a) => a.country !== c.id);
-      for (const p of Object.values(w.provinces))
-        if (p.owner === c.id && p.controller === c.id) {
-          p.controller = victor;
-          p.resistance = 25;
-        }
-      openConference(w, c.id);
-      event(
-        w,
-        `${c.name} teslim oldu. ${w.countries[victor].name} barış koşullarını belirleyebilir.`,
-        "war",
-      );
-    }
+  resolveCapitulations(w);
+}
+
+export function resolveLandDay(w: World) {
+  resolveLandStep(w, 1);
+}
+
+function resolveCapitulations(w: World) {
+  const candidates = Object.values(w.countries)
+    .filter(
+      (country) =>
+        !country.capitulated &&
+        country.wars.length &&
+        surrender(w, country.id) >= 80,
+    )
+    .sort((left, right) => compareIds(left.id, right.id));
+  for (const c of candidates) {
+    const occupied = Object.values(w.provinces).filter(
+      (p) => p.owner === c.id && atWar(w, c.id, p.controller),
+    );
+    const scores: Record<string, number> = {};
+    for (const p of occupied)
+      scores[p.controller] = (scores[p.controller] ?? 0) + GEOGRAPHY[p.id].vp;
+    const victor = Object.keys(scores).sort(
+      (a, b) => scores[b] - scores[a] || compareIds(a, b),
+    )[0];
+    if (!victor) continue;
+    c.capitulated = true;
+    c.victor = victor;
+    w.armies = w.armies.filter((a) => a.country !== c.id);
+    for (const p of Object.values(w.provinces))
+      if (p.owner === c.id && p.controller === c.id) {
+        p.controller = victor;
+        p.resistance = 25;
+      }
+    openConference(w, c.id);
+    event(
+      w,
+      `${c.name} teslim oldu. ${w.countries[victor].name} barış koşullarını belirleyebilir.`,
+      "war",
+    );
+  }
 }

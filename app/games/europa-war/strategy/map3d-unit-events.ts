@@ -1,6 +1,7 @@
 import { inLandContact } from "./land";
 import { armyMapPosition } from "./map3d-visuals";
 import { atWar, GEOGRAPHY } from "./world";
+import { HOURS_PER_DAY, worldHour } from "./time";
 import type { Army, Battle, World } from "./types";
 
 export interface FormationCombat {
@@ -17,7 +18,7 @@ export interface FormationCapture {
   armyIds: string[];
 }
 
-/** A real fight that finished between two daily simulation snapshots. */
+/** A real fight that finished between two simulation snapshots. */
 export interface ResolvedFormationCombat {
   key: string;
   battleId: string;
@@ -27,6 +28,31 @@ export interface ResolvedFormationCombat {
   armyIds: string[];
   position: { x: number; y: number };
   target: { x: number; y: number };
+}
+
+/** Hourly ticks and the retained full-day API are the only replayable steps. */
+export function formationSnapshotTransition(
+  previous: World | null,
+  current: World,
+): "reset" | "command" | "step" {
+  if (
+    !previous ||
+    current.version !== previous.version ||
+    current.player !== previous.player ||
+    current.mode !== previous.mode ||
+    current.serial < previous.serial
+  )
+    return "reset";
+  const elapsed = worldHour(current) - worldHour(previous);
+  if (elapsed === 0) return "command";
+  return elapsed === 1 || elapsed === HOURS_PER_DAY ? "step" : "reset";
+}
+
+/** Keep interpolation within the actual snapshot cadence, including 5x speed. */
+export function formationMovementBlendMs(snapshotIntervalMs: number): number {
+  if (!Number.isFinite(snapshotIntervalMs) || snapshotIntervalMs <= 0)
+    return 650;
+  return Math.max(80, Math.min(650, snapshotIntervalMs));
 }
 
 function attacking(world: World, army: Army, battle: Battle) {
@@ -102,14 +128,7 @@ export function detectResolvedFormationCombats(
   previous: World | null,
   current: World,
 ): ResolvedFormationCombat[] {
-  if (
-    !previous ||
-    current.day !== previous.day + 1 ||
-    current.version !== previous.version ||
-    current.player !== previous.player ||
-    current.mode !== previous.mode ||
-    current.serial < previous.serial
-  )
+  if (!previous || formationSnapshotTransition(previous, current) !== "step")
     return [];
 
   const currentArmies = new Map(current.armies.map((army) => [army.id, army]));
@@ -173,7 +192,7 @@ export function detectResolvedFormationCombats(
           continue;
         const first = members[0].before;
         events.push({
-          key: `${battle.id}:${battle.started}:${current.day}:${groupKey}:resolved`,
+          key: `${battle.id}:${battle.started}:${worldHour(current)}:${groupKey}:resolved`,
           battleId: battle.id,
           province: battle.province,
           country: first.country,
@@ -194,14 +213,7 @@ export function detectFormationCaptures(
   previous: World | null,
   current: World,
 ): FormationCapture[] {
-  if (
-    !previous ||
-    current.day !== previous.day + 1 ||
-    current.version !== previous.version ||
-    current.player !== previous.player ||
-    current.mode !== previous.mode ||
-    current.serial < previous.serial
-  )
+  if (!previous || formationSnapshotTransition(previous, current) !== "step")
     return [];
 
   const oldArmies = new Map(previous.armies.map((army) => [army.id, army]));
@@ -224,7 +236,7 @@ export function detectFormationCaptures(
     )
       continue;
 
-    // Fast units can start and finish the first queued leg in one day. The
+    // Fast units can start and finish the first queued leg in one step. The
     // preceding march or next queued leg must target the newly held province;
     // unrelated capitulation/peace transfers receive no capture animation.
     if ((before.move?.to ?? before.route[0]) !== army.province) continue;
@@ -235,7 +247,7 @@ export function detectFormationCaptures(
   return Array.from(arrivals, ([province, armyIds]) => {
     const country = current.provinces[province].controller;
     return {
-      key: `${current.day}:${province}:${country}`,
+      key: `${worldHour(current)}:${province}:${country}`,
       province,
       country,
       armyIds,

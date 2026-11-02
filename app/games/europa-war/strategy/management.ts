@@ -248,7 +248,24 @@ export function manage(
             GEOGRAPHY[c.capital].y - GEOGRAPHY[w.countries[b].capital].y,
           ),
       )[0];
-    const airMission = target ? "support" : "idle",
+    // A convenience support/raid order requires a real bomber/submarine.
+    // Choose a mission the deployed force can perform instead of repeatedly
+    // rejecting the whole order and leaving fighters or surface ships idle.
+    const airMission = !target
+        ? "idle"
+        : c.air.wings.some(
+              (wing) =>
+                wing.count >= 1 &&
+                AIRCRAFT[wing.model].missions.includes("support"),
+            )
+          ? "support"
+          : c.air.wings.some(
+                (wing) =>
+                  wing.count >= 1 &&
+                  AIRCRAFT[wing.model].missions.includes("superiority"),
+              )
+            ? "superiority"
+            : "idle",
       countryTarget = target ?? c.id;
     // Compare actual orders, not just the country summary: a newly formed wing
     // still needs its first mission. Special wings keep their final individual
@@ -278,7 +295,10 @@ export function manage(
         }))
     )
       attempt({ type: "air", mission: airMission, target: countryTarget });
-    const navyMission = target ? "raid" : "patrol",
+    const navyMission =
+        target && c.navy.ships.some((ship) => ship.model === "submarine")
+          ? "raid"
+          : "patrol",
       coast = controlled(w, countryTarget).find((p) => GEOGRAPHY[p.id].port),
       zone = coast ? portZone(coast.id) : c.navy.zone;
     const homeRoutes = new Map<string, boolean>();

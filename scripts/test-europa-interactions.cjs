@@ -880,7 +880,7 @@ function fixture() {
     );
 
     await tab("Ordu");
-    const advanceOneDay = async () => {
+    const advanceOneHour = async () => {
       const date = await page.getByTestId("game-date").textContent();
       await page
         .getByRole("button", { name: "Zamanı başlat", exact: true })
@@ -896,7 +896,7 @@ function fixture() {
         .click();
     };
     await armySearch.fill("Denetim 096");
-    await advanceOneDay();
+    await advanceOneHour();
     assert.equal(
       await armySearch.inputValue(),
       "Denetim 096",
@@ -908,14 +908,14 @@ function fixture() {
     await page
       .getByRole("button", { name: "Sonraki birlikler", exact: true })
       .click();
-    await advanceOneDay();
+    await advanceOneHour();
     assert.ok(
       await checkbox(40).isChecked(),
       "Advancing the simulation must preserve roster page and selection",
     );
     assert.equal(await checkbox(0).count(), 0);
     checks.push(
-      "Simulation-day updates preserve roster search, current page and selected divisions",
+      "Simulation-hour updates preserve roster search, current page and selected divisions",
     );
 
     await load();

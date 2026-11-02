@@ -149,6 +149,7 @@ test("144 bölgeli kayıt 447 şehre taşınır; işgal ve tesisler korunur, esk
 test("Canlı v1 biçimindeki 144 bölgeli sefer yeni hava/deniz ve şehir sistemine birlikte taşınır", () => {
   const old: Omit<World, "version"> & { version: number } = regionalFixture();
   old.version = 1;
+  Reflect.deleteProperty(old, "hour");
   for (const k of ["difficulty", "plans", "conferences", "warScore"])
     Reflect.deleteProperty(old, k);
   for (const c of Object.values(old.countries)) {
@@ -177,7 +178,7 @@ test("Canlı v1 biçimindeki 144 bölgeli sefer yeni hava/deniz ve şehir sistem
     JSON.stringify({ format: "xarmy-europa-1936", version: 1, world: old }),
   );
   assert.equal(Object.keys(w.provinces).length, 447);
-  assert.equal(w.version, 2);
+  assert.equal(w.version, 3);
   assert.equal(w.difficulty, "easy");
   assert.ok(w.countries.turkey.air.wings.length > 0);
   assert.ok(validateWorld(w));

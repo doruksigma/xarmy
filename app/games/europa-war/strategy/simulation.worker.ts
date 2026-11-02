@@ -1,4 +1,4 @@
-import { advanceDay } from "./engine";
+import { advanceHour } from "./engine";
 import type { SimulationRequest, SimulationResponse } from "./simulation";
 import type { World } from "./types";
 
@@ -18,7 +18,7 @@ worker.onmessage = ({ data }) => {
   try {
     const source = world ?? (snapshotRevision === revision ? snapshot : null);
     if (!source) throw new Error("Simulation snapshot missing or obsolete");
-    const next = advanceDay(source);
+    const next = advanceHour(source);
     snapshot = next;
     snapshotRevision = revision;
     worker.postMessage({ type: "result", id, revision, world: next });

@@ -407,7 +407,10 @@ function battleFixture() {
       .getByRole("button", { name: "Zamanı duraklat", exact: true })
       .click();
     saved = await saveWorld();
-    assert.ok(saved.day > 0, "Real game clock must advance the battle");
+    assert.ok(
+      saved.day * 24 + saved.hour > 0,
+      "Real game clock must advance the battle",
+    );
     for (const army of [...battle.group, ...battle.defenders]) {
       assert.ok(
         saved.armies.find((a) => a.id === army.id)?.strength < army.strength,

@@ -19,6 +19,7 @@ import {
 import { GEOGRAPHY, MAP, event, uid } from "./world";
 import { COMMANDER_CAPACITY, MAX_COMMANDERS } from "./commander-roster";
 import { isValidCommandState } from "./command-types";
+import { HOURS_PER_DAY, hourLabel, worldHour } from "./time";
 import type { Building, Country, World } from "./types";
 
 type Validator = (value: unknown) => boolean;
@@ -214,11 +215,12 @@ export const countrySchema: Record<
   ),
 };
 const worldFields: Record<string, Validator> = {
-  version: one([2]),
+  version: one([3]),
   player: str,
   mode: one(["historical", "alternative"]),
   difficulty: one(["easy", "normal", "hard"]),
   day: (v) => num(36500)(v) && Number.isInteger(v),
+  hour: (v) => num(HOURS_PER_DAY - 1)(v) && Number.isInteger(v),
   seed: num(4294967295),
   serial: num(),
   tension: num(100),
@@ -343,11 +345,15 @@ const worldFields: Record<string, Validator> = {
   ),
   warScore: record(record(num(1e7), 60), 60),
   events: arr(
-    shape({
-      day: num(),
-      text: str,
-      kind: one(["info", "war", "economy", "politics"]),
-    }),
+    shapeWithOptionalField(
+      {
+        day: num(),
+        text: str,
+        kind: one(["info", "war", "economy", "politics"]),
+      },
+      "hour",
+      (v) => num(HOURS_PER_DAY - 1)(v) && Number.isInteger(v),
+    ),
     80,
   ),
   firedEvents: arr(str, 200),
@@ -371,7 +377,7 @@ function validateWithRegions(
   // doing so could allow an already-paid command to execute again after loading.
   if (
     Object.hasOwn(w, "commandState") &&
-    !isValidCommandState(w.commandState, ids, w.day * 24)
+    !isValidCommandState(w.commandState, ids, worldHour(w))
   )
     return false;
   if (
@@ -808,7 +814,7 @@ function migrateCityRegions(value: unknown): unknown {
 export function encodeSave(w: World) {
   return JSON.stringify({
     format: "xarmy-europa-1936",
-    version: 2,
+    version: 3,
     savedAt: new Date().toISOString(),
     world: w,
   });
@@ -817,6 +823,7 @@ export function migrateLegacy(value: unknown): World {
   if (
     !object(value) ||
     value.version !== 1 ||
+    Object.hasOwn(value, "hour") ||
     Object.hasOwn(value, "commandState") ||
     !object(value.countries) ||
     !object(value.provinces) ||
@@ -885,7 +892,8 @@ export function migrateLegacy(value: unknown): World {
   }
   if (["plans", "conferences", "warScore"].some((k) => Object.hasOwn(w, k)))
     throw new Error("Geçersiz eski sürüm");
-  w.version = 2;
+  w.version = 3;
+  w.hour = 0;
   w.plans = [];
   w.conferences = [];
   w.warScore = {};
@@ -898,6 +906,26 @@ export function migrateLegacy(value: unknown): World {
     quickNavalOrder(expanded, c, c.navy.mission, c.navy.target);
   }
   return expanded;
+}
+
+/** Genuine daily saves start at midnight; never silently rewind an hourly save. */
+function migrateDailyWorld(value: unknown): unknown {
+  if (!object(value) || value.version !== 2 || Object.hasOwn(value, "hour"))
+    throw new Error("Geçersiz günlük sefer kaydı");
+  if (Object.hasOwn(value, "commandState")) {
+    // The old protocol only emitted daily-boundary ticks. Preserve its ledger
+    // exactly; accepting malformed old timestamps could change duplicate IDs.
+    if (
+      !isValidCommandState(value.commandState) ||
+      value.commandState.receipts.some(
+        (receipt) =>
+          receipt.issuedTick % HOURS_PER_DAY !== 0 ||
+          receipt.appliedTick % HOURS_PER_DAY !== 0,
+      )
+    )
+      throw new Error("Geçersiz eski emir günlüğü");
+  }
+  return { ...structuredClone(value), version: 3, hour: 0 };
 }
 const MAX_SAVE_LENGTH = 4 * 1024 * 1024;
 export function decodeSave(text: string): World {
@@ -912,13 +940,18 @@ export function decodeSave(text: string): World {
   if (
     !object(data) ||
     data.format !== "xarmy-europa-1936" ||
-    ![1, 2].includes(data.version as number)
+    ![1, 2, 3].includes(data.version as number)
   )
     throw new Error("Bu dosya bir Europa War kaydı değil.");
   let world: unknown = data.world;
   try {
+    if (!object(world) || world.version !== data.version)
+      throw new Error("Kayıt ve sefer sürümü uyuşmuyor");
     if (data.version === 1) world = migrateLegacy(world);
-    else world = migrateCityRegions(migrateCommanderCapacity(world));
+    else {
+      if (data.version === 2) world = migrateDailyWorld(world);
+      world = migrateCityRegions(migrateCommanderCapacity(world));
+    }
   } catch {
     throw new Error("Eski kayıt bozuk; mevcut seferin değiştirilmedi.");
   }
@@ -986,7 +1019,7 @@ export function listSaves(): SaveSummary[] {
         const w = decodeSave(raw);
         summary = {
           slot,
-          label: `${w.countries[w.player].name} · ${w.day}. gün`,
+          label: `${w.countries[w.player].name} · ${w.day}. gün · ${hourLabel(worldHour(w))}`,
           valid: true,
         };
       } catch {

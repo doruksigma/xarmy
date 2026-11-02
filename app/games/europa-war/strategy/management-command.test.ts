@@ -142,6 +142,35 @@ test("Doğru hava ve deniz emirleri haftalık tekrarlanmaz; özel kanatlar göre
   assert.deepEqual(world, before, "No new receipt, order or resource change");
 });
 
+test("Bombardıman uçağı olmayan ülke avcılarını hava üstünlüğüne gönderir", () => {
+  const world = operationsWorld();
+  world.countries.germany.air.wings = world.countries.germany.air.wings.filter(
+    (wing) => wing.model === "fighter",
+  );
+  const attempts = operationOrders(world),
+    country = world.countries.germany;
+  assert.ok(attempts.every((step) => step.accepted));
+  assert.equal(country.air.mission, "superiority");
+  assert.equal(country.air.wings[0].mission, "superiority");
+  assert.equal(country.air.wings[0].target, world.countries.poland.capital);
+  assert.deepEqual(operationOrders(world), []);
+});
+
+test("Denizaltısı olmayan ülke yüzey filosuna reddedilen baskın yerine devriye verir", () => {
+  const world = operationsWorld();
+  world.countries.germany.navy.ships =
+    world.countries.germany.navy.ships.filter(
+      (ship) => ship.model !== "submarine",
+    );
+  const attempts = operationOrders(world),
+    country = world.countries.germany;
+  assert.ok(attempts.every((step) => step.accepted));
+  assert.equal(country.navy.mission, "patrol");
+  assert.ok(country.navy.ships.every((ship) => ship.mission === "patrol"));
+  assert.ok(country.navy.ships.every((ship) => ship.zone === "baltic"));
+  assert.deepEqual(operationOrders(world), []);
+});
+
 test("Görev aynı kalsa da kaybedilen ikmal limanı erişilebilir kendi limanıyla değiştirilir", () => {
   const world = operationsWorld();
   operationOrders(world);

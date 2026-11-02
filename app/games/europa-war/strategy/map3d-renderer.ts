@@ -20,6 +20,8 @@ import {
   detectFormationCaptures,
   detectResolvedFormationCombats,
   formationCombat,
+  formationMovementBlendMs,
+  formationSnapshotTransition,
   type FormationCapture,
   type ResolvedFormationCombat,
 } from "./map3d-unit-events";
@@ -90,7 +92,6 @@ type Formation = UnitFormation & {
 };
 const CAPTURE_DURATION = 6000;
 const RESOLVED_COMBAT_DURATION = 1800;
-const MOVEMENT_BLEND_DURATION = 650;
 const TERRAIN_COLORS = {
   plains: 0x819370,
   urban: 0x9b927b,
@@ -155,6 +156,8 @@ export class Map3DRenderer {
   private renderedFrames = 0;
   private frameCount = 0;
   private updateAt = 0;
+  private lastSimulationSnapshotAt: number | null = null;
+  private movementBlendDuration = 650;
   private width = 1;
   private height = 1;
   private down = { x: 0, y: 0, shift: false };
@@ -385,22 +388,33 @@ export class Map3DRenderer {
     this.props = state;
     const previousWorld = this.worldRef;
     const changedWorld = previousWorld !== state.world;
+    const now = performance.now();
+    let resetPositions = false;
     this.worldRef = state.world;
     if (changedWorld || old.mode !== state.mode) this.colorMap();
     if (changedWorld) {
-      if (
-        !previousWorld ||
-        previousWorld.player !== state.world.player ||
-        state.world.day < previousWorld.day ||
-        state.world.day > previousWorld.day + 1
-      ) {
+      const transition = formationSnapshotTransition(
+        previousWorld,
+        state.world,
+      );
+      if (transition === "reset") {
+        resetPositions = true;
         this.captureEvents.length = 0;
         this.resolvedCombats.length = 0;
+        this.lastSimulationSnapshotAt = now;
+        this.movementBlendDuration = 650;
       }
-      // A same-day command replaces the order immediately; never keep firing
+      if (transition === "step") {
+        this.movementBlendDuration = formationMovementBlendMs(
+          this.lastSimulationSnapshotAt === null
+            ? 650
+            : now - this.lastSimulationSnapshotAt,
+        );
+        this.lastSimulationSnapshotAt = now;
+      }
+      // A same-hour command replaces the order immediately; never keep firing
       // an old exchange after a halt, peace agreement or loaded campaign.
-      if (previousWorld?.day === state.world.day)
-        this.resolvedCombats.length = 0;
+      if (transition === "command") this.resolvedCombats.length = 0;
       this.resolvedCombats = this.resolvedCombats.filter((event) => {
         const participants = state.world.armies.filter((army) =>
           belongsToResolvedExchange(event, army),
@@ -461,8 +475,8 @@ export class Map3DRenderer {
       old.armyIds !== state.armyIds ||
       old.mode !== state.mode
     ) {
-      this.rebuildMarkers();
-      this.updateAt = performance.now();
+      this.rebuildMarkers(resetPositions);
+      this.updateAt = now;
     }
     if (
       changedWorld ||
@@ -563,9 +577,9 @@ export class Map3DRenderer {
     this.overlays.push(item);
     return item;
   }
-  private rebuildMarkers() {
+  private rebuildMarkers(resetPositions = false) {
     const previous = new Map(
-      this.formations.map((f) => [
+      (resetPositions ? [] : this.formations).map((f) => [
         f.armies.map((a) => a.id).join(","),
         f.position.clone(),
       ]),
@@ -907,7 +921,7 @@ export class Map3DRenderer {
             : Math.min(
                 1,
                 (now - (formation.resumeAt ?? this.updateAt)) /
-                  MOVEMENT_BLEND_DURATION,
+                  this.movementBlendDuration,
               );
         formation.position.lerpVectors(formation.from, formation.target, blend);
       }

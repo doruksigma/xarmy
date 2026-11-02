@@ -7,6 +7,7 @@ import {
   type SaveSummary,
 } from "./storage";
 import type { World } from "./types";
+import { hourLabel, worldHour } from "./time";
 
 export const SAVE_CHANNEL = "xarmy-europa-auto-change";
 const DATABASE = "xarmy-europa-auto-v1";
@@ -76,7 +77,7 @@ function committedSave(
     transaction.objectStore(STORE).put(
       {
         format: "xarmy-europa-1936",
-        version: 2,
+        version: 3,
         savedAt: new Date().toISOString(),
         world,
       },
@@ -171,7 +172,7 @@ export async function listBrowserSaves(): Promise<SaveSummary[]> {
         const world = validatedWorld(stored.value);
         return {
           slot,
-          label: `${world.countries[world.player].name} · ${world.day}. gün`,
+          label: `${world.countries[world.player].name} · ${world.day}. gün · ${hourLabel(worldHour(world))}`,
           valid: true,
         };
       } catch {

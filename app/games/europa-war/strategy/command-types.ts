@@ -1,12 +1,13 @@
 import type { Action } from "./types";
+import { HOURS_PER_DAY, MAX_CAMPAIGN_HOUR } from "./time";
 
 export const COMMAND_RECEIPT_LIMIT = 64;
 export const COMMAND_PLAYER_RECEIPT_RESERVE = 12;
 export const COMMAND_ACTION_MAX_CHARS = 65_536;
 export const COMMAND_HISTORY_MAX_CHARS = 131_072;
 export const COMMAND_SUMMARY_MAX_CHARS = 500;
-/** Commands currently execute on daily boundaries, not an hourly simulation. */
-export const COMMAND_TICKS_PER_DAY = 24;
+/** One command tick is one simulation hour, including legacy daily receipts. */
+export const COMMAND_TICKS_PER_DAY = HOURS_PER_DAY;
 
 export interface ProtocolCommand {
   commandId: string;
@@ -291,8 +292,7 @@ const tick: Validator = (v) =>
   typeof v === "number" &&
   Number.isSafeInteger(v) &&
   v >= 0 &&
-  v <= 36500 * COMMAND_TICKS_PER_DAY &&
-  v % COMMAND_TICKS_PER_DAY === 0;
+  v <= MAX_CAMPAIGN_HOUR;
 export function isValidProtocolCommand(
   value: unknown,
 ): value is ProtocolCommand {

@@ -155,6 +155,13 @@ function nextStep(w: World, a: Army, to: string) {
   }
 }
 export function planningDay(w: World) {
+  planningStep(w, 1);
+}
+
+/** Tactical orders may update hourly; preparation is still measured per day. */
+export function planningStep(w: World, elapsedDays: number) {
+  if (!Number.isFinite(elapsedDays) || elapsedDays <= 0 || !w.plans.length)
+    return;
   // Planning changes orders, so each country's supply network stays valid here.
   const networks = new Map<string, Set<string>>();
   const supplyAt = (country: string, province: string) => {
@@ -162,12 +169,16 @@ export function planningDay(w: World) {
       networks.set(country, supplyNetwork(w, country));
     return localSupply(w, country, province, networks.get(country)!);
   };
+  // Units do not move or disappear during planning. Reuse membership and
+  // path searches within this step only; conquests invalidate them next hour.
+  const armyById = new Map(w.armies.map((army) => [army.id, army]));
+  const nextSteps = new Map<string, string | undefined>();
+  const routes = new Map<string, string[] | null>();
   for (const p of w.plans) {
-    p.armies = p.armies.filter((id) =>
-      w.armies.some((a) => a.id === id && a.country === p.country),
-    );
+    p.armies = p.armies.filter((id) => armyById.get(id)?.country === p.country);
+    const members = new Set(p.armies);
     const c = w.countries[p.country],
-      armies = w.armies.filter((a) => p.armies.includes(a.id));
+      armies = w.armies.filter((a) => members.has(a.id));
     if (!armies.length || c.capitulated) {
       p.active = false;
       continue;
@@ -177,7 +188,8 @@ export function planningDay(w: World) {
         armies.reduce((n, a) => n + (a.supply * a.organization) / 100, 0) /
         armies.length;
       p.preparation = clamp(
-        p.preparation + readiness * (c.cabinet.military === "planner" ? 4 : 2),
+        p.preparation +
+          readiness * (c.cabinet.military === "planner" ? 4 : 2) * elapsedDays,
       );
       continue;
     }
@@ -188,6 +200,19 @@ export function planningDay(w: World) {
       p.active = false;
       continue;
     }
+    const defenses = new Map<string, number>(),
+      attackPowers = new Map<string, number>(),
+      attacks = new Map<string, number>();
+    const adjacentTo = (army: Army, province: string) =>
+      GEOGRAPHY[army.province].neighbors.some(
+        (edge) => !edge.sea && edge.id === province,
+      );
+    const attackPower = (army: Army, province: string) => {
+      const key = `${army.id}:${province}`;
+      if (!attackPowers.has(key))
+        attackPowers.set(key, combatPower(w, army, true, province));
+      return attackPowers.get(key)!;
+    };
     for (const a of armies) {
       if (a.move || a.route.length) continue;
       if (a.organization < 25 || a.supply < 0.25 || a.strength < 30) {
@@ -203,35 +228,55 @@ export function planningDay(w: World) {
           a.route = [rear.id];
         continue;
       }
-      const step = nextStep(w, a, targets[0]);
+      const pathKey = `${a.country}:${a.province}:${targets[0]}`;
+      if (!nextSteps.has(pathKey))
+        nextSteps.set(pathKey, nextStep(w, a, targets[0]));
+      const step = nextSteps.get(pathKey);
       if (!step) continue;
       if (atWar(w, a.country, w.provinces[step].controller)) {
-        const def = w.armies
-          .filter((x) => x.province === step && atWar(w, a.country, x.country))
-          .reduce((n, x) => n + combatPower(w, x, false, step), 0);
-        const attack = armies
-          .filter(
-            (x) =>
-              GEOGRAPHY[x.province].neighbors.some(
-                (e) => !e.sea && e.id === step,
-              ) &&
-              x.organization >= 25 &&
-              x.supply >= 0.25 &&
-              x.strength >= 30 &&
-              ((!x.move && !x.route.length) ||
-                (x.move?.to ?? x.route[0]) === step),
-          )
-          .reduce((n, x) => n + combatPower(w, x, true, step), 0);
+        if (!defenses.has(step))
+          defenses.set(
+            step,
+            w.armies
+              .filter(
+                (x) => x.province === step && atWar(w, a.country, x.country),
+              )
+              .reduce((n, x) => n + combatPower(w, x, false, step), 0),
+          );
+        if (!attacks.has(step))
+          attacks.set(
+            step,
+            armies
+              .filter(
+                (x) =>
+                  adjacentTo(x, step) &&
+                  x.organization >= 25 &&
+                  x.supply >= 0.25 &&
+                  x.strength >= 30 &&
+                  ((!x.move && !x.route.length) ||
+                    (x.move?.to ?? x.route[0]) === step),
+              )
+              .reduce((n, x) => n + attackPower(x, step), 0),
+          );
         if (
-          attack / Math.max(1, def) <
+          attacks.get(step)! / Math.max(1, defenses.get(step)!) <
           { careful: 1.35, balanced: 0.95, aggressive: 0.6 }[p.stance]
         )
           continue;
       }
-      a.route = routeTo(w, a, step) ?? [];
+      const routeKey = `${a.country}:${a.province}:${step}`;
+      if (!routes.has(routeKey)) routes.set(routeKey, routeTo(w, a, step));
+      a.route = [...(routes.get(routeKey) ?? [])];
       a.stance = "advance";
+      // This previously idle unit can no longer support a different front.
+      // Keep cached totals identical to evaluating current orders afresh;
+      // units joining the same target remain eligible without recomputation.
+      if (a.route.length)
+        for (const [target, power] of attacks)
+          if (target !== a.route[0] && adjacentTo(a, target))
+            attacks.set(target, power - attackPower(a, target));
     }
-    p.preparation = Math.max(0, p.preparation - 0.3);
+    p.preparation = Math.max(0, p.preparation - 0.3 * elapsedDays);
   }
   w.plans = w.plans.filter((p) => p.armies.length);
 }

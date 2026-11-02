@@ -10,6 +10,7 @@ const { chromium } = require("playwright");
 const base = process.env.EUROPA_BASE_URL || "http://localhost:3000";
 const output =
   process.env.EUROPA_ARTIFACT_DIR || "/tmp/xarmy-europa-worker-browser";
+const tick = (world) => world.day * 24 + (world.hour ?? 0);
 const saveKey = "xarmy-europa-1936-v1:slot-1";
 const readyText = "Çevrimdışı kullanıma hazır · bu cihaz";
 fs.mkdirSync(output, { recursive: true });
@@ -152,7 +153,7 @@ fs.mkdirSync(output, { recursive: true });
     await start();
     await waitForDateChange(initialDate);
     await pause();
-    assert.ok((await save()).world.day > initial.world.day);
+    assert.ok(tick((await save()).world) > tick(initial.world));
     passed("real dedicated worker launches and advances the campaign");
 
     await holdResults(worker);
@@ -246,7 +247,7 @@ fs.mkdirSync(output, { recursive: true });
     await waitForDateChange(failureDate);
     await pause();
     const saved = await save();
-    assert.ok(saved.world.day > beforeFailure.world.day);
+    assert.ok(tick(saved.world) > tick(beforeFailure.world));
     passed(
       "worker failure pauses without changing the saved world and retry recovers",
     );
@@ -300,7 +301,7 @@ fs.mkdirSync(output, { recursive: true });
       waitUntil: "domcontentloaded",
     });
     await page.getByText("Kayıtlı sefere devam et", { exact: true }).click();
-    const label = `${saved.world.countries[saved.world.player].name} · ${saved.world.day}. gün`;
+    const label = `${saved.world.countries[saved.world.player].name} · ${saved.world.day}. gün · ${String(saved.world.hour).padStart(2, "0")}:00`;
     await page
       .getByRole("button", { name: `${label} →`, exact: true })
       .first()
@@ -315,7 +316,7 @@ fs.mkdirSync(output, { recursive: true });
     await waitForDateChange(offlineDate);
     await pause();
     const offline = await save();
-    assert.ok(offline.world.day > saved.world.day);
+    assert.ok(tick(offline.world) > tick(saved.world));
     assert.equal(offline.world.player, saved.world.player);
     const bitmap = await page.evaluate(async (url) => {
       const response = await fetch(url);

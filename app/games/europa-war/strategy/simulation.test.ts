@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import { once } from "node:events";
 import { test } from "node:test";
 import { Worker } from "node:worker_threads";
-import { advanceDay, createWorld } from "./engine";
+import { advanceHour, createWorld } from "./engine";
 import {
   SimulationController,
-  SIMULATION_DAY_MS,
+  SIMULATION_HOUR_MS,
   type SimulationRequest,
   type SimulationResponse,
   type SimulationWorker,
@@ -13,6 +13,45 @@ import {
 import type {} from "./simulation.worker";
 import { createSimulationWorker } from "./simulation-worker";
 import type { World } from "./types";
+import { createCommand, executeCommand } from "./commands";
+
+test("1× ve 5× aynı oyun saatlerindeki emirlerle aynı gerçek simülasyonu üretir", () => {
+  function run(speed: number) {
+    const clock = new Clock();
+    const worker = new FakeWorker();
+    let current = createWorld("turkey", "alternative", 77);
+    const controller = new SimulationController({
+      createWorker: () => worker,
+      onWorld: (next) => {
+        current = next;
+      },
+      onError: (message) => assert.fail(message),
+      setTimer: clock.setTimer,
+      clearTimer: clock.clearTimer,
+    });
+    controller.setWorld(current);
+    controller.setSpeed(speed);
+    controller.setRunning(true);
+    for (let hour = 0; hour < 30; hour++) {
+      if (hour === 5 || hour === 20) {
+        const command = createCommand(current, {
+          type: "commanderAutoAssign",
+          enabled: hour === 20,
+        });
+        const result = executeCommand(current, command, current.player);
+        assert.equal(result.status, "applied");
+        current = result.world;
+        controller.setWorld(current);
+      }
+      clock.advance(SIMULATION_HOUR_MS / speed);
+      const request = worker.requests.at(-1)!;
+      worker.finish(request, advanceHour(current));
+    }
+    controller.dispose();
+    return current;
+  }
+  assert.deepEqual(run(1), run(5));
+});
 
 test("The worker factory normalizes URLs, strings and TrustedScriptURL values into the scoped bootstrap", () => {
   const previousWorker = Object.getOwnPropertyDescriptor(globalThis, "Worker");
@@ -177,7 +216,7 @@ function fixture(
   const start = (speed = 1) => {
     controller.setSpeed(speed);
     controller.setRunning(true);
-    clock.advance(SIMULATION_DAY_MS / speed);
+    clock.advance(SIMULATION_HOUR_MS / speed);
     assert.equal(workers.length, 1);
     return workers[0];
   };
@@ -192,6 +231,23 @@ function fixture(
     start,
   };
 }
+
+test("Tarih sınırında worker başlatmadan anlaşılır bildirimle durur ve kayıt korunur", () => {
+  const f = fixture();
+  const last = { ...world(36500), hour: 23 };
+  f.controller.setWorld(last);
+  f.controller.setRunning(true);
+  f.clock.advance(SIMULATION_HOUR_MS);
+  assert.equal(f.workers.length, 0);
+  assert.equal(f.errors.length, 1);
+  assert.match(f.errors[0], /tarih sınırına/);
+  assert.equal(f.published.length, 0);
+  f.clock.advance(60_000);
+  assert.equal(f.errors.length, 1);
+  assert.equal(last.day, 36500);
+  assert.equal(last.hour, 23);
+  f.controller.dispose();
+});
 
 test("Initialization can expose offline worker assets without advancing a paused campaign", () => {
   const f = fixture();
@@ -214,7 +270,7 @@ test("Simulation creates its worker lazily and never advances a paused campaign"
   assert.equal(f.workers.length, 0);
   assert.equal(f.published.length, 0);
   f.controller.setRunning(true);
-  f.clock.advance(SIMULATION_DAY_MS - 1);
+  f.clock.advance(SIMULATION_HOUR_MS - 1);
   assert.equal(f.workers.length, 0);
   f.clock.advance(1);
   assert.equal(f.workers.length, 1);
@@ -223,14 +279,10 @@ test("Simulation creates its worker lazily and never advances a paused campaign"
   f.controller.dispose();
 });
 
-test("Normal pace waits two seconds per day and 1–5× retain their relative intervals", () => {
-  for (const [speed, interval] of [
-    [1, 2000],
-    [2, 1000],
-    [3, 2000 / 3],
-    [4, 500],
-    [5, 400],
-  ]) {
+test("Normal pace waits 500 ms per hour and 1–5× retain their relative intervals", () => {
+  assert.equal(SIMULATION_HOUR_MS, 500);
+  for (const speed of [1, 2, 3, 4, 5]) {
+    const interval = SIMULATION_HOUR_MS / speed;
     const f = fixture();
     f.controller.setSpeed(speed);
     f.controller.setRunning(true);
@@ -259,22 +311,22 @@ test("Normal pace waits two seconds per day and 1–5× retain their relative in
 test("Changing a scheduled speed replaces its delay; pause and resume never catch up missed days", () => {
   const f = fixture();
   f.controller.setRunning(true);
-  f.clock.advance(1700);
+  f.clock.advance(SIMULATION_HOUR_MS * 0.85);
   f.controller.setSpeed(2);
-  f.clock.advance(300);
+  f.clock.advance(SIMULATION_HOUR_MS * 0.15);
   assert.equal(f.workers.length, 0, "The old 1× timer must be cancelled");
-  f.clock.advance(699);
+  f.clock.advance(SIMULATION_HOUR_MS * 0.35 - 1);
   assert.equal(f.workers.length, 0, "The new 2× interval starts when selected");
   f.clock.advance(1);
   const worker = f.workers[0];
   assert.equal(worker.requests.length, 1);
   worker.finish(worker.requests[0]);
-  f.clock.advance(500);
+  f.clock.advance(SIMULATION_HOUR_MS / 4);
   f.controller.setRunning(false);
   f.clock.advance(60_000);
   assert.equal(worker.requests.length, 1);
   f.controller.setRunning(true);
-  f.clock.advance(999);
+  f.clock.advance(SIMULATION_HOUR_MS / 2 - 1);
   assert.equal(worker.requests.length, 1, "Resume waits a full 2× interval");
   f.clock.advance(1);
   assert.equal(worker.requests.length, 2);
@@ -293,7 +345,7 @@ test("A slow daily step has one in-flight request and schedules from completion"
   const result = world(1);
   worker.finish(worker.requests[0], result);
   assert.deepEqual(f.published, [result]);
-  f.clock.advance(SIMULATION_DAY_MS / 5 - 1);
+  f.clock.advance(SIMULATION_HOUR_MS / 5 - 1);
   assert.equal(worker.requests.length, 1);
   f.clock.advance(1);
   assert.equal(worker.requests.length, 2);
@@ -314,7 +366,7 @@ test("Continuous accepted days send only advance metadata, including after a spe
   for (let day = 1; day <= 5; day++) {
     worker.finish(worker.requests.at(-1)!);
     f.controller.setSpeed(day);
-    f.clock.advance(SIMULATION_DAY_MS / day);
+    f.clock.advance(SIMULATION_HOUR_MS / day);
     const request = worker.requests.at(-1)!;
     assert.deepEqual(Object.keys(request).sort(), ["id", "revision", "type"]);
     assert.equal(request.revision, revision);
@@ -330,25 +382,25 @@ test("A cached worker resynchronizes after a command, stale paused step and new 
   const f = fixture();
   const worker = f.start();
   worker.finish(worker.requests[0]);
-  f.clock.advance(SIMULATION_DAY_MS);
+  f.clock.advance(SIMULATION_HOUR_MS);
   const obsolete = worker.requests.at(-1)!;
   assert.equal("world" in obsolete, false);
   const commanded = { ...f.published[0], tension: 73 };
   f.controller.setWorld(commanded);
   worker.finish(obsolete, world(2));
   assert.equal(f.published.length, 1);
-  f.clock.advance(SIMULATION_DAY_MS);
+  f.clock.advance(SIMULATION_HOUR_MS);
   const synchronized = worker.requests.at(-1)!;
   assert.equal(synchronized.world, commanded);
   assert.notEqual(synchronized.revision, obsolete.revision);
   const accepted = { ...commanded, day: 2 };
   worker.finish(synchronized, accepted);
-  f.clock.advance(SIMULATION_DAY_MS);
+  f.clock.advance(SIMULATION_HOUR_MS);
   const paused = worker.requests.at(-1)!;
   assert.equal("world" in paused, false);
   f.controller.setRunning(false);
   f.controller.setRunning(true);
-  f.clock.advance(SIMULATION_DAY_MS);
+  f.clock.advance(SIMULATION_HOUR_MS);
   assert.equal(
     worker.requests.at(-1),
     paused,
@@ -356,7 +408,7 @@ test("A cached worker resynchronizes after a command, stale paused step and new 
   );
   worker.finish(paused, world(3));
   assert.equal(f.published.length, 2);
-  f.clock.advance(SIMULATION_DAY_MS);
+  f.clock.advance(SIMULATION_HOUR_MS);
   const resumed = worker.requests.at(-1)!;
   assert.equal(
     resumed.world,
@@ -364,18 +416,18 @@ test("A cached worker resynchronizes after a command, stale paused step and new 
     "Resume must discard the worker's unaccepted day",
   );
   worker.finish(resumed, { ...accepted, day: 3 });
-  f.clock.advance(SIMULATION_DAY_MS);
+  f.clock.advance(SIMULATION_HOUR_MS);
   const oldCampaign = worker.requests.at(-1)!;
   const replacement = world(125, "france");
   f.controller.setWorld(replacement);
   worker.finish(oldCampaign, world(4));
-  f.clock.advance(SIMULATION_DAY_MS);
+  f.clock.advance(SIMULATION_HOUR_MS);
   const restored = worker.requests.at(-1)!;
   assert.equal(restored.world, replacement);
   worker.finish(restored);
   assert.equal(f.published.at(-1)?.player, "france");
   assert.equal(f.published.at(-1)?.day, 126);
-  f.clock.advance(SIMULATION_DAY_MS);
+  f.clock.advance(SIMULATION_HOUR_MS);
   assert.equal("world" in worker.requests.at(-1)!, false);
   f.controller.dispose();
 });
@@ -385,13 +437,13 @@ test("Retry after a cached worker fails sends the last accepted world to the new
   const worker = f.start();
   const accepted = world(1);
   worker.finish(worker.requests[0], accepted);
-  f.clock.advance(SIMULATION_DAY_MS);
+  f.clock.advance(SIMULATION_HOUR_MS);
   assert.equal("world" in worker.requests.at(-1)!, false);
   worker.onerror?.({ message: "Worker failed" });
   assert.equal(worker.terminated, true);
   assert.equal(f.errors.length, 1);
   f.controller.setRunning(true);
-  f.clock.advance(SIMULATION_DAY_MS);
+  f.clock.advance(SIMULATION_HOUR_MS);
   assert.equal(f.workers.length, 2);
   const replacement = f.workers[1];
   assert.equal(replacement.requests[0].world, accepted);
@@ -400,7 +452,7 @@ test("Retry after a cached worker fails sends the last accepted world to the new
     f.published.map((w) => w.day),
     [1, 2],
   );
-  f.clock.advance(SIMULATION_DAY_MS);
+  f.clock.advance(SIMULATION_HOUR_MS);
   assert.equal("world" in replacement.requests.at(-1)!, false);
   f.controller.dispose();
 });
@@ -419,7 +471,7 @@ test("A command replaces the authoritative world immediately and stale work cann
   );
   worker.finish(obsolete);
   assert.equal(f.published.length, 0);
-  f.clock.advance(SIMULATION_DAY_MS);
+  f.clock.advance(SIMULATION_HOUR_MS);
   assert.equal(worker.requests.length, 2);
   const next = worker.requests[1];
   assert.equal(next.world, commanded);
@@ -441,7 +493,7 @@ test("Multiple commands during one step keep the newest state without a request 
   assert.equal(worker.requests.length, 1);
   worker.finish(obsolete);
   assert.equal(f.published.length, 0);
-  f.clock.advance(SIMULATION_DAY_MS / 5);
+  f.clock.advance(SIMULATION_HOUR_MS / 5);
   assert.equal(worker.requests.length, 2);
   assert.equal(worker.requests[1].world?.tension, 12);
   f.controller.dispose();
@@ -459,7 +511,7 @@ test("Loading a campaign while a step runs never publishes the previous campaign
   assert.equal(f.published.length, 0);
   assert.equal(worker.requests.length, 1);
   f.controller.setRunning(true);
-  f.clock.advance(SIMULATION_DAY_MS);
+  f.clock.advance(SIMULATION_HOUR_MS);
   assert.equal(worker.requests[1].world, restored);
   worker.finish(worker.requests[1], world(126, "france"));
   assert.equal(f.published[0].player, "france");
@@ -476,7 +528,7 @@ test("Pause and resume before a reply discard that reply and do not run overlapp
   assert.equal(worker.requests.length, 1);
   worker.finish(worker.requests[0]);
   assert.equal(f.published.length, 0);
-  f.clock.advance(SIMULATION_DAY_MS);
+  f.clock.advance(SIMULATION_HOUR_MS);
   assert.equal(worker.requests.length, 2);
   assert.equal(worker.requests[1].world, f.initial);
   worker.finish(worker.requests[1]);
@@ -487,7 +539,7 @@ test("Pause and resume before a reply discard that reply and do not run overlapp
 test("Pausing before the next step cancels scheduled work", () => {
   const f = fixture();
   f.controller.setRunning(true);
-  f.clock.advance(500);
+  f.clock.advance(SIMULATION_HOUR_MS / 4);
   f.controller.setRunning(false);
   f.clock.advance(60_000);
   assert.equal(f.workers.length, 0);
@@ -510,10 +562,10 @@ test("Changing speed during a step applies to the next delay without queuing ext
   const f = fixture();
   const worker = f.start();
   f.controller.setSpeed(5);
-  f.clock.advance(SIMULATION_DAY_MS);
+  f.clock.advance(SIMULATION_HOUR_MS);
   assert.equal(worker.requests.length, 1);
   worker.finish(worker.requests[0]);
-  f.clock.advance(SIMULATION_DAY_MS / 5 - 1);
+  f.clock.advance(SIMULATION_HOUR_MS / 5 - 1);
   assert.equal(worker.requests.length, 1);
   f.clock.advance(1);
   assert.equal(worker.requests.length, 2);
@@ -525,7 +577,7 @@ test("A duplicated reply cannot publish twice or complete a newer request", () =
   const worker = f.start();
   const first = worker.requests[0];
   worker.finish(first);
-  f.clock.advance(SIMULATION_DAY_MS);
+  f.clock.advance(SIMULATION_HOUR_MS);
   assert.equal(worker.requests.length, 2);
   worker.finish(first, world(999));
   assert.equal(f.published.length, 1);
@@ -567,7 +619,7 @@ test("A worker timeout reports once, preserves the latest world and stops schedu
 test("Worker startup failures pause without simulating on the main thread", () => {
   const f = fixture({ createError: true });
   f.controller.setRunning(true);
-  f.clock.advance(SIMULATION_DAY_MS);
+  f.clock.advance(SIMULATION_HOUR_MS);
   assert.equal(f.errors.length, 1);
   assert.equal(f.published.length, 0);
   f.clock.advance(60_000);
@@ -582,7 +634,7 @@ test("Failure to send a world to the worker clears pending work and reports the 
   const worker = f.workers[0];
   worker.postMessageError = new Error("World could not be cloned");
   f.controller.setRunning(true);
-  f.clock.advance(SIMULATION_DAY_MS);
+  f.clock.advance(SIMULATION_HOUR_MS);
   assert.equal(f.errors.length, 1);
   assert.equal(worker.terminated, true);
   assert.equal(f.published.length, 0);
@@ -657,7 +709,7 @@ test("A hidden document cannot accept a completed step before its visibility eve
   assert.equal(worker.requests.length, 1);
   visible = true;
   f.controller.setRunning(true);
-  f.clock.advance(SIMULATION_DAY_MS);
+  f.clock.advance(SIMULATION_HOUR_MS);
   assert.equal(worker.requests[1].world, f.initial);
   f.controller.dispose();
 });
@@ -667,7 +719,7 @@ test("A hidden document cannot start a scheduled step before its visibility even
   const f = fixture({ canRun: () => visible });
   f.controller.setRunning(true);
   visible = false;
-  f.clock.advance(SIMULATION_DAY_MS);
+  f.clock.advance(SIMULATION_HOUR_MS);
   assert.equal(f.workers.length, 0);
   assert.equal(f.published.length, 0);
   f.controller.setRunning(false);
@@ -716,7 +768,7 @@ test(
       assert.fail("Worker must return a computed world");
     assert.equal(response.id, request.id);
     assert.equal(response.revision, request.revision);
-    assert.deepEqual(response.world, advanceDay(input));
+    assert.deepEqual(response.world, advanceHour(input));
     assert.deepEqual(
       input,
       snapshot,
@@ -730,7 +782,7 @@ test(
     }
     let expected = response.world;
     for (let id = 18; id <= 21; id++) {
-      expected = advanceDay(expected);
+      expected = advanceHour(expected);
       const next = await advance({ type: "advance", id, revision: 8 });
       assert.equal(next.type, "result");
       if (next.type !== "result")
@@ -754,7 +806,7 @@ test(
     assert.equal(resynced.type, "result");
     if (resynced.type !== "result")
       assert.fail("Full authoritative world must recover a cache miss");
-    assert.deepEqual(resynced.world, advanceDay(commanded));
+    assert.deepEqual(resynced.world, advanceHour(commanded));
 
     const replacement = createWorld("france", "historical", 1936, "easy");
     replacement.day = 125;
@@ -767,13 +819,13 @@ test(
     assert.equal(restored.type, "result");
     if (restored.type !== "result")
       assert.fail("A new campaign must replace the snapshot");
-    assert.deepEqual(restored.world, advanceDay(replacement));
+    assert.deepEqual(restored.world, advanceHour(replacement));
     const continued = await advance({ type: "advance", id: 25, revision: 10 });
     assert.equal(continued.type, "result");
     if (continued.type !== "result")
       assert.fail(
         "The replacement campaign must continue without resending it",
       );
-    assert.deepEqual(continued.world, advanceDay(restored.world));
+    assert.deepEqual(continued.world, advanceHour(restored.world));
   },
 );

@@ -2,12 +2,14 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { declareWar } from "./diplomacy";
 import { applyAction } from "./engine";
-import { resolveLandDay } from "./land";
+import { resolveLandDay, resolveLandStep } from "./land";
 import { armyMapPosition } from "./map3d-visuals";
 import {
   detectFormationCaptures,
   detectResolvedFormationCombats,
   formationCombat,
+  formationMovementBlendMs,
+  formationSnapshotTransition,
 } from "./map3d-unit-events";
 import { addArmy, createWorld, GEOGRAPHY } from "./world";
 import type { World } from "./types";
@@ -46,12 +48,110 @@ function nextDay(world: World) {
   return next;
 }
 
+function nextHour(world: World) {
+  const next = structuredClone(world);
+  next.hour++;
+  if (next.hour === 24) {
+    next.hour = 0;
+    next.day++;
+  }
+  resolveLandStep(next, 1 / 24);
+  return next;
+}
+
 function oneDayRout(experience = 0) {
   const previous = campaign(4);
   for (const army of previous.armies) army.experience = experience;
   previous.armies.find((army) => army.country === "poland")!.organization = 11;
   return { previous, current: nextDay(previous) };
 }
+
+test("Hourly snapshots preserve short combat exchanges within a day and across midnight", () => {
+  for (const startHour of [7, 23]) {
+    const { previous, current } = oneDayRout();
+    previous.hour = startHour;
+    current.day = previous.day + Number(startHour === 23);
+    current.hour = (startHour + 1) % 24;
+    const before = JSON.stringify({ previous, current });
+    assert.equal(formationSnapshotTransition(previous, current), "step");
+    assert.equal(detectResolvedFormationCombats(previous, current).length, 2);
+    assert.equal(JSON.stringify({ previous, current }), before);
+    assert.deepEqual(detectResolvedFormationCombats(current, current), []);
+  }
+});
+
+test("A genuine one-hour rout remains visible after the hourly land solver retreats its defender", () => {
+  const previous = campaign(4);
+  previous.hour = 23;
+  previous.armies.find((army) => army.country === "poland")!.organization =
+    10.01;
+  const current = nextHour(previous);
+  assert.equal(current.day, previous.day + 1);
+  assert.equal(current.hour, 0);
+  assert.ok(current.battles.length > 0);
+  assert.ok(current.armies.every((army) => !formationCombat(current, [army])));
+  const exchanges = detectResolvedFormationCombats(previous, current);
+  assert.equal(exchanges.length, 2);
+  assert.ok(exchanges.some((event) => event.country === "germany"));
+  assert.ok(exchanges.some((event) => event.country === "poland"));
+});
+
+test("An hourly military arrival captures a city once without requiring the next day", () => {
+  const previous = campaign(4);
+  previous.hour = 12;
+  previous.armies = previous.armies.filter(
+    (army) => army.country === "germany",
+  );
+  for (const army of previous.armies) {
+    army.route = [];
+    army.move = { to: target, progress: 1 - 1 / 48, days: 1 };
+  }
+  const current = nextHour(previous);
+  assert.equal(current.day, previous.day);
+  assert.equal(current.hour, 13);
+  assert.equal(current.provinces[target].controller, "germany");
+  const captures = detectFormationCaptures(previous, current);
+  assert.equal(captures.length, 1);
+  assert.deepEqual(
+    captures[0].armyIds,
+    previous.armies.map((army) => army.id),
+  );
+  assert.deepEqual(detectFormationCaptures(current, nextHour(current)), []);
+});
+
+test("Hourly rewind, same-tick commands and discontinuous loads cannot replay a short battle", () => {
+  const { previous, current } = oneDayRout();
+  previous.hour = 9;
+  current.day = previous.day;
+  for (const hour of [8, 9, 11, 23]) {
+    current.hour = hour;
+    assert.equal(
+      formationSnapshotTransition(previous, current),
+      hour === 9 ? "command" : "reset",
+    );
+    assert.deepEqual(detectResolvedFormationCombats(previous, current), []);
+  }
+  current.hour = 10;
+  assert.equal(detectResolvedFormationCombats(previous, current).length, 2);
+  const firstKeys = detectResolvedFormationCombats(previous, current).map(
+    (event) => event.key,
+  );
+  previous.hour = 10;
+  current.hour = 11;
+  assert.notDeepEqual(
+    detectResolvedFormationCombats(previous, current).map((event) => event.key),
+    firstKeys,
+  );
+});
+
+test("Movement interpolation follows hourly snapshot speed without extending pauses or accepting invalid intervals", () => {
+  assert.equal(formationMovementBlendMs(100), 100);
+  assert.equal(formationMovementBlendMs(500), 500);
+  assert.equal(formationMovementBlendMs(2000), 650);
+  assert.equal(formationMovementBlendMs(1), 80);
+  for (const elapsed of [0, -1, NaN, Infinity])
+    assert.equal(formationMovementBlendMs(elapsed), 650);
+});
 
 test("Veterans at the experience cap still show a real short fight without replaying unrelated attrition", () => {
   const { previous, current } = oneDayRout(100);
@@ -383,6 +483,32 @@ function capturePair() {
   current.provinces[target].controller = "germany";
   return { previous, current, arriving };
 }
+
+test("Hourly capture events support midnight and distinguish recaptures on the same day", () => {
+  const { previous, current } = capturePair();
+  previous.hour = 4;
+  current.day = previous.day;
+  current.hour = 5;
+  const first = detectFormationCaptures(previous, current);
+  assert.equal(first.length, 1);
+  previous.hour = 6;
+  current.hour = 7;
+  const second = detectFormationCaptures(previous, current);
+  assert.equal(second.length, 1);
+  assert.notEqual(first[0].key, second[0].key);
+  previous.hour = 23;
+  current.day = previous.day + 1;
+  current.hour = 0;
+  assert.equal(detectFormationCaptures(previous, current).length, 1);
+  current.day = previous.day;
+  current.hour = 22;
+  assert.deepEqual(detectFormationCaptures(previous, current), []);
+  current.hour = 23;
+  assert.deepEqual(detectFormationCaptures(previous, current), []);
+  current.day = previous.day + 1;
+  current.hour = 1;
+  assert.deepEqual(detectFormationCaptures(previous, current), []);
+});
 
 test("A fast tank captures an undefended province on the first queued movement day", () => {
   const original = createWorld("germany");

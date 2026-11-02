@@ -4,6 +4,7 @@
    Run after a production build. EUROPA_BASE_URL, EUROPA_CHROMIUM and
    EUROPA_ARTIFACT_DIR may override local defaults. */
 const assert = require("node:assert/strict");
+const { advanceClockHours } = require("./europa-browser-clock.cjs");
 const { mkdirSync, readFileSync, writeFileSync } = require("node:fs");
 const path = require("node:path");
 const { chromium } = require("playwright");
@@ -24,7 +25,6 @@ const {
   createWorld,
   addArmy,
   GEOGRAPHY,
-  dateLabel,
 } = require("../app/games/europa-war/strategy/world.ts");
 const { declareWar } = require("../app/games/europa-war/strategy/diplomacy.ts");
 const { applyAction } = require("../app/games/europa-war/strategy/engine.ts");
@@ -201,7 +201,11 @@ function fixture({
               .world,
         );
         decodeSave(
-          JSON.stringify({ format: "xarmy-europa-1936", version: 2, world }),
+          JSON.stringify({
+            format: "xarmy-europa-1936",
+            version: world.version,
+            world,
+          }),
         );
         if (name)
           writeFileSync(
@@ -239,50 +243,7 @@ function fixture({
       };
       const day = async () => {
         await closeCommander();
-        const before = await page.getByTestId("game-date").textContent();
-        const currentDay = Array.from(
-          { length: 100 },
-          (_, index) => index,
-        ).find((index) => dateLabel(index) === before);
-        assert.notEqual(currentDay, undefined);
-        await click(
-          page.getByRole("button", { name: "1 kat hız", exact: true }),
-        );
-        await page.evaluate(() => {
-          const clock = document.querySelector('[data-testid="game-date"]'),
-            before = clock.textContent;
-          window.__commanderDateStep = new Promise((resolve, reject) => {
-            const observer = new MutationObserver(() => {
-              if (clock.textContent === before) return;
-              observer.disconnect();
-              clearTimeout(timeout);
-              document
-                .querySelector('button[aria-label="Zamanı duraklat"]')
-                .click();
-              resolve(clock.textContent);
-            });
-            const timeout = setTimeout(() => {
-              observer.disconnect();
-              reject(new Error("Real clock did not advance"));
-            }, 15000);
-            observer.observe(clock, {
-              childList: true,
-              subtree: true,
-              characterData: true,
-            });
-          });
-        });
-        await click(
-          page.getByRole("button", { name: "Zamanı başlat", exact: true }),
-        );
-        await page.evaluate(() => window.__commanderDateStep);
-        await page
-          .getByRole("button", { name: "Zamanı başlat", exact: true })
-          .waitFor();
-        assert.equal(
-          await page.getByTestId("game-date").textContent(),
-          dateLabel(currentDay + 1),
-        );
+        await advanceClockHours(page, 24);
       };
       await page.goto(`${base}/games/europa-war`, {
         waitUntil: "domcontentloaded",

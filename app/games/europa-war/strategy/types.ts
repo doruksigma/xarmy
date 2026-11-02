@@ -245,17 +245,20 @@ export interface Front {
 }
 export interface GameEvent {
   day: number;
+  /** Absent only in events retained from a pre-hourly save. */
+  hour?: number;
   text: string;
   kind: "info" | "war" | "economy" | "politics";
 }
 export interface World {
-  /** Optional for legacy v2 saves; recorded only after a protocol command succeeds. */
+  /** Recorded only after a protocol command succeeds. */
   commandState?: CommandState;
-  version: 2;
+  version: 3;
   player: string;
   mode: "historical" | "alternative";
   difficulty: "easy" | "normal" | "hard";
   day: number;
+  hour: number;
   seed: number;
   serial: number;
   tension: number;

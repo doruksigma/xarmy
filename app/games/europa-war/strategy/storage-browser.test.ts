@@ -118,8 +118,16 @@ test("Otomatik kayıt kuyruğu tamamlanmayı, hata sonrası toparlanmayı ve esk
       "Yazmalar sırayla tamamlanır; okuma bekler, başarısız kayıt sonraki kaydı engellemez",
       async () => {
         const original = createWorld("turkey");
-        const first = saveAutomatic("auto-1", { ...original, day: 14 });
-        const second = saveAutomatic("auto-1", { ...original, day: 28 });
+        const first = saveAutomatic("auto-1", {
+          ...original,
+          day: 14,
+          hour: 7,
+        });
+        const second = saveAutomatic("auto-1", {
+          ...original,
+          day: 28,
+          hour: 19,
+        });
         const rejected = assert.rejects(second, /Cihaz kaydı yapılamadı/);
         let readDone = false;
         const read = loadBrowserSave("auto-1").then((w) => {
@@ -138,14 +146,21 @@ test("Otomatik kayıt kuyruğu tamamlanmayı, hata sonrası toparlanmayı ve esk
         assert.equal(readDone, false);
         db.finish(false);
         await rejected;
-        assert.equal((await read).day, 14);
+        const loaded = await read;
+        assert.equal(loaded.day, 14);
+        assert.equal(loaded.hour, 7);
+        assert.equal(loaded.version, 3);
         assert.equal(
           notifications,
           1,
           "Abort must not announce a committed save",
         );
         const stringify = mock.method(JSON, "stringify");
-        const third = saveAutomatic("auto-1", { ...original, day: 42 });
+        const third = saveAutomatic("auto-1", {
+          ...original,
+          day: 42,
+          hour: 23,
+        });
         await setImmediate();
         db.finish();
         await third;
@@ -155,7 +170,14 @@ test("Otomatik kayıt kuyruğu tamamlanmayı, hata sonrası toparlanmayı ve esk
           "Gameplay saving must not JSON-serialize the world",
         );
         stringify.mock.restore();
-        assert.equal((await loadBrowserSave("auto-1")).day, 42);
+        const latest = await loadBrowserSave("auto-1");
+        assert.equal(latest.day, 42);
+        assert.equal(latest.hour, 23);
+        assert.equal(
+          (await listBrowserSaves()).find((save) => save.slot === "auto-1")
+            ?.label,
+          `${original.countries.turkey.name} · 42. gün · 23:00`,
+        );
         assert.equal(notifications, 2);
         assert.deepEqual(broadcasts, ["auto-1", "closed", "auto-1", "closed"]);
       },

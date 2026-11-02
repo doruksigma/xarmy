@@ -38,7 +38,7 @@ export function event(
   text: string,
   kind: GameEvent["kind"] = "info",
 ) {
-  w.events.unshift({ day: w.day, text, kind });
+  w.events.unshift({ day: w.day, hour: w.hour, text, kind });
   w.events.length = Math.min(80, w.events.length);
 }
 export function controlled(w: World, c: string) {
@@ -122,12 +122,14 @@ export function localSupply(
   c: string,
   province: string,
   network?: Set<string>,
+  friendlyTroops?: number,
 ) {
   if (!(network ?? supplyNetwork(w, c)).has(province)) return 0.08;
   const p = w.provinces[province];
-  let troops = 0;
-  for (const a of w.armies)
-    if (a.province === province && friendly(w, c, a.country)) troops++;
+  let troops = friendlyTroops ?? 0;
+  if (friendlyTroops === undefined)
+    for (const a of w.armies)
+      if (a.province === province && friendly(w, c, a.country)) troops++;
   return clamp(
     ((0.4 +
       p.buildings.infra * 0.12 +
@@ -213,11 +215,12 @@ export function createWorld(
     "Geçerli bir ülke seç.",
   );
   const w: World = {
-    version: 2,
+    version: 3,
     player,
     mode,
     difficulty,
     day: 0,
+    hour: 0,
     seed: seed >>> 0,
     serial: 0,
     tension: 12,

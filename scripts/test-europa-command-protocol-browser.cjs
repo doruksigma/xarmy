@@ -2,6 +2,7 @@
    save/load across desktop and touch mobile. Fixtures enter via the save UI;
    assertions inspect exported saves, never React state or private app hooks. */
 const assert = require("node:assert/strict");
+const { advanceClockHours } = require("./europa-browser-clock.cjs");
 const fs = require("node:fs");
 const path = require("node:path");
 const { chromium } = require("playwright");
@@ -17,10 +18,7 @@ require.extensions[".ts"] = (module, filename) =>
     }).outputText,
     filename,
   );
-const {
-  createWorld,
-  dateLabel,
-} = require("../app/games/europa-war/strategy/world.ts");
+const { createWorld } = require("../app/games/europa-war/strategy/world.ts");
 const {
   BUILDINGS,
   UNITS,
@@ -202,38 +200,9 @@ function fixture(treasury = 10000) {
       passed(
         `${label}: save import retains journal and resumes the next sequence`,
       );
-      // Real worker advancement preserves journal state while the campaign progresses.
-      await page.evaluate(() => {
-        window.__journalDay = new Promise((resolve, reject) => {
-          const clock = document.querySelector('[data-testid="game-date"]'),
-            before = clock.textContent;
-          const observer = new MutationObserver(() => {
-            if (clock.textContent === before) return;
-            observer.disconnect();
-            clearTimeout(timeout);
-            document
-              .querySelector('button[aria-label="Zamanı duraklat"]')
-              .click();
-            resolve(clock.textContent);
-          });
-          const timeout = setTimeout(() => {
-            observer.disconnect();
-            reject(new Error("Worker clock timeout"));
-          }, 15000);
-          observer.observe(clock, {
-            childList: true,
-            subtree: true,
-            characterData: true,
-          });
-        });
-      });
-      await click(
-        page.getByRole("button", { name: "Zamanı başlat", exact: true }),
-      );
-      assert.equal(
-        await page.evaluate(() => window.__journalDay),
-        dateLabel(continued.day + 1),
-      );
+      // Settle a complete real day; hourly ticks before midnight must not
+      // accidentally trigger the daily AI or replace the player's receipts.
+      await advanceClockHours(page, 24);
       const advanced = await save();
       assert.equal(advanced.day, continued.day + 1);
       assert.equal(

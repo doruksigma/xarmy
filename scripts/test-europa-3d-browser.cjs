@@ -4,6 +4,7 @@
    Run against a local production build, with Playwright and Chromium installed.
    Optional EUROPA_BASE_URL, EUROPA_CHROMIUM, EUROPA_ARTIFACT_DIR, EUROPA_SKIP_PERF=1. */
 const assert = require("node:assert/strict");
+const { advanceClockHours } = require("./europa-browser-clock.cjs");
 const { mkdirSync, readFileSync, writeFileSync } = require("node:fs");
 const path = require("node:path");
 const { chromium } = require("playwright");
@@ -23,7 +24,6 @@ const {
   createWorld,
   addArmy,
   GEOGRAPHY,
-  dateLabel,
 } = require("../app/games/europa-war/strategy/world.ts");
 const { declareWar } = require("../app/games/europa-war/strategy/diplomacy.ts");
 const {
@@ -189,7 +189,11 @@ function fixture() {
               .world,
         );
         decodeSave(
-          JSON.stringify({ format: "xarmy-europa-1936", version: 2, world }),
+          JSON.stringify({
+            format: "xarmy-europa-1936",
+            version: world.version,
+            world,
+          }),
         );
         if (name)
           writeFileSync(
@@ -489,16 +493,7 @@ function fixture() {
         );
         i++
       ) {
-        await click(
-          page.getByRole("button", { name: "Zamanı başlat", exact: true }),
-        );
-        await page.waitForFunction(
-          (old) =>
-            document.querySelector('[data-testid="game-date"]')?.textContent !==
-            old,
-          dateLabel(moved.day),
-        );
-        await pause();
+        await advanceClockHours(page, 24);
         moved = await save(`day-${i + 1}`);
       }
       assert.equal(moved.provinces[f.target].controller, "turkey");

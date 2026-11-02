@@ -129,7 +129,7 @@ fs.mkdirSync(output, { recursive: true });
           const value = args[0];
           const save =
             value?.format === "xarmy-europa-1936" ||
-            (value?.version === 2 &&
+            ([2, 3].includes(value?.version) &&
               Array.isArray(value.armies) &&
               value.countries);
           const start = performance.now();
@@ -287,7 +287,7 @@ fs.mkdirSync(output, { recursive: true });
       await tab("Komuta");
       await tab("Kayıtlar");
     };
-    const label = (day) => "Türkiye · " + day + ". gün";
+    const label = (day) => "Türkiye · " + day + ". gün · 00:00";
     const expectPaused = (target = page) =>
       target.waitForFunction(() => {
         const button = document.querySelector(
@@ -309,8 +309,9 @@ fs.mkdirSync(output, { recursive: true });
     while (world.armies.length < 2000)
       addArmy(world, "turkey", world.countries.turkey.capital);
     world.day = 13;
+    world.hour = 23;
     decodeSave(encodeSave(world));
-    const dayWorld = (day) => ({ ...world, day });
+    const dayWorld = (day) => ({ ...world, day, hour: 0 });
 
     attach(await context.newPage());
     await page.goto(base + "/games/europa-war", {

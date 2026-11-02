@@ -3,6 +3,7 @@
    No engine actions or application internals are invoked inside the browser.
    EUROPA_BASELINE=1 records failures against the old production bundle. */
 const assert = require("node:assert/strict");
+const { advanceClockHours } = require("./europa-browser-clock.cjs");
 const { mkdirSync, readFileSync, writeFileSync } = require("node:fs");
 const path = require("node:path");
 const { chromium } = require("playwright");
@@ -22,7 +23,6 @@ const {
   createWorld,
   addArmy,
   GEOGRAPHY,
-  dateLabel,
 } = require("../app/games/europa-war/strategy/world.ts");
 const { declareWar } = require("../app/games/europa-war/strategy/diplomacy.ts");
 const { encodeSave } = require("../app/games/europa-war/strategy/storage.ts");
@@ -220,57 +220,7 @@ function fixture() {
       .getByRole("button", { name: "Emri iptal et", exact: true })
       .waitFor({ state: "detached" });
   };
-  const day = async () => {
-    const before = await page.getByTestId("game-date").textContent();
-    let index = -1;
-    for (let i = 0; i < 100; i++)
-      if (dateLabel(i) === before) {
-        index = i;
-        break;
-      }
-    assert.ok(index >= 0, "Known date before daily clock step");
-    await page.getByRole("button", { name: "1 kat hız", exact: true }).click();
-    // Stop through the public pause button as soon as the real clock renders
-    // a new date. This avoids CDP round trips skipping a day on a busy host.
-    await page.evaluate(() => {
-      const clock = document.querySelector('[data-testid="game-date"]');
-      const old = clock.textContent;
-      window.__convoyDateStep = new Promise((resolve, reject) => {
-        const observer = new MutationObserver(() => {
-          if (clock.textContent === old) return;
-          observer.disconnect();
-          clearTimeout(timeout);
-          document
-            .querySelector('button[aria-label="Zamanı duraklat"]')
-            .click();
-          resolve(clock.textContent);
-        });
-        const timeout = setTimeout(() => {
-          observer.disconnect();
-          reject(
-            new Error("The real game clock did not advance within 15 seconds"),
-          );
-        }, 15000);
-        observer.observe(clock, {
-          subtree: true,
-          characterData: true,
-          childList: true,
-        });
-      });
-    });
-    await page
-      .getByRole("button", { name: "Zamanı başlat", exact: true })
-      .click();
-    await page.evaluate(() => window.__convoyDateStep);
-    await page
-      .getByRole("button", { name: "Zamanı başlat", exact: true })
-      .waitFor();
-    assert.equal(
-      await page.getByTestId("game-date").textContent(),
-      dateLabel(index + 1),
-      "Observe every actual simulation day; never skip a possible split",
-    );
-  };
+  const day = () => advanceClockHours(page, 24);
   const members = (w, f) =>
     f.attackers.map((initial) => {
       const a = w.armies.find((a) => a.id === initial.id);

@@ -5,6 +5,7 @@ import {
 } from "./action-engine";
 import { BUILDINGS, UNITS } from "./catalog";
 import { GEOGRAPHY } from "./world";
+import { worldHour } from "./time";
 import {
   canonicalAction,
   commandSequence,
@@ -13,7 +14,6 @@ import {
   COMMAND_RECEIPT_LIMIT,
   COMMAND_PLAYER_RECEIPT_RESERVE,
   COMMAND_SUMMARY_MAX_CHARS,
-  COMMAND_TICKS_PER_DAY,
   type ProtocolCommand,
   type CommandReceipt,
   type CommandState,
@@ -158,9 +158,9 @@ function describeAction(world: World, issuer: string, action: Action): string {
     : `${summary.slice(0, COMMAND_SUMMARY_MAX_CHARS - 1)}…`;
 }
 
-/** Tick labels reserve 24 positions/day, but execution still occurs once per day. */
+/** Absolute simulation hour; legacy daily receipts already use this scale. */
 export function commandTick(world: World): number {
-  return world.day * COMMAND_TICKS_PER_DAY;
+  return worldHour(world);
 }
 export function createCommand(
   world: World,
@@ -249,7 +249,7 @@ function checkCommand(
     return rejected(
       world,
       "FUTURE_TICK",
-      "Gelecekteki bir güne ait emir uygulanamaz.",
+      "Gelecekteki bir oyun saatine ait emir uygulanamaz.",
     );
   return null;
 }

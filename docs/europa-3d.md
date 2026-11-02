@@ -21,9 +21,10 @@ ikmal, hava ve deniz renklerini seçer.
   yerleşimi aynı sefer komutlarını kullanır.
 - **Animasyonlar:** Otomatik cihazın hareket tercihine uyar; Açık hareketi
   etkinleştirir; Azaltılmış sabit görünüm kullanır. Tercih cihazda saklanır.
-- Normal **1×** hızda bir oyun günü yaklaşık **2 saniye** sürer; 2–5×
+- Normal **1×** hızda her oyun saati için hesaplama bitiminden sonra **500 ms**
+  beklenir; bir gün 24 saatlik gerçek adımdan oluşur ve en az **12 saniye** sürer. 2–5×
   aynı taban hızın çarpanlarıdır. Hesaplama süresi buna eklenebilir; yavaş
-  cihazlarda kaçırılan günler biriktirilip peş peşe işletilmez.
+  cihazlarda kaçırılan saatler biriktirilip peş peşe işletilmez.
 
 ## Grafik ve maliyet
 
@@ -101,14 +102,16 @@ barışla toprak devretmek ele geçirme animasyonu başlatmaz. Bunlar mevcut
 savaş sonuçlarını görselleştirir; ilave hasar, cephane veya fetih hesabı yapmaz.
 
 Atış saati yalnız çizilen karelerde başlar; hazırlık güncellemeleri ilk atışı
-tüketmez. Bir günde sonuçlanan gerçek muharebenin kısa gösterimi **Son çatışma**
+tüketmez. Bir saat içinde sonuçlanan gerçek muharebenin kısa gösterimi **Son çatışma**
 etiketi taşır ve ardından birlik güncel konumuna geçer. Bu gösterim yalnız
 gerçek temas/kayıp kanıtıyla hayatta kalan katılımcılara uygulanır; boş şehir,
 yüklenen kayıt, yıpranma veya yedek birlikler için çatışma uydurulmaz. Yeni emir
 ve yeni savaş eski gösterimi iptal eder. Azaltılmış hareket, geçmiş gösterimi
 kaldırıp güncel konumu gösterir. Canlı savaşlar **Çatışma** etiketi taşır.
 
-Bu aşama; tam dünya haritası, yeni saatlik savaş motoru, karargâh/kolordu
+Saatlik kara savaş motoru ve eski kayıt geçişi sonraki çalışmada eklendi;
+kapsamı [güncel durum belgesinde](europa-2000-status.md) açıklanır.
+Bu görsel katman; tam dünya haritası, karargâh/kolordu
 zinciri, modüler tasarımcılar, ortak kapasiteli lojistik akışı veya yüksek
 çözünürlüklü sanat varlıkları üretmiş sayılmaz. Tam kapsamın başlangıç
 durumu ve aşama sonuçları [durum belgesinde](europa-expansion-status.md).

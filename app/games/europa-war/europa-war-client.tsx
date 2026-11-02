@@ -10,6 +10,7 @@ import MapPresentationBoundary from "./strategy/MapPresentationBoundary";
 import { createWorld } from "./strategy/engine";
 import { createCommand, executeCommand } from "./strategy/commands";
 import { dateLabel, MAP, surrender } from "./strategy/world";
+import { hourLabel, worldHour } from "./strategy/time";
 import {
   decodeSave,
   encodeSave,
@@ -73,7 +74,7 @@ function Saves({
       url = URL.createObjectURL(blob),
       a = document.createElement("a");
     a.href = url;
-    a.download = `xarmy-${world.player}-${world.day}.json`;
+    a.download = `xarmy-${world.player}-${world.day}-${world.hour}.json`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
@@ -206,7 +207,7 @@ export default function EuropaWarClient() {
   );
   const offline = useOfflinePack(load3DMap);
   const lastAuto = useRef(-1),
-    lastHiddenSave = useRef(-1);
+    lastHiddenSave = useRef<World | null>(null);
   const preview = useMemo(
     () => createWorld(choice, scenario, 1936, difficulty),
     [choice, scenario, difficulty],
@@ -257,8 +258,8 @@ export default function EuropaWarClient() {
       // An exit already has its own committed-save request in flight.
       if (transitionPending.current) return;
       const w = current.current;
-      if (w && lastHiddenSave.current !== w.day) {
-        lastHiddenSave.current = w.day;
+      if (w && lastHiddenSave.current !== w) {
+        lastHiddenSave.current = w;
         void saveAutomatic("auto-2", w).catch((e: Error) => say(e.message));
       }
     };
@@ -294,7 +295,7 @@ export default function EuropaWarClient() {
     setTarget(Object.keys(w.countries).find((id) => id !== w.player)!);
     setTab("command");
     lastAuto.current = w.day;
-    lastHiddenSave.current = -1;
+    lastHiddenSave.current = null;
   }
   function start() {
     if (transitionPending.current) return;
@@ -581,7 +582,9 @@ export default function EuropaWarClient() {
           </div>
         </div>
         <div className={styles.clock}>
-          <strong data-testid="game-date">{dateLabel(shown.day)}</strong>
+          <strong data-testid="game-date" data-game-hour={worldHour(shown)}>
+            {dateLabel(shown.day)} · {hourLabel(worldHour(shown))}
+          </strong>
           {transition && (
             <small role="status">
               {transition === "saving"
@@ -604,6 +607,7 @@ export default function EuropaWarClient() {
                 className={speed === s ? styles.active : ""}
                 disabled={setup || transition !== null}
                 aria-label={`${s} kat hız`}
+                title={`${s}×: saniyede en fazla ${s * 2} oyun saati; hesaplama tamamlanınca ilerler`}
                 onClick={() => setSpeed(s)}
               >
                 {s}×
@@ -829,7 +833,10 @@ export default function EuropaWarClient() {
               <h3>Harekât günlüğü</h3>
               {shown.events.map((e, i) => (
                 <div key={`${e.day}-${i}`}>
-                  <time>{dateLabel(e.day)}</time>
+                  <time>
+                    {dateLabel(e.day)}
+                    {e.hour !== undefined && ` · ${hourLabel(e.hour)}`}
+                  </time>
                   <p className={e.kind === "war" ? styles.red : ""}>{e.text}</p>
                 </div>
               ))}

@@ -1,7 +1,8 @@
 import type { World } from "./types";
+import { MAX_CAMPAIGN_HOUR, worldHour } from "./time";
 
-/** Real-time breathing room between game days at 1×, after worker completion. */
-export const SIMULATION_DAY_MS = 2_000;
+/** At 1× one game hour per 500 ms, always waiting for worker completion. */
+export const SIMULATION_HOUR_MS = 500;
 
 export type SimulationRequest = {
   type: "advance";
@@ -60,7 +61,7 @@ export class SimulationController {
     this.clearTimer = options.clearTimer ?? ((timer) => clearTimeout(timer));
   }
 
-  /** Warm the worker so its code can be cached before the first day starts. */
+  /** Warm the worker so its code can be cached before the first hour starts. */
   initialize() {
     if (this.disposed || this.worker) return;
     try {
@@ -92,14 +93,14 @@ export class SimulationController {
         }
         if (data.type === "error") {
           this.fail(
-            "Gün hesaplanamadı. Zaman duraklatıldı; mevcut sefer korunuyor.",
+            "Oyun saati hesaplanamadı. Zaman duraklatıldı; mevcut sefer korunuyor.",
           );
           return;
         }
         this.world = data.world;
         this.workerRevision = pending.revision;
         this.options.onWorld(data.world);
-        // Waiting after completion avoids queued days on slower devices.
+        // Waiting after completion avoids queued hours on slower devices.
         this.schedule();
       };
       worker.onerror = (event) => {
@@ -194,11 +195,17 @@ export class SimulationController {
     this.scheduled = this.setTimer(() => {
       this.scheduled = null;
       this.advance();
-    }, SIMULATION_DAY_MS / this.speed);
+    }, SIMULATION_HOUR_MS / this.speed);
   }
 
   private advance() {
     if (this.disposed || !this.running || !this.world || this.pending) return;
+    if (worldHour(this.world) >= MAX_CAMPAIGN_HOUR) {
+      this.fail(
+        "Seferin desteklenen tarih sınırına ulaşıldı. Zaman duraklatıldı; seferini kaydedebilir veya yeni sefer başlatabilirsin.",
+      );
+      return;
+    }
     if (this.options.canRun?.() === false) {
       this.setRunning(false);
       return;
@@ -212,7 +219,7 @@ export class SimulationController {
       revision,
       timeout: this.setTimer(() => {
         this.fail(
-          "Gün hesaplaması zaman aşımına uğradı. Zaman duraklatıldı; mevcut sefer korunuyor. Tekrar ▶ ile deneyebilirsin.",
+          "Saat hesaplaması zaman aşımına uğradı. Zaman duraklatıldı; mevcut sefer korunuyor. Tekrar ▶ ile deneyebilirsin.",
         );
       }, this.options.timeoutMs ?? 20_000),
     };

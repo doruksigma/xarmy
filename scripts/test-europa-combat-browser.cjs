@@ -189,7 +189,11 @@ function fixture(count, weak = false) {
               .world,
         );
         decodeSave(
-          JSON.stringify({ format: "xarmy-europa-1936", version: 2, world }),
+          JSON.stringify({
+            format: "xarmy-europa-1936",
+            version: world.version,
+            world,
+          }),
         );
         if (name)
           writeFileSync(
@@ -339,7 +343,7 @@ function fixture(count, weak = false) {
 
       if (!mobile) {
         // DOM observations only: record actual date changes produced by the worker.
-        const dayIntervals = async (rate) => {
+        const hourIntervals = async (rate) => {
           await speed(rate);
           const dates = page.evaluate(
             () =>
@@ -377,10 +381,10 @@ function fixture(count, weak = false) {
             .slice(1)
             .map((change, i) => change.time - changes[i].time);
         };
-        const normal = await dayIntervals(1);
+        const normal = await hourIntervals(1);
         assert.ok(
-          normal.every((delay) => delay >= 1800),
-          `1x days advanced too quickly: ${normal}`,
+          normal.every((delay) => delay >= 450),
+          `1x hours advanced too quickly: ${normal}`,
         );
         const frozenDate = await page.getByTestId("game-date").textContent();
         await page.waitForTimeout(2200);
@@ -388,8 +392,8 @@ function fixture(count, weak = false) {
           await page.getByTestId("game-date").textContent(),
           frozenDate,
         );
-        const accelerated = await dayIntervals(5);
-        assert.ok(accelerated.every((delay) => delay >= 350));
+        const accelerated = await hourIntervals(5);
+        assert.ok(accelerated.every((delay) => delay >= 90));
         assert.ok(
           accelerated.reduce((a, b) => a + b) <
             normal.reduce((a, b) => a + b) * 0.85,
@@ -397,7 +401,7 @@ function fixture(count, weak = false) {
         );
         samples.push({ label, view: "campaign-clock", normal, accelerated });
         passed(
-          "desktop: actual 1x days wait at least two seconds, pause freezes the date and 5x accelerates it",
+          "desktop: actual 1x hours wait at least half a second, pause freezes the date and 5x accelerates it",
         );
       }
 
@@ -493,12 +497,16 @@ function fixture(count, weak = false) {
         }
         await speed(5);
         await play();
+        // A one-division fight needs roughly 216 real hourly steps. Allow
+        // the complete campaign clock on software WebGL without skipping time.
         await page.waitForFunction(
           () =>
             Number(
               document.querySelector('[data-testid="war-map-3d"]')?.dataset
                 .captures,
             ) > 0,
+          null,
+          { timeout: 180000 },
         );
         await page.waitForFunction(() => {
           const d = document.querySelector(
@@ -539,8 +547,8 @@ function fixture(count, weak = false) {
         await play();
         const replay = await observedFrame("tankShells", 0, true);
         await pauseVisibleFrame();
-        await screenshot("one-day-resolved-battle");
-        const resolved = await save("one-day-resolved-battle");
+        await screenshot("short-resolved-battle");
+        const resolved = await save("short-resolved-battle");
         assert.ok(
           resolved.countries.turkey.casualties >
             short.world.countries.turkey.casualties,
@@ -556,7 +564,7 @@ function fixture(count, weak = false) {
           ),
           "The defender has already left the frontline",
         );
-        samples.push({ label, view: "one-day-resolved-battle", ...replay });
+        samples.push({ label, view: "short-resolved-battle", ...replay });
         await speed(1);
         await play();
         await page.waitForFunction(() => {
@@ -572,7 +580,7 @@ function fixture(count, weak = false) {
         });
         await pause();
         passed(
-          "desktop: a real one-day rout at 5x visibly fires once and its bounded recent-combat presentation expires",
+          "desktop: a real short rout at 5x visibly fires once and its bounded recent-combat presentation expires",
         );
       }
       await motion("reduced", "reduced");

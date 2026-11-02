@@ -89,7 +89,7 @@ test("Aynı kimliğin farklı içerik veya tarihle gönderilmesi çatışmadır;
   );
 });
 
-test("Sıra atlama ve gelecek tarih reddedilir; günlük sınır etiketi saatlik çözümleme yapmaz", () => {
+test("Sıra atlama ve gelecek saat reddedilir; komut günlüğü gerçek oyun saatini saklar", () => {
   const { world, command } = buildFixture();
   assert.equal(
     executeCommand(world, { ...command, commandId: "turkey:2" }, world.player)
@@ -102,14 +102,17 @@ test("Sıra atlama ve gelecek tarih reddedilir; günlük sınır etiketi saatlik
   );
   assert.equal(
     executeCommand(world, { ...command, issuedTick: 1 }, world.player).code,
-    "INVALID_COMMAND",
+    "FUTURE_TICK",
   );
   world.day = 7;
   assert.equal(commandTick(world), 168);
+  world.hour = 7;
+  assert.equal(commandTick(world), 175);
   const issued = createCommand(world, { type: "difficulty", value: "easy" });
   const applied = executeCommand(world, issued, world.player);
   assert.equal(applied.world.day, 7);
-  assert.equal(applied.world.commandState!.receipts[0].appliedTick, 168);
+  assert.equal(applied.world.hour, 7);
+  assert.equal(applied.world.commandState!.receipts[0].appliedTick, 175);
 });
 
 test("Güvenilir aktörle uyuşmayan ülke ve başka ülkenin tümeni üzerinden emir verilemez", () => {

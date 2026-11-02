@@ -80,7 +80,7 @@ test("Beş dolu kayıt yuvası değişmedikçe listeleme seferleri tekrar çöz�
     first[0].label = "Changed by caller";
     for (let i = 0; i < 100; i++) {
       const summaries = listSaves();
-      assert.equal(summaries[0].label, "Türkiye · 0. gün");
+      assert.equal(summaries[0].label, "Türkiye · 0. gün · 00:00");
       assert.ok(summaries.every((s) => s.valid));
     }
     assert.equal(
@@ -92,13 +92,30 @@ test("Beş dolu kayıt yuvası değişmedikçe listeleme seferleri tekrar çöz�
     storage.setItem(slotKey("auto-1"), encodeSave(w));
     assert.equal(
       listSaves().find((s) => s.slot === "auto-1")!.label,
-      "Türkiye · 14. gün",
+      "Türkiye · 14. gün · 00:00",
     );
     assert.equal(
       parse.mock.callCount(),
       6,
       "Yalnızca değişen yuva tekrar doğrulanmalı",
     );
+    w.hour = 9;
+    storage.setItem(slotKey("auto-1"), encodeSave(w));
+    assert.equal(
+      listSaves().find((s) => s.slot === "auto-1")!.label,
+      "Türkiye · 14. gün · 09:00",
+    );
+    assert.equal(
+      parse.mock.callCount(),
+      7,
+      "Aynı gün içindeki saat değişimi yalnızca ilgili yuvayı yeniden doğrulamalı",
+    );
+    for (let i = 0; i < 100; i++)
+      assert.equal(
+        listSaves().find((s) => s.slot === "auto-1")!.label,
+        "Türkiye · 14. gün · 09:00",
+      );
+    assert.equal(parse.mock.callCount(), 7);
   }));
 
 test("Önbellek dışarıdan değişen ve silinen kayıtları algılar; yükleme ve içe aktarma doğrulamayı atlamaz", () =>
@@ -127,7 +144,7 @@ test("Önbellek dışarıdan değişen ve silinen kayıtları algılar; yükleme
     assert.throws(() => decodeSave(badRaw));
     w.day = 20;
     storage.setItem(slotKey("slot-1"), encodeSave(w));
-    assert.equal(listSaves()[0].label, "Türkiye · 20. gün");
+    assert.equal(listSaves()[0].label, "Türkiye · 20. gün · 00:00");
     storage.removeItem(slotKey("slot-1"));
     assert.deepEqual(listSaves()[0], {
       slot: "slot-1",
@@ -159,20 +176,31 @@ test("Aynı pencerenin kayıt bildirimi ancak başarılı yazmadan sonra gelir",
     const w = createWorld("turkey");
     let notifications = 0;
     const days: number[] = [];
+    const hours: number[] = [];
     events.addEventListener(SAVE_CHANGE_EVENT, () => {
       notifications++;
-      days.push(loadLocal("slot-1").day);
-      assert.equal(listSaves()[0].label, `Türkiye · ${days.at(-1)}. gün`);
+      const saved = loadLocal("slot-1");
+      days.push(saved.day);
+      hours.push(saved.hour);
+      assert.equal(
+        listSaves()[0].label,
+        `Türkiye · ${days.at(-1)}. gün · ${String(hours.at(-1)).padStart(2, "0")}:00`,
+      );
     });
     saveLocal("slot-1", w);
     w.day = 7;
+    w.hour = 13;
     saveLocal("slot-1", w);
     assert.equal(notifications, 2);
     assert.deepEqual(days, [0, 7]);
+    assert.deepEqual(hours, [0, 13]);
     storage.failWrite = true;
     w.day = 8;
+    w.hour = 4;
     assert.throws(() => saveLocal("slot-1", w), /Cihaz kaydı yapılamadı/);
     assert.equal(notifications, 2);
-    assert.equal(loadLocal("slot-1").day, 7);
-    assert.equal(listSaves()[0].label, "Türkiye · 7. gün");
+    const committed = loadLocal("slot-1");
+    assert.equal(committed.day, 7);
+    assert.equal(committed.hour, 13);
+    assert.equal(listSaves()[0].label, "Türkiye · 7. gün · 13:00");
   }));
