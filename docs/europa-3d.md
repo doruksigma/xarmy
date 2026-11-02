@@ -19,6 +19,11 @@ ikmal, hava ve deniz renklerini seçer.
   seçili tümenlere git. Odak haritadayken WASD/oklar kaydırır; Home sıfırlar.
 - Alttaki komutan portreleri, 12 tümen sınırı ve hedef ülkeye özel sınır
   yerleşimi aynı sefer komutlarını kullanır.
+- **Animasyonlar:** Otomatik cihazın hareket tercihine uyar; Açık hareketi
+  etkinleştirir; Azaltılmış sabit görünüm kullanır. Tercih cihazda saklanır.
+- Normal **1×** hızda bir oyun günü yaklaşık **2 saniye** sürer; 2–5×
+  aynı taban hızın çarpanlarıdır. Hesaplama süresi buna eklenebilir; yavaş
+  cihazlarda kaçırılan günler biriktirilip peş peşe işletilmez.
 
 ## Grafik ve maliyet
 
@@ -86,14 +91,22 @@ gövde alanları gözetilerek yerleştirilir.
 
 Yürüyen piyadenin adımları, tank paletleri, kamyon tekerlekleri ve çekilen top
 ayrı hareket eder. Yalnız gerçek muharebeye katılan gruplarda namlu alevi,
-geri tepme, top mermisi yayı ve isabet etkileri gösterilir; kamyon destek
+geri tepme, piyade iz mermisi, tank mermisi, top mermisi yayı ve isabet
+etkileri gösterilir; kamyon destek
 animasyonu kullanır. İlk atış savaşın başlamasına bağlıdır; kısa muharebe
 önceki animasyon döngüsünün bitmesini beklemez. Gerçek düşman şehrine varıp
 kontrolü değiştiren grup kısa bir toparlanma ve bayrak kaldırma animasyonu
-oynatır. Duraklatma ve
-azaltılmış hareket bu birlik animasyonlarını dondurur. Kayıt yüklemek veya
+oynatır. Duraklatma ve azaltılmış hareket bu birlik animasyonlarını dondurur. Kayıt yüklemek veya
 barışla toprak devretmek ele geçirme animasyonu başlatmaz. Bunlar mevcut
 savaş sonuçlarını görselleştirir; ilave hasar, cephane veya fetih hesabı yapmaz.
+
+Atış saati yalnız çizilen karelerde başlar; hazırlık güncellemeleri ilk atışı
+tüketmez. Bir günde sonuçlanan gerçek muharebenin kısa gösterimi **Son çatışma**
+etiketi taşır ve ardından birlik güncel konumuna geçer. Bu gösterim yalnız
+gerçek temas/kayıp kanıtıyla hayatta kalan katılımcılara uygulanır; boş şehir,
+yüklenen kayıt, yıpranma veya yedek birlikler için çatışma uydurulmaz. Yeni emir
+ve yeni savaş eski gösterimi iptal eder. Azaltılmış hareket, geçmiş gösterimi
+kaldırıp güncel konumu gösterir. Canlı savaşlar **Çatışma** etiketi taşır.
 
 Bu aşama; tam dünya haritası, yeni saatlik savaş motoru, karargâh/kolordu
 zinciri, modüler tasarımcılar, ortak kapasiteli lojistik akışı veya yüksek

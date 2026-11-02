@@ -380,3 +380,28 @@ sınırları geçerlidir.
 
 Bu ölçümler fiziksel telefon veya Windows ekran kartlarında 60 FPS garantisi
 vermez; tarayıcı doğrulaması yazılımsal WebGL ve mobil emülasyon kullanır.
+
+### Çatışma görünürlüğü ve tempo düzeltmesi — 2 Kasım 2026
+
+- Bir ve iki tümenli gruplara görünür piyade iz mermileri ve tank mermileri,
+  daha uzun namlu alevi ve ateş duruşu eklendi. Animasyon saati yalnız gerçek
+  çizim karesinde başlatılır; hazırlık güncellemesi ilk atışı tüketmez.
+- Aynı günde savunmacının geri çekilmesiyle biten gerçek çatışmalar, önceki
+  temas ve kayıp kanıtından kısa **Son çatışma** gösterimi oluşturur. Ölü
+  birlik, yedek, yıpranma, boş şehir veya yüklenen kayıt savaş üretmez.
+  Yeni emir/savaş eski gösterimi iptal eder; gerçek sefer verisi bekletilmez.
+- Normal 1× hız 2 saniye/gün tabanına alındı; 2–5× çarpanları ve tek bekleyen
+  worker isteği korunur. Birlik konum geçişi 650 ms'ye yayıldı.
+- Animasyonlar menüsünde Otomatik/Açık/Azaltılmış tercihi kalıcıdır ve
+  Otomatik sistem tercihindeki değişiklikleri izler. Azaltılmış görünüm kısa
+  geçmiş gösterimini kaldırıp güncel konumu gösterir. 2D savaş işareti artık
+  sırf cihaz dokunmatik diye kapatılmaz; sistemin azaltılmış hareket tercihi
+  korunur.
+- `npm run test:europa`: **381/381** geçti. Üretim derlemesi ve TypeScript
+  geçti. `scripts/test-europa-combat-browser.cjs`: **17/17** geçti; masaüstü
+  ve mobil emülasyonda sayfa/konsol/istek hatası sıfır. Gerçek 1/2 tümenli
+  savaşlar, dört tümenli top atışı, 5× hızda tek günlük savaş, gerçek hasar,
+  fetih, efektlerin sona ermesi ve duraklatma kontrol edildi.
+- Bu tarayıcı çalıştırmasında 1× gün aralıkları 2024,1 ve 2015,3 ms; 5×
+  aralıkları 417,8 ve 419,8 ms ölçüldü. Bunlar tek test ortamının zamanlama
+  gözlemleridir, fiziksel cihaz performans garantisi değildir.

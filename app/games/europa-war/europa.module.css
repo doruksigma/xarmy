@@ -1011,7 +1011,7 @@
     opacity: 1;
   }
 }
-@media (prefers-reduced-motion: reduce), (pointer: coarse) {
+@media (prefers-reduced-motion: reduce) {
   .battlePulse {
     animation: none;
   }

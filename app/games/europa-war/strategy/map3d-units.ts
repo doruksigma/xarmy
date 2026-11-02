@@ -58,6 +58,8 @@ export interface UnitModelStats {
   trucks: number;
   combatFormations: number;
   muzzleFlashes: number;
+  infantryTracers: number;
+  tankShells: number;
   shells: number;
   impacts: number;
   captures: number;
@@ -451,6 +453,7 @@ export function createUnitModels(
     scene.add(mesh);
   }
   const flashGeometry = new THREE.IcosahedronGeometry(1, 0),
+    tracerGeometry = new THREE.CylinderGeometry(0.1, 0.1, 1, 5),
     shellGeometry = new THREE.CapsuleGeometry(0.16, 0.68, 2, 6),
     impactGeometry = new THREE.IcosahedronGeometry(1, 1);
   const flashMaterial = new THREE.MeshBasicMaterial({
@@ -472,6 +475,16 @@ export function createUnitModels(
       flashMaterial,
       MAX_UNIT_EFFECTS,
     ),
+    tracers = new THREE.InstancedMesh(
+      tracerGeometry,
+      shellMaterial,
+      MAX_UNIT_EFFECTS,
+    ),
+    tankShells = new THREE.InstancedMesh(
+      shellGeometry,
+      shellMaterial,
+      MAX_UNIT_EFFECTS,
+    ),
     shells = new THREE.InstancedMesh(
       shellGeometry,
       shellMaterial,
@@ -483,20 +496,32 @@ export function createUnitModels(
       MAX_UNIT_EFFECTS,
     );
   flashes.name = "unit-muzzle-flashes";
+  tracers.name = "unit-infantry-tracers";
+  tankShells.name = "unit-tank-shells";
   shells.name = "unit-artillery-shells";
   impacts.name = "unit-shell-impacts";
-  for (const mesh of [flashes, shells, impacts]) {
+  for (const mesh of [flashes, tracers, tankShells, shells, impacts]) {
     mesh.count = 0;
     mesh.frustumCulled = false;
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     scene.add(mesh);
   }
-  const overlayBatches = [accents, flags, flashes, shells, impacts];
+  const overlayBatches = [
+    accents,
+    flags,
+    flashes,
+    tracers,
+    tankShells,
+    shells,
+    impacts,
+  ];
   const transform = new THREE.Object3D(),
+    weaponMount = new THREE.Object3D(),
     parent = new THREE.Object3D(),
     color = new THREE.Color(),
     origin = new THREE.Vector3(),
     projectile = new THREE.Vector3(),
+    destination = new THREE.Vector3(),
     direction = new THREE.Vector3(),
     up = new THREE.Vector3(0, 1, 0);
   const counts = new Uint32Array(batches.length);
@@ -510,6 +535,8 @@ export function createUnitModels(
     trucks: 0,
     combatFormations: 0,
     muzzleFlashes: 0,
+    infantryTracers: 0,
+    tankShells: 0,
     shells: 0,
     impacts: 0,
     captures: 0,
@@ -522,7 +549,8 @@ export function createUnitModels(
   let disposed = false,
     clock = 0,
     lastNow = -1,
-    frame = 0;
+    frame = 0,
+    effectScale = 1;
   const put = (
     batch: number,
     x: number,
@@ -548,6 +576,16 @@ export function createUnitModels(
         -x * Math.sin(yaw) + z * Math.cos(yaw),
       )
       .applyMatrix4(parent.matrix);
+  const flashAtOrigin = (size: number) => {
+    if (stats.muzzleFlashes >= MAX_UNIT_EFFECTS) return;
+    transform.position.copy(origin);
+    transform.rotation.set(clock * 7, clock * 11, clock * 13);
+    transform.scale
+      .set(size, size * 0.68, size * 1.4)
+      .multiplyScalar(effectScale);
+    transform.updateMatrix();
+    flashes.setMatrixAt(stats.muzzleFlashes++, transform.matrix);
+  };
   const flash = (
     x: number,
     y: number,
@@ -555,13 +593,40 @@ export function createUnitModels(
     yaw: number,
     size: number,
   ) => {
-    if (stats.muzzleFlashes >= MAX_UNIT_EFFECTS) return;
     point(x, y, z, yaw);
-    transform.position.copy(origin);
-    transform.rotation.set(clock * 7, clock * 11, clock * 13);
-    transform.scale.set(size, size * 0.68, size * 1.4);
+    flashAtOrigin(size);
+  };
+  // Bounded, pooled projectiles make one/two-division battles readable too.
+  // They are presentation only: all damage remains in the daily simulation.
+  const flight = (
+    mesh: THREE.InstancedMesh,
+    index: number,
+    target: THREE.Vector3,
+    t: number,
+    arc: number,
+    width: number,
+    length: number,
+    targetHeight = 0,
+  ) => {
+    destination.copy(target).y += targetHeight;
+    projectile.lerpVectors(origin, destination, t);
+    projectile.y += 4 * t * (1 - t) * arc;
+    direction.subVectors(destination, origin);
+    direction.y += 4 * (1 - 2 * t) * arc;
+    direction.normalize();
+    transform.position.copy(projectile);
+    transform.quaternion.setFromUnitVectors(up, direction);
+    transform.scale.set(width, length, width).multiplyScalar(effectScale);
     transform.updateMatrix();
-    flashes.setMatrixAt(stats.muzzleFlashes++, transform.matrix);
+    mesh.setMatrixAt(index, transform.matrix);
+  };
+  const impact = (target: THREE.Vector3, t: number, size: number) => {
+    if (stats.impacts >= MAX_UNIT_EFFECTS) return;
+    transform.position.copy(target).y += 0.35 + t * 0.75;
+    transform.rotation.set(0, clock, 0);
+    transform.scale.set(size, 0.7 + t * 1.6, size).multiplyScalar(effectScale);
+    transform.updateMatrix();
+    impacts.setMatrixAt(stats.impacts++, transform.matrix);
   };
   return {
     get stats(): Readonly<UnitModelStats> {
@@ -587,11 +652,18 @@ export function createUnitModels(
         stats.trucks =
         stats.combatFormations =
         stats.muzzleFlashes =
+        stats.infantryTracers =
+        stats.tankShells =
         stats.shells =
         stats.impacts =
         stats.captures =
           0;
       stats.detail = options.distance < (options.quality === "low" ? 340 : 720);
+      effectScale = THREE.MathUtils.clamp(
+        Number.isFinite(options.distance) ? options.distance / 420 : 1,
+        1,
+        2,
+      );
       let models = 0;
       for (let f = 0; f < formations.length; f++) {
         const formation = formations[f],
@@ -679,21 +751,70 @@ export function createUnitModels(
             badgeScale = 1;
           if (kind === "infantry") {
             const shot = combatElapsed % (1.2 + battleOffset * 0.18),
-              kick = combat ? Math.max(0, 1 - shot / 0.16) * 0.11 : 0;
+              kick = combat ? Math.max(0, 1 - shot / 0.34) * 0.25 : 0;
             const bob =
               Math.abs(walk) * 0.055 + rally * Math.sin(clock * 9) * 0.04;
-            put(0, 0, bob, -kick, -kick * 0.15);
-            put(1, -0.36, 1.67, 0, walk * 0.37 + rally * 0.08);
-            put(1, 0.36, 1.67, 0, -walk * 0.37 - rally * 0.08);
-            if (stats.detail) put(5, 0, bob, -kick, -kick * 0.15);
-            if (combat && shot < 0.075)
-              flash(0.37, 2.9 + bob, 2 - kick, 0, 0.45);
-            badgeY += bob;
+            const stance = combat ? -0.18 : 0,
+              pitch = (combat ? 0.045 : 0) - kick * 0.22;
+            put(0, 0, bob + stance, -kick, pitch);
+            put(
+              1,
+              -0.36,
+              1.67,
+              combat ? 0.12 : 0,
+              walk * 0.37 + rally * 0.08 + (combat ? -0.13 : 0),
+            );
+            put(
+              1,
+              0.36,
+              1.67,
+              combat ? -0.16 : 0,
+              -walk * 0.37 - rally * 0.08 + (combat ? 0.13 : 0),
+            );
+            if (stats.detail) put(5, 0, bob + stance, -kick, pitch);
+            if (combat) {
+              // Match the actual rifle muzzle after the body's brace/recoil transform.
+              weaponMount.position.set(0, bob + stance, -kick);
+              weaponMount.rotation.set(pitch, 0, 0);
+              weaponMount.scale.setScalar(1);
+              weaponMount.updateMatrix();
+              origin
+                .set(0.37, 2.9, 1.97)
+                .applyMatrix4(weaponMount.matrix)
+                .applyMatrix4(parent.matrix);
+              if (shot < 0.24) flashAtOrigin(0.85);
+              if (
+                shot >= 0.04 &&
+                shot < 0.7 &&
+                stats.infantryTracers < MAX_UNIT_EFFECTS
+              )
+                flight(
+                  tracers,
+                  stats.infantryTracers++,
+                  combat.target,
+                  (shot - 0.04) / 0.66,
+                  0.35,
+                  1.6,
+                  THREE.MathUtils.clamp(
+                    origin.distanceTo(combat.target) * 0.14,
+                    3,
+                    9,
+                  ),
+                  2.8,
+                );
+              if (shot >= 0.7 && shot < 1.05)
+                impact(
+                  combat.target,
+                  (shot - 0.7) / 0.35,
+                  0.8 + (shot - 0.7) * 4,
+                );
+            }
+            badgeY += bob + stance;
             badgeZ -= kick;
             stats.infantry++;
           } else if (kind === "tank") {
             const shot = combatElapsed % (2.8 + battleOffset * 0.32),
-              kick = combat ? Math.max(0, 1 - shot / 0.36) * 0.38 : 0;
+              kick = combat ? Math.max(0, 1 - shot / 0.55) * 0.55 : 0;
             const bob = Math.abs(walk) * 0.026;
             const aim = combat
               ? Math.atan2(
@@ -722,8 +843,31 @@ export function createUnitModels(
                 formation.moving ? ((clock * 1.3) % 1) * 0.38 : 0,
               );
             }
-            if (combat && shot < 0.12)
-              flash(0, 2.3 + bob, 4.21 - kick, aim, 0.95);
+            if (combat) {
+              point(0, 2.3 + bob, 4.21 - kick, aim);
+              if (shot < 0.28) flashAtOrigin(1.45);
+              if (
+                shot >= 0.08 &&
+                shot < 1.2 &&
+                stats.tankShells < MAX_UNIT_EFFECTS
+              )
+                flight(
+                  tankShells,
+                  stats.tankShells++,
+                  combat.target,
+                  (shot - 0.08) / 1.12,
+                  2.5,
+                  2.1,
+                  2.3,
+                  0.8,
+                );
+              if (shot >= 1.2 && shot < 1.85)
+                impact(
+                  combat.target,
+                  (shot - 1.2) / 0.65,
+                  1.5 + (shot - 1.2) * 5,
+                );
+            }
             badgeX = 1.07 * Math.cos(aim) + 0.12 * Math.sin(aim);
             badgeZ = -1.07 * Math.sin(aim) + 0.12 * Math.cos(aim);
             badgeY = 2.22 + bob;
@@ -747,14 +891,14 @@ export function createUnitModels(
                 0.67,
               );
             if (combat) {
-              if (shot < 0.14)
-                flash(0, 1.96 - kick * 0.15, 2.96 - kick, 0, 1.2);
+              if (shot < 0.28)
+                flash(0, 1.96 - kick * 0.15, 2.96 - kick, 0, 1.5);
               if (
                 shot >= 0.14 &&
                 shot < 1.65 &&
                 stats.shells < MAX_UNIT_EFFECTS
               ) {
-                point(0, 1.96, 2.96);
+                point(0, 1.96 - kick * 0.15, 2.96 - kick);
                 const t = (shot - 0.14) / 1.51;
                 const arc = Math.min(
                   20,
@@ -767,7 +911,7 @@ export function createUnitModels(
                 direction.normalize();
                 transform.position.copy(projectile);
                 transform.quaternion.setFromUnitVectors(up, direction);
-                transform.scale.setScalar(1.3);
+                transform.scale.setScalar(1.3 * effectScale);
                 transform.updateMatrix();
                 shells.setMatrixAt(stats.shells++, transform.matrix);
               }
@@ -870,6 +1014,8 @@ export function createUnitModels(
       }
       flags.count = stats.captures;
       flashes.count = stats.muzzleFlashes;
+      tracers.count = stats.infantryTracers;
+      tankShells.count = stats.tankShells;
       shells.count = stats.shells;
       impacts.count = stats.impacts;
       for (const mesh of overlayBatches) {
@@ -892,6 +1038,8 @@ export function createUnitModels(
         stats.trucks =
         stats.combatFormations =
         stats.muzzleFlashes =
+        stats.infantryTracers =
+        stats.tankShells =
         stats.shells =
         stats.impacts =
         stats.captures =
@@ -900,7 +1048,7 @@ export function createUnitModels(
         scene.remove(mesh);
         mesh.dispose();
       }
-      for (const mesh of [accents, flags, flashes, shells, impacts]) {
+      for (const mesh of overlayBatches) {
         scene.remove(mesh);
         mesh.dispose();
       }
@@ -909,6 +1057,7 @@ export function createUnitModels(
         accentGeometry,
         flagGeometry,
         flashGeometry,
+        tracerGeometry,
         shellGeometry,
         impactGeometry,
       ])

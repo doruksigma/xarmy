@@ -171,6 +171,12 @@ for 3 and a truck for 4+. The same silhouettes remain at every quality and
 zoom; actual division types, equipment, selection and orders remain unchanged.
 Movement, actual combat (including arcing artillery shells) and military
 capture animations are distinct and freeze with the campaign or reduced motion.
+Infantry tracers and tank shells make one- and two-division fights visible too;
+one-day routs receive a short, labelled playback of the actual exchange.
+The **Animasyonlar** selector follows the device preference by default and offers
+explicit full/reduced motion. Normal **1×** speed now waits two seconds per game
+day; 2–5× retain their relative multipliers. Combat/pacing browser checks are in
+`scripts/test-europa-combat-browser.cjs`.
 All valid city regions receive buildings; isolated cross-shaped street bars
 have been removed. Scenery and miniature parts use instanced rendering.
 Only player-controlled, capital-connected railway infrastructure and trains

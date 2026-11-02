@@ -11,6 +11,17 @@ import { TERRAINS } from "./catalog";
 import styles from "./map3d.module.css";
 
 const QUALITY_KEY = "xarmy-europa-3d-quality-v1";
+const MOTION_KEY = "xarmy-europa-3d-motion-v1";
+type MotionPreference = "system" | "full" | "reduced";
+const initialMotionPreference = (): MotionPreference => {
+  try {
+    const value = localStorage.getItem(MOTION_KEY);
+    if (value === "full" || value === "reduced") return value;
+  } catch {
+    /* The setting still works when preferences cannot be stored. */
+  }
+  return "system";
+};
 const normalize = (value: string) =>
   value
     .toLocaleLowerCase("tr-TR")
@@ -38,9 +49,15 @@ function WarMap3D(
   const live = useRef(props);
   live.current = props;
   const [quality, setQuality] = useState<GraphicsQuality>(initialQuality);
-  const [reducedMotion] = useState(
+  const [motionPreference, setMotionPreference] = useState<MotionPreference>(
+    initialMotionPreference,
+  );
+  const [systemReducedMotion, setSystemReducedMotion] = useState(
     () => window.matchMedia("(prefers-reduced-motion: reduce)").matches,
   );
+  const reducedMotion =
+    motionPreference === "reduced" ||
+    (motionPreference === "system" && systemReducedMotion);
   const [search, setSearch] = useState("");
   const [metrics, setMetrics] = useState<Map3DMetrics | null>(null);
   const [error, setError] = useState("");
@@ -59,6 +76,7 @@ function WarMap3D(
           live.current.onUnavailable?.(message);
         },
       );
+      renderer.current.setReducedMotion(reducedMotion);
     } catch (error) {
       const message =
         "Bu cihazda 3D harita başlatılamadı. Seferin korunuyor; 2D haritayla devam edebilirsin.";
@@ -81,6 +99,19 @@ function WarMap3D(
       localStorage.setItem(QUALITY_KEY, quality);
     } catch {}
   }, [quality]);
+  useEffect(() => {
+    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const update = () => setSystemReducedMotion(query.matches);
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
+  useEffect(() => {
+    renderer.current?.setReducedMotion(reducedMotion);
+    try {
+      localStorage.setItem(MOTION_KEY, motionPreference);
+    } catch {}
+  }, [motionPreference, reducedMotion]);
   const matches = search.trim()
     ? MAP.provinces
         .filter((p) => normalize(p.name).includes(normalize(search)))
@@ -158,6 +189,28 @@ function WarMap3D(
               </option>
             ))}
           </select>
+        </label>
+        <label>
+          ANİMASYONLAR
+          <select
+            aria-label="Animasyonlar"
+            value={motionPreference}
+            title="Otomatik, cihazının hareket azaltma tercihini izler. Açık, hareket ve çatışma animasyonlarını oynatır."
+            onChange={(e) =>
+              setMotionPreference(e.target.value as MotionPreference)
+            }
+          >
+            <option value="system">Otomatik</option>
+            <option value="full">Açık</option>
+            <option value="reduced">Azaltılmış</option>
+          </select>
+          {reducedMotion && (
+            <small className={styles.motionNote}>
+              {motionPreference === "system"
+                ? "Cihaz tercihi: azaltılmış"
+                : "Hareketler azaltıldı"}
+            </small>
+          )}
         </label>
       </div>
       <div

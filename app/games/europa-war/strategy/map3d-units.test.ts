@@ -89,7 +89,7 @@ test("1/2/3/4/12 tümen, gerçek tipleri değiştirmeden tam istenen sayı sembo
   assert.equal(unitDisplayLayout(NaN).length, 0);
   assert.equal(
     scene.children.length,
-    18,
+    20,
     "shared batches do not grow with army count",
   );
   for (const m of scene.children as THREE.InstancedMesh[]) {
@@ -133,7 +133,11 @@ test("her tür hareket animasyonu oynatır; hareketsiz durumda kendi kendine yü
     assert.notDeepEqual(matrices(scene, name), before[i], name),
   );
   assert.equal(
-    models.stats.muzzleFlashes + models.stats.shells + models.stats.impacts,
+    models.stats.muzzleFlashes +
+      models.stats.shells +
+      models.stats.impacts +
+      models.stats.infantryTracers +
+      models.stats.tankShells,
     0,
   );
   group.moving = false;
@@ -213,6 +217,128 @@ test("duraklatma ve azaltılmış hareket yürüyüşü, taret tepkisini ve uça
   assert.deepEqual(sceneSnapshot(scene), active);
   models.update([group], 2400, { ...settings, reduced: true });
   assert.deepEqual(sceneSnapshot(scene), active);
+  models.dispose();
+});
+
+test("tek piyadenin çatışması kısa flaş yerine iz mermisi, duruş, geri tepme ve isabet gösterir", () => {
+  const scene = new THREE.Scene(),
+    models = createUnitModels(scene),
+    group = formation(1);
+  const options = { quality: "low" as const, distance: 1000 };
+  models.update([group], 0, options);
+  const idle = matrices(scene, "infantry-body");
+  group.combat = { key: "rifle-only", target: new THREE.Vector3(90, 12, 80) };
+  const before = JSON.stringify(group);
+  models.update([group], 500, options);
+  assert.notDeepEqual(
+    matrices(scene, "infantry-body"),
+    idle,
+    "rifleman braces to fire",
+  );
+  assert.equal(models.stats.muzzleFlashes, 1);
+  const body = new THREE.Matrix4();
+  mesh(scene, "infantry-body").getMatrixAt(0, body);
+  const muzzle = new THREE.Vector3(0.37, 2.9, 1.97).applyMatrix4(body);
+  const flash = new THREE.Matrix4();
+  mesh(scene, "muzzle-flashes").getMatrixAt(0, flash);
+  assert.ok(
+    muzzle.distanceTo(new THREE.Vector3().setFromMatrixPosition(flash)) <
+      0.00001,
+    "flash is attached to the rifle after the actual brace/recoil transform",
+  );
+  models.update([group], 700, options);
+  assert.equal(
+    models.stats.muzzleFlashes,
+    1,
+    "flash survives a 200ms frame interval",
+  );
+  assert.equal(models.stats.infantryTracers, 1);
+  const firstTrace = matrices(scene, "infantry-tracers");
+  models.update([group], 1000, options);
+  assert.equal(models.stats.muzzleFlashes, 0);
+  assert.equal(
+    models.stats.infantryTracers,
+    1,
+    "visible trace continues after muzzle flash",
+  );
+  assert.notDeepEqual(
+    matrices(scene, "infantry-tracers"),
+    firstTrace,
+    "trace travels toward target",
+  );
+  assert.equal(
+    models.stats.artillery + models.stats.shells + models.stats.tankShells,
+    0,
+  );
+  models.update([group], 1500, options);
+  models.update([group], 2000, options);
+  assert.ok(models.stats.impacts > 0, "rifle hit raises a visible impact");
+  assert.equal(
+    JSON.stringify(group),
+    before,
+    "effects do not mutate armies or battle state",
+  );
+  models.dispose();
+});
+
+test("iki tümen tank mermisi ve piyade izi gösterir; duraklatma, azaltılmış hareket ve savaş sonu güvenlidir", () => {
+  const scene = new THREE.Scene(),
+    models = createUnitModels(scene),
+    group = formation(2);
+  group.combat = {
+    key: "two-division-battle",
+    target: new THREE.Vector3(110, 12, 70),
+  };
+  models.update([group], 0, settings);
+  const barrel = new THREE.Matrix4(),
+    flash = new THREE.Matrix4();
+  mesh(scene, "tank-barrel").getMatrixAt(0, barrel);
+  mesh(scene, "muzzle-flashes").getMatrixAt(0, flash);
+  const muzzle = new THREE.Vector3(0, 2.3, 4.21).applyMatrix4(barrel);
+  assert.ok(
+    muzzle.distanceTo(new THREE.Vector3().setFromMatrixPosition(flash)) <
+      0.00001,
+    "tank flash follows rotated turret and recoil exactly",
+  );
+  models.update([group], 500, settings);
+  assert.equal(models.stats.infantryTracers, 1);
+  assert.equal(models.stats.tankShells, 1);
+  assert.equal(
+    models.stats.shells,
+    0,
+    "two-division group has no artillery symbol",
+  );
+  const firstShell = matrices(scene, "tank-shells");
+  models.update([group], 1000, settings);
+  assert.equal(models.stats.tankShells, 1);
+  assert.notDeepEqual(matrices(scene, "tank-shells"), firstShell);
+  const frozen = sceneSnapshot(scene);
+  models.update([group], 1500, { ...settings, paused: true });
+  assert.deepEqual(sceneSnapshot(scene), frozen);
+  models.update([group], 2000, { ...settings, reduced: true });
+  assert.deepEqual(sceneSnapshot(scene), frozen);
+  models.update([group], 2500, settings);
+  assert.equal(
+    models.stats.tankShells,
+    1,
+    "tank shell lasts longer than a single slow frame",
+  );
+  models.update([group], 3000, settings);
+  models.update([group], 3500, settings);
+  assert.equal(models.stats.tankShells, 0);
+  assert.ok(models.stats.impacts > 0);
+  group.combat = undefined;
+  models.update([group], 4000, settings);
+  assert.equal(
+    models.stats.muzzleFlashes +
+      models.stats.infantryTracers +
+      models.stats.tankShells +
+      models.stats.shells +
+      models.stats.impacts,
+    0,
+  );
+  for (const name of ["infantry-tracers", "tank-shells", "shell-impacts"])
+    assert.equal(mesh(scene, name).visible, false);
   models.dispose();
 });
 
@@ -414,11 +540,17 @@ test("çok büyük savaşta modeller ve efektler kapasiteyi aşmaz; dispose her 
   for (const m of meshes) assert.ok(m.count <= m.instanceMatrix.count, m.name);
   for (const count of [
     models.stats.shells,
+    models.stats.infantryTracers,
+    models.stats.tankShells,
     models.stats.muzzleFlashes,
     models.stats.impacts,
     models.stats.captures,
   ])
     assert.ok(count <= MAX_UNIT_EFFECTS);
+  models.update(groups, 250, { quality: "low", distance: 1500 });
+  assert.equal(models.stats.infantryTracers, MAX_UNIT_EFFECTS);
+  assert.equal(models.stats.tankShells, MAX_UNIT_EFFECTS);
+  for (const m of meshes) assert.ok(m.count <= m.instanceMatrix.count, m.name);
   models.update([], 100, settings);
   assert.ok(meshes.every((m) => !m.visible));
   models.dispose();

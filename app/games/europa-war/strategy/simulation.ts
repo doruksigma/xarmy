@@ -1,5 +1,8 @@
 import type { World } from "./types";
 
+/** Real-time breathing room between game days at 1×, after worker completion. */
+export const SIMULATION_DAY_MS = 2_000;
+
 export type SimulationRequest = {
   type: "advance";
   id: number;
@@ -191,7 +194,7 @@ export class SimulationController {
     this.scheduled = this.setTimer(() => {
       this.scheduled = null;
       this.advance();
-    }, 1000 / this.speed);
+    }, SIMULATION_DAY_MS / this.speed);
   }
 
   private advance() {

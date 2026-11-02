@@ -19,8 +19,10 @@ import {
 } from "./map3d-units";
 import {
   detectFormationCaptures,
+  detectResolvedFormationCombats,
   formationCombat,
   type FormationCapture,
+  type ResolvedFormationCombat,
 } from "./map3d-unit-events";
 import { createRailways } from "./map3d-railways";
 import { createTerrainSurfaceSampler } from "./map3d-surface";
@@ -59,6 +61,21 @@ type Overlay = {
   kind: "capital" | "army" | "city" | "sea";
 };
 type CaptureVisual = FormationCapture & { elapsed: number };
+type ResolvedCombatVisual = ResolvedFormationCombat & {
+  elapsed: number;
+  seen: boolean;
+  locations: Map<string, string>;
+  advancing: boolean;
+};
+function belongsToResolvedExchange(event: ResolvedCombatVisual, army: Army) {
+  const location = event.locations.get(army.id);
+  return (
+    location !== undefined &&
+    army.strength > 0 &&
+    (army.province === location ||
+      (event.advancing && army.province === event.province))
+  );
+}
 type Formation = UnitFormation & {
   armies: Army[];
   position: THREE.Vector3;
@@ -69,8 +86,12 @@ type Formation = UnitFormation & {
   tint: number;
   overlay: Overlay;
   captureEvent?: CaptureVisual;
+  resolvedCombat?: ResolvedCombatVisual;
+  resumeAt?: number;
 };
 const CAPTURE_DURATION = 6000;
+const RESOLVED_COMBAT_DURATION = 1800;
+const MOVEMENT_BLEND_DURATION = 650;
 const TERRAIN_COLORS = {
   plains: 0x819370,
   urban: 0x9b927b,
@@ -117,6 +138,7 @@ export class Map3DRenderer {
   >[] = [];
   private formations: Formation[] = [];
   private captureEvents: CaptureVisual[] = [];
+  private resolvedCombats: ResolvedCombatVisual[] = [];
   private lastUnitFrame = 0;
   private unitAnimationActive = false;
   private overlays: Overlay[] = [];
@@ -327,6 +349,19 @@ export class Map3DRenderer {
     this.renderer.setSize(this.width, this.height, false);
     this.markDirty();
   }
+  setReducedMotion(reduced: boolean) {
+    if (this.disposed || this.reduced === reduced) return;
+    this.reduced = reduced;
+    this.lastUnitFrame = performance.now();
+    this.unitAnimationActive = false;
+    if (reduced) {
+      // Reduced motion shows the current location, not an indefinitely frozen
+      // replay at a battle that has already finished.
+      this.resolvedCombats.length = 0;
+      this.rebuildMarkers();
+    }
+    this.markDirty();
+  }
   setQuality(value: GraphicsQuality) {
     this.quality = value;
     const preset = GRAPHICS_QUALITY[value];
@@ -359,8 +394,45 @@ export class Map3DRenderer {
         previousWorld.player !== state.world.player ||
         state.world.day < previousWorld.day ||
         state.world.day > previousWorld.day + 1
-      )
+      ) {
         this.captureEvents.length = 0;
+        this.resolvedCombats.length = 0;
+      }
+      // A same-day command replaces the order immediately; never keep firing
+      // an old exchange after a halt, peace agreement or loaded campaign.
+      if (previousWorld?.day === state.world.day)
+        this.resolvedCombats.length = 0;
+      this.resolvedCombats = this.resolvedCombats.filter((event) => {
+        const participants = state.world.armies.filter((army) =>
+          belongsToResolvedExchange(event, army),
+        );
+        return (
+          event.elapsed < RESOLVED_COMBAT_DURATION &&
+          state.world.countries[event.country]?.wars.includes(event.opponent) &&
+          participants.length > 0 &&
+          !formationCombat(state.world, participants)
+        );
+      });
+      const exchanges = this.reduced
+        ? []
+        : detectResolvedFormationCombats(previousWorld, state.world);
+      this.resolvedCombats.unshift(
+        ...exchanges.map((event) => ({
+          ...event,
+          elapsed: 0,
+          seen: false,
+          advancing: state.world.battles.some(
+            (battle) =>
+              battle.id === event.battleId && battle.attacker === event.country,
+          ),
+          locations: new Map(
+            state.world.armies
+              .filter((army) => event.armyIds.includes(army.id))
+              .map((army) => [army.id, army.province]),
+          ),
+        })),
+      );
+      this.resolvedCombats = this.resolvedCombats.slice(0, 32);
       const arrivals = detectFormationCaptures(previousWorld, state.world);
       this.captureEvents.push(
         ...arrivals.map((event) => ({ ...event, elapsed: 0 })),
@@ -562,14 +634,25 @@ export class Map3DRenderer {
       const to = army.move ? GEOGRAPHY[army.move.to] : null,
         origin = GEOGRAPHY[army.province];
       const battle = formationCombat(world, armies);
-      const combat = battle
+      const resolvedCombat = !battle
+        ? this.resolvedCombats.find(
+            (event) =>
+              event.elapsed < RESOLVED_COMBAT_DURATION &&
+              event.country === army.country &&
+              armies.every((member) =>
+                belongsToResolvedExchange(event, member),
+              ),
+          )
+        : undefined;
+      const exchange = battle ?? resolvedCombat;
+      const combat = exchange
         ? {
-            key: battle.key,
-            target: this.point(battle.target.x, battle.target.y, 0.12),
+            key: exchange.key,
+            target: this.point(exchange.target.x, exchange.target.y, 0.12),
           }
         : undefined;
       const captureEvent =
-        !army.move && !combat
+        !army.move && !battle
           ? this.captureEvents.find(
               (event) =>
                 event.province === army.province &&
@@ -591,6 +674,7 @@ export class Map3DRenderer {
         tint: new THREE.Color(world.countries[army.country].color).getHex(),
         overlay,
         combat,
+        resolvedCombat,
         captureEvent,
         capture: captureEvent
           ? {
@@ -703,7 +787,8 @@ export class Map3DRenderer {
           this.markers.add(plane);
         }
       }
-    this.updateUnitMatrices(performance.now());
+    // Model clocks advance only when a frame will actually be rendered. An
+    // eager update here used to consume short muzzle flashes before drawing.
   }
   private updateRoutes() {
     if (this.selection) {
@@ -752,16 +837,23 @@ export class Map3DRenderer {
       active && this.unitAnimationActive
         ? Math.max(0, Math.min(100, now - this.lastUnitFrame))
         : 0;
+    const combatElapsed =
+      active && this.unitAnimationActive
+        ? Math.max(0, Math.min(250, now - this.lastUnitFrame))
+        : 0;
     this.lastUnitFrame = now;
     this.unitAnimationActive = active;
     for (const event of this.captureEvents) event.elapsed += elapsed;
     this.captureEvents = this.captureEvents.filter(
       (event) => event.elapsed < CAPTURE_DURATION,
     );
-    const blend =
-      this.props.paused || this.reduced
-        ? 1
-        : Math.min(1, (now - this.updateAt) / 400);
+    for (const event of this.resolvedCombats) {
+      if (event.seen) event.elapsed += combatElapsed;
+      event.seen = true;
+    }
+    this.resolvedCombats = this.resolvedCombats.filter(
+      (event) => event.elapsed < RESOLVED_COMBAT_DURATION,
+    );
     this.camera.updateMatrixWorld();
     this.unitFrustum.setFromProjectionMatrix(
       this.unitProjection.multiplyMatrices(
@@ -771,12 +863,62 @@ export class Map3DRenderer {
     );
     this.visibleUnits.length = 0;
     for (const formation of this.formations) {
+      const exchange = formation.resolvedCombat;
+      if (exchange && exchange.elapsed >= RESOLVED_COMBAT_DURATION) {
+        formation.resolvedCombat = undefined;
+        formation.combat = undefined;
+        formation.from.copy(formation.position);
+        formation.resumeAt = now;
+        formation.moving = !!formation.armies[0]?.move;
+        const army = formation.armies[0];
+        const from = GEOGRAPHY[army.province];
+        const to = army.move && GEOGRAPHY[army.move.to];
+        formation.angle = to
+          ? Math.atan2(to.x - from.x, to.y - from.y)
+          : Math.PI;
+      }
       if (formation.capture && formation.captureEvent) {
         formation.capture.progress =
           formation.captureEvent.elapsed / CAPTURE_DURATION;
         if (formation.capture.progress >= 1) formation.capture = undefined;
       }
-      formation.position.lerpVectors(formation.from, formation.target, blend);
+      if (formation.resolvedCombat) {
+        const event = formation.resolvedCombat;
+        formation.position.copy(this.point(event.position.x, event.position.y));
+        formation.angle = Math.atan2(
+          event.target.x - event.position.x,
+          event.target.y - event.position.y,
+        );
+        // Show the actual exchange before the victory flag, without holding
+        // back the authoritative simulation or creating extra divisions.
+        formation.capture = undefined;
+      } else {
+        if (
+          !formation.capture &&
+          formation.captureEvent &&
+          formation.captureEvent.elapsed < CAPTURE_DURATION
+        )
+          formation.capture = {
+            key: formation.captureEvent.key,
+            progress: formation.captureEvent.elapsed / CAPTURE_DURATION,
+          };
+        const blend =
+          this.props.paused || this.reduced
+            ? 1
+            : Math.min(
+                1,
+                (now - (formation.resumeAt ?? this.updateAt)) /
+                  MOVEMENT_BLEND_DURATION,
+              );
+        formation.position.lerpVectors(formation.from, formation.target, blend);
+      }
+      const combatStatus = formation.resolvedCombat
+        ? "recent"
+        : formation.combat
+          ? "active"
+          : "none";
+      if (formation.overlay.element.dataset.combat !== combatStatus)
+        formation.overlay.element.dataset.combat = combatStatus;
       formation.position.y =
         this.surfaceHeightAt(
           formation.position.x + HALF_X,
@@ -1058,6 +1200,15 @@ export class Map3DRenderer {
       this.canvas.dataset.combatFormations = String(
         this.units.stats.combatFormations,
       );
+      this.canvas.dataset.animations = this.reduced ? "reduced" : "full";
+      this.canvas.dataset.recentCombats = String(
+        this.visibleUnits.filter((formation) => formation.resolvedCombat)
+          .length,
+      );
+      this.canvas.dataset.infantryTracers = String(
+        this.units.stats.infantryTracers,
+      );
+      this.canvas.dataset.tankShells = String(this.units.stats.tankShells);
       this.canvas.dataset.muzzleFlashes = String(
         this.units.stats.muzzleFlashes,
       );
@@ -1109,6 +1260,7 @@ export class Map3DRenderer {
     this.controls?.dispose();
     this.clearMarkers();
     this.captureEvents.length = 0;
+    this.resolvedCombats.length = 0;
     this.pointerCancel();
     this.units?.dispose();
     this.railways?.dispose();

@@ -17,6 +17,18 @@ export interface FormationCapture {
   armyIds: string[];
 }
 
+/** A real fight that finished between two daily simulation snapshots. */
+export interface ResolvedFormationCombat {
+  key: string;
+  battleId: string;
+  province: string;
+  country: string;
+  opponent: string;
+  armyIds: string[];
+  position: { x: number; y: number };
+  target: { x: number; y: number };
+}
+
 function attacking(world: World, army: Army, battle: Battle) {
   return (
     army.strength > 0 &&
@@ -77,6 +89,104 @@ export function formationCombat(
     };
   }
   return null;
+}
+
+/**
+ * A defender can rout in the same tick that first records a battle. In that
+ * case formationCombat correctly finds no active opponent, but dropping the
+ * resolved exchange would make the entire genuine fight invisible. Return
+ * only surviving, damaged combatants and their historical contact positions;
+ * the renderer owns a short, bounded playback, never a simulation delay.
+ */
+export function detectResolvedFormationCombats(
+  previous: World | null,
+  current: World,
+): ResolvedFormationCombat[] {
+  if (
+    !previous ||
+    current.day !== previous.day + 1 ||
+    current.version !== previous.version ||
+    current.player !== previous.player ||
+    current.mode !== previous.mode ||
+    current.serial < previous.serial
+  )
+    return [];
+
+  const currentArmies = new Map(current.armies.map((army) => [army.id, army]));
+  const events: ResolvedFormationCombat[] = [];
+  for (const battle of current.battles) {
+    if (
+      !GEOGRAPHY[battle.province] ||
+      !previous.provinces[battle.province] ||
+      !(battle.attack > 0 && battle.defense > 0)
+    )
+      continue;
+    const attackers = previous.armies.filter(
+      (army) =>
+        army.strength > 0 &&
+        army.country === battle.attacker &&
+        (army.move?.to ?? army.route[0]) === battle.province &&
+        inLandContact(previous, army),
+    );
+    const defenders = previous.armies.filter(
+      (army) =>
+        army.strength > 0 &&
+        !army.move &&
+        army.province === battle.province &&
+        atWar(previous, army.country, battle.attacker),
+    );
+    if (!attackers.length || !defenders.length) continue;
+
+    for (const [participants, opponents] of [
+      [attackers, defenders],
+      [defenders, attackers],
+    ]) {
+      const groups = new Map<string, { before: Army; after: Army }[]>();
+      for (const before of participants) {
+        const after = currentArmies.get(before.id);
+        // Attrition lowers strength but never grants land combat experience.
+        // Veterans already at the cap cannot gain more; their current battle,
+        // prior hostile contact and actual loss still prove the exchange.
+        // Missing/dead armies must not become ghost models in a past exchange.
+        if (
+          !after ||
+          after.country !== before.country ||
+          after.strength <= 0 ||
+          after.strength >= before.strength ||
+          !(
+            after.experience > before.experience ||
+            (before.experience === 100 && after.experience === 100)
+          )
+        )
+          continue;
+        const groupKey = `${before.country}:${before.province}:${before.move?.to ?? before.route[0] ?? "idle"}`;
+        if (!groups.has(groupKey)) groups.set(groupKey, []);
+        groups.get(groupKey)!.push({ before, after });
+      }
+      for (const [groupKey, members] of groups) {
+        if (
+          formationCombat(
+            current,
+            members.map(({ after }) => after),
+          )
+        )
+          continue;
+        const first = members[0].before;
+        events.push({
+          key: `${battle.id}:${battle.started}:${current.day}:${groupKey}:resolved`,
+          battleId: battle.id,
+          province: battle.province,
+          country: first.country,
+          opponent: opponents[0].country,
+          armyIds: members.map(({ after }) => after.id),
+          position: armyMapPosition(first),
+          // Never aim at (or disclose) a defender's new retreat destination.
+          target: armyMapPosition(opponents[0]),
+        });
+      }
+    }
+  }
+  return events;
 }
 
 /** A military arrival and hostile control change, never a save/load flourish. */

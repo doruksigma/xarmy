@@ -57,6 +57,27 @@
   border: 2px solid #ffdf8b;
   box-shadow: 0 0 0 2px #493c29;
 }
+.labels :global(.map3d-label[data-combat="active"]),
+.labels :global(.map3d-label[data-combat="recent"]) {
+  border-color: #ffd69a;
+}
+.labels :global(.map3d-label[data-combat="active"])::after,
+.labels :global(.map3d-label[data-combat="recent"])::after {
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  transform: translateX(-50%);
+  content: "ÇATIŞMA";
+  font-size: 8px;
+  padding: 2px 4px;
+  background: #35281ce8;
+  color: #ffe1ae;
+  border-radius: 0 0 3px 3px;
+  pointer-events: none;
+}
+.labels :global(.map3d-label[data-combat="recent"])::after {
+  content: "SON ÇATIŞMA";
+}
 .labels :global(.map3d-selection-box) {
   position: absolute;
   border: 1px solid #f3da9e;
@@ -110,6 +131,9 @@
   color: #bdccb5;
   font-size: 8px;
   letter-spacing: 1px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
 }
 .quality select {
   display: block;
@@ -121,6 +145,18 @@
   border-radius: 3px;
   font-size: 11px;
   color: #ece9d2;
+}
+.motionNote {
+  display: block;
+  max-width: 110px;
+  margin-top: 4px;
+  padding: 3px 4px;
+  border-radius: 3px;
+  background: #152923e8;
+  color: #d4c38e;
+  font-size: 9px;
+  letter-spacing: normal;
+  line-height: 1.3;
 }
 .controls {
   position: absolute;
@@ -214,6 +250,8 @@
   .quality {
     right: 14px;
     top: 155px;
+    flex-direction: column;
+    gap: 7px;
   }
   .quality select {
     min-width: 86px;
@@ -249,6 +287,10 @@
   }
   .quality {
     top: 165px;
+    flex-direction: row;
+  }
+  .motionNote {
+    display: none;
   }
   .controls {
     bottom: 85px;

@@ -4,8 +4,12 @@ import { declareWar } from "./diplomacy";
 import { applyAction } from "./engine";
 import { resolveLandDay } from "./land";
 import { armyMapPosition } from "./map3d-visuals";
-import { detectFormationCaptures, formationCombat } from "./map3d-unit-events";
-import { addArmy, createWorld } from "./world";
+import {
+  detectFormationCaptures,
+  detectResolvedFormationCombats,
+  formationCombat,
+} from "./map3d-unit-events";
+import { addArmy, createWorld, GEOGRAPHY } from "./world";
 import type { World } from "./types";
 
 const origin = "germany-7";
@@ -41,6 +45,186 @@ function nextDay(world: World) {
   resolveLandDay(next);
   return next;
 }
+
+function oneDayRout(experience = 0) {
+  const previous = campaign(4);
+  for (const army of previous.armies) army.experience = experience;
+  previous.armies.find((army) => army.country === "poland")!.organization = 11;
+  return { previous, current: nextDay(previous) };
+}
+
+test("Veterans at the experience cap still show a real short fight without replaying unrelated attrition", () => {
+  const { previous, current } = oneDayRout(100);
+  const events = detectResolvedFormationCombats(previous, current);
+  assert.equal(events.length, 2);
+  assert.ok(
+    events
+      .flatMap((event) => event.armyIds)
+      .every((id) => {
+        const before = previous.armies.find((a) => a.id === id)!;
+        const after = current.armies.find((a) => a.id === id)!;
+        return (
+          before.experience === 100 &&
+          after.experience === 100 &&
+          after.strength < before.strength
+        );
+      }),
+  );
+  const reserve = addArmy(previous, "germany", origin);
+  reserve.experience = 100;
+  const damagedReserve = structuredClone(reserve);
+  damagedReserve.strength -= 0.25;
+  current.armies.push(damagedReserve);
+  current.serial = previous.serial;
+  assert.equal(detectResolvedFormationCombats(previous, current).length, 2);
+  assert.ok(
+    !detectResolvedFormationCombats(previous, current).some((event) =>
+      event.armyIds.includes(reserve.id),
+    ),
+  );
+  const attritionOnly = structuredClone(previous);
+  attritionOnly.day++;
+  attritionOnly.battles = [];
+  for (const army of attritionOnly.armies) army.strength -= 0.25;
+  assert.deepEqual(detectResolvedFormationCombats(previous, attritionOnly), []);
+});
+
+test("A first-tick rout preserves the real exchange after queued attackers and defenders cease active combat", () => {
+  const { previous, current } = oneDayRout();
+  const snapshot = JSON.stringify({ previous, current });
+  assert.equal(current.battles.length, 1);
+  const beforeAttackers = previous.armies.filter(
+    (a) => a.country === "germany",
+  );
+  assert.ok(beforeAttackers.every((a) => !a.move && a.route[0] === target));
+  assert.ok(current.armies.every((a) => !formationCombat(current, [a])));
+  const events = detectResolvedFormationCombats(previous, current);
+  assert.equal(events.length, 2);
+  const attack = events.find((event) => event.country === "germany")!;
+  const defense = events.find((event) => event.country === "poland")!;
+  assert.deepEqual(
+    attack.armyIds,
+    beforeAttackers.map((a) => a.id),
+  );
+  assert.deepEqual(attack.position, armyMapPosition(beforeAttackers[0]));
+  assert.equal(attack.opponent, "poland");
+  assert.equal(defense.opponent, "germany");
+  const oldDefender = previous.armies.find((a) => a.country === "poland")!;
+  const retreated = current.armies.find((a) => a.id === oldDefender.id)!;
+  assert.notEqual(retreated.province, target);
+  assert.deepEqual(attack.target, armyMapPosition(oldDefender));
+  assert.deepEqual(defense.position, armyMapPosition(oldDefender));
+  assert.notDeepEqual(attack.target, armyMapPosition(retreated));
+  for (const event of events)
+    for (const id of event.armyIds) {
+      const before = previous.armies.find((a) => a.id === id)!;
+      const after = current.armies.find((a) => a.id === id)!;
+      assert.ok(after.strength < before.strength);
+      assert.ok(after.experience > before.experience);
+    }
+  assert.equal(JSON.stringify({ previous, current }), snapshot);
+  assert.deepEqual(
+    detectResolvedFormationCombats(current, nextDay(current)),
+    [],
+  );
+});
+
+test("Ongoing battles and uncontested city captures do not produce a resolved-fight replay", () => {
+  const ongoing = campaign(4);
+  assert.deepEqual(
+    detectResolvedFormationCombats(ongoing, nextDay(ongoing)),
+    [],
+  );
+  const empty = campaign(4);
+  empty.armies = empty.armies.filter((army) => army.country === "germany");
+  for (const army of empty.armies) {
+    army.route = [];
+    army.move = { to: target, days: 1, progress: 0 };
+  }
+  const captured = nextDay(empty);
+  assert.equal(captured.provinces[target].controller, "germany");
+  assert.equal(captured.battles.length, 0);
+  assert.deepEqual(detectResolvedFormationCombats(empty, captured), []);
+});
+
+test("Resolved exchanges require consecutive snapshots and a current real battle record", () => {
+  const { previous, current } = oneDayRout();
+  assert.deepEqual(detectResolvedFormationCombats(null, current), []);
+  assert.deepEqual(detectResolvedFormationCombats(current, current), []);
+  assert.deepEqual(detectResolvedFormationCombats(current, previous), []);
+  for (const mutate of [
+    (w: World) => {
+      w.day++;
+    },
+    (w: World) => {
+      w.version++;
+    },
+    (w: World) => {
+      w.player = "poland";
+    },
+    (w: World) => {
+      w.mode = "alternative";
+    },
+    (w: World) => {
+      w.serial = previous.serial - 1;
+    },
+    (w: World) => {
+      w.battles = [];
+    },
+  ]) {
+    const changed = structuredClone(current);
+    mutate(changed);
+    assert.deepEqual(detectResolvedFormationCombats(previous, changed), []);
+  }
+});
+
+test("Unrelated attrition, reserves, redeployments and new armies cannot masquerade as a resolved fight", () => {
+  const previous = campaign(4);
+  previous.armies.find((army) => army.country === "poland")!.organization = 11;
+  const reserve = addArmy(previous, "germany", origin);
+  const elsewhere = addArmy(previous, "germany", reserveProvince);
+  elsewhere.route = [origin];
+  const current = nextDay(previous);
+  const reservedIds = [reserve.id, elsewhere.id];
+  for (const id of reservedIds) {
+    const army = current.armies.find((a) => a.id === id)!;
+    army.strength -= 5;
+    army.experience += 0.3;
+  }
+  const newArmy = addArmy(current, "germany", origin);
+  newArmy.strength = 80;
+  newArmy.experience = 1;
+  const noExperience = current.armies.find(
+    (a) => a.country === "germany" && !reservedIds.includes(a.id),
+  )!;
+  noExperience.experience = previous.armies.find(
+    (a) => a.id === noExperience.id,
+  )!.experience;
+  const events = detectResolvedFormationCombats(previous, current);
+  const included = events.flatMap((event) => event.armyIds);
+  assert.ok(events.length > 0);
+  for (const id of [...reservedIds, newArmy.id, noExperience.id])
+    assert.ok(!included.includes(id));
+});
+
+test("Destroyed combatants never reappear as ghost formations in a resolved exchange", () => {
+  const previous = campaign(4);
+  const defender = previous.armies.find((a) => a.country === "poland")!;
+  defender.organization = 11;
+  // Remove every friendly escape route so the real rout destroys this unit.
+  for (const neighbor of GEOGRAPHY[target].neighbors)
+    if (!neighbor.sea) previous.provinces[neighbor.id].controller = "germany";
+  const current = nextDay(previous);
+  assert.ok(!current.armies.some((a) => a.id === defender.id));
+  const events = detectResolvedFormationCombats(previous, current);
+  assert.ok(events.some((event) => event.country === "germany"));
+  assert.ok(events.every((event) => event.country !== "poland"));
+  assert.ok(
+    events
+      .flatMap((event) => event.armyIds)
+      .every((id) => current.armies.some((a) => a.id === id)),
+  );
+});
 
 test("A real resolved battle aims both formations at participating enemies", () => {
   const ordered = campaign();
