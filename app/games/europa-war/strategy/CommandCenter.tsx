@@ -1,7 +1,8 @@
 "use client";
 import { advice, AUTOMATION } from "./management";
 import { BUILDINGS, focusTree, TECHNOLOGIES } from "./catalog";
-import { controlled, GEOGRAPHY } from "./world";
+import { controlled, dateLabel, GEOGRAPHY } from "./world";
+import { COMMAND_TICKS_PER_DAY } from "./command-types";
 import type { Action, Country, World } from "./types";
 import type { Tab } from "./WarPanels";
 import styles from "../europa.module.css";
@@ -159,6 +160,33 @@ export default function CommandCenter({
           !c.research.length &&
           !c.construction.length &&
           !c.recruitment.length && <p>Henüz bir iş başlatılmadı.</p>}
+      </details>
+      <details className={styles.fold}>
+        <summary>Verdiğin emirler</summary>
+        <p className={styles.hint}>
+          Son uygulanan emirlerin kayıt dosyasıyla birlikte saklanır.
+          Yardımcının ve diğer ülkelerin otomatik kararları bu listede yer
+          almaz.
+        </p>
+        {!w.commandState?.receipts.some((r) => r.issuerCountryId === c.id) ? (
+          <p>Henüz kayıtlı bir emrin yok.</p>
+        ) : (
+          <ol className={styles.helpSteps} aria-label="Uygulanan emirler">
+            {w
+              .commandState!.receipts.filter((r) => r.issuerCountryId === c.id)
+              .slice(-12)
+              .reverse()
+              .map((r) => (
+                <li key={r.commandId}>
+                  <strong>{r.summary}</strong>
+                  <br />
+                  <small>
+                    {dateLabel(r.appliedTick / COMMAND_TICKS_PER_DAY)}
+                  </small>
+                </li>
+              ))}
+          </ol>
+        )}
       </details>
       <details className={styles.fold}>
         <summary>Nasıl oynanır?</summary>

@@ -1,0 +1,2000 @@
+## 01 | EUROPA WAR: GÖREV, OYNANIŞ HEDEFİ VE KAPSAM
+Sen oyun mimarı, simülasyon programcısı, 3D grafik geliştiricisi, arayüz tasarımcısı ve stratejik yapay zekâ mühendisi olarak çalış.
+Proje adı Europa War, hedef site xarmygames.online; bu şartnameyi çalışan bir tarayıcı strateji oyununa uygula.
+Oyun yalnızca tek oyunculudur; seçilmeyen ülkeler aynı kurallara tabi yerel yapay zekâ tarafından yönetilir.
+Hedef, HOI4 ana oyunundaki ve doğrulanan genişlemelerdeki mekanik ailelerini kapsamlı biçimde karşılayan özgün bir uygulamadır.
+Oyuncu bir ülkenin siyasetini, sanayisini, araştırmasını, diplomasisini ve kara, hava, deniz kuvvetlerini birlikte yönetir.
+Harita gerçek üç boyutlu arazi, şehir, tesis ve temsilî birlik modelleri içersin; düz görsel üzerine simge yerleştirmekle yetinme.
+Stratejik sonuçları simülasyon hesaplasın; animasyonlar ve sesler hesaplanan olayları göstersin, sonuçları belirlemesin.
+Ekonomik hazırlık, askerî üretim, eğitim, ikmal, harekât, işgal ve barış aynı kampanyada birbirini etkilesin.
+Her özellikte oyuncu girdisi, uygunluk koşulu, maliyet, süreç, sonuç, arayüz, yapay zekâ kullanımı ve doğrulama testi bulunsun.
+Ekrana konan her etkin düğme gerçek komut üretsin; uygulanamayan komutun nedenini ve karşılanacak şartlarını göster.
+Askerî güç yalnız birlik adedinden türemesin; personel, ekipman, eğitim, organizasyon, komuta ve lojistik ayrı etkiler taşısın.
+Oyuncu ülkesinin sorunlarını açıklanabilir göstergelerden anlasın; sonuçların nedenlerini incelemek için geliştirici bilgisi gerekmesin.
+Özgün isimlendirme, arayüz çizimleri, müzik, modeller ve olay metinleri üret; lisanslı içeriklerin kullanım koşullarını kaydet.
+Bu şartnamedeki sayısal örnekler Europa War denge önerileridir; HOI4'ün birebir veya yayımlanmamış iç formülleri değildir.
+Tarihsel verileri kaynaklarıyla, oyun dengesi verilerini tasarım gerekçeleriyle ayrı alanlarda sakla.
+Tek oyunculu kampanya yerel cihazda yürüsün; kullanıcı hesabı ve kalıcı sunucu bağlantısı temel oynanışın ön koşulu olmasın.
+Ülke seçimi, yükleme ve ayarlar hızlı erişilebilir olsun; kapsamı yalnız gösterişli açılış ekranlarına yoğunlaştırma.
+Uygulamaya repository incelemesiyle başla; mevcut teknoloji ve oyun davranışları hakkında dosyaları görmeden varsayım üretme.
+Tamamlanma ölçütü, aşağıdaki mekaniklerin aynı kayıtta birlikte işlemesi ve belirtilen testlerden geçmesidir.
+## 02 | HOI4 ÖZELLİK EŞLEŞMESİ VE DOĞRULAMA SINIRLARI
+Referans tarihi 2 Kasım 2026 olsun; bu tarihte doğrulanabilen yayımlanmış içerikleri ayrı bir kapsam tablosunda takip et.
+Tablo sütunları kaynak paket, mekanik, Europa War modülü, veri, simülasyon, arayüz, yapay zekâ ve test durumu olsun.
+Together for Victory kapsamındaki özerklik, bağlı devlet katkısı ve savaş yardımı mekaniklerini ilgili ortak sistemlere eşleştir.
+Death or Dishonor kapsamındaki ekipman dönüşümü ve üretim lisanslarını stok ve sanayi sistemlerine eşleştir.
+Waking the Tiger kapsamındaki komuta, karar, görev, Çin içeriği ve sınırlı çatışmaları ilgili mekaniklerle eşleştir.
+Man the Guns kapsamındaki gemi tasarımı, deniz görevleri, mayınlar, rota kontrolü ve sürgün hükümetlerini kapsa [K08].
+La Résistance kapsamındaki istihbarat teşkilatı, ajanlar, operasyonlar ve işbirliği hazırlığını kapsa [K05].
+No Step Back kapsamındaki tank tasarımı, subay kadrosu, ikmal yenilikleri ve demiryolu toplarını kapsa [K02].
+By Blood Alone kapsamındaki uçak tasarımı, birlik madalyaları ve barış taleplerini kapsa [K03].
+Arms Against Tyranny kapsamındaki sanayi kuruluşları, silah pazarı ve özel kuvvet uzmanlaşmasını kapsa [K04].
+Götterdämmerung kapsamındaki araştırma tesisleri, bilim insanları, özel projeler ve baskınları kapsa [K06].
+No Compromise, No Surrender kapsamındaki doktrin, ittifak ve deniz yeniliklerini kapsa [K07].
+Thunder at Our Gates kapsamındaki karargâhlar, gemi kaptanları ve eşlik eden alay desteklerini kapsa [K09].
+Battle for the Bosporus, Trial of Allegiance, Graveyard of Empires ve Peace for Our Time ülke içeriklerini eşleştir.
+27 Ekim 2026 kalite güncellemesindeki otomatik ticaret, diplomatik yanıtlar, onarım sırası ve odak mini haritasını kapsa [K14].
+Yalnız duyurulan veya açık beta durumundaki mekanikleri yayımlanmış temel oyun özelliği gibi etiketleme.
+Kaynaklar mekanik ailesinin varlığını doğrular; burada açıklanan algoritmalar, eşikler ve kod mimarisi özgün uygulama tasarımıdır.
+Her ülkenin bütün odak ve olay adlarının birebir çoğaltıldığını iddia etme; içerik kapsamını ölçülebilir veri envanteriyle doğrula.
+Eksik eşleşme bulunan mekanik için bağımlılıkları ve uygulanacak gerçek davranışı kapsam tablosuna ekle.
+## 03 | REPOSITORY İNCELEMESİ VE MODÜLER MİMARİ
+Paket manifestini, kilit dosyasını, sayfa rotalarını, harita kaynaklarını, durum yönetimini ve test düzenini incele.
+Oyun rotasını gerçek dosyalardan belirle; /europa-war gibi bir yolun zaten bulunduğunu varsayma.
+Simülasyon çekirdeği grafik kütüphanesi, tarayıcı DOM'u ve kullanıcı arayüzünden bağımsız çalışabilsin.
+world modülü ülke, eyalet, hareket bölgesi, komşuluk, arazi ve coğrafi erişim hesaplarını yönetsin.
+economy modülü inşaat, kaynak, enerji, yakıt, üretim, ticaret ve ekipman muhasebesini yönetsin.
+military modülü birlik, hareket, muharebe, cephe, komuta, hava, deniz ve ikmal hesaplarını yönetsin.
+politics modülü hükümet, yasa, odak, olay, diplomasi, ittifak, işgal ve bağlı devlet kurallarını yönetsin.
+intelligence modülü bilgi doğruluğu, ajan, ağ, şifre çözme ve operasyon durumlarını yönetsin.
+content modülü senaryo, ülke paketi, teknoloji, ekipman, metin ve görsel varlık tanımlarını taşısın.
+presentation modülü 3D sahne, kullanıcı panelleri, ses, kamera ve bildirimleri simülasyon çıktısından oluştursun.
+Komutlar ve alan olayları için ortak tipler tanımla; modüller birbirinin özel iç durumunu rastgele değiştirmesin.
+Sayı ve oranların birimlerini açıklaştır; günlük yakıt ile saatlik tüketimi aynı isimli çıplak sayı olarak kullanma.
+Uygun olduğunda CountryId, DivisionId ve EquipmentId gibi birbirine karışmayan kimlik türleri kullan.
+Her mekanik için saf hesap fonksiyonu ile durum güncelleyen işlem fonksiyonunu ayrı tut.
+Paket sürümlerini mevcut proje ve resmî belgelerle doğrula; hatırlanan eski API biçimlerini körlemesine uygulama.
+Açık veri şemaları ve şema doğrulayıcıları kullan; içerik hataları oyun ortasında belirsiz çökme yaratmasın.
+Geliştirme tanılaması, test yardımcıları ve oyuncu özellikleri ayrı yetki ve paketleme sınırları taşısın.
+Mimari kararların gerekçelerini kısa proje notlarında tut; uygulanmış kodla çelişen tasarım belgeleri oluşturma.
+Kabul testi olarak grafik olmadan küçük bir dünya kur, yüz oyun saati ilerlet ve sonuç özetini al.
+## 04 | DÜNYA DURUMU, KİMLİKLER VE MUHASEBE
+GameState; oyun saati, senaryo, kurallar, ülkeler, bölgeler, birlikler, savaşlar, kuyruklar ve üreteç durumunu taşısın.
+Country; hükümet, yasalar, teknoloji, diplomasi, ulusal etkiler, insan gücü, stok ve sanayi erişimlerini taşısın.
+State; nüfus, kaynak, bina, yapı kapasitesi, bölge listesi, sahiplik ve işgal yönetimi verisini taşısın.
+Province; arazi, coğrafi konum, komşular, geçiş türleri, kontrol, stratejik noktalar ve birlik konumlarını taşısın.
+Region tanımlarını hava ve deniz için ayrı türle; kara komşuluğu ile görev bölgesi üyeliğini karıştırma.
+ownerId, controllerId, coreCountryIds ve claimCountryIds birbirinden farklı anlam ve güncelleme koşulları taşısın.
+Ekipman miktarlarını tasarım sürümü, ülke sahibi, mevcut konum ve kullanılabilirlik durumuyla takip et.
+Depo, üretim, sevkiyat, eğitim, cephe ve onarım konumları arasında aktarım işlemleri tanımla.
+Bir ekipman aktarımı kaynak konumdaki miktarı azaltıp hedef konumu aynı işlem bütünlüğünde artırmalı.
+Kayıp, üretim, dönüşüm, ele geçirme ve anlaşma teslimatı farklı muhasebe türleri olsun.
+Her işlem kimlik, oyun saati, neden, kaynak, hedef, miktar ve ilgili komut kimliği taşısın.
+Negatif stok, çift fabrika tahsisi ve bulunmayan ülkeye ait birlik oluşumunu değişmez kurallarla engelle.
+Kısmi üretim puanı stoktaki tamamlanmış ekipmandan ayrı olsun; 0,4 tankı savaşabilir tank olarak sayma.
+İnsan gücünü sivil potansiyel, hazır havuz, eğitim, aktif hizmet, yaralı ve kalıcı kayıp durumlarıyla ayır.
+Nüfus ve ekipman hesaplarında yuvarlama kalıntısını sakla; küçük günlük farklar yıllar içinde varlık üretmesin.
+Bölge kontrolü değiştiğinde kaynak erişimi değişebilir; depodaki bütün stoklar otomatik sahibini değiştirmesin.
+Türetilmiş ülke özetlerini temel verilerden hesapla ve sürüm numarasıyla önbellekle.
+Arayüz tabloları muhasebe özetleriyle tutarlı olsun; üretim ekranı ile lojistik ekranı farklı stok göstermesin.
+Testte kapalı bir dünyada bütün ekipmanların başlangıç, üretim, kayıp ve son toplam eşitliğini doğrula.
+## 05 | KOMUT SİSTEMİ VE OYUNCU EMİRLERİ
+Her oyuncu işlemi tipli bir komut oluştursun; aynı komut yolu yapay zekâ tarafından da kullanılsın.
+Komutta commandId, issuerCountryId, issuedTick, tür ve doğrulanmış parametreler bulunsun.
+Doğrulama aşaması sahiplik, yetki, diplomatik ilişki, erişim, maliyet ve mevcut durum şartlarını kontrol etsin.
+Uygunluk önizlemesi ile gerçek uygulama aynı kural fonksiyonunu kullansın; arayüzün izin verdiği işlem motorca farklı yorumlanmasın.
+Kaynak harcayan komutları atomik uygula; maliyet kesilip sonuç oluşmayan yarım işlemler bırakma.
+Aynı commandId tekrar geldiğinde ikinci kez ekipman veya siyasi güç harcama.
+Sıraya alınan komutun koşulları uygulama anında yeniden değerlendirilsin; önceki uygunluk garantisi sonsuza kadar geçerli olmasın.
+Toplu emirlerde her hedefin sonucu raporlansın; bir tümenin geçersizliği bütün ordunun sonucunu belirsiz bırakmasın.
+Shift ile kuyruk oluşturma ve doğrudan yeni emir verme farklı komut kipleri taşısın.
+Elle verilen kritik emirler, belirlenen süre ve kapsam içinde otomatik cephe emirlerine üstün gelsin.
+Emir geçmişi oyuncuya hangi birliğin hangi plan veya doğrudan komutla hareket ettiğini gösterebilsin.
+Duraklatma sırasında idari emirler uygulanabilir; zaman gerektiren ilerleme sonraki simülasyon adımlarında gerçekleşsin.
+Komut sonucu başarı, kısmi başarı veya gerekçeli uygunsuzluk döndürsün; yalnız boolean kullanma.
+İşlem sonucunda alan olayı üret; arayüz, kayıt ve ses bu olaya kendi görevleri doğrultusunda tepki versin.
+Önizleme hesabı dünya durumunu değiştirmesin; bir düğmeye bakmak kaynak tüketmemeli.
+Yapay zekâya maliyeti atlayan gizli komut yolu sağlama; zorluk avantajlarını ayrı görünür kurallarla uygula.
+Girdi doğrulamasında sayısal sınırları ve bilinmeyen kimlikleri kontrol et; dış kayıtlar güvenilir kabul edilmesin.
+Testte aynı üretim atama komutunu iki kez gönder; kapasitenin yalnız bir kez tahsis edildiğini doğrula.
+Testte geçiş izni sona ermiş rotaya verilen emrin açık neden koduyla reddedildiğini doğrula.
+## 06 | SAATLİK SİMÜLASYON VE DETERMİNİZM
+Temel zaman birimi oyun saati olsun; tarih gösterimini bu sayısal saatten türet.
+Oyun hızı gerçek saniyede işlenecek saat sayısını belirlesin; formüllerin saatlik sonuçlarını değiştirmesin.
+Saat başında geçerli komutları sırala, erişim değişikliklerini uygula ve gerekli yerel ağları güncelle.
+Hareket ve muharebe için adım başlangıcındaki tutarlı dünya görüntüsünü kullan.
+İki tarafın hasarını önce hesapla, sonra birlikte uygula; ülke kayıt sırasından avantaj doğmasın.
+Kontrol değişimlerini muharebe ve hareket çözümünden sonra uygula; sonraki saat yeni erişimden yararlansın.
+Gün sınırında üretim, inşaat, araştırma ve personel işlemlerini tanımlı sırayla yürüt.
+O gün üretilen ekipmanın dağıtıma hangi aşamada girdiğini tek bir kuralla belirle.
+Haftalık strateji değerlendirmesini ülkelere dağıt; bütün ülkelerin ağır planlaması aynı görüntü karesine yığılmasın.
+Rastgeleliği tohumlu üreteçlerden al; savaş, olay ve yapay zekâ için ayrı kayıtlı akışlar kullan.
+Grafik rastgeleliği farklı akışta olsun; bir patlama efekti savaşın sonraki zarını tüketmesin.
+Koleksiyonları deterministik sırada işle; kimlik sıralaması ve eşit puanda tercih kuralları tanımlansın.
+Ondalık hesaplarda belirli yuvarlama veya sabit nokta yaklaşımı kullan; platform farklarının birikmesini izle.
+Duraklatıldığında üretim, yakıt, eğitim, araştırma ve muharebe zamanı ilerlemesin.
+Gerçek saat ve sekmenin arka planda kalması kendiliğinden oyun yılları atlatmasın; davranış kullanıcı ayarına bağlı olsun.
+Yetişmeyen bilgisayarda simülasyon adımı atlama; gerçek zamanda elde edilen ilerleme hızını kontrollü sınırla.
+Belirli aralıklarla dünya özet karması üret; tekrar oynatma testlerinde aynı adımların aynı karmayı verdiğini karşılaştır.
+Testte 1x ve 5x hızda aynı komutları aynı oyun saatlerinde uygula; son durumlar eşleşsin.
+Testte kayıt yükleme sonrasında rastgele üretecin kaldığı yerden aynı sonuçları verdiğini doğrula.
+## 07 | WORKER, GÖREV BÜTÇESİ VE VERİ AKIŞI
+Ağır simülasyonu uygun ortamda Web Worker içinde çalıştır; ana iş parçacığı kamera ve arayüze odaklansın.
+Worker yetkili dünya durumunu taşısın; ana iş parçacığı sunuma gerekli okunabilir görünümü alsın.
+Mesaj protokolünde başlat, komut, adım, duraklat, anlık görüntü, fark, hata ve kayıt işlemlerini tanımla.
+Her mesaj protokol sürümü ve istek kimliği taşısın; geç gelen yanıt yanlış kampanyaya uygulanmasın.
+Her saat bütün dünya nesnesini aktarmak yerine değişen varlıkları ve gerekli özetleri gönder.
+Büyük sayısal dizilerde uygun aktarılabilir tamponları kullan; gereksiz kopyalama maliyetini ölç.
+Paylaşımlı bellek zorunlu olmasın; destek veya güvenlik başlıkları uygun değilse normal mesajlaşma çalışsın.
+Yol bulma görevlerine öncelik ver; oyuncunun seçili ordusunun emri düşük önemdeki dekoratif işin arkasında beklemesin.
+İkmal ağını değişen bağlantılar için yeniden değerlendir; her karede bütün dünya akışını hesaplama.
+Yapay zekâ görevlerini ülke büyüklüğü ve savaş önemine göre bütçelendir; küçük ülke tamamen unutulmasın.
+Ağır görevler hesap adımlarına bölünebilsin; yarım sonuç dünya durumuna geçerli sonuç olarak yazılmasın.
+Aynı duruma ait tekrarlanan hesap taleplerini birleştir; her arayüz paneli ayrı ikmal çözümü başlatmasın.
+Türetilmiş veriler dünya sürümü taşısın; eski sonuç yeni cepheye yanlış uygulanmasın.
+Arayüz seçili ülke özetlerini sık, uzak ülkelerin ayrıntılarını ihtiyaç halinde güncelleyebilsin.
+Simülasyon performans ölçümlerini grafik FPS ölçümünden ayrı göster.
+Worker hatasında tanı kaydı ve son geçerli kayıt bilgisi sun; arayüz sonsuz yükleniyor durumunda kalmasın.
+Görünür sekmeye dönüşte görsel konumları güncel dünya durumuna yumuşak yaklaştır.
+Testte yoğun muharebe sırasında kamera kaydırma ve panel açma gecikmesini ölç.
+Testte eski kampanyadan gelen gecikmiş mesajın yeni kampanya durumunu değiştirmediğini doğrula.
+## 08 | SENARYO, ÜLKE SEÇİMİ VE KAMPANYA KURALLARI
+1936 ve 1939 başlangıçları bağımsız senaryo verileri olsun; yalnız görünen tarihi değiştirmek yeterli değildir.
+Her senaryo başlangıç sınırlarını, orduları, teknolojileri, stokları, hükümetleri, anlaşmaları ve savaşları tanımlasın.
+Ülke seçiminde bütün oynanabilir ülkeler arama ve bölgesel filtreyle erişilebilir olsun.
+Seçili ülkenin sanayi, insan gücü, lojistik, deniz erişimi ve siyasi sorunları kısa açıklamalarla gösterilsin.
+Zorluk açıklaması hangi davranış veya katsayıların değiştiğini belirtmeli; gizli sınırsız kaynak varsayımı kullanma.
+Tarihsel yapay zekâ seçimi tarihsel eğilimleri güçlendirsin; imkânsızlaşan koşullarda mantıksız zorunlu karar üretmesin.
+Alternatif tarih seçimi ülkelerin yollarını başlangıç tohumu, koşullar ve stratejik değerlerle belirlesin.
+Ülkeye özel yapay zekâ siyasi yol ayarı isteğe bağlı olsun; oyuncu senaryonun olasılıklarını görebilsin.
+Ekonomi, hava, donanma ve cephe yardımcılığı ayrı seçenekler olsun; oyuncu bütün yönetimi tek seferde devretmek zorunda kalmasın.
+Kampanya hedef yılı sonuç özeti açabilir; oyuncu uygun seçenekle aynı dünyada devam edebilsin.
+Harita ayrıntısı ile simülasyon zorluğu farklı ayarlar olsun; düşük grafik ayarı daha kolay rakip üretmesin.
+Başlangıç tohumu kullanıcı tarafından görüntülenip girilebilsin; aynı tohumu paylaşmak tekrar üretilebilir kampanya sağlasın.
+Kural değişikliklerinin kayıt uyumluluğu açık olsun; devam eden savaşın ortasında belirsiz mekanik geçiş yapma.
+Öğretici ülke veya küçük senaryo seçeneği gerçek oyun sistemlerini kullanmalı.
+Başlatma sırasında içerik doğrulaması yap; eksik başkent veya geçersiz birlik konumu varsa açık hata göster.
+Yükleme ilerlemesini veri, harita, varlık ve simülasyon hazırlığı aşamalarıyla ölç.
+Başlangıç ordusunun gerçek ekipmanları ülke stok muhasebesiyle eşleşsin; aynı araçları iki kere sayma.
+Testte iki senaryonun başlangıç dünya özetlerini karşılaştır ve beklenen tarihsel veri farklılıklarını doğrula.
+Testte ülke seçimini değiştirmenin diğer ülkelerin başlangıç gücünü sebepsiz değiştirmediğini doğrula.
+## 09 | ÜLKE TARİHİ, KARAKTERLER VE İÇERİK VERİSİ
+Her ülke paketi kimlik, yerelleştirme, renk, bayrak, tarih aralıkları, karakterler, başlangıç kurumları ve içerik referansları taşısın.
+Lider ile devlet başkanı ve hükümet başkanı ayrımı gereken ülkelerde ayrı görev yuvaları kullanılabilsin.
+Tarihsel karakterin göreve uygunluğu tarih, siyasi yol ve olay koşullarına bağlı olsun.
+Lider değişimi danışman, odak ve anlaşma erişimini etkileyebilir; önceki liderin bütün etkileri gerekçesiz devam etmesin.
+Portreler özgün, lisanslı veya uygun kullanım koşullu varlıklarla sağlansın; varlık kaynağı manifestte bulunsun.
+Ülke adı ve bayrak değişimleri yönetim durumu üzerinden seçilsin; temel ülke kimliğini değiştirmek zorunda kalma.
+Ulusal ruhlar, gelenekler ve başlangıç sorunları yapılandırılmış etkiler taşısın; açıklama metni hesaplamanın yerine geçmesin.
+Tarihsel veri kayıtlarında kaynak, geçerlilik tarihi, güven düzeyi ve araştırma notu alanı kullan.
+Tahmini nüfus veya sanayi verisini kesin tarihsel sayı gibi etiketleme; denge düzeltmesini ayrıca belirt.
+Aynı karakterin eşzamanlı çelişen ülkelerde veya görevlerde bulunmasını uygunluk kurallarıyla denetle.
+Oluşturulabilir yeni ülkeler başlangıç ülkesine bağımlı olmayan yerelleştirme ve temel yönetim paketlerine sahip olsun.
+Ülke paketi bulunmayan küçük devlet için tanımlı genel odak ve danışman havuzu çalışsın.
+İçerik kimlikleri anlamlı ve kararlı olsun; metin çevirisi değişince olay bağlantıları bozulmasın.
+Tarihsel anlatımları açıklayıcı tut; ideolojik yolların oynanabilir olması övgü metni gerektirmesin.
+Alternatif tarih dalları gerçekleşmiş tarih gibi sunulmasın; oyun içi varsayımsal yol olarak etiketlensin.
+Büyük ülkelere özgün kararlar eklerken aynı kararın ortak sistemlerdeki maliyetlerini kullan.
+Karakter olaylarını kayıtlı olay kimliğiyle işle; tekrar yükleme aynı atamayı veya ödülü çoğaltmasın.
+Testte bir lider değişimi sonrasında hükümet ekranı, bonuslar ve odak uygunluğu aynı durumu göstermeli.
+Testte bütün ülke paketlerinin başkent, bayrak, teknoloji ve karakter referanslarının çözümlendiğini doğrula.
+## 10 | COĞRAFİ BÖLGELER, KOMŞULUK VE GEÇİŞ KURALLARI
+İdari eyalet, kara hareket bölgesi, hava bölgesi ve deniz bölgesini farklı çözünürlükte veri katmanları olarak oluştur.
+Kara hareketi küçük bölgeler arasında; sanayi ve nüfus idari eyalet üzerinde hesaplansın.
+Sahiplik ve kontrol sınırlarını aynı çizgiye zorunlu bağlama; işgal sırasında ikisini ayrı gösterebil.
+Komşuluk yalnız merkez noktalarının yakınlığına dayanmasın; gerçek sınır paylaşımı ve özel geçiş tanımı kullan.
+Her bağlantı mesafe, geçiş türü, nehir, boğaz, kapasite ve diplomatik erişim koşulu taşısın.
+Ada ile kıta arasındaki suyu kara bağlantısı sayma; özel boğaz veya nakliye kuralı açık tanımlansın.
+Dağ geçitleri ve geçilemez alanlar hem yol bulmada hem cephe oluştururken aynı veriden beslensin.
+Nehir geçişinin maliyeti hareket ile muharebede ayrı hesaplanabilsin; aynı ceza iki kez uygulanmasın.
+Boğaz kontrolü deniz filosu, ticaret ve kara geçişi için farklı kurallar gerektirebilir.
+Kanal ve boğaz erişimini savaş, anlaşma ve kontrol durumlarıyla değerlendir; açık görsel geçit erişim garantisi değildir.
+Coğrafi koordinatı render koordinatından ayır; kamera ölçeği değişince gerçek mesafe hesabı değişmesin.
+Çok parçalı poligon, ada, iç göl ve poligon deliği desteği sağla.
+Dünya haritası sarma kullanıyorsa tarih değiştirme çizgisindeki rotaları kesintisiz hesapla.
+Zafer noktası, liman ve hava üssü uygun hareket bölgesine bağlansın; yalnız ekranda yüzen simge olmasın.
+Bölge kontrol olayları erişim ve ikmal ağlarının ilgili kısmını geçersiz kılsın.
+Harita doğrulayıcı boş komşuluk, tek yönlü hatalı bağlantı ve denizde kara birliği başlangıcını bulsun.
+Modern sınır verisini doğrudan tarihsel senaryo diye sunma; senaryo sınır eşlemesini ayrı içerik işi olarak takip et.
+Testte kara, nehir, boğaz ve deniz nakli gerektiren dört farklı rota senaryosu oluştur.
+Testte kontrol edilen boğazın erişim değişikliğinin ticaret ve donanma rotalarına doğru yansıdığını doğrula.
+## 11 | ÜÇ BOYUTLU ARAZİ MOTORU
+Haritayı gerçek yükseklik taşıyan parçalı arazi geometrisiyle oluştur; siyasi renkleri ayrı görünüm katmanı olarak uygula.
+Render katmanı Three.js veya mevcut projeyle uyumlu eşdeğer bir WebGL çözümü kullansın.
+Yükseklik verisini coğrafi alanla eşleştir; görsel dağ kabartısını oynanabilir stratejik ölçeğe normalize et.
+Araziyi parçalara böl; her parçanın düşük, orta ve yüksek geometrik ayrıntı sürümleri bulunsun.
+Kamera uzaklığına göre ayrıntı değiştirirken yükseklik sıçraması ve sınır çatlağı oluşmasını engelle.
+Komşu parçaların kenar örnekleri aynı koordinatlarda eşleşsin; farklı ayrıntı seviyelerinde boşluk görünmesin.
+Ova, orman, çöl, kaya ve kar dokularını yükseklik, eğim ve arazi türüne göre karıştır.
+Doku tekrarını farklı ölçekli ayrıntı katmanlarıyla yumuşat; her eyalet aynı damalı yüzey gibi görünmesin.
+Siyasi kaplama arazinin eğimini izlesin; ülke rengi dağları düz iki boyutlu bir yüzeyle örtmesin.
+Bölge sınırlarını yüzeyin biraz üzerinde çizerek titreşimi önle; bu görsel offset gerçek konum hesabını etkilemesin.
+Gölge haritalarını kameranın önemli alanına yoğunlaştır; bütün dünya için aynı yüksek çözünürlük zorunlu olmasın.
+Şehir ve birlik zemin yüksekliğini arazi örnekleyicisinden alsın; modeller havada kalmasın veya toprağa gömülmesin.
+Büyük dünya koordinatlarında hassasiyet sorunu oluşursa kamera çevresine göre görsel köken yaklaşımı uygula.
+Harita geometrisini önceden işlenebilir paketlere dönüştür; ağır üçgenleme işlemini her başlangıçta tekrarlama.
+Yükseklik veya doku verisi erişilemiyorsa açıkça işaretlenmiş düşük ayrıntılı araziyle oynanabilirlik sağla.
+Grafik kaynakları için model, doku, çözünürlük, kaynak ve lisans alanlı bir manifest oluştur.
+Düşük kalite görünümü gerçek 3D araziyi daha az ayrıntıyla sunsun; oyun kurallarını farklılaştırmasın.
+Testte dağ, kıyı, ada ve büyük nehir çevresinde kamera yakınlaşırken geometrik sürekliliği doğrula.
+Testte aynı eyaletin farklı ayrıntı seviyelerinde seçilen kimliğinin değişmediğini doğrula.
+## 12 | DENİZ, ORMAN, ŞEHİR VE TESİS GÖRSELLERİ
+Deniz yüzeyinde zamanla değişen normal ve sınırlı geometrik dalga kullan; kıyıda sert dikey su duvarı oluşmasın.
+Su rengini derinlik ve kıyı mesafesine bağla; nehir, sığ kıyı ve açık deniz birbirinden ayrışsın.
+Kıyı köpüğünü kıyı maskesinden üret; bütün deniz yüzeyine eşit beyaz parçacık dağıtma.
+Gemi izi gerçek görsel hız ve yönle oluşsun; duran gemi sürekli uzun iz bırakmasın.
+Orman ağaçlarını bölgeye bağlı görsel tohumla yerleştir; kayıt yüklenince ağaçlar her defasında başka yerde belirmesin.
+Aynı ağaç ve bina tiplerini uygun örnekleme yöntemiyle toplu çiz; her nesne için ayrı pahalı çizim çağrısı oluşturma.
+Ağaç yoğunluğu gerçek arazi kimliğini desteklesin; düşük grafik yoğunluğu orman savaş etkisini değiştirmesin.
+Şehir bina yoğunluğu nüfus ve kentsel önemden türesin; bütün şehirler aynı büyüklükte olmasın.
+Başkentler özel simge, okunabilir etiket ve sınırlı özgün mimariyle ayrışsın.
+Sanayi tesisleri gerçek bina seviyesine bağlansın; tamamlanmamış fabrika aktif üretim bacası gibi görünmesin.
+İnşaat halinde şantiye, tamamlanmış yapıda normal model, hasarlı yapıda uygun hasar varyantı kullan.
+Limanlarda iskele, depo ve gemi konum noktaları bulunmalı; karadaki rastgele noktaya gemi yerleştirme.
+Hava üslerinde pist, hangar ve uçak yaklaşma noktaları tanımla; pist kapasitesi simülasyon verisinden gelsin.
+Demiryolu çizgileri gerçek lojistik bağlantısını izlesin; görsel trenler ikmal akışını temsil etsin.
+Baraj ve araştırma tesisi gibi özel yapılar kendi kimlikleri ve işlevleriyle seçilebilsin.
+Gece ışıkları kentsel alanlarda yoğunlaşsın; oyuncu ışık seviyesini okunabilirlik için ayarlayabilsin.
+Savaş hasarı görselleştirmesi gerçek bölgesel hasar oranını takip etsin, her kayıt açılışında rastgele değişmesin.
+Testte bir liman inşa edip hasar ver ve onar; görsel durum ile kapasite aynı süreci göstermeli.
+Testte grafik kalitesini değiştirirken inşaat, nüfus ve kaynak miktarlarının aynı kaldığını doğrula.
+## 13 | KAMERA, FARE, KLAVYE VE SEÇİM
+Sol tık nesne seçsin; seçilen ülke, bölge veya birlik ilgili ayrıntı paneline bağlansın.
+Boş alanda sürükleme çoklu birlik seçimi oluştursun; başlangıç arayüz üzerindeyse harita seçimi başlamasın.
+Sağ tık seçime göre hareket, saldırı, üs atama veya bağlam menüsü açsın.
+Orta tuşla sürükleme veya atanabilir kombinasyon kamera dönüşünü kontrol etsin.
+Tekerlek yakınlaştırması imlecin hedeflediği alana yaklaşsın; oyuncunun baktığı yer sürekli ekran dışına kaçmasın.
+WASD, isteğe bağlı kenar kaydırma ve dokunmatik sürükleme aynı kamera hedefi üzerinde birleşsin.
+Kamera hızını yakınlığa göre ölçekle; şehir görünümünde küçük hareket dünya kadar mesafe atlamasın.
+Kamera yüzeyin altına girmesin; eğim ve yükseklik sınırları görsel çarpışma kontrolü taşısın.
+Yakınlaştırma üç okunabilir katman sunsun: dünya özeti, cephe yönetimi ve yerel 3D ayrıntı.
+Uzakta ülke isimleri ve ordu kümeleri; ortada tümenler; yakında modeller ve tesisler ağırlık kazansın.
+Etiketler ekran uzayında çakışma denetimiyle yerleşsin; önemli şehir ve seçili birlik öncelikli olsun.
+Birlik kümeleri tıklandığında gerçek birlik listesi açılsın; toplu simge yanlışlıkla tek tümen gibi davranmasın.
+Seçili orduya, başkente, araştırma tesisine ve kritik bildirime odaklanma kısayolları ekle.
+Oyuncu takip kamerasını seçmedikçe birlik hareketi kamerayı kendiliğinden sürüklemesin.
+Kamera kaydı yalnız görünüm bilgisidir; tekrar oynatmanın askerî sonuçlarını etkilemesin.
+Arayüz odaklı klavye girişi sırasında savaş emri kısayolları tetiklenmesin.
+Tuştakımı, ekran ölçeği ve dokunmatik cihazda seçim toleransını ayarlanabilir yap.
+Testte üst üste gelen hava üssü, şehir ve tümeni seçim listesiyle ayrı ayrı seç.
+Testte diplomasi düğmesine basmanın arka plandaki tümeni hareket ettirmediğini doğrula.
+## 14 | HARİTA MODLARI, SINIRLAR VE VERİ KAPLAMALARI
+Siyasi modda sahiplik ve fiilî kontrol farkını renk, tarama veya sınır deseniyle göster.
+Arazi modunda hareket ve savaş açısından anlamlı türleri açıklamalı lejantla sun.
+İkmal modunda teslimat oranı, merkez kapasitesi, hat tıkanıklığı ve son kilometre erişimini ayrı incelet.
+Demiryolu modunda seviye, hasar, uygunluk ve tren açığını bağlantı bazında göster.
+Kaynak modunda üretim, erişilebilir miktar, ihracat yükümlülüğü ve işgal kaybını ayırt et.
+Sanayi modunda sivil, askerî ve tersane kapasitesini aynı tek sayıya indirgeme.
+Hava modunda görev bölgesi, menzil kapsaması, üs kapasitesi ve üstünlük belirsizliği göster.
+Deniz modunda görev, rota, tespit bilgisi, operasyon güvenliği ve konvoy tehdidini göster.
+Diplomasi modunda seçili ülkenin savaş, ittifak, garanti, geçiş ve saldırmazlık ilişkilerini renkle ayır.
+İşgal modunda sahiplik, uyum, direniş ve garnizon açığı için seçilebilir veri görünümü kullan.
+İstihbarat modunda kesin olmayan bilgileri aralık ve güven düzeyiyle göster; bilinmeyeni sıfır kabul etme.
+İnşaat modunda uygun yapı alanlarını ve bölgesel kapasite sınırlarını göster.
+Nüfus modunda toplam nüfusla askere alınabilir insan gücünün farklı değerler olduğunu açıklaştır.
+Seçili göstergeyi değiştirirken arazi geometrisini yeniden kurma; renk tamponu ve veri katmanı güncellensin.
+Lejantta birim, zaman aralığı ve seçili ülke bağlamı yazsın; günlük akış stokla karışmasın.
+Harita filtreleri kayıtlı görünüm tercihi olarak saklansın; senaryo başlangıç verisi sayılmasın.
+Savaş sisi düşman ekonomisine ait kaplamaları da sınırlasın; yalnız birlik simgelerini gizlemekle yetinme.
+Testte aynı kaynağı harita ve ülke ekranında karşılaştır; iki görünüm aynı erişilebilir miktarı göstermeli.
+Testte işgal sonrası sahiplik çizgisinin kalırken kontrol kaplamasının değiştiğini doğrula.
+## 15 | BİRLİK MODELLERİ VE ANİMASYON DURUMLARI
+Bir tümen gerçek personel sayısından bağımsız, sınırlı sayıda temsilî 3D unsurla gösterilsin.
+Model seçimi şablonun baskın rolünden gelsin; tank ağırlıklı tümen piyade simgesiyle yanlış temsil edilmesin.
+Yürüme, bekleme, saldırı, savunma, geri çekilme, mevzilenme ve ikmal ayrı animasyon durumları olsun.
+Durum önceliğini belirle; geri çekilen birlik aynı anda ileri taarruz animasyonu oynatmasın.
+Piyade adım hızı görsel hareket hızına uysun; yerde kayma etkisini sınırla.
+Tank palet ve tekerlek hareketi kat edilen mesafeye bağlı olsun; kamera durunca animasyon durmasın.
+Tank kulesi uygun hedef yönüne dönebilsin; gövde ve kule dönüşünü ayrı kontrol et.
+Top ateşi sırasında namlu parlaması, kısa geri tepme ve duman birlikte tetiklensin.
+Topçu mevzilenme animasyonu gerçek hazırlık durumu ile eşleşsin; nakliye halinde tam ateş görüntüsü verme.
+Motorize birlik modelleri rota yönünü izlesin; virajlarda anlık ters dönmek yerine sınırlı dönüş uygula.
+Uçak kalkış, görev, dönüş ve iniş animasyonları üs ve görev kaydına bağlı olsun.
+Gemi modelinde hız, yön, hasar dumanı ve batma durumu ilgili simülasyon olayıyla eşleşsin.
+Yakından görülen askerler sınırlı çeşitlilik taşısın; rastgele görsel varyant ekipman istatistiğini değiştirmesin.
+Ülke renklerini özgün üniforma ve araç desenleriyle uygula; bütün ordular aynı renksiz model olmasın.
+Uzak modelleri simgeye veya sade geometriye dönüştür; görünmeyen iskelet animasyonlarını gereksiz güncelleme.
+Animasyonlu varlıkların belleğini ve örnekleme maliyetini ölç; yalnız model sayısına göre performans tahmini yapma.
+Savaş motoru olayından efekt üret; görsel merminin çarpışması personel kaybını tekrar hesaplamasın.
+Testte aynı tümeni durdur, yürüt, saldırıya sok ve geri çektir; durum geçişleri doğru sırada gerçekleşsin.
+Testte yakın kamera ile uzak kamera arasında savaş hasarının değişmediğini doğrula.
+## 16 | EFEKTLER, SES VE SAVAŞ ATMOSFERİ
+Patlama, ateş, duman, toz, su sıçraması ve mermi izi için sınırlı nesne havuzları kullan.
+Bir muharebenin görsel yoğunluğu gerçek katılım ve ateş gücünden türesin; her savaş aynı patlama sayısını üretmesin.
+Efekt havuzu dolduğunda daha düşük önemdeki görsellerin yoğunluğu azalsın; simülasyon olayı kaybolmasın.
+Gece patlamalarında sınırlı kısa ışık kullan; yüzlerce eşzamanlı dinamik ışık oluşturma.
+Duman rüzgâr yönüyle uyumlu hareket etsin; siyasi sınır ve birlik bilgilerini tamamen örtmesin.
+Krater ve hasar izleri yakın görünüm için sınırlı süreli görsel katman olsun.
+Birlik hasarı ile bina hasarını farklı efektlerden göster; şehir hasarı rastgele orman yangını gibi görünmesin.
+Kamera uzaklığı arttıkça savaş sesini daha soyut bölgesel uğultuya dönüştür.
+Yakın görünümde motor, palet, topçu, uçak ve gemi sesleri konum ve mesafeyle değişsin.
+Aynı sesin onlarca kopyasını aynı anda başlatma; ses gruplarına eşzamanlı çalma sınırı koy.
+Müzik barış, hazırlık, savaş ve kriz durumları arasında yumuşak geçiş yapsın.
+Savaş bitince bütün sesleri aniden kesmek yerine uygun geçiş süresi kullan.
+Arayüz uyarıları savaş gürültüsü içinde duyulabilir olsun; önem düzeyine göre ses önceliği uygula.
+Müzik, ortam, savaş, arayüz ve konuşma sesleri ayrı ayarlanabilsin.
+Ses başlatma tarayıcı etkileşim koşullarıyla uyumlu olsun; kullanıcı girdisi olmadan ses zorunluluğu varsayma.
+Yoğun parlama, ekran sarsıntısı ve kamera etkileri kapatılabilen erişilebilirlik seçenekleri olsun.
+Ses ve efekt dosyalarının kaynak, lisans ve kullanım alanlarını varlık manifestinde kaydet.
+Testte görünür olmayan cephede yüzlerce muharebe varken ses havuzunun sınırlarını aşmadığını doğrula.
+Testte efekt yoğunluğu sıfırken bütün muharebe raporlarının aynı kaldığını doğrula.
+## 17 | HAVA DURUMU, MEVSİM VE YEREL SAAT
+Hava durumu iklim bölgesi, mevsim, coğrafi konum ve önceki koşullara bağlı gelişsin.
+Yağış, kar birikimi, çamur, sıcaklık, rüzgâr ve görüş mesafesini ayrı değerler olarak tut.
+Komşu bölgelerin hava durumları ilişkili olsun; her küçük eyalette tamamen bağımsız hava zarları kullanma.
+Kar birikimi sıcaklık ve yağıştan oluşsun; sıcaklık yükselince erime süresiyle azalsın.
+Çamur yağış ve erimeyle artsın, kuruma hızıyla azalsın; yağmur durunca anında kaybolmasın.
+Arazi koşulları araç, yaya ve özel birlikleri farklı etkileyebilsin.
+Aşırı sıcak veya soğuk, ikmal ve ekipman güvenilirliği üzerinden uygun yıpranma etkileri taşısın.
+İklime alışma birliklerin bölgede geçirdiği süre ve eğitimine bağlı ilerlesin.
+Birlik başka iklime taşındığında önceki alışma avantajı bütün dünyada aynı kalmasın.
+Hava görevleri görüş, fırtına, gece ve üs koşullarından etkilensin.
+Deniz fırtınası görev etkinliği, uçak gemisi operasyonu ve çıkarma hazırlığını etkilesin.
+Yerel gece-gündüzü boylam ve oyun saatinden türet; bütün dünya aynı anda gece olmasın.
+Sabit gündüz görsel seçeneği simülasyondaki gece cezalarını etkilemesin.
+Oyuncuya görünen hava tahmini kesin gelecek bilgisi değil, öngörü aralığı ve güven göstergesi taşısın.
+Plan ekranında mevcut hava ve tahmini hareket cezası gösterilsin.
+Yapay zekâ uygun olduğunda çıkarma veya hava baskınını kötü hava nedeniyle erteleyebilsin.
+Hava üreteci kayıtlı tohum ve geçmiş durumu kullansın; kayıt yükleyerek hava sürekli değiştirilemesin.
+Testte aynı bölgedeki yağmur, çamur ve kuruma zincirini farklı birlik türleriyle doğrula.
+Testte kış görseli kapatıldığında simülasyon sıcaklığı ve hareket maliyetinin değişmediğini doğrula.
+## 18 | YÖNETİM ARAYÜZÜ VE GÜNCEL KULLANIM KOLAYLIKLARI
+Üst çubuk tarih, hız, siyasi güç, istikrar, savaş desteği, insan gücü, sanayi ve yakıt özetini sunsun.
+Ana paneller siyaset, inşaat, üretim, ticaret, araştırma, ordu, hava, deniz, diplomasi ve istihbarat olarak ayrışsın.
+Bir değerin üzerine gelince temel değer, ek etkiler, çarpanlar ve sonuç adım adım görülebilsin.
+Uyarıları konu ve önem seviyesine göre grupla; aynı savaşa katılan ülkeler ekranı tekrar eden pencerelerle doldurmasın.
+Otomatik ticaret için fabrika bütçesi, kaynak önceliği, satıcı tercihi ve risk sınırı tanımlanabilsin [K14].
+Otomatik diplomatik yanıtlar işlem türü ve ilişki koşullarına göre kullanıcı tarafından ayarlansın.
+Onarım öncelik kuyruğu bina sınıfı ve elle sıralama desteklesin; yeni hasar uygun sıraya yerleşsin.
+İstihbarat geliştirmeleri sıraya alınabilsin; tamamlanan geliştirme sonrası koşulları uygun sıradaki iş başlasın.
+Araştırma seçerken tek kullanımlık bonusu harcamama seçeneği bulunsun; tercih gerçek bonus muhasebesine yansısın.
+Ulusal odak ekranında mini harita, arama, mevcut dal işaretleme ve erişilebilir hedef filtreleri olsun.
+Filo düzenleri yerel şablon olarak saklanabilsin; başka kampanyada uygun ekipmanlarla tekrar kurulabilsin.
+Siyasi danışmanlar etki türü, görev ve uygunluk kategorileriyle filtrelensin.
+Gönüllü kuvvet geri çağırma işlemi erişim ve kuşatma koşullarını kontrol edip geri dönüş süreci başlatsın.
+Bağlı devletleri üst devlet rengiyle gösterme seçeneği yalnız harita sunumunu etkilesin.
+Araştırma ve panel gezinme kısayolları ayarlanabilir olsun; metin yazarken yanlış komut üretmesin.
+Kritik bildirime tıklandığında ilgili panel ve harita noktası birlikte açılabilsin.
+Panel boyutları küçük ekranlarda taşmasın; ayrıntılar kaydırılabilir ve okunabilir kalmalı.
+Testte otomatik ticaretin belirlenen fabrika bütçesini aşmadığını ve aynı kaynağı gereksiz almadığını doğrula.
+Testte otomatik yanıt kuralının yalnız yetkilendirilen diplomatik işlem türünü etkilediğini doğrula.
+## 19 | SİYASİ GÜÇ, İSTİKRAR VE SAVAŞ DESTEĞİ
+Siyasi güç hükümetin karar kapasitesidir; günlük kazanım, devam eden gider ve tek seferlik harcamayı ayrı göster.
+Bakan atama, yasa değişikliği, karar ve diplomatik eylemler aynı siyasi kaynak muhasebesini kullansın.
+Günlük kazanımı lider, kurum, ulusal ruh ve mevcut siyasi kriz etkilerinden hesapla.
+İstikrar iç düzen ve yönetim kabulünü; savaş desteği savaş yükünü sürdürme isteğini temsil etsin.
+İki göstergeyi aynı yüzdeye bağlama; yüksek istikrarlı fakat savaşa isteksiz ülke mümkün olsun.
+Saldırıya uğrama, kayıplar, bombardıman, savaş süresi ve siyasi olaylar farklı etkiler üretebilsin.
+Etkilerin başlangıcı, süresi, günlük değişimi ve üst sınırı ayrı kayıt taşısın.
+İstikrar düşüklüğü üretim, siyasi güç ve kriz olasılıklarını kontrollü katsayılarla etkilesin.
+Savaş desteği seferberlik ve ekonomi yasası uygunluğunu etkileyebilsin; bütün savaş gücüne aynı kaba çarpanı uygulama.
+Propaganda kararları kaynak ve zaman maliyeti taşısın; aynı kararı tekrarlamak sınırsız kalıcı destek vermesin.
+Savaş kayıplarının etkisini mutlak sayı kadar ülke ölçeği ve süreyle ilişkilendir.
+Savunma savaşı ve saldırı savaşı siyasi olarak farklı yorumlanabilsin; koşullar açıklanabilir olsun.
+Grev veya hükümet krizi gibi olayları eşik, süre ve mevcut koşullarla tetikle; her gün bağımsız yüksek rastgele risk kullanma.
+Bir krizin çözümü siyasi güç, sanayi taahhüdü veya yönetim değişikliği gibi gerçek tercih gerektirsin.
+Gösterge geçmişi son aylardaki artış ve düşüş nedenlerini zaman çizelgesinde sunsun.
+Yapay zekâ ciddi istikrarsızlıkta saldırgan dış politikayı yeniden değerlendirsin.
+Tahmini bir yasa değişiminin siyasi etkisi onay ekranında gösterilsin.
+Testte süreli propaganda etkisinin süresi dolunca yalnız ilgili katkının sona erdiğini doğrula.
+Testte savaş desteği şartını karşılamayan yasa komutunun kaynak harcamadan gerekçeli sonuç verdiğini doğrula.
+## 20 | HÜKÜMET, İDEOLOJİLER VE DANIŞMANLAR
+Hükümet sistemi ideoloji, lider, kabine, seçim takvimi, meşruiyet ve ülkeye özgü kurumlarla tanımlansın.
+İdeolojik destekler toplamı tanımlı aralığı aşmasın; günlük değişimler tutarlı normalizasyon kullansın.
+Demokratik, komünist, faşist ve bağlantısız yolların alt yönetim biçimleri ülke verisiyle ayrışabilsin.
+Monarşi, askerî yönetim veya koalisyon gibi yapılar yalnız farklı etiket değil, uygun karar ve yasa koşulları taşısın.
+Danışman yuvalarının görev türü ve uygunluk koşulu olsun; aynı kişi çelişen görevlerde sınırsız bonus vermesin.
+Danışman etkileri atandığı süreyle sınırlı ve kaynak kimliğiyle izlenebilir olsun.
+Seçim takvimi uygun hükümetlerde olay üretsin; savaşta seçim koşulları ülke kurallarından gelsin.
+Oyuncu seçim veya reform sürecini kararlarla etkileyebilir; bütün sonuçlar tek düğmeyle anında oluşmasın.
+Yönetim değişikliği için destek, hazırlık, olay veya iç savaş yolu kullan.
+Yeni hükümet dış politika, ulusal ruh ve bazı anlaşmaların değerlendirmesini tetikleyebilsin.
+Parlamento veya koalisyon kullanılan ülkelerde destek grupları ve yasa onayı ayrı mekanik olarak çalışsın.
+Güç dengesi kullanılan ülkelerde sivil, askerî veya saray etkileri ayrı kararlarla değişsin.
+Aşırı bir yöne kayış bonus yanında kriz veya hareket alanı kaybı yaratabilsin.
+Siyasi açıklamalar tarihsel bağlamı bilgilendirici biçimde sunsun; oyun mekaniği ideolojik yüceltmeye dayanmasın.
+Lider ölümü, emeklilik veya görev değişimi senaryo ve olay verileriyle yönetilsin.
+Yapay zekâ kendi hedefi ve mevcut desteğine uygun siyasi yol seçsin; her ay sebepsiz yön değiştirmesin.
+Oyuncu hükümet değişiminden önce hangi kurum ve yasaların etkileneceğini görebilsin.
+Testte danışman ataması sonrası ilgili bonusun doğru kategoride ve bir kez uygulandığını doğrula.
+Testte seçim olayı aynı seçim dönemi için yalnız bir kez sonuç üretsin.
+## 21 | EKONOMİ, TİCARET VE ASKERLİK YASALARI
+Ekonomi yasaları sivil tüketim yükünü, askerî dönüşümü ve yapı üretimini değiştirerek sanayi tercihlerini belirlesin.
+Sivil, erken seferberlik ve savaş ekonomisi gibi düzeyler siyasi ve savaş koşulları taşısın.
+Bir yasanın uygunluğu istikrar, savaş desteği, dünya gerilimi ve ülkeye özgü kısıtlarla değerlendirilsin.
+Yasa seçimi siyasi güç harcasın; uygulama geçiş süreci gerekiyorsa etkiler belirtilen takvimle değişsin.
+Tüketim yükünü toplam uygun sanayiden hesapla; aynı fabrika hem sivil yükümlülükte hem inşaatta tam çalışmasın.
+Askerlik yasaları nüfusun erişilebilir bölümünü belirlesin; yüksek oran ek iş gücü veya eğitim maliyeti getirsin.
+Yasa değişiminden doğan yeni personel potansiyeli günlük seferberlik hızıyla hazır havuza geçsin.
+Seferberliği azaltmak aktif askerleri anında sivil yapmasın; uygun terhis ve personel dönüş süreci işle.
+Ticaret yasaları iç kullanım, ihracata açıklık, araştırma etkileşimi ve diplomatik tercihleri etkilesin.
+İhracata ayrılan kaynak ile gerçekten satılan miktarı ayrı göster; seçilen ekonomi modelini açıklayan bilgi balonu kullan.
+Kapalı ekonomi her durumda en iyi seçenek olmasın; kaynak güvenliği yanında sanayi veya diplomasi ödünleşimi bulunsun.
+İş gücü yasaları kullanılıyorsa nüfus ve sanayi modeliyle gerçek bağlantı kursun.
+Yasa ekranı eski ve yeni durumda kullanılabilir fabrika, insan gücü ve temel üretim farkını hesaplasın.
+Öngörü yalnız mevcut koşullar sabitken geçerli olduğuna dair uygun etiket taşısın.
+Yapay zekâ savaş ihtimali artarken önceden seferberlik hazırlığı yapabilsin.
+Kaynakları dar ülke ticaret yasasını yalnız ideolojiye göre değil sanayi ihtiyacına göre değerlendirsin.
+Yasa değişimini tetikleyen olaylar aynı uygunluk kurallarının açık istisnalarını taşısın.
+Testte fabrika tahsis toplamının yasa değişimi sonrası yeni kullanılabilir kapasiteyi aşmadığını doğrula.
+Testte seferberlik artışının personeli anlık değil tanımlı hızla oluşturduğunu doğrula.
+## 22 | NÜFUS, PERSONEL HAVUZU VE YARALI DÖNÜŞÜ
+Eyalet nüfusu ile ülkenin hazır asker havuzunu ayrı tut; bütün nüfus doğrudan asker değildir.
+Çekirdek, işgal ve bağlı devlet nüfusu farklı erişim kuralları taşısın.
+Askere alınabilir potansiyeli yasa, bölgesel statü ve ulusal etkiler üzerinden hesapla.
+Personelin eğitim, cephe, hava, donanma ve garnizonda kullanımını ayrı muhasebe kalemleri olarak göster.
+Yeni eğitim emri uygun personeli ayırsın; aynı kişiler eşzamanlı başka eğitimde kullanılamasın.
+Gemi mürettebatını üretim veya hizmete alma için seçilen açık aşamada ayır; iki aşamada tekrar harcama yapma.
+Muharebe kayıplarını kalıcı kayıp ve geri dönebilecek yaralı havuzu olarak soyutlaştır.
+Yaralı geri dönüşü belirli süre, sağlık desteği ve uygun erişim koşullarına bağlı olsun.
+Sıhhiye desteği geri dönüş oranı ve deneyim kaybını etkileyebilir; personeli yoktan üretmesin.
+Takviye personelini ulaştırma süresi ve ikmal erişimiyle cepheye gönder.
+Kuşatılmış tümen ülke havuzundan erişimsizken anında personel alamamalı.
+Eksik personel tümenin istatistiklerini ekipman açığından ayrı etkilesin.
+Deneyimli personel kaybı birlik deneyimini uygun ağırlıkla düşürsün; takviye yeni deneyim ortalamasına katılsın.
+Sivil nüfus artışı uygulanıyorsa dönem ve denge modelini ayrı yapılandır; doğrulanmamış tarihsel oranı kesin sunma.
+Ülke bölündüğünde havuz ve aktif personel atamalarını bölgesel ve sadakat kurallarıyla paylaştır.
+Personel paneli bugünkü havuzun yanı sıra planlanan eğitim ve beklenen takviye ihtiyacını göstersin.
+Yapay zekâ insan gücü daraldığında üretim, tümen yapısı ve seferberliği birlikte değerlendirsin.
+Testte eğitimdeki birliğin konuşlandırılması sırasında personelin iki kez kesilmediğini doğrula.
+Testte yaralı dönüşü ve kalıcı kayıp toplamlarının ilk kayıpla tutarlı kaldığını doğrula.
+## 23 | ULUSAL ODAK AĞACI VE DAL KOŞULLARI
+Odakları kimlik, konum, ön koşul, çelişen yol, süre, uygunluk ve tamamlanma etkisiyle tanımla.
+Ön koşul grafiğinde döngü bulunmasını içerik doğrulamasında hata say.
+Oyuncu odağı seçmeden önce açacağı karar, teknoloji, yapı veya diplomatik sonucu inceleyebilsin.
+Bir odak ilerlerken günlük maliyet ve devam koşulları uygulanmalı; koşul bozulursa belirlenmiş davranış çalışsın.
+Karşılıklı dışlayan yollar aynı kampanyada mantıksız biçimde birlikte tamamlanamasın.
+Geçilmiş koşulu otomatik karşılanmış sayan atlama kuralları açık gerekçeyle gösterilsin.
+Tamamlama etkileri gerçek bina, siyasi kaynak, ulusal ruh veya diplomatik komut oluştursun.
+Ücretsiz ekipman ödülü varsa miktar ve kaynağı senaryo muhasebesinde özel olay üretimi olarak kaydet.
+Araştırma bonusu tek kullanımlık veya süreli niteliğini taşısın; sınırsız kopyaya dönüşmesin.
+Savaş hedefi veren odak hedef ülke mevcut değilse tanımlı alternatif veya uygunluk davranışına sahip olsun.
+Odak ağacı mini haritası, arama ve seçili yol izini desteklesin [K14].
+Tamamlanmış, devam eden, uygun, kilitli ve çelişen odaklar görsel olarak ayrışsın.
+Gereken koşulları listelerken sahip olunmayan bilgiye bağlı şartları gizlilik sınırlarıyla göster.
+Tarihsel yapay zekâ ağırlıkları koşullar ve stratejik hedeflerle birleşsin; tarih tek başına karar vermesin.
+Alternatif siyasi yol yeni ekonomi ve askerî kararlar açsın; yalnız ülke adını değiştirmesin.
+Ortak odak alt ağaçları içerik tekrarını azaltabilsin; ülkeye özel değişkenler açık parametreler taşısın.
+Odak ilerlemesini kayıtla birlikte sakla; yeniden yükleme süreyi veya ödülü tekrar başlatmasın.
+Testte tamamlanma olayı iki kez işlense bile ödülün yalnız bir kez uygulandığını doğrula.
+Testte ön koşulu eksik ve karşıt dalı seçilmiş odakların farklı nedenlerle uygun olmadığını doğrula.
+## 24 | KARARLAR, SÜRELİ GÖREVLER VE OLAY MOTORU
+Kararlar görünürlük, uygunluk, maliyet, süre, bekleme ve sonuç tanımı taşısın.
+Görünür olmak uygulanabilir olmakla aynı değildir; oyuncu hedefin hangi şartının eksik olduğunu görebilsin.
+Süreli görevlerde son tarih, başarı koşulu, başarısızlık koşulu ve iki sonucun etkisi ayrı olsun.
+Bir görev belirli altyapı inşası, ekipman açığını azaltma veya diplomatik destek kazanma gibi ölçülebilir hedef taşısın.
+Karar başlangıcında ayrılan kaynak ile süreç boyunca tüketilen kaynak ayrı muhasebe edilsin.
+Tekrar kullanılabilir kararın maliyet ve bekleme süresi tarihçe içinde takip edilsin.
+Olaylar zamanlanmış, koşula bağlı veya başka olaydan türeyen türlere ayrılsın.
+Olay koşullarını her karede bütün dünyada tarama; ilgili değişikliklere abone ol veya bütçeli kontrol yap.
+Olay seçenekleri gerçek sonuçlarını ve bilinebilen risklerini açıkça göstersin.
+Süreli yanıt verilmezse hangi varsayılan seçeneğin uygulanacağı önceden belirli olsun.
+Aynı olay kimliği ve aynı bağlam için tek seferlik tetikleme kaydı tut.
+Olay etkilerini güvenli bir kural yorumlayıcısında çalıştır; içerik dosyalarına sınırsız kod yürütme yetkisi verme.
+Rastgele olay olasılıkları kayıtlı üreteçten gelsin; arayüzü açmak sonucu yeniden zar atmasın.
+Dünya haberleri oyuncuya uzak ülkelerden anlamlı özetler sunsun; her küçük üretim değişimi haber olmasın.
+Yerel olay ile küresel haber aynı olayı iki kez uygulamasın; haber yalnız sunum katmanı olsun.
+Yapay zekâ seçenekleri kısa fayda, stratejik hedef ve risk hesabıyla değerlendirsin.
+Olay metinleri özgün olsun; tarihsel olayın adını kullanmak kaynak metni birebir çoğaltmayı gerektirmesin.
+Testte aynı son tarihe gelen başarı ve başarısızlık kontrollerinin tek nihai sonuç oluşturduğunu doğrula.
+Testte lider değişimiyle uygunluğu bozulan kararın tanımlı devam kuralını uyguladığını doğrula.
+## 25 | ULUSAL RUHLAR, GÜÇ DENGESİ VE İÇ KRİZLER
+Ulusal ruhlar etki kategorisi, değer, kaynak, süre ve yığılma kuralı taşısın.
+Aynı etkinin farklı kaynaklardan birleşmesi için toplamsal, çarpımsal veya en güçlü kuralını açıkça tanımla.
+Süreli ruh sona erdiğinde yalnız kendi katkısı etkisizleşsin; diğer kaynakların bonusu kaybolmasın.
+Güç dengesi tek veya çok eksenli olabilir; kullanılan ülke paketinde sınırlar ve eşikler tanımlansın.
+Sivil-asker, saray-hükümet veya rakip kurum dengesini ortak motorla fakat ülkeye özel sonuçlarla kur.
+Merkezde kalmak bazı avantajlar, uçlara yaklaşmak farklı fırsat ve riskler doğurabilsin.
+Dengeyi değiştiren kararlar maliyet, süre ve mümkünse karşı taraf tepkisi taşısın.
+Ordu sadakati ülke genelinde tek sayıdan ibaret olmak zorunda değildir; komutan ve bölge etkileri kullanılabilsin.
+İç krizler belirli hazırlık işaretleri versin; oyuncu hiçbir uyarı olmadan bütün ordusunu kaybetmesin.
+Grev, siyasi skandal veya koalisyon krizi üretim ve karar erişimini gerçek süreli etkilerle değiştirsin.
+Kriz çözümünde taviz, siyasi güç, sanayi taahhüdü veya yönetim tercihi gibi seçenekler olsun.
+Ekonomik kriz ruhunu yalnız zaman beklemek yerine uygun reform ve üretim kararlarıyla aşamalı yönet.
+Bir sorunu çözen olay yeni siyasi maliyet yaratabilir; her karar kalıcı ücretsiz güç artışı vermesin.
+Bölgesel destek, ulusal destek ve ideolojik destek ayrı verilerse aralarındaki dönüşüm kurallarını açıklaştır.
+Arayüz mevcut etkiyi, sonraki eşiği ve beklenen tetikleyiciyi gösterebilsin.
+Yapay zekâ güç dengesini tercih ettiği siyasi yol ve askerî durumla birlikte yönetsin.
+Geliştirici görünümünde etkilerin hangi olay veya karardan geldiği izlenebilsin.
+Testte iki farklı kaynaktan gelen aynı bonusun tanımlı yığılma kuralıyla hesaplandığını doğrula.
+Testte eşik çevresindeki küçük dalgalanmanın aynı krizi sürekli yeniden başlatmadığını doğrula.
+## 26 | İNŞAAT, YAPI YUVALARI VE ONARIM KUYRUĞU
+Her yapı türü maliyet, seviye sınırı, coğrafi şart, hasar davranışı ve ekonomik çıktı tanımı taşısın.
+Sivil fabrika, askerî fabrika, tersane, rafineri, depo, radar, uçaksavar ve üsleri ayrı tiplerle modelle.
+Demiryolu ve tahkimat gibi bağlantı veya bölge yapıları eyalet fabrikalarıyla aynı konum mantığına zorlanmasın.
+Eyaletin yapı yuvası sınırı araştırma, kentleşme ve özel etkilerle kontrollü değişebilsin.
+Kıyı gerektiren yapı kıyısız bölgede kurulamasın; uygunluk nedeni haritada görülsün.
+İnşaat kuyruğu önceliği sivil fabrika dağılımını belirlesin; proje başına kapasite sınırı yapılandırılabilir olsun.
+Günlük inşaat ilerlemesini atanan fabrika × temel çıktı × altyapı × ülke etkisi × bölgesel etki olarak hesapla.
+Örnek denge hesabında 8 × 5 × 1,20 × 1,10 = 52,8 günlük inşaat puanı üret.
+Tamamlanma tahminini kalan puan ve mevcut hızdan türet; hız değişince tarih güncellensin.
+Tamamlanan proje bina seviyesini bir kez artırıp kapasite olayını ilgili sistemlere göndersin.
+İşgal, kaynak veya kapasite değişimi proje hızını etkiliyorsa nedenini kuyrukta göster.
+Onarım ayrı öncelik kuyruğu taşısın; radar, ray, liman ve fabrikalara farklı öncelik verilebilsin.
+Yapı hasarı kullanılabilir kapasiteyi kademeli etkilesin; küçük hasar bütün fabrikayı tamamen işlevsiz yapmasın.
+Sivil-askerî fabrika dönüşümü zaman ve kapasite maliyetiyle gerçekleşsin.
+İnşaat önizlemesi toplam kapasite ile atanmamış kapasiteyi ayırsın.
+Yapay zekâ cephe lojistiği, üretim ihtiyacı ve bombardıman tehdidine göre yapım ve onarım önceliği seçsin.
+3D şantiye ve hasar durumu gerçek ilerleme ve hasarla aynı veriyi kullansın.
+Testte aynı anda beş projeye verilen fabrika toplamının uygun kapasiteyi aşmadığını doğrula.
+Testte günlük eşik aşıldığında bir binanın yanlışlıkla iki seviye tamamlanmadığını doğrula.
+## 27 | STRATEJİK KAYNAKLAR, KÖMÜR VE ENERJİ MODELİ
+Çelik, alüminyum, tungsten, krom, kauçuk, petrol ve kömürü ayrı ekonomik rollerle modelle.
+Her eyaletin temel çıkarımı altyapı, kontrol, teknoloji ve yerel koşullarla erişilebilir üretime dönüşsün.
+Kaynakların günlük kapasite mi stoklanabilir ürün mü olduğunu şemada açıkça belirt.
+Sanayi kaynaklarının tahsisini günlük erişilebilir kapasite üzerinden yapıyorsan ertesi güne gizli sınırsız stok biriktirme.
+İhracat, ithalat, işgal verimi ve ticaret kaybını kaynak bilançosunda ayrı satırlar halinde göster.
+Kömürü sanayi girdisi olarak ele al; petrol ve askerî yakıtla aynı işlevi taşıyan ikinci isim haline getirme [K14].
+Açık beta enerji santrali tasarımını yayımlanmış temel kurallardan ayrı experimentalEnergy seçeneğiyle etiketle.
+Deneysel seçenek etkinse enerji arzı, talep, santral kapasitesi ve kömür girdisi açık bir ülke bilançosu oluştursun.
+Deneysel enerji formülleri Europa War önerisidir; doğrulanmış HOI4 denge katsayısı olarak sunulmasın.
+Santral ve baraj katkısını seçilen modelde açıkça hesapla; aynı tesisi hem talep indirimi hem tam arz olarak çift sayma.
+Enerji açığı üretim türlerine belirlenen öncelik ve sınırlarla yansısın; bütün sanayi açıklamasız sıfırlanmasın.
+Gelişmiş ekipmanın enerji yükü tasarım özelliklerinden türeyebilir; arayüz bu yükü üretim maliyetinden ayırsın.
+Kaynak arama kararları maliyet, süre, uygun bölge ve sınırlı kazanım taşısın.
+Bir kaynağın bulunması üretimi anında sonsuz artırmasın; erişim ve altyapı gereksinimi olsun.
+Yapay zekâ açığı ithalat, kapasite yatırımı veya ürün tercih değişimiyle çözmeye çalışsın.
+Üretim ekranı kaynak darboğazını malzeme, ticaret veya taşıma nedeni olarak sınıflandırsın.
+Bütün kaynak değişimleri günlük ekonomik raporda başlangıç ve sonuç miktarlarıyla uzlaşsın.
+Testte iki üretim hattının aynı kıt çeliği çift kullanamadığını doğrula.
+Testte deneysel enerji seçeneği kapalıyken bu modele ait tesis ve çarpanların etkisiz kaldığını doğrula.
+## 28 | PETROL, RAFİNAJ, YAKIT VE REZERVLER
+Petrol girdisi ile kullanıma hazır yakıtı farklı ekonomik varlıklar olarak tut.
+Rafinaj teknolojisi ve kapasitesi uygun petrol erişimini günlük yakıt üretimine dönüştürsün.
+Sentetik tesisler tanımlı çıktı, maliyet ve kaynak koşullarına göre kauçuk veya yakıt katkısı sağlayabilsin.
+Yakıt deposu kapasitesi toplam stok sınırını belirlesin; kapasite üstü üretimin davranışı açık olsun.
+Ülke rezervi, sevkiyattaki yakıt ve birlik yerel rezervi birbirinden ayrı muhasebe edilsin.
+Tank, motorize birlik, uçak ve gemi hareket, tatbikat ve savaşta farklı tüketim oranları taşısın.
+Üs veya limanda bekleyen araçların tüketimi faaliyet halinden farklı olsun.
+Yakıtı azalan birlik önce yerel rezervini kullansın; ülke havuzuna doğrudan sihirli bağlantı kurmasın.
+İkmal hattı açık ve kapasite yeterliyse yerel rezerv hedef düzeye doldurulsun.
+Yakıt yetersizliği hareket ve görev etkinliğini kademeli etkilesin; etki türü birime göre açıklansın.
+Öncelik politikası kara, hava ve deniz arasında kullanıcı tarafından ayarlanabilsin.
+Yakıt paneli günlük üretim, ithalat katkısı, tüketim ve mevcut faaliyetle tahmini dayanma süresini göstersin.
+Tahmin gelecekteki savaş veya yeni filo görevlerini kesin biliyormuş gibi sunulmasın.
+Ticaret kesildiğinde rafinaj çıktısı uygun gecikme ve stok kurallarıyla değişsin.
+Düşman işgaliyle kaybedilen depo kapasitesi ve yerel rezervler bölgesel kayıt üzerinden çözümlensin.
+Yapay zekâ yakıt krizi öncesinde tatbikatı azaltıp kritik görevleri önceliklendirsin.
+Oyuncu bir yeni tank şablonunun toplam yakıt ihtiyacını üretimden önce görebilsin.
+Testte ülke deposunda yakıt varken bağlantısı kesilmiş tümenin otomatik dolmadığını doğrula.
+Testte bütün birliklerin toplam tüketiminin ülke yakıt raporuyla eşleştiğini doğrula.
+## 29 | ASKERÎ ÜRETİM HATLARI VE VERİMLİLİK
+Üretim hattı ekipman tasarımı, fabrika tahsisi, verimlilik, birikmiş puan ve öncelik taşısın.
+Askerî fabrika ile tersane üretimini ayrı kapasite havuzlarında değerlendir.
+Hat verimliliği başlangıç değeri, büyüme hızı, üst sınır ve tasarım değişimi etkisi taşısın.
+Günlük puan = fabrika sayısı × temel çıktı × verimlilik × kaynak yeterliliği × sanayi katsayısı olsun.
+Örnek hesapta 10 × 4,5 × 0,80 × 0,90 = 32,4 üretim puanı elde edilir.
+Birim ekipman maliyeti 12 ise iki ekipman tamamlanır ve 8,4 puan hatta kalır.
+Tamamlanmış ürünleri depo muhasebesine tek üretim olayıyla ekle; arayüz animasyonu ek üretim yapmasın.
+Kaynak ihtiyacını atanan kapasite ve tasarımdan türet; öncelikli hatlar tanımlı dağıtım kuralıyla kaynak alsın.
+Eksik tek kaynağın etkisini açık darboğaz formülüyle hesapla; farklı kaynak cezalarını kontrolsüz üst üste bindirme.
+Fabrika sayısı arttığında yeni kapasitenin alışma etkisini seçilen verimlilik modeliyle açıklaştır.
+Benzer varyanta geçiş ile farklı ekipman sınıfına geçiş farklı verimlilik tutma oranı taşısın.
+Tasarım yükseltmesi önizlemesi günlük çıktı, kaynak ve verimlilik farkını göstersin.
+Hasar veya işgal nedeniyle azalan fabrika kapasitesi üretim önceliklerine göre yeniden dağıtılsın.
+Hatların sıralanması yalnız görsel düzen değil gerçek kaynak ve fabrika önceliğini belirlesin.
+Üretim tahmini mevcut kaynak ve verimliliğe dayansın; kesin gelecek garantisi gibi gösterilmesin.
+Yapay zekâ stok hedefini, cephe kaybını ve yeni eğitim ihtiyacını birlikte kullanarak üretim açığını hesaplasın.
+Üretim panelinden ilgili tasarımcı, ticaret açığı ve birlik ihtiyacına doğrudan geçilebilsin.
+Testte kesirli üretimin uzun dönemde kaybolmadığını veya tam ürün gibi iki kez sayılmadığını doğrula.
+Testte kaynak önceliği değişiminin sonraki üretim adımına beklenen miktarda yansıdığını doğrula.
+## 30 | DEPOLAR, VARYANTLAR, MODERNİZASYON VE DÖNÜŞÜM
+Depo ekipmanları model, sürüm, ülke kökeni, durum ve kullanılabilir adetle izlesin.
+Eski ekipman yeni araştırma açıldığında kendiliğinden modern modele dönüşmesin.
+Birliklere izin verilen ekipman modelleri şablon ve öncelik politikasıyla belirlenebilsin.
+Modernizasyon, yeni ekipmanı birliğe ulaştırıp uygun eski ekipmanı geri akışa gönderen süreç olsun.
+Dönüşüm tarifleri hangi eski modelden hangi yeni role geçilebildiğini açıkça tanımlasın.
+Dönüşüm başlarken kaynak ekipman ayrılır; üretim süresi ve ek malzeme tamamlanınca hedef ekipman oluşur.
+Aynı şasiyi eşzamanlı iki dönüşüm hattı kullanamasın.
+Ele geçirilen yabancı ekipman teknik uygunluğuna göre kullanılabilir, dönüştürülebilir veya stokta tutulabilir.
+Bakım ve güvenilirlik etkisi kaynak ülkenin adından değil gerçek ekipman tanımından gelsin.
+Hasarlı fakat onarılabilir ekipman ile kalıcı kayıp ekipmanı ayrı muhasebe türleriyle işle.
+Onarım seçilen modelde kapasite ve yedek parça yükü gerektiriyorsa bunu üretim veya bakım kuyruğuna bağla.
+Envanter öncelikleri elit, normal, eğitim, garnizon ve dış yardım ihtiyaçlarını ayırabilsin.
+Stok hedefleri mutlak adet, beklenen kayıp günleri veya tümen ihtiyacına göre belirlenebilsin.
+Fazla ekipman satış veya yardım için ayrıldığında cephe takviyesine aynı anda kullanılamasın.
+Depo paneli toplam miktarı, ayrılmış miktarı, sevkiyatı ve gerçekten serbest stoğu ayrı göstersin.
+Tasarım sürümleri değişmez tanım taşısın; tasarımcıdaki yeni modül geçmişte üretilen tankı otomatik değiştirmesin.
+Yapay zekâ pahalı modernizasyon ile mevcut kayıpları tamamlama arasında maliyet karşılaştırması yapsın.
+Testte dönüşüm öncesi ve sonrası şasi toplamının tanımlı kayıplar dışında tutarlı kaldığını doğrula.
+Testte aynı ekipmanı satışa ayırmanın ardından takviye havuzunda serbest görünmediğini doğrula.
+## 31 | KAYNAK TİCARETİ VE TAŞIMA SÖZLEŞMELERİ
+Ticaret anlaşması satıcı, alıcı, kaynak, miktar, endüstriyel karşılık, rota ve durum bilgisi taşısın.
+Satıcının ihraç edilebilir kaynağı diğer sözleşmeler hesaba katıldıktan sonra hesaplanmalı.
+Alıcının ayırdığı sivil kapasite iç inşaatta aynı anda tam kullanılamasın.
+Kara ticareti için uygun erişim zinciri, deniz ticareti için liman ve konvoy gereksinimi kontrol edilsin.
+Anlaşma imzalanması teslim garantisi değildir; her dönemde rota ve taşınabilir miktar yeniden değerlendirilsin.
+Teslim oranı erişilebilir kaynak, taşıma kapasitesi ve rota kaybıyla sınırlandırılsın.
+Karşılık hesabı sözleşmedeki ödeme modeline uysun; teslim yokken ödemenin nasıl davranacağı açık tanımlansın.
+Ambargo, savaş veya geçiş kapanması sözleşmeyi uygun askı durumuna getirsin.
+Aynı kaynağa talep fazlaysa satıcı önceliği ilişki, anlaşma ve ticaret erişimi kurallarıyla belirlensin.
+Oyuncu ülke seçerken fiyat, erişim, taşıma riski ve diplomatik bağımlılığı birlikte görsün.
+Otomatik ticaret fabrika bütçesi ve kaynak önceliğine uysun; her küçük dalgalanmada anlaşma değiştirerek salınım üretmesin.
+Satıcı değiştirme kararında mevcut teslim süresi ve yeni rotanın riski hesaba katılsın.
+Ticaret ekranında toplam ithalat, yoldaki miktar ve gerçekten gelen günlük miktar ayrışsın.
+Konvoy kaybı üretim hattına kaynak açığı olarak yansısın; yalnız deniz raporunda kalmasın.
+Karayla çevrili ülke için üçüncü taraf geçiş ve üs erişimi koşulları tanımlansın.
+Yapay zekâ düşmanlaşma riski yüksek tek satıcıya kritik bağımlılığı değerlendirsin.
+Kaynak satış gelirinin sivil sanayi katkısı muhasebesi alıcı harcamasıyla uzlaşsın.
+Testte satıcının toplam sözleşme teslimatının erişilebilir ihracat miktarını aşmadığını doğrula.
+Testte kapanan boğazın ilgili sözleşmelerde yeni rota veya teslim kaybı oluşturduğunu doğrula.
+## 32 | ASKERÎ YARDIM, ÜRETİM LİSANSI VE TEKNOLOJİ PAYLAŞIMI
+Askerî yardım bir defalık miktar, aylık teslim veya üretim payı şeklinde kurulabilsin.
+Yardım isteği alıcının gerçek ekipman ihtiyacını sunabilsin; talep miktarı otomatik kabul anlamına gelmesin.
+Gönderici kabulde kendi stok hedefini, savaşını, ilişkiyi ve taşıma riskini değerlendirsin.
+Ayrılan ekipmanı sevkiyat durumuna geçir; aynı ürün gönderici takviyesine yeniden atanamasın.
+Teslim süresi rota ve taşıma kapasitesine bağlı olsun; uzak müttefike yardım aynı anda ulaşmasın.
+Taşıma kaybını ekipman ve konvoy muhasebesine işle; alıcı yalnız ulaşan miktarı kazansın.
+Üretim payı sözleşmesi gerçek tamamlanan ürünlere uygulanmalı; üretim puanı üzerinden hayalî ürün dağıtma.
+Gönderici stok yetersizliğinde öncelik ve erteleme kuralı uygulansın; negatif depo üretme.
+Lisans anlaşması belirli tasarım veya teknoloji kullanımını süre ve koşullarla açsın.
+Lisans alınması fabrikada hazır ürün yaratmasın; yerel üretim hattı yine kaynak ve kapasite tüketsin.
+Yabancı tasarımın üretim uyumu ve teknoloji farkı açık verimlilik etkisi taşısın.
+Lisansın sona ermesinde devam eden üretim ve mevcut ürünlerin durumu sözleşme kuralına göre çözümlensin.
+Teknoloji paylaşımı araştırma hızına veya uygun ilerlemeye katkı sağlasın; bütün araştırmaları anında tamamlamasın.
+Paylaşım grubunda hangi üyelerin hangi faydayı sağladığı arayüzde görünür olsun.
+Bağlı devlet ilişkisi yardımın özerklik etkisini ayrıca hesaplayabilsin.
+Yapay zekâ yardım almayı mevcut araştırma ve üretim planıyla birlikte kullansın.
+Oyuncu teslimat geçmişinden anlaşma, kayıp ve gecikme nedenlerini inceleyebilsin.
+Testte düzenli yardımın her teslim döneminde yalnız bir kez çalıştığını doğrula.
+Testte lisans üretiminin kendi fabrika ve kaynak kapasitesini gerçekten kullandığını doğrula.
+## 33 | ULUSLARARASI SİLAH PAZARI
+Pazar ilanı tasarım sürümü, adet, durum, satıcı, talep edilen endüstriyel karşılık ve erişim koşulu taşısın.
+Satışa ayrılmış ekipman serbest stoktan ayrılarak tahsis edilmiş duruma geçsin.
+Alıcı ülke ilişki, pazar erişimi, ambargo ve savaş koşullarını karşılamalı.
+Arama ekranı ekipman rolü, teknoloji seviyesi, maliyet, teslim süresi ve güvenilirlikle filtrelenebilsin.
+Alıcı yalnız istatistik üstünlüğünü değil mevcut şablon uyumunu ve yedek ihtiyacını görebilsin.
+Sözleşme kabulünde ödeme takvimi ve taşıma takvimi ayrı oluşturulsun.
+Sivil fabrika çıktısıyla ödeme modelinde aynı kapasite iç inşaatta tekrar kullanılamasın [K04].
+Satıcıya geçen sanayi katkısı işlem kaydıyla alıcının ödediği katkıya bağlansın.
+Tam ödeme öncesi veya sonrası teslim seçeneklerinden hangisi kullanılıyorsa açık durum makinesiyle uygula.
+Kısmi teslimatlar hangi parti ve hangi ödeme dilimiyle ilişkili olduğunu saklasın.
+Konvoy kaybı halinde riskin sözleşmede kime ait olduğu ve kalan yükümlülük açık olsun.
+Satın alınan ekipmanın birliğe atanması normal ikmal ve takviye sürecini kullansın.
+Yabancı ürünün rolü eşdeğer olsa da şablon izin politikasına uyması gereksin.
+Tarafsız ülke silah ihracatıyla sanayi kapasitesi kazanabilsin; diplomatik tepkiler uygun kurallarla oluşsun.
+Yapay zekâ satış kararında beklenen savaş, mevcut stok fazlası ve eski model kullanımını değerlendirsin.
+Yapay zekâ alım kararında teslim süresini kendi üretim tamamlanma süresiyle karşılaştırsın.
+İlan, sözleşme ve tamamlanmış teslimat farklı ekran durumları olsun.
+Testte aynı parti ekipmanı iki farklı alıcıya kesin olarak satmanın mümkün olmadığını doğrula.
+Testte ödeme, sevkiyat, kayıp ve teslim toplamlarının sözleşme bilançosuyla uzlaştığını doğrula.
+## 34 | ASKERÎ SANAYİ KURULUŞLARI VE TASARIM UZMANLIĞI
+Kuruluşlar tank, uçak, gemi, topçu veya genel ekipman uzmanlığına sahip veri varlıkları olsun.
+Her kuruluş deneyim, seçili yetenekler, politika, uygun projeler ve aktif tahsisler taşısın.
+Oyuncu uygun araştırma veya üretim hattını kuruluşla ilişkilendirebilsin [K04].
+Kuruluş deneyimi gerçek araştırma ve üretim faaliyetinden gelsin; boş hatta atamak sınırsız deneyim sağlamasın.
+Yetenek ağacı üretim maliyeti, güvenilirlik, hız, menzil veya kaynak verimi gibi ödünleşimler sunsun.
+Her yol bütün istatistikleri aynı anda iyileştirmesin; seri üretim ve yüksek performans farklı tercihler olsun.
+Politikalar belirli süre veya maliyetle değişebilsin; sürekli ücretsiz değiştirme optimizasyon döngüsü yaratmasın.
+Kuruluş etkilerinin tasarım özelliği mi üretim hattı etkisi mi olduğunu açıkça ayır.
+Yeni üretim yeteneği eski depodaki araçların zırhını açıklamasız değiştirmesin.
+Tasarım kaydı hangi kuruluş ve yetenek sürümüyle üretildiğini saklasın.
+Aynı kuruluşun kapasitesi sınırlıysa eşzamanlı atama ve paylaşım kuralları tanımlansın.
+Kuruluşun bulunduğu bölgenin işgali veya taşınması uygun üretim ve erişim sonuçları doğursun.
+Araştırma projesi kuruluş değiştirdiğinde ilerlemenin ve bonusun nasıl etkilendiği önizlemede gösterilsin.
+Karşılaştırma ekranı aynı tasarımın farklı kuruluşlarla maliyet ve üretim farkını sunsun.
+Yapay zekâ ulusal kaynaklar ve askerî hedefe uygun uzmanlık seçsin.
+Kuruluş isimleri ve görselleri özgün veya uygun lisanslı olsun; gerçek şirket iddiaları araştırma kaydı gerektirsin.
+Kuruluş büyümesini kampanya raporunda gerçek katkı miktarıyla göster.
+Testte üretim bonusunun tasarım maliyeti ve hat verimliliğine yanlışlıkla iki kez uygulanmadığını doğrula.
+Testte yeni yetenek açılınca geçmiş ekipman sürümlerinin istatistiklerinin sabit kaldığını doğrula.
+## 35 | ARAŞTIRMA AĞACI, SANAYİ VE ELEKTRONİK
+Teknolojiler kategori, yıl seviyesi, maliyet, ön koşul ve açılan içerik kimlikleri taşısın.
+Piyade, topçu, zırhlı, hava, deniz, sanayi, mühendislik ve elektronik ağaçları gerçek bağlantılarla kurulsun.
+Araştırma yuvaları sınırlı olsun; aynı yuvada birden fazla tam hızlı proje çalışmasın.
+Günlük ilerleme temel araştırma hızı ile ülke, kurum, paylaşım ve bonus etkilerinden hesaplansın.
+Döneminden ileri araştırma cezaları açık yıl farkı ve katsayı tablosuyla hesaplanabilsin.
+Tek kullanımlık bonuslar uygun kategoriye ve tercih edilen projeye bağlansın; oyuncu kullanmamayı seçebilsin.
+Proje değiştirme ve geri dönme durumunda birikmiş ilerleme seçilen kurala göre kaydedilsin.
+Yeni tüfek veya tank araştırması yalnız tasarım erişimini açsın; mevcut ekipman otomatik yükselmesin.
+Sanayi araştırmaları verimlilik sınırı, büyüme, inşaat, kaynak çıkarımı ve dönüşümü ayrı etkileyebilsin.
+Yoğun ve dağınık sanayi yaklaşımları üretim yoğunluğu, bombardıman riski ve uyum açısından farklılaşsın.
+Elektronik araştırma radar, hesaplama, haberleşme veya istihbarat etkilerini ilgili sistemlere bağlasın.
+Radar teknolojisi araştırılması radar binası olmadan bütün ülkeyi tam kapsama kavuşturmasın.
+Şifreleme ve çözme teknolojileri istihbarat hazırlığını etkilesin; düşman bilgisini anında sınırsız açmasın.
+Araştırma ekranı mevcut hızın hangi etkilerden oluştuğunu ve tahmini tamamlanmayı göstersin.
+Yeni araştırma tamamlanınca kullanılabilir üretim ve modül seçenekleri bildirimle gösterilsin.
+Yapay zekâ araştırmayı ordusunun ihtiyacı, sanayi kapasitesi ve beklenen savaş takvimine göre seçsin.
+Sadece yılı yeni olduğu için üretilemeyecek pahalı ekipmanı otomatik en yüksek öncelik yapma.
+Testte ön koşulu eksik teknoloji uygun bulunmamalı ve bonus tüketmemeli.
+Testte araştırma tamamlanmasının ilgili ekipman ve modülleri tam bir kez açtığını doğrula.
+## 36 | DOKTRİN, USTALIK VE ASKERÎ GELENEKLER
+Doktrini ekipman teknolojisinden ayrı askerî uygulama sistemi olarak kur [K07].
+Kara, hava ve deniz kuvvetlerinin doktrin tercihleri kendi deneyim ve kullanım verileriyle gelişsin.
+Ana yaklaşım, alt uzmanlık ve uygulama ustalığı gibi katmanlar içerik şemasında ayrı tutulabilsin.
+Kara tercihleri hareket, ateş yoğunluğu, planlama, savunma, geniş insan gücü kullanımı ve lojistik arasında farklılık sunsun.
+Hava tercihleri üstünlük, önleme, kara desteği, bombardıman ve deniz iş birliğini farklı güçlendirsin.
+Deniz tercihleri büyük filo, ticaret baskını, koruma ve uçak gemisi yaklaşımını farklılaştırsın.
+Doktrin seçimi askerî deneyim, eğitim zamanı veya tanımlı uygulama maliyeti gerektirsin.
+Ustalık gerçek eğitim ve ilgili savaş faaliyetinden artsın; ilgisiz faaliyet bütün dalları aynı hızda geliştirmesin.
+Yeni doktrine geçişte önceki yatırım ve alışkanlık maliyeti açık olsun.
+Doktrin etkisi tümenin organizasyon, taktik, takviye, ikmal veya görev etkinliğine gerçek hesap olarak uygulansın.
+Bütün doktrinlerde aynı saldırı bonusunun farklı isimle verilmesiyle yetinme.
+Ordu ruhları komuta kültürü ve eğitim tercihleri için sınırlı seçilebilir etkiler sunsun.
+Büyük ülkenin deneyim fazlası sınırsız üst üste doktrin bonusuna dönüşmesin; kapasite ve seçim sınırları bulunsun.
+Doktrin ekranı mevcut yapı ile yeni tercihin ekipman ve tümen uyumunu açıklasın.
+Tarihsel doktrin adları kullanılıyorsa etkilerin özgün denge tasarımı olduğu belirtilsin.
+Yapay zekâ mevcut ordu bileşimi ve kaynak imkanına göre doktrin seçsin.
+Kazanılan ustalık kayıtta saklansın; yeni kayıt yükleme bütün orduyu yeniden eğitilmiş saymasın.
+Testte doktrin bonusunun yalnız uygun birlik ve görev kategorilerine uygulandığını doğrula.
+Testte doktrin değişim maliyetinin önizleme ve gerçek sonuçta aynı olduğunu doğrula.
+## 37 | MODÜLER TANK TASARIMCISI
+Oyuncu önce şasi ve rol, sonra kule, ana silah, motor, süspansiyon, zırh ve yardımcı modülleri seçsin.
+Her modül ağırlık, maliyet, kaynak, güvenilirlik ve oyun içi performans katkısı taşısın.
+Şasi taşıma kapasitesi, modül yuvaları ve dönem uygunluğunu tanımlasın.
+Uyumsuz kule veya ağır modül kombinasyonu açık neden koduyla geçersiz sayılsın.
+Tank hızı motor gücü, toplam ağırlık ve hareket düzeninden türeyen ayarlanabilir oyun formülüyle hesaplansın.
+Zırh artışı dayanıklılık sağlarken maliyet, ağırlık ve yakıt tüketimi üzerinde karşılık oluştursun.
+Ana silah seçimi yumuşak saldırı, sert saldırı, delme ve üretim maliyeti dengesini değiştirsin.
+Hafif, orta, ağır, amfibi ve uygun ileri şasiler farklı rol ve sanayi gereksinimleri taşısın.
+Tank avcısı, kundağı motorlu topçu ve uçaksavar tasarımları rol koşullarına bağlı olsun.
+Telsiz ve haberleşme modülleri koordinasyon veya yarma gibi uygun oyun değerlerini etkilesin.
+Bakım kolaylığı üretim ve güvenilirlik arasında tercih sağlayabilir; bütün maliyetleri birlikte sıfırlamasın.
+Tasarım deneyim maliyeti modül değişiminin kapsamına göre hesaplansın.
+Önizleme yalnız saldırı ve zırhı değil tümen başına yakıt, kaynak ve aylık üretim tahminini göstersin.
+Tasarımı kaydetmek yeni sürüm oluştursun; mevcut stokların eski sürüm tanımı sabit kalsın.
+3D önizleme gövde, kule ve silah sınıfını görsel olarak yansıtsın; aynı model bütün tasarımlara zorlanmasın.
+Hazır önerilen tasarımlar yeni oyuncuya başlangıç sağlayabilir; oyuncu modülleri değiştirince sonuçlar anında güncellensin.
+Yapay zekâ rol, düşman tehdidi, arazi ve sanayi kapasitesine göre tasarım puanı hesaplasın.
+Testte ağırlık sınırını aşan tasarımın üretime alınamadığını doğrula.
+Testte daha ağır zırhın seçilen formülde beklenen maliyet ve hız farkını oluşturduğunu doğrula.
+## 38 | MODÜLER UÇAK TASARIMCISI
+Gövde, motor, silah, görev donanımı, yakıt ve savunma modülleri ayrı yuvalarda seçilsin.
+Gövde boyutu rol, kapasite, menzil potansiyeli ve üretim yükünü belirlesin.
+Motor kapasitesi toplam yükle karşılaştırılsın; geçersiz tasarımın nedeni açıkça gösterilsin.
+Avcı, önleyici, yakın destek, deniz saldırısı, keşif, nakliye ve bombardıman rolleri modül koşullarına bağlansın.
+Ek yakıt menzili artırırken ağırlık ve uygun diğer performans değerlerini etkilesin.
+Silah ve bomba yükü artışı çeviklik, hız, dayanıklılık veya üretim maliyetinde ödünleşim yaratsın.
+Savunma ve koruma modülleri kayıp riskini etkileyebilir; tasarım her alanda bedelsiz güçlenmesin.
+Uçak gemisine uygunluk ayrı özellik olsun; kara tasarımı otomatik güverte uçağı olarak atanamasın.
+Güvenilirlik tatbikat ve operasyon kayıplarını etkilesin; hava muharebe gücüyle aynı gösterge olmasın.
+Menzil gerçek üs ve görev bölgesi kapsamasında kullanılmalı; yalnız tasarım kartında yazan sayı olarak kalmasın.
+Tasarım sürümü araştırma yılı, kuruluş etkisi ve kullanılan modülleri saklasın.
+Üretim hattı yeni sürüme geçince uygun verimlilik uyum maliyetini uygulasın.
+Önizlemede aynı görev için mevcut tasarımla menzil, maliyet, yakıt ve görev uygunluğu karşılaştırılsın.
+3D model küçük, orta ve büyük gövde sınıflarını okunabilir biçimde ayrıştırsın.
+Uygun ekipman yokken hava kanadı şablonu eksik kapasiteyle görünmeli; uçaklar tasarım kaydıyla kendiliğinden oluşmasın.
+Yapay zekâ hedef hava bölgesi, üs mesafesi ve düşman rolüne göre tasarım değerlendirsin.
+Bütün formüller oyun dengesi amaçlı soyut parametrelerle çalışsın; gerçek silah yapım tarifine dönüşmesin.
+Testte aynı tasarımın menzil kapsamını iki farklı hava üssünden karşılaştır.
+Testte güverte uygunluğu olmayan uçağın uçak gemisine atanmasının gerekçeli reddini doğrula.
+## 39 | MODÜLER GEMİ TASARIMCISI VE MODERNİZASYON
+Gövde, motor, batarya, torpido, uçaksavar, zırh, radar, sonar ve görev donanımını ayrı modüllerle kur.
+Gövde sınıfı yuva sayısı, ağırlık sınırı, görev rolü ve üretim kapasitesi koşullarını belirlesin.
+Denizaltı, muhrip, kruvazör, büyük savaş gemisi ve uçak gemisi farklı geçerlilik kuralları taşısın.
+Ana batarya yüzey muharebesini; sonar ve uygun silahlar denizaltı karşıtı görevi etkilesin.
+Radar tespit ve atış koordinasyonuna uygun katkı sağlasın; denizaltıyı her koşulda otomatik görünür yapmasın.
+Hız, menzil, görünürlük ve yakıt tüketimi tasarım bileşenlerinden türesin.
+Zırh ve büyük silahların maliyeti ucuz koruma filosu ihtiyacıyla gerçek tercih oluştursun.
+Uçak gemisinin güverte kapasitesi hava kanadı sınırını belirlesin; taşınan uçaklar ayrı stoktan gelsin.
+Mayın döşeme veya tarama görevi uygun donanıma bağlı olsun.
+Deniz antlaşmaları geçerliyse tasarım sınırlamalarını ve aşmanın diplomatik sonucunu önizlemede göster.
+Yeni gemi üretimi tersane, malzeme ve mürettebat kaynağını gerçek kuyrukta kullansın.
+Modernizasyon mevcut gemiyi tanımlı süre görev dışı bıraksın; hazır filoda tam güçle çalışırken aynı anda yenilenmesin.
+Küçük elektronik güncelleme ile büyük silah değişimi farklı zaman ve maliyet taşısın.
+Gövde değişiminin izin verilen kapsamı açık olsun; her eski gemi her yeni sınıfa dönüştürülemesin.
+Tasarım karşılaştırması tek güç puanı yerine rol bazında kapasite, yakıt ve üretim süresini göster.
+Gemi adı, sınıfı, kaptanı, geçmişi ve mevcut tasarım sürümü ayrı saklansın.
+Yapay zekâ filosunun koruma, tespit, saldırı ve menzil açığını tasarımla tamamlasın.
+Testte modernizasyondaki geminin aynı anda normal deniz görevine katılmadığını doğrula.
+Testte tasarım değişiminin mevcut geminin değil yalnız tamamlanan modernizasyonun özelliklerini değiştirdiğini doğrula.
+## 40 | EKİPMAN KATALOĞU VE ROL UYUMLULUĞU
+Piyade silahı, destek malzemesi, topçu, tanksavar ve uçaksavar temel ekipman aileleri olsun.
+Kamyon, zırhlı araç, mekanize araç ve uygun amfibi araçlar personel ve lojistik rollerini desteklesin.
+Tren, zırhlı tren, ikmal kamyonu ve demiryolu topu farklı ihtiyaç ve görev türleri taşısın.
+Avcı, destek, bombardıman, keşif ve nakliye uçakları rol etiketi ve modül uygunluğuyla tanımlansın.
+Konvoyu savaş gemisiyle aynı operasyon nesnesi sayma; yük ve taşıma kapasitesi modeli kullan.
+Özel bölgesel birliklerin bisiklet, kayak, deve veya diğer taşıma tercihleri içerik koşullarıyla açılabilsin.
+Bu tercihlerin arazi avantajı, ikmal maliyeti ve ekipman gereksinimi gerçek istatistiklere bağlansın.
+Her ekipman kimliği üretim maliyeti, malzeme ihtiyacı, teknoloji, sürüm ve uygun birlik rollerini taşısın.
+Aynı kategori içindeki eski ve yeni modeller uyumluluk tablosuyla şablona atanabilsin.
+Yabancı lisans veya ele geçirilmiş ürünler ülke kökeni nedeniyle görünmez hale gelmesin; uygunluk kuralları çalışsın.
+Bir role uygun olmayan ekipman sırf depoda çok diye tümenin açığını tamamlamasın.
+Ekipman ihtiyaçları personel sayısından veya şablon yapısından tanımlı oranlarla türesin.
+Destek birliklerinin araç ve malzeme ihtiyacı ana muharebe taburlarından ayrı gösterilsin.
+Katalog ekranında kullanılabilir, araştırılabilir, lisanslı ve üretim dışı modeller filtrelenebilsin.
+Güvenilirlik, bakım ve yakıt parametreleri kategoriye uygun olsun; piyade tüfeğine gemi menzili alanı zorunlu koyma.
+İstatistik etiketleri kategoriye göre değişsin; bütün ekipmanları yanıltıcı tek saldırı sayısıyla karşılaştırma.
+İçerik doğrulayıcı ihtiyaç duyulan ekipmanın tanımının veya üretim yolunun eksik olduğunu yakalasın.
+Testte bir topçu taburunun piyade tüfeği fazlasıyla top açığını kapatamadığını doğrula.
+Testte uygun ele geçirilmiş modelin izin verildiğinde gerçek tümen yeterliliğine katıldığını doğrula.
+## 41 | TÜMEN ŞABLONU VE İSTATİSTİK BİRLEŞTİRME
+Tümen şablonu muharebe alayları, tabur yuvaları, tümen destekleri ve uygun alay desteklerinden oluşsun.
+Oyuncu tabur eklediğinde insan gücü, ekipman, organizasyon, hız, genişlik, ikmal ve yakıt değerleri anında güncellensin.
+İnsan gücü ve ekipman ihtiyaçları tabur ve destek katkılarının toplamından gelsin.
+Yumuşak saldırı, sert saldırı, savunma ve yarma katkıları uygun tabur katsayılarıyla birleştirilsin.
+Organizasyon tabur rolüne göre ağırlıklı ortalama ve destek etkileriyle hesaplansın.
+Hız zorunlu muharebe unsurlarının en yavaşına ve mevcut ekipman yeterliliğine bağlı sınırlandırılsın.
+Sertlik, zırhlı unsur ağırlığına göre tanımlı aralıkta hesaplansın; bir destek aracı bütün tümeni zırhlı yapmasın.
+Zırh için örnek denge modeli 0,30 × en yüksek değer + 0,70 × ağırlıklı ortalama kullanabilir.
+Delme için ayrı ağırlıklar tanımla; bu örnekleri doğrulanmış HOI4 formülü diye sunma.
+Şablonun savaş genişliği tabur katkılarından türesin; arazi genişliğiyle karşılaştırma önizlemesi göster.
+Personel ve ekipman açığını tabur rolü bazında etkinliğe dönüştür; eksik tankları hazır tank gibi sayma.
+Destek şirketleri her istatistiğe eşit katkı vermesin; görevine uygun etkiler taşısın.
+Şablon değişiminin askerî deneyim maliyeti ve sahadaki tümenlere etkisi önceden gösterilsin.
+Değişen şablon yeni personel ve ekipman ihtiyacını takviye sistemine iletsin.
+Birliklerin şablon sürümü ve geçiş durumu kaydedilsin; aynı isimli iki sürüm belirsizlik yaratmasın.
+Oyuncu savunma, yarma, hızlı takip veya dağ savaşı için farklı şablonları karşılaştırabilsin.
+Yapay zekâ şablonu sanayi, insan gücü, arazi ve beklenen düşman türüne göre değerlendirsin.
+Testte tank eklenen fakat yürüyen piyade içeren tümenin bütün ordudan daha hızlı olmadığını doğrula.
+Testte şablon gereksinim toplamlarının üretim ve eğitim ekranlarında aynı çıktığını doğrula.
+## 42 | ALAY DESTEKLERİ VE ÖZEL KUVVET UZMANLIĞI
+Tümen desteği ile alay desteğinin etki kapsamını ayrı tut; biri bütün tümeni, diğeri ilgili alt grubu etkileyebilsin [K09].
+Alay destek yuvaları teknoloji, doktrin veya şablon kurallarına bağlı açılsın.
+Uygun ateş desteği, tanksavar, uçaksavar ve hareketli destek seçenekleri kendi ekipman ihtiyacını taşısın.
+Bir alaya eklenen destek başka alaydaki bütün taburlara yanlışlıkla tam bonus vermesin.
+Mühendis, keşif, lojistik, sıhhiye, bakım ve muhabere işlevlerini ayrı hesaplarla uygula.
+Mühendislik siperlenme, geçiş veya tahkimat etkileşimini; keşif bilgi ve taktik uygunluğunu etkilesin.
+Lojistik desteği ikmal talebini tanımlı sınırla azaltırken kendi ekipman ve personelini gerektirsin.
+Bakım desteği güvenilirlik ve ekipman kurtarma gibi uygun alanlara katkı versin.
+Dağcı, deniz piyadesi ve paraşütçü eğitim kapasitesi ve özel ekipman koşulları taşısın.
+Özel kuvvet kapasitesi toplam ordu veya kurum düzeyine bağlı tanımlı tavanla yönetilsin.
+Dağcı dağda, deniz piyadesi amfibi görevde, paraşütçü hava indirmesinde uzmanlaşsın; her yerde koşulsuz üstün olmasın.
+Özel kuvvet doktrinleri görev etkinliği, hazırlık ve ikmal avantajları arasında tercih getirsin.
+Komando veya bölgesel birlik seçenekleri ülke paketleriyle açılabilir; ortak eğitim ve muhasebe kurallarını kullansın.
+Amfibi tank ve mekanize araçlar çıkarma cezasını etkileyebilir; deniz üstünlüğü ihtiyacını otomatik geçersiz kılmasın.
+Destek seçim ekranı net katkı, kaynak yükü ve hangi taburları etkilediğini vurgulasın.
+Yapay zekâ özel kuvvetleri gerçekten planladığı görevlere ayırsın; bütün dağcıları açık ovada rastgele tüketmesin.
+Desteklerin yığılma sınırları ve aynı etkiyi tekrar uygulama kuralları açık olsun.
+Testte alay desteğinin yalnız atanmış alt gruba katkı verdiğini doğrula.
+Testte özel kuvvet kapasitesi aşımının eğitim uygunluğunda açık neden oluşturduğunu doğrula.
+## 43 | TÜMEN EĞİTİMİ, TATBİKAT VE TAKVİYE DAĞITIMI
+Yeni eğitim emri şablon, adet, eğitim konumu, ekipman tercihi ve öncelik içersin.
+Personeli eğitim havuzuna ayır; ekipman teslimatını mevcut stok ve dağıtım önceliğine göre başlat.
+Eğitim ilerlemesini personel, ekipman ve eğitim kapasitesinin uygun birleşimiyle hesapla.
+Ağır ekipmanı olmayan tümen tam donanımlı eğitim kalitesine ulaşamasın.
+Erken konuşlandırma uygun alt eşik sağlandığında mümkün olsun; düşük deneyim ve hazırlık sonuçları açık gösterilsin.
+Konuşlandırma noktası dost, uygun erişimli ve senaryo kurallarına uyumlu olmalı.
+Kuşatılmış uzak bölgeye yeni tümeni doğrudan yerleştirme; erişim ve taşıma süreci gerektir.
+Eğitim sonrasında ordu atama ve hedef bölge seçimi gerçek hareket emri oluşturabilsin.
+Tatbikat deneyim sağlarken ekipman yıpranması ve uygun birliklerde yakıt tüketsin.
+Tatbikatın ulaşabileceği deneyim tavanı ile savaş deneyiminin üst seviyelerini ayrı tanımla.
+Birlik deneyimi kayıplar ve yeni personelin katılmasıyla ağırlıklı güncellensin.
+Takviye dağıtımı elit, normal, eğitim ve garnizon önceliklerini kullansın.
+Kritik personel ve ekipman açığı her tümen için ayrı listelensin.
+Gelen takviye önce sevkiyat, ardından uygun konuma teslim olarak işlensin.
+Modern ekipman alan tümenin eski ekipman dönüşü gerçek depoya ve taşıma koşullarına bağlansın.
+Yapay zekâ mevcut ordusu eksikken gereksiz yeni tümen kuyruğunu büyütmemeyi öğrenmiş kural kullansın.
+Eğitim ekranında tamamlanma, eksik ekipman ve gecikmenin nedeni aynı anda görülebilsin.
+Testte eksik ekipman tamamlanınca eğitim hızının doğru yükseldiğini doğrula.
+Testte tümen konuşlandırıldığında personel ve ekipman muhasebesinin toplamının değişmediğini doğrula.
+## 44 | ORDU HİYERARŞİSİ, GENERALLER VE SUBAY KADROSU
+Tümen, ordu, ordu grubu ve savaş alanı hiyerarşisini açık ebeveyn kimlikleriyle kur.
+General ve mareşal rollerinin etki kapsamı farklı olsun; aynı komutan eşzamanlı çelişen ordulara atanamasın.
+Komuta kapasitesi aşımı planlama ve koordinasyon üzerinde açıklanabilir ceza oluştursun.
+Saldırı, savunma, planlama ve lojistik becerilerini ilgili hesaplara ayrı bağla.
+Komutan özellikleri arazi, birlik türü ve görev deneyimiyle uygun koşullarda gelişsin.
+Aynı küçük muharebeyi tekrarlayarak sınırsız deneyim kazanmayı engelleyen azalan getiri kuralları bulunsun.
+Komutan terfisi rol değişimi ve varsa geçiş maliyeti taşısın.
+Subay kadrosu kara, hava ve deniz danışmanlarını görev ve kaynak sınırlarıyla birleştirsin [K02].
+Ordunun ruhu ve kadro tercihleri doktrinle etkileşsin; aynı bonus iki farklı adla katlanmasın.
+Komuta gücü kazanımı ve harcaması siyasi güçten ayrı havuz olsun.
+Orduya yeni tümen atamak cephe ve ikmal planını yeniden değerlendirsin.
+Tümeni başka orduya taşımanın plan hazırlığı ve komuta bağlantısına etkisi açık olsun.
+Komutan arayüzü mevcut görev, kapasite, özellik, deneyim ve uygun yetenekleri sunsun.
+Kullanılamayan yeteneğin nedeni komuta gücü, durum, süre veya kapsam olarak gösterilsin.
+Karakter yaralanma veya görevden uzak kalma olayları varsa vekil atama davranışı tanımlansın.
+Yapay zekâ komutanı yalnız en yüksek toplam puana göre değil cephe ve birlik uygunluğuna göre seçsin.
+Komutan geçmişi yönettiği ordular, önemli muharebeler ve kazanılan özellikleri kaydetsin.
+Testte mareşal ve general etkilerinin doğru hiyerarşi üzerinden yalnız uygun birliklere ulaştığını doğrula.
+Testte komuta kapasitesi aşımının arayüz ve savaş hesaplarında aynı cezayı ürettiğini doğrula.
+## 45 | SAHRA KARARGÂHLARI VE KOMUTA YETENEKLERİ
+Karargâhı gerçek konumu, personeli, ekipmanı ve ikmal ihtiyacı olan askerî varlık olarak oluştur [K09].
+Generalin karargâh konumu yakın birliklere komuta ve destek erişimini etkilesin.
+Etkiyi yalnız düz mesafe değil dost bağlantı, haberleşme ve arazi koşullarıyla değerlendirebil.
+Yakınlık avantajı belirli sınırlarla uygulansın; yan yana iki karargâh sonsuz çarpan üretmesin.
+Karargâh türü yaya, motorize veya uygun zırhlı seçeneklerle hareket ve koruma dengesini değiştirebilsin.
+Karargâh taşınırken hazırlık ve komuta sürekliliği etkisi oluşsun.
+Cepheye yakın karargâh daha iyi yerel etki sağlarken düşman baskını veya kuşatma riski taşısın.
+Yakalanma koşulları savaş ve geri çekilme kurallarına bağlı olsun; düşman yaklaşınca otomatik kesin esaret verme.
+Esir komutan görevi sürdüremesin; ordu uygun vekil veya yeni komutanla yönetilsin.
+Kurtarma baskını açılıyorsa hedef, risk, hazırlık ve kaynak koşulları özel harekât sisteminden gelsin.
+Komuta yetenekleri acil savunma, zorlanmış taarruz veya lojistik öncelik gibi sınırlı süreli tercihler sunsun.
+Yeteneğin organizasyon, kayıp veya gelecek hazırlık maliyeti varsa onay öncesinde göster.
+Yeteneği başlatmak uygun birlik ve bölge kapsamını kilitlesin; sonradan sınırsız yeni birlik ekleyerek etkisini büyütme.
+Bekleme süresi ve komuta maliyetini kayıtla sakla; yükleme sonrası tekrar ücretsiz kullanılamasın.
+Haritada karargâh menzilini seçili görünümde göster; normal oyunda bütün dünya çemberlerle dolmasın.
+Yapay zekâ karargâhı uygun mesafede tutup geri bağlantı daralınca zamanında taşısın.
+Komuta kaybı ile ikmal kaybı ayrı uyarılar olsun; benzer nedenler oyuncuya açıklansın.
+Testte bağlantısı kopan karargâhın etkisinin geçerli erişim kuralına göre değiştiğini doğrula.
+Testte esir düşmüş komutanın aynı anda aktif ordu bonusu vermediğini doğrula.
+## 46 | TÜMEN KOMUTANLARI, GEMİ KAPTANLARI VE MADALYALAR
+Tümen komutanı ve gemi kaptanı ana general veya amiralden ayrı alt düzey karakter olsun.
+Her karakter görev, deneyim, özellik, başarı ve terfi uygunluğu taşısın.
+Gemide görev yapan kaptan yalnız bağlı olduğu gemiye uygun katkı sağlasın [K09].
+Tümen komutanının madalya etkisi bütün ülke ordusuna yanlışlıkla uygulanmasın.
+Başarı kaydı muharebe kimliği, tarih, görev, katkı ve sonuçla ilişkilendirilsin.
+Aynı başarı kaydından sınırsız madalya üretilemesin; ödül uygunluğu tekil izlenebilir olsun.
+Madalya siyasi veya komuta maliyeti taşıyabilir; ödül arayüzü net etkisini göstersin.
+Başarı ölçümü sadece düşman kaybı değil savunma, kurtarma ve görev başarısı gibi rolleri kapsasın.
+Terfi edilen tümen komutanı uygun general havuzuna, kaptan uygun amiral havuzuna geçebilsin.
+Terfi eski ve yeni görevi tutarlı güncellesin; aynı karakter aynı anda iki ayrı hiyerarşide kopyalanmasın.
+Yeni göreve geçince yetenek dönüşümü ve başlangıç becerisi açık hesapla belirlensin.
+Gemi batması veya tümenin teslimi karakter için tanımlı durum değerlendirmesi oluştursun.
+Kayıp, yaralanma veya esaret sonuçları soyut oyun olayı ve olasılık kurallarıyla işlensin.
+Karakter portreleri ve adları özgün veya kaynaklı içerik paketlerinden gelsin.
+Geçmiş paneli oyuncunun sevdiği tümen ve geminin kampanya boyunca yaptıklarını izletebilsin.
+Yapay zekâ terfide ülkesinin boş komuta ihtiyacını ve aday uygunluğunu değerlendirsin.
+Başarımlar ile madalya sistemi birbirine bağlanabilir; platform hesabı zorunlu olmasın.
+Testte terfi sonrası eski görevde boşluk veya vekil ataması doğru oluşsun.
+Testte bir muharebenin yeniden raporlanmasının aynı madalyayı ikinci kez kazandırmadığını doğrula.
+## 47 | YOL BULMA, HAREKET VE STRATEJİK NAKLİYE
+Rota aramasını geçilebilir bölge grafiğinde A* veya uygun hiyerarşik yol bulma yaklaşımıyla yap.
+Kenar maliyeti mesafe, arazi, hava, altyapı, geçiş türü ve birlik hızından türesin.
+Normal hareket, stratejik demiryolu nakli ve deniz nakli ayrı hareket durumları taşısın.
+Stratejik nakil daha hızlı olabilir; ancak organizasyon ve hazırlık maliyeti uygulasın.
+Ray erişimi olmayan yerde tren avantajı verilmesin; ilk ve son kesim için uygun hareket kullanılsın.
+Birliğin hedefi, rota listesi, geçiş ilerlemesi ve tahmini varışı kayıtlı olsun.
+Bölgeye geçiş tanımlı sınırda gerçekleşsin; görsel interpolasyon gerçek kontrol hesabını öne almasın.
+Düşman kontrolü veya diplomatik erişim değiştiğinde etkilenen rotalar yeniden değerlendirilsin.
+Geçersiz hedefte birlik durma, güvenli alternatif veya geri dönüş seçeneklerinden tanımlı davranışı uygulasın.
+Deniz geçişinde liman, konvoy, rota ve güvenlik koşulları kontrol edilsin.
+Hareket sırasında yakıt ve ikmal tüketimi saatlik gerçek faaliyetle hesaplansın.
+Birliğe ardışık hedef verildiğinde rota kuyruğu açık görünür olsun.
+Saldırı emri için hedefin düşman ve uygun erişimde olması gereksin; tarafsız ülkeye tıklamak savaş ilanı yaratmasın.
+Geri çekilme hareketi normal emirle aynı serbestlikte olmasın; savaş sonucu belirlenen kısıtları taşısın.
+Hedefe ulaşan birlik uygun durumda organizasyon toparlama veya mevzilenme sürecine geçsin.
+Yapay zekâ gereksiz cephe boyu yolculukları maliyetli saysın; mevcut mevzi kararlılığına değer versin.
+Haritada hareket oku gerçek geçilebilir rotayı izlesin; deniz üzerinden kısa düz çizgiyle yanıltmasın.
+Testte en kısa mesafe yerine daha hızlı geçilebilir yolun seçildiği arazi örneğini doğrula.
+Testte geçiş hakkı sona erince gelecekteki rota adımlarının uygun biçimde değiştiğini doğrula.
+## 48 | CEPHE, TAARRUZ HATTI VE OTOMATİK DAĞILIM
+Cephe çizimi gerçek dost-düşman sınır kenarlarına bağlansın; serbest çizgi geçersiz bölgelere emir üretmesin.
+Ordudaki tümenleri tehdit, arazi, ikmal, stratejik değer ve mevcut konuma göre cepheye dağıt.
+Atama maliyeti hareket süresi + ikmal riski + açıkta bırakılan mevzi maliyeti gibi bileşenler taşısın.
+Piyade geniş savunmayı, uygun zırhlı birlikler dar yarma noktalarını destekleyecek dağılım seçenekleri sunsun.
+Taarruz hattı hedef bölge kümesi ve ilerleme önceliği taşısın; yalnız görsel ok olarak kalmasın.
+Dar yarma, genel taarruz, geri savunma ve alan güvenliği farklı plan türleri olsun.
+Planlama bonusu göreve ulaşmış, uygun durumda hazırlanan birliklerde biriksin.
+Sürekli yer değiştiren veya savaşan birlik için plan birikim ve tüketim kuralları ayrı olsun.
+Oyuncu temkinli, dengeli ve saldırgan uygulama eşikleri seçebilsin.
+Saldırı kararı beklenen güç, kayıp, ikmal ve hedef değeriyle değerlendirilsin.
+Cephe bölünürse alt cepheler oluşsun; tüm ordunun gereksiz uzak noktaya yürümesini önle.
+Birlik atama düzenini her saat küçük farklarla tamamen değiştirme; kararlılık eşiği uygula.
+Elle verilen görevler belirlenen kapsamda otomatik plan tarafından hemen tersine çevrilmesin.
+Yedek kuvvet tutma ve kritik yarılmaya müdahale kuralları bulunmalı.
+Alan güvenliği liman, şehir, ikmal merkezi ve isyan riski gibi hedef türleriyle seçilebilsin.
+Plan ekranı beklenen ikmal yükünü ve hazırlık eksiklerini başlamadan önce göstersin.
+Yapay zekâ aynı plan nesnelerini kullansın; görünmez özel cephe sistemiyle avantaj elde etmesin.
+Testte hedef ele geçirilince cephe ve taarruz kapsamının doğru güncellendiğini doğrula.
+Testte küçük düşman hareketinin bütün orduda sürekli yeniden konuşlanma döngüsü yaratmadığını doğrula.
+## 49 | KARA MUHAREBE ÇÖZÜCÜSÜ VE HASAR HESABI
+Muharebe kaydı saldıran, savunan, yedek, bölge, yön, arazi, hava ve başlangıç saati bilgilerini taşısın.
+Katılım uygunluğunu komşuluk, emir, organizasyon, erişim ve görev durumu üzerinden doğrula.
+Hedef sertliği h için temel saldırıyı A = softAttack × (1 − h) + hardAttack × h olarak hesaplayabil.
+Etkili saldırıda gerçek ekipman, personel, ikmal, arazi, komuta ve destek çarpanlarını uygula.
+Organizasyonu dayanıklılık ve devam etme kapasitesi olarak ele al; isteğe bağlı saldırı etkisini ayrıca sınırla.
+Hedef savunmadaysa defense, saldırı halindeyse breakthrough değerini karşı ateş koruması için kullan.
+Örnek baskı formülü H = 0,10 × min(A,D) + 0,40 × max(A−D,0) olabilir.
+Bu H doğrudan insan kaybı değildir; organizasyon ve güç hasarına ayrı katsayılarla dönüştür.
+Zırh-delme etkileşimini sınırlı, kademeli katsayılarla uygula; tek puanlık fark sonsuz avantaj yaratmasın.
+Birden fazla hedef varsa ateş dağıtımı ve hedef önceliği açık kurallar taşısın.
+Güç hasarı personel ve ekipman türlerine mevcut bileşimle uyumlu paylaştırılsın.
+Kayıplar mevcut miktarı aşamasın; yuvarlama artıkları kayıtlı kalabilsin.
+Saatlik hasarları iki taraf için aynı başlangıç durumundan hesaplayıp birlikte uygula.
+Rastgelelik küçük veya tasarlanmış dağılım kullansın; tek zar bütün stratejik hazırlığı anlamsızlaştırmasın.
+Hava desteği ve kıyı ateşi uygun katılım, menzil ve üst sınırla savaşın hesabına girsin.
+Savaş ekranında temel saldırıdan son etkiye giden katsayı ayrıntısı açılabilsin.
+Yapay zekâ aynı çözücünün ucuz tahmin sürümüyle risk hesabı yapabilsin; gerçek sonucu önceden kesin bilmesin.
+Testte tamamen simetrik kuvvetlerde ülke kimlik sırasının taraflı sonuç yaratmadığını doğrula.
+Testte sıfır ekipmanlı taburun tam donanımlı saldırı katkısı sağlamadığını doğrula.
+## 50 | GENİŞLİK, TAKTİK, TAHKİMAT VE YIPRANMA
+Arazi türü temel savaş genişliği ve ek saldırı yönü katkısını belirlesin.
+Aktif katılım kapasitesi dolunca uygun birlikler yedekte beklesin; sonsuz yığın tam ateş gücü vermesin.
+Genişlik aşımı uygulanıyorsa ceza ve aktif katılım seçimi oyuncuya açıklansın.
+Yedekten katılım haberleşme, doktrin, komutan ve anlık duruma bağlı olsun.
+Taktik seçimi birlik türü, arazi, keşif ve doktrin uygunluğuyla ağırlıklandırılsın.
+Karşı taktik avantajı sınırlı olsun; oyuncunun bütün ekipmanını tek rastgele seçimle anlamsızlaştırmasın.
+Siperlenme bölgede kalma süresiyle artsın; hareket sonrası nasıl azaldığı açık olsun.
+Tahkimat bina seviyesi, saldırı yönü ve hasar durumuna göre savunma etkisi oluştursun.
+Nehir geçişi, dağ, orman, bataklık ve şehir etkileri ilgili birlik türleriyle farklılaşsın.
+Mühendis ve özel birlik katkıları belirli cezalara karşı çalışsın; bütün arazi etkilerini tek seferde sıfırlamasın.
+Şehir çatışması hazırlık, dar alan ve yıpranma açısından ayrı maliyet taşısın.
+Demiryolu topu ray erişimi, konuşlanma süresi ve menzil içindeki muharebelere destek versin.
+Aynı demiryolu topunun bir saatte uzak iki cepheye tam destek vermesini engelle.
+Muharebe dışı yıpranma hava, arazi, ikmal, tatbikat ve güvenilirlikten hesaplanabilsin.
+Ceza toplamlarında alt-üst sınırlar ve tekrarlanan kaynak etkisi kontrolü bulunsun.
+Savaş raporu organizasyon kaybı, ekipman kaybı, taktik ve arazi katkılarını ayrı göstersin.
+Yapay zekâ kötü genişlik ve ikmal koşullarında takviye yığmak yerine başka saldırı yönü arayabilsin.
+Testte dağda uygun dağcı katkısı ile standart birlik katkısını aynı koşullarda karşılaştır.
+Testte yedekteki tümenin aktif ateş katkısına yanlışlıkla dahil edilmediğini doğrula.
+## 51 | KUŞATMA, GERİ ÇEKİLME VE BİRLİK TESLİMİ
+Kuşatılmayı dost askerî bağlantıdan kopma, ikmalsizliği gerçek teslimat açığı olarak ayrı değerlendir.
+Kara yolu kesilen birlik için liman, deniz, hava ve yerel kaynak erişimini ayrıca kontrol et.
+Her tümenin tanımlı yerel ikmal rezervi olsun; bağlantı kesildiği anda tamamen etkisiz hale gelmesin.
+Rezerv tüketimi gerçek faaliyet, personel ve ekipman bileşiminden türesin.
+Eksik teslimat önce rezervi azaltıp ardından organizasyon yenilenmesi, hareket ve yıpranmayı etkilesin.
+Organizasyon kritik eşiğe indiğinde güvenli ve geçilebilir geri çekilme hedefi ara.
+Hedef değerlendirmesi düşman kontrolü, geçiş hakkı, ikmal ve yakın savaş riskini hesaba katsın.
+Geri çekilen birlik normal saldırı emri alamayabilir; yeniden örgütlenme koşulları açık olsun.
+Takip baskısı ve erişilemeyen kaçış yolları birlik teslimi riskini artırabilsin.
+Teslim kararı kalan savaş kapasitesi, kaçış ve emir koşullarına bağlı olsun; yalnız takvimle otomatik çalışmasın.
+Teslim olan birliğin personel, ekipman ve karakter sonuçları muhasebe olaylarıyla işlensin.
+Ele geçirilen ekipman gerçek mevcut ve kurtarılabilir miktarla sınırlı olsun.
+Kuşatma çemberi kapanmadan önce daralan geri bağlantı oyuncuya risk uyarısı verebilsin.
+Harita kuşatma ile yetersiz ikmali farklı simgelerle göstersin.
+Limanı bulunan cebin deniz ikmali sürüyorsa kalan kapasite ve konvoy riski açıklansın.
+Yapay zekâ kuşatma kırma hedefini cephe tutma ihtiyacı ve tahmini başarıyla karşılaştırsın.
+Kuşatan yapay zekâ çemberi açık bırakacak gereksiz ileri yürüyüşten kaçınan değerlendirme kullansın.
+Testte kara bağlantısı kesilmiş fakat çalışan limanı bulunan tümenin ikmal alabildiğini doğrula.
+Testte teslim ekipmanının önceki stoktan fazla olmadığını ve iki tarafa birden yazılmadığını doğrula.
+## 52 | KAPASİTELİ İKMAL AĞI VE PAYLAŞIM
+İkmal ağını kaynak düğümleri, aktarma merkezleri, demiryolları, limanlar ve talep noktalarından oluştur.
+Her bağlantı saatlik veya günlük kapasite, hasar, erişim ve taşıma maliyeti taşısın.
+Başkent ve uygun yerel kaynaklar ağın üretici düğümleri olsun; üretim toplamını sınırsız varsayma.
+Demiryolu ağı, konvoy hatları ve yerel dağıtımı ortak kapasite muhasebesiyle bağla.
+Bir rotanın kapasitesi en dar bağlantıyla sınırlansın; alternatif yollar varsa akış paylaştırılabilsin.
+Aynı hat iki orduya ayrı hesaplanıp iki kez tam kapasite verilmesin.
+İkmal çözümünde talep önceliği ve adil paylaşım kuralı açık olsun.
+Talep; tümenin personeli, ekipmanı, faaliyeti ve lojistik desteğinden türesin.
+Ülke veya müttefik erişimi olmayan bağlantı, görsel olarak mevcut olsa da kullanılamasın.
+Ağ değişince etkilenen bağlı parçaları güncelle; bütün dünyayı her görüntü karesinde yeniden çözme.
+Verimli yaklaşım olarak kapasite kısıtlı akış, çok aşamalı dağıtım veya ölçülmüş uygun yaklaşık çözücü kullan.
+Yaklaşık çözücü kullanıldığında kapasite aşımı ve toplam teslimat sınırları yine kesin korunmalı.
+Tümenin aldığı teslimatı talebe oranlayarak supplyRatio üret; sıfır talep durumunu güvenli işle.
+İkmal cezasını rezerv ve geçmiş açığa bağla; anlık küçük dalgalanma büyük savaş sıçraması yaratmasın.
+Oyuncu tümenin kaynağa kadar izlediği yolu ve darboğaz düğümünü inceleyebilsin.
+Yapay zekâ savaş planından önce hedef bölgede beklenen ek talebi hesaplasın.
+İkmal ekranındaki açıklama hat, tren, liman, konvoy veya kamyon sorununu ayırt etsin.
+Testte tek dar demiryoluna bağlı iki ordunun toplam teslimatı hat kapasitesini aşmasın.
+Testte alternatif yol açıldığında çözümün kullanılabilir kapasiteyi uygun biçimde artırdığını doğrula.
+## 53 | DEMİRYOLU, TREN VE SON KİLOMETRE DAĞITIMI
+Demiryolu seviyeleri taşımacılık kapasitesi ve onarım maliyetine bağlı olsun.
+Tren gereksinimini çalışan ağın yükü ve mesafesinden türet; ray binası tek başına sınırsız taşıma sağlamasın.
+Tren stoku yetersizse hangi hatların ve merkezlerin etkilendiği gösterilsin.
+Zırhlı veya farklı tren tasarımları maliyet, güvenilirlik ve saldırıya dayanım açısından farklılaşabilsin.
+Yeni ele geçirilen ray ve merkezler uygun hazırlık veya onarım süresinden sonra tam çalışsın.
+İkmal merkezinden birliklere dağıtım mesafe, arazi, altyapı, hava ve motorize seviyeye bağlı olsun.
+Motorize dağıtım daha yüksek menzil veya kapasite sağlarken kamyon ve yakıt tüketsin.
+Kamyon açığı varsa gösterilen motorize seviye tam fayda sağlamasın; fiilî kapasite ayrı hesaplansın.
+Aynı kamyon stoku tümen motorize ekipmanı ve merkez taşımacılığına çift tahsis edilemesin.
+Yerel dağıtım rotaları düşman kontrolü ve geçilemez araziyi dikkate alsın.
+Merkez kapasitesi ile son kilometre kapasitesini ayrı göster; güçlü merkez her uzak tümeni doyurmasın.
+Demiryolu inşaatı iki seçili nokta arasında geçerli bağlantı projesi oluşturabilsin.
+Onarım önceliğinde cepheye giden kritik bağlantılar kullanıcı tarafından öne alınabilsin.
+Hava lojistik saldırıları tren, kamyon ve hat hasarını ilgili muhasebeye uygulasın.
+Görsel trenler gerçek toplam akışı temsil etsin; her teslimat için ayrı fizik nesnesi zorunlu olmasın.
+Yapay zekâ fazla birlik göndermek yerine ray yükseltme ve merkez motorize etme seçeneklerini karşılaştırsın.
+Lojistik raporu günlük tren ve kamyon kaybını normal ekipman muharebe kaybından ayırsın.
+Testte kamyon stoğu azaldığında yerel dağıtım menzili veya kapasitesi beklenen biçimde değişsin.
+Testte yeni işgal edilen rayın hazırlık süresi bitmeden tam ikmal taşımadığını doğrula.
+## 54 | DENİZ İKMALİ, HAVA İKMALİ VE ALTYAPI HASARI
+Denizaşırı ikmal çıkış limanı, deniz rotası, konvoy ve varış limanı kapasitesiyle sınırlandırılsın.
+Limanların aynı anda ticaret, asker taşıma ve ikmal kullanımını kapasite açısından birlikte değerlendir.
+Konvoy açığı oluştuğunda görev öncelikleri kullanıcı tarafından ayarlanabilsin.
+Deniz rotası kapandığında alternatif liman veya rota ara; coğrafi bağlantı yoksa teslimatı duruma uygun azalt.
+Konvoy saldırısı gerçek sevkiyat miktarını ve sonraki ikmal seviyesini etkilesin.
+Hava ikmali nakliye uçağı, uygun üs, menzil, hava güvenliği ve yakıt gerektirsin.
+Hava yoluyla teslim miktarı kara demiryolunun sınırsız alternatifi olmasın; açık kapasite sınırı taşısın.
+Yerel ikmal bölgesel kaynak ve nüfustan sınırlı katkı sağlayabilir; bütün kuşatmaları etkisizleştirmesin.
+Geçici liman desteği kurulum, taşıma, ömür ve kapasite koşulları taşısın.
+Geçici kapasite sona ermeden önce oyuncuya kalan süre ve bağımlı birlik sayısı gösterilsin.
+Geri çekilme sırasında altyapıyı kullanılamaz hale getiren oyun kararı hazırlık ve bölgesel maliyet gerektirsin.
+Bu karar dost nüfus, inşaat veya ilerideki ikmal erişimine maliyet oluşturan soyut oyun etkileriyle temsil edilsin.
+Hasar kendi ilerleyişini de etkileyebilsin; bedelsiz yalnız düşmana çalışan sihirli etki olmasın.
+Müttefik liman ve üs erişimi ilgili diplomatik haklara bağlı olsun.
+İkmal önceliği değişince aynı kaynak miktarının yeni dağılımı önizlenebilsin.
+Yapay zekâ uzak harekâtı başlatmadan geri ikmal ve tahliye seçeneklerini değerlendirsin.
+Deniz ve hava ikmali haritada rota, teslim oranı ve kayıp riskiyle gösterilsin.
+Testte varış limanı dar olduğunda büyük konvoy filosunun teslimatı sınırsız artırmadığını doğrula.
+Testte kuşatılmış cepheye hava ikmalinin yalnız gerçek görev kapasitesi kadar katkı sağladığını doğrula.
+## 55 | HAVA KANATLARI, ÜSLER VE GÖREV ATAMA
+Hava kanadı ülke, rol, tasarım izinleri, uçak sayısı, pilot deneyimi, üs ve görev bilgisi taşısın.
+Yeni kanat depodaki gerçek uçak ve personelden oluşsun; boş kanat şablonu hazır filo sayılmasın.
+Üs kapasitesi, hasar, yakıt ve ikmal seviyesi görev hazırlığını etkilesin.
+Üs aşırı kalabalıksa görev etkinliği ve operasyon düzeni tanımlı cezalar alsın.
+Uçakları başka üsse taşımak menzil ve erişim koşullarına bağlı yeniden konuşlanma süreci olsun.
+Müttefik üs kullanımı ilgili diplomatik erişim gerektirsin.
+Görev bölgesi seçildiğinde menzil kapsamını üs ile bölgenin gerçek alanı üzerinden hesapla.
+Bölgenin küçük bölümüne ulaşan uçak tam kapsama etkinliği kazanmasın.
+Hava üstünlüğü, önleme, yakın destek, bombardıman, deniz saldırısı, keşif ve nakliye görevlerini ayrı tanımla.
+Kanat aynı anda çelişen görevlerde tam uçak sayısıyla çalışmasın; görev payı veya önceliği kullan.
+Gece, gündüz veya sürekli görev tercihleri yakıt ve görev etkinliğini etkilesin.
+Düşük kayıp, dengeli ve yoğun görev tercihleri risk ve faaliyet eşiklerini değiştirsin.
+Takviye önceliği kanadın yeni uçakları ne hızla alacağını belirlesin.
+Hava kanadını orduya bağlama seçeneği varsa yeni cepheye uygun üs ve bölgeyi otomatik değerlendirsin.
+Pilot deneyimi tatbikat ve savaşla artsın; kayıp ve yeni personelle ağırlıklı değişsin.
+Yapay zekâ hava üslerini kara ilerleyişi ve yakıt güvenliğiyle birlikte seçsin.
+Panel uçak adedi, hazır adet, menzil, faaliyet oranı ve yakıt sorununu ayrı göstersin.
+Testte menzil dışındaki bölgeye atanan kanadın gerçek görev üretmediğini doğrula.
+Testte aynı uçakların iki hava kanadında eşzamanlı sayılmadığını doğrula.
+## 56 | HAVA TESPİTİ, ÜSTÜNLÜK VE HAVA MUHAREBESİ
+Hava karşılaşmasını önce tespit, sonra görevdeki uçakların teması ve muharebe olarak çöz.
+Radar, keşif, hava koşulu, gece ve görev yoğunluğu tespit olasılığını etkilesin.
+Bölgedeki bütün uçakları her saat otomatik muharebeye sokma; hazırlık ve katılım sınırı uygula.
+Karşılaşan uçakların hız, çeviklik, saldırı, dayanıklılık ve pilot deneyimini role uygun kullan.
+Üstünlük puanı yalnız toplam uçak adedi değil görev etkinliği ve gerçek faaliyet üzerinden hesaplansın.
+Düşük yakıt veya üs yoğunluğu nedeniyle uçamayan uçaklar tam üstünlük katkısı vermesin.
+Önleme görevi bombardıman tehdidine odaklansın; üstünlük görevi daha geniş hava kontrolü sağlasın.
+Kara uçaksavarı ve bölgesel uçaksavar farklı etki kapsamı taşısın.
+Muharebe kaybı, operasyon kazası ve yerdeki uçak kaybını ayrı raporla.
+Güvenilirlik ve kötü hava kazalara katkı yapabilir; kaza hesabını düşman saldırı hasarıyla karıştırma.
+As pilotlar uygun savaş başarılarıyla oluşabilir; ilgili kanat ve görev kapsamında sınırlı bonus sağlasın.
+Asın kaybı veya görev değişimi kayıtlı karakter durumu oluştursun.
+Savaş sisi nedeniyle düşman kayıpları kesin değil tahmini raporlanabilir.
+Üstünlük değişiminin kara savaşı ve çıkarma koşullarına geçişini tanımlı eşik ve gecikmelerle yönet.
+Bir saatlik küçük sayı farkı bütün harekâtı sürekli açıp kapatmasın; kararlılık eşiği kullan.
+Yapay zekâ kayıp oranı aşırı artınca üs, görev, tasarım veya faaliyet düzeyini değiştirsin.
+Hava raporu sortiler, tespit, çatışma, kayıp ve etkiyi ayrı aşamalarla açıklasın.
+Testte hiç uçmayan kanadın yalnız depodaki uçak sayısıyla hava üstünlüğü sağlamadığını doğrula.
+Testte aynı hava çatışmasının uçak kaybını depo ve kanatta iki kez düşmediğini doğrula.
+## 57 | YAKIN HAVA DESTEĞİ VE BOMBARDIMAN GÖREVLERİ
+Yakın hava desteği gerçek kara muharebelerini hedeflesin; savaş olmayan bölgede kara hasarı üretmesin.
+Bir muharebeye katılabilen destek uçakları genişlik, görev etkinliği ve uygun kapasiteyle sınırlandırılsın.
+Aşırı hava yığılması aynı muharebeye sınırsız doğrudan hasar vermesin.
+Düşman avcıları ve uçaksavarlar görev kaybı ve etkinlik üzerinde ayrı etkiler taşısın.
+Stratejik bombardımanda oyuncu uygun bina türlerini önceliklendirebilsin.
+Fabrika, ray, liman, hava üssü ve araştırma tesisi hasarı kendi gerçek kapasitesini değiştirsin.
+Bombardıman sonucu altyapı hasarı onarım kuyruğuna ve ikmal ağına olay göndersin.
+Lojistik saldırıları tren, kamyon ve hat kullanımına yönelik soyut hedefler üzerinden çalışsın.
+Liman saldırısı limandaki uygun gemiler ve savunmalarla ayrı çözüm kullansın.
+Deniz saldırısı uçak menzili, tespit, hedef görünürlüğü ve gemi uçaksavarına bağlı olsun.
+Keşif görevi bilgi doğruluğu ve hedef tespitini geliştirirken kendi yakıt ve riskini taşısın.
+Görev hedefi savaş sisi altında bilinmiyorsa gerçek kesin konum yerine bilgiye dayalı tercih kullan.
+Hedef hasar sınırına ulaştığında görevin etkinliği yeniden değerlendirilip uygun alternatif seçilebilsin.
+Oyuncu bombardıman raporunda hangi yapıya ne kadar işlev kaybı verildiğini tahmin aralığıyla görsün.
+Aynı hasarın üretim ve bina hesabında iki kez uygulanmasını engelle.
+Yapay zekâ stratejik hedefin savaş ekonomisine katkısını, kayıp riskini ve uçuş maliyetini karşılaştırsın.
+3D bomba ve patlama görüntüsü raporlanan göreve bağlı olsun; görsel isabet yeni hasar üretmesin.
+Testte demiryolu bombardımanının sonraki ikmal dağıtımını gerçek kapasite üzerinden etkilediğini doğrula.
+Testte hava üssü hasarının yerdeki kapasite ile uçuş etkinliğine tutarlı yansıdığını doğrula.
+## 58 | PARAŞÜT HAREKÂTI VE HAVA NAKLİ
+Paraşüt emri uygun tümen, başlangıç üssü, hedef bölge, nakliye kanadı ve hazırlık bilgisi taşısın.
+Birliğin hava indirmeye uygunluğu şablondaki bütün gerekli unsurlardan kontrol edilsin.
+Ağır ve uyumsuz ekipman bulunan tümen yalnız paraşütçü etiketi taşıdığı için indirilemesin.
+Gerekli taşıma kapasitesi personel ve ekipman yükünden türesin.
+Nakliye uçakları aynı anda başka hava ikmali veya indirme görevine tam kapasite ayrılamasın.
+Harekât menzil, hava koşulu, üs kapasitesi, yakıt ve gerekli hava güvenliği şartlarını karşılasın.
+Hazırlık tamamlandığında başlayan görev uçuş ve iniş aşamalarına ayrılsın.
+Görev boyunca kayıplar teslim edilen personel ve ekipman miktarını etkilesin.
+İniş sonrası organizasyon ve düzenlenme süresi uygulansın; birlik anında tam hazırlıklı saldırmasın.
+Savunulan hedefte uygun muharebe çözümü başlasın; boş hedefte kontrol değişimi kuralları çalışsın.
+İndirme birlikleri normal ikmal ağına bağlı kalır; havadan gelmeleri sürekli ücretsiz ikmal sağlamaz.
+Küçük bir indirme ile uzak başkent alınması ülkeyi koşulsuz otomatik teslim ettirmesin.
+Oyuncuya hedef bölgenin bilinen savunması ve belirsizlik düzeyi gösterilsin.
+Hava ikmali ile hava indirmesi aynı taşıma sistemini kullanabilir; hedef ve teslim kuralları farklı olsun.
+Başlayan görevde koşullar değişirse geri dönüş veya kısmi devam davranışı açık tanımlansın.
+Yapay zekâ indirme hedefini kara ordusuyla buluşma, liman veya ikmal erişimi açısından değerlendirsin.
+3D nakliye uçakları ve paraşüt efekti temsilî olsun; tek tek bütün personeli fizik nesnesi yapma.
+Testte yetersiz nakliye kapasitesiyle tam tümenin aynı anda taşınmadığını doğrula.
+Testte iniş sonrası kuşatılmış birliğin yerel rezerv ve ikmal kurallarına girdiğini doğrula.
+## 59 | FİLOLAR, GÖREV KUVVETLERİ VE LİMAN YÖNETİMİ
+Donanmayı filo ve görev kuvveti hiyerarşisiyle düzenle; gemiler tek aktif görev kuvvetine ait olsun.
+Her görev kuvveti rol, üs, amiral bağlantısı, görev bölgeleri ve çatışma isteği taşısın.
+Devriye, vurucu kuvvet, koruma, baskın, mayın, tarama ve destek görevlerini ayrı durumlar olarak kur.
+Ana üs seçimi menzil, onarım, ikmal ve stratejik konum üzerinden oyuncu veya yardımcı tarafından yapılabilsin.
+Görev kuvvetinin menzili ve hızı en kısıtlayıcı uygun gemi unsurlarından türesin.
+Yakıt yetersizliği veya hasar görevin gerçek faaliyetini etkilesin.
+Liman kapasitesi onarım, ikmal ve konuşlanmada tanımlı sınırlamalar taşısın.
+Otomatik ayrılma seçeneğinde hasarlı gemiler uygun onarım grubuna geçebilsin.
+Onarılan gemiler asıl görev kuvvetine dönüş rotası ve görev koşullarıyla katılsın.
+Filo şablonu istenen gemi rolü ve adetlerini saklasın; mevcut depodan uygun takviye önerilsin.
+Kayıtlar arası kullanılabilen filo düzeni yalnız şablondur; başka kampanyadan gerçek gemi taşımasın.
+Gemi mürettebatı ve deneyimi eğitim, savaş ve kayıplarla değişsin.
+Deniz tatbikatı deneyim sağlarken yakıt, kaza ve hazırlık maliyetleri oluştursun.
+Müttefik üs kullanımı ve liman erişimi diplomatik anlaşma şartlarına bağlı olsun.
+Oyuncu görev kuvveti kartından yakıt, menzil, hasar, rol dengesi ve mevcut emri görebilsin.
+Yapay zekâ filosunu bütün gemileri tek gruba yığmak yerine görev ihtiyacına göre bölebilsin.
+Görev değişimi rota ve faaliyet hazırlığını güncellesin; gemiler haritada anında başka denize geçmesin.
+Testte onarıma ayrılan geminin aktif görev gücünde aynı anda sayılmadığını doğrula.
+Testte görev kuvveti şablonunun yeni kampanyada yalnız mevcut gemi imkanlarıyla doldurulduğunu doğrula.
+## 60 | DENİZ TESPİTİ, OPERASYON GÜVENLİĞİ VE TEMAS
+Deniz karşılaşması görev bölgesi, gerçek faaliyet, tespit ve temasa geçme aşamalarını kullansın.
+Devriye gemileri düşmanı radar, keşif, hava desteği ve kendi tespit özellikleriyle arayabilsin.
+Hedef görünürlüğü, hız, hava ve deniz durumu tespit süresini etkilesin.
+Vurucu kuvvet limanda beklerken uygun temas çağrısıyla menzil ve yakıt şartları altında harekete geçsin.
+Tespit edilen hedefin konumu ve gücü bilgi güveniyle raporlansın; eski temas sonsuza kadar kesin kalmasın.
+Teması sürdürme ve kaybetme kuralları takip hızına, keşfe ve hedef davranışına bağlı olsun.
+Çatışma isteği oyuncunun kabul ettiği tahmini güç oranı ve risk eşiğini belirlesin.
+Görev kuvveti kendisinden güçlü düşmana her koşulda intihar saldırısı yapmasın.
+Deniz kontrolü veya hakimiyet değeri gerçek görev etkinliği ve uygun görev katkısından türesin.
+Limanda hareketsiz gemilerin uzak bölgelerde bedelsiz tam hakimiyet sağlamasını engelle.
+Koruma görevi, deniz kontrolü ve konvoy güvenliği birbirinin aynı tek sayısı olmasın.
+Mayın, kıyı hava gücü ve üs yakınlığı operasyon güvenliğine uygun katkı sağlayabilsin.
+Bölgesel deniz üstünlüğü çıkarma uygunluğuna bağlansın; anlık küçük dalgalanmada sürekli emir açılıp kapanmasın.
+Görev bölgesi sayısı arttıkça kuvvetin dağılım ve etkinlik maliyeti hesaba katılsın.
+Oyuncu bilinen tehdit, tahmini düşman gücü ve kendi faaliyet payını ayrı görsün.
+Yapay zekâ riskli deniz bölgesinde ticareti yönlendirme, eskort artırma veya görev azaltma seçeneklerini değerlendirsin.
+Görsel gemi konumu gerçek filonun tam istihbaratını izinsiz açıklamasın.
+Testte görünmeyen düşman filosunun gerçek konumunun yapay zekâ karar girdisine sızmadığını doğrula.
+Testte yakıtsız ve görev dışı kuvvetin aktif deniz kontrolü katkısı vermediğini doğrula.
+## 61 | DENİZ MUHAREBESİ, HASAR, ÇEKİLME VE ONARIM
+Deniz muharebesi katılan kuvvetler, konumlanma, hava, görüş, takviye ve çekilme durumlarını taşısın.
+Koruma gemileri, büyük gemiler, uçak gemileri ve denizaltılar farklı muharebe rolleri kullansın.
+Koruma yeterliliği büyük gemilerin torpido ve yakın tehditlere maruz kalma oranını etkilesin.
+Büyük filo yığılması konumlanma veya koordinasyon maliyeti taşısın; gemi sayısı sınırsız doğrusal güç vermesin.
+Silah türü uygun hedef sınıfı ve menzil soyutlamasıyla çalışsın.
+Zırh ve delme deniz hedefinde kademeli hasar etkisi oluştursun.
+Torpido, yüzey ateşi, denizaltı karşıtı silah ve hava saldırısını ayrı hasar kanalları olarak hesapla.
+Uçaksavar gemiyi ve uygun filo çevresini tanımlı kapsamda korusun; bütün okyanusa bonus vermesin.
+Kritik hasar motor, silah, yangın veya kontrol etkileri taşıyabilir; bunlar soyut oyun durumları olsun.
+Hasarlı gemi hızı ve görev kapasitesi gerçek hasar durumuna bağlı değişsin.
+Çekilme isteği sağlık, organizasyon benzeri hazırlık, görevin riski ve oyuncu politikasından türesin.
+Çekilme anında güvenli limana ışınlanma olmasın; takip ve uzaklaşma aşaması çözümlensin.
+Batma durumunda gemi, mürettebat, kaptan ve taşınan uçak kayıtları tutarlı güncellensin.
+İki tarafın aynı adım hasarı birlikte uygulanarak kayıt sırasından avantaj doğması önlensin.
+Onarım liman erişimi, tersane tahsisi, malzeme ve zaman gerektirsin.
+Oyuncu onarım ile yeni gemi üretimi arasında kapasite paylaşımını yönetebilsin.
+Yapay zekâ filonun rol dengesini kaybedince muharebeyi sürdürme kararını yeniden değerlendirsin.
+Testte batmış geminin sonraki saatte ateş veya koruma katkısı vermediğini doğrula.
+Testte onarım kapasitesinin yeni üretim kapasitesiyle çifte sayılmadığını doğrula.
+## 62 | KONVOYLAR, MAYINLAR, ROTALAR VE DENİZ ANTLAŞMALARI
+Konvoy kapasitesini ticaret, asker taşıma ve denizaşırı ikmal talepleri arasında paylaş.
+Konvoy sevkiyatları kaynak, hedef, yük, rota, tahmini varış ve risk bilgisi taşısın.
+Oyuncu deniz bölgelerini normal, tercih edilmeyen veya erişime kapalı olarak işaretleyebilsin.
+Alternatif rota daha uzun olduğunda konvoy ihtiyacı ve teslim gecikmesi gerçek hesapla artsın.
+Konvoy baskınında tespit, saldıran güç, eskort ve hava desteği üzerinden kayıp çözümlemesi yap.
+Kaybedilen yük ilgili ticaret veya ikmal teslimatında aynı miktarda eksik oluşmasına yol açsın.
+Koruma görevi konvoy kaybını azaltabilir; tek eskort bütün rotayı kesin güvenli yapmasın.
+Mayın alanı bölgesel yoğunluk, taraf, etkinlik ve süre bilgisi taşısın.
+Mayın döşeme uygun görev donanımı, süre ve faaliyet kapasitesi gerektirsin.
+Mayın tarama yoğunluğu görev etkinliği ve koşullarla azaltırken risk taşısın.
+Aynı mayın etkisini filo hızı ve hasarda gerekçesiz iki kez tam uygulama.
+Deniz antlaşmaları gemi tasarımı veya üretim sınırlarını ve diplomatik yükümlülükleri tanımlasın.
+Antlaşmaya uyum, istisna ve ihlal seçeneklerinin siyasi sonuçları onay öncesinde görülsün.
+Antlaşma sona erdiğinde tasarım uygunluğu güncellensin; eski kısıtlar belirsiz biçimde kalmasın.
+Abluka etkisini gerçek rota ve teslim kaybıyla temsil et; bütün ülkenin üretimini tek etikete göre sıfırlama.
+Yapay zekâ tehlikeli rotaya daha fazla konvoy göndermek yerine koruma ve alternatif yolu karşılaştırsın.
+Deniz ticaret raporu gemi kaybı, yük kaybı ve gecikmeyi ayrı göstersin.
+Testte yasaklanan deniz bölgesini yeni rotanın kullanmadığını doğrula.
+Testte tek konvoy kaybının birden çok sözleşmeye toplam yükünden fazla kayıp yazmadığını doğrula.
+## 63 | UÇAK GEMİLERİ VE YENİ DENİZ ÖZEL PROJELERİ
+Uçak gemisindeki uçaklar gerçek kanat ve tasarım kayıtları taşısın; gemi istatistiğine gömülü sınırsız uçak olmasın.
+Güverte kapasitesi, hazırlık, hasar ve hava koşulu sorti sayısını sınırlandırsın.
+Güverte aşırı yoğunluğu verim kaybı veya görev düzeni sorunu oluştursun.
+Uçak gemisi uçağı avcı, deniz saldırısı veya uygun destek rolüne göre görevlendirilebilsin.
+Geminin bulunduğu deniz bölgesi ve görevi hava kanadının menzil merkezini belirlesin.
+Taşıyıcı hasarı uçuş faaliyetini etkilesin; batma anında uçakların kaderi uygun yakın üs ve görev durumuyla çözümlensin.
+Karadan kalkan hava kuvvetleriyle taşıyıcı hava kuvvetleri aynı hedefte tanımlı koordinasyon sınırlarına tabi olsun.
+Yeni deniz özel projeleri destek gemisi, eskort uçak gemisi ve denizaltı taşıyıcı gibi ayrı tasarım erişimleri açabilsin [K07].
+Destek gemilerinin görevi onarım, ikmal veya keşif katkısı olarak açık tanımlansın; bedelsiz her rol bonusu olmasın.
+Eskort uçak gemisi maliyet, hız ve kapasite açısından büyük filo taşıyıcısından farklılaşsın.
+Denizaltı taşıyıcı seçeneği görev, tespit ve kapasite ödünleşimleri taşıyan deneysel oyun tasarımı olarak işlensin.
+Deniz uçağı veya keşif modülleri tespiti geliştirirken yuva ve üretim maliyeti tüketsin.
+Özel proje tamamlanması üretim şablonunu açsın; hazır gemileri otomatik depoya eklemesin.
+Görev kuvveti planlayıcısı koruma ve hava gücü dengesini görselleştirsin.
+Oyuncu uçak gemisinin yalnız gövde maliyetini değil uçak ve yakıt ihtiyacını birlikte görebilsin.
+Yapay zekâ taşıyıcı filosunu yeterli koruma ve yakıt olmadan uzak görevde tüketmemeyi değerlendirsin.
+Tasarım, üretim, eğitim ve donanma görevi arasında geçerli bağımlılık zinciri kur.
+Testte taşıyıcı uçaklarının kara üslerindeki stokla aynı anda sayılmadığını doğrula.
+Testte güverte hasarının sorti kapasitesini beklenen ölçüde düşürdüğünü doğrula.
+## 64 | DENİZ ÇIKARMASI VE KIYI HAREKÂTI
+Çıkarma planı başlangıç limanı, hedef kıyı, tümenler, hazırlık, taşıma ve destek atamalarını taşısın.
+Birlikler başlangıç limanına gerçek hareketle ulaşsın; haritadaki her ordudan anlık çıkarma başlatma.
+Planlanan personel ve ekipman yüküne göre konvoy ve çıkarma kapasitesi hesapla.
+Çıkarma teknolojisi aynı anda taşınabilecek kapasiteyi ve hazırlık koşullarını etkilesin.
+İlgili deniz bölgelerinde tanımlı operasyon güvenliği ve erişim koşulları karşılanmalı.
+Hava desteği, kıyı ateşi, amfibi araç ve deniz piyadesi uygun katkılar sağlasın.
+Hazırlık süresi tümen sayısı, plan değişikliği ve doktrine bağlı olsun.
+Harekât başladıktan sonra deniz yolculuğu riskleri normal konvoy ve donanma kurallarıyla çözümlensin.
+Savunulan kıyıya ulaşınca amfibi muharebe başlasın; çıkarma cezası ilgili birlik özellikleriyle değişsin.
+Kıyı tahkimatı ve normal tahkimat etkilerini tanımlı kapsamda ayır.
+Liman ele geçirilmeden kurulan köprübaşı sınırlı rezerv ve ikmal kapasitesine sahip olsun.
+Geçici liman planı varsa kurulum ve sınırlı ömür gerçek lojistik etkisi oluştursun.
+Takviye tümenler ilk dalga gibi sınırsız aynı anda kıyıya çıkmasın; taşıma ve kıyı kapasitesini paylaşsın.
+Başarısız harekâtta geri dönüş veya tahliye koşullarını taşıma kapasitesiyle değerlendir.
+Oyuncu plan ekranında eksik şartları ve harekât sonrası beklenen ikmal durumunu görsün.
+Yapay zekâ yalnız boş sahil değil limana ulaşma ve cepheyi genişletme ihtimalini değerlendirsin.
+3D taşıma ve kıyı çatışması gösterimi gerçek aşamalara bağlı çalışsın.
+Testte konvoy veya deniz erişimi yetersizken harekâtın uygunluk dışı kaldığını doğrula.
+Testte köprübaşındaki birliklerin liman olmadan sınırsız takviye almadığını doğrula.
+## 65 | DİPLOMASİ, SAVAŞ HEDEFİ VE DÜNYA GERİLİMİ
+Diplomatik ilişki çifti görüş, anlaşmalar, tarihçe, gerilim kaynakları ve kabul etkenleri taşısın.
+İlişki geliştirme günlük siyasi maliyet ve etki sınırıyla çalışsın.
+Saldırmazlık, garanti, askerî geçiş, üs erişimi, ticaret, ambargo ve savaş çağrısı ayrı işlem türleri olsun.
+Her işlem uygunluk, maliyet, süre, yanıt ve sona erme koşullarını tanımlasın.
+Kabul puanı ortak tehdit, güven, ideoloji, güç, ekonomik bağımlılık ve stratejik hedeflerden türesin.
+Oyuncu bilinebilir kabul nedenlerini görsün; gizli plan ve kesin düşman kuvveti arayüzden sızmasın.
+Savaş hedefi hazırlığı siyasi koşul ve zaman gerektirsin; hedef ülke veya bölge açık tanımlansın.
+Ültimatom yanıt süresi ve kabul, reddetme veya müzakere sonuçları taşısın.
+Savaş ilanı taraflar, garanti ve ittifak yükümlülüklerini tutarlı olay zinciriyle değerlendirsin.
+Dünya gerilimi olay kaynağı, sorumlu ülke, artış ve zaman etkisiyle kayıtlı olsun.
+İlhak ve saldırgan kararlar farklı gerilim katkıları taşıyabilsin; aynı olay iki kez gerilim üretmesin.
+Demokratik veya ülkeye özgü diplomatik kısıtlar hükümet kurallarından gelsin.
+Diplomatik erişim yalnız ilgili türü açsın; hava üssü izni otomatik bütün kara ordusuna hak vermesin.
+Anlaşma ihlali güven ve gelecekteki kabul değerlendirmesine gerçek geçmiş etkisi bıraksın.
+Otomatik yanıt sistemi kullanıcının belirlediği koşullarla aynı diplomatik komutları kullansın.
+Yapay zekâ güçsüzken her talebi reddetmek veya güçlüye her koşulda boyun eğmek yerine çıkar hesabı yapsın.
+Diplomasi paneli devam eden teklifleri, süreleri ve karşılıklı yükümlülükleri açıkça göstersin.
+Testte aynı ülke çiftinin aynı anda çelişen barış ve savaş statülerine sahip olmadığını doğrula.
+Testte garanti yükümlülüğünün uygun savaş olayında yalnız bir çağrı ürettiğini doğrula.
+## 66 | İTTİFAK KURALLARI, HEDEFLER VE LİDERLİK
+İttifak lider, üyeler, katılım koşulları, kurallar, ortak hedefler ve katkı kayıtları taşısın [K07].
+İttifak kurma ve katılma siyasi koşul, kabul hesabı ve diplomatik sonuç gerektirsin.
+Savaş ilanı veya savaşa çağrı yetkisi gibi kurallar üye davranışını gerçek biçimde sınırlasın.
+Kural ihlali tanımlı siyasi veya ittifak içi sonuç oluştursun; yalnız açıklama metninde kalmasın.
+Ortak hedefler bölge savunma, düşman baskısını kırma, ikmal yolu açma veya sanayi geliştirme gibi ölçülebilir olsun.
+Hedef başarısı kayıtlı katkılardan değerlendirilsin; aynı hedef tekrar tekrar sınırsız ödül vermesin.
+İttifak gelişimi araştırma, istihbarat veya lojistik iş birliği kapasitesi açabilsin.
+Üyelerin katkı yükümlülükleri ekonomik büyüklük ve savaş durumuna göre değerlendirilsin.
+Liderlik değişimi uygun güç, katkı ve siyasi koşullarla mümkün olsun.
+Lider değişince devam eden savaş ve ortak emir kayıtları tutarlı yeni yetkiye bağlansın.
+İttifaktan ayrılma devam eden savaş, üs erişimi ve birlik yetkilerini açık kurallarla güncellesin.
+Araştırma paylaşımı üyelerin gerçek teknoloji durumundan türesin; boş ittifak bonusu sınırsız olmasın.
+Ortak istihbarat paylaşımı üyenin sahip olduğu bilgi doğruluğuyla sınırlansın.
+Farklı ideolojili üyeler ortak tehdit altında birlikte hareket edebilir; ilişkinin gerilimi politik sonuç yaratabilsin.
+İttifak ekranı hedef, katkı, yükümlülük ve kural etkilerini aynı yerde sunsun.
+Yapay zekâ üyelikten beklenen güvenlik ile bağımsız hareket maliyetini karşılaştırsın.
+Üye devletin bütün iç siyaseti ittifak liderine otomatik devredilmesin.
+Testte liderin yetki vermediği işlemi üyenin uygunluk kuralını aşarak yapamadığını doğrula.
+Testte hedef tamamlanmasının bütün ilgili üyelere doğru kapsamla tek kez uygulandığını doğrula.
+## 67 | MÜTTEFİK SAVAŞ ALANLARI VE SEFER KUVVETLERİ
+Ortak savaş alanı coğrafi kapsam, amaç, öncelik, komuta sahibi ve istenen katkıları taşısın.
+Lider veya yetkili ülke kara, hava ve deniz katkısı talep edebilsin.
+Katılan ülke kendi savunmasını ve kaynaklarını değerlendirerek uygun katkı sunsun.
+Sefer kuvvetinde sahiplik, emir yetkisi, ekipman sorumluluğu ve geri çağırma hakkı ayrı alanlar olsun.
+Komuta devri personel veya ekipmanın ülke sahipliğini açıklamasız değiştirmesin.
+Birliklerin müttefik bölgede ikmali erişim ve paylaşım kurallarıyla çalışsın.
+Ortak harekât hedefleri oyuncuya müttefik orduların niyetini uygun bilgi düzeyinde gösterebilsin.
+Müttefik yapay zekâ aynı limana aşırı tümen yığarak ikmali çökertmemeyi değerlendirsin.
+Özel plan talebi birliklerin mevcut konumundan gerçek rota ve hazırlık süreci oluştursun.
+Hava ve deniz desteği aynı coğrafi hedefe bağlandığında görev alanları otomatik önerilebilsin.
+İttifak koordinasyonu geçici emir önceliği sağlayabilir; üye ülkenin bütün yönetimini görünmezce ele geçirmesin.
+Komuta anlaşması sona erdiğinde birlikler uygun sahip emir sistemine geri dönsün.
+Geri çağrılan sefer kuvvetlerinin taşıma ve güvenli dönüş koşulları değerlendirilsin.
+Başarı katkısı kendi ve müttefik birliklerin gerçek faaliyetinden hesaplanarak savaş katkısına işlensin.
+Oyuncu müttefik yardımını kabul ederken ikmal maliyetini ve olası kapasite aşımını görsün.
+Yapay zekâ ulaşılamayan cepheye kâğıt üzerinde büyük katkı vermek yerine uygulanabilir görev seçsin.
+Ortak işaret ve harita notları tek oyunculu komuta yardımcısı olarak çalışabilir.
+Testte yabancı birlik için komuta yetkisinin ekipman sahipliğini değiştirmediğini doğrula.
+Testte ittifak erişimi değişince uygun olmayan ortak üs ve ikmal kullanımının güncellendiğini doğrula.
+## 68 | İSTİHBARAT TEŞKİLATI VE AJAN YÖNETİMİ
+Teşkilat kurma siyasi veya sanayi taahhüdü gerektirsin; kuruluş süresi gerçek takvimde ilerlesin.
+Teşkilat geliştirmeleri maliyet, süre, ön koşul ve görev etkileri taşısın [K05].
+Geliştirme kuyruğu sonraki uygun işlemi tamamlanma sonrası otomatik başlatabilsin [K14].
+Ajan kapasitesi teşkilat, ülke ve ittifak özelliklerinden türesin; sınırsız ücretsiz ajan oluşmasın.
+Ajanlar dil veya bölge uygunluğu, uzmanlık, deneyim, görev ve risk durumu taşısın.
+Yeni ajan havuzu kayıtlı içerik ve rastgelelikle oluşsun; menüyü açıp kapatmak adayları sürekli değiştirmesin.
+Görev atama uygun ülke, erişim, uzmanlık ve kapasite koşullarını kontrol etsin.
+Ağ kurma, karşı istihbarat, bilgi toplama, diplomatik baskı ve operasyon hazırlığı ayrı görevler olsun.
+Görevdeki ajan aynı anda başka ülkede tam kapasite çalışamasın.
+Seyahat, göreve yerleşme ve geri dönüş süreçleri seçilen soyutlama seviyesinde süre taşısın.
+Karşı istihbarat düşman faaliyetini belirleme ve risk artırma işlevi görsün; bütün ajanları otomatik bulmasın.
+Yakalanma riski görev yoğunluğu, ağ, düşman tedbirleri ve uzmanlıktan türesin.
+Ajan yakalandığında uygun sorgu, görev aksaması veya kurtarma olayı tanımlansın.
+Kimlik ve uzmanlık bilgisi sadece oyun içi kurgu olarak işlensin; gerçek kişilere yönelik casusluk talimatı üretme.
+Ajan paneli görevi, ilerlemeyi, bilinen riski ve dönüş seçeneğini göstersin.
+Yapay zekâ kritik tehdit ve bilgi ihtiyacına göre sınırlı ajanlarını dağıtsın.
+Teşkilat seviyesi ile erişilen bilgi kategorilerinin bağlantısı açık olsun.
+Testte geliştirme kuyruğunun mevcut sanayi taahhüdünü aşmadığını doğrula.
+Testte yakalanmış ajanın aynı anda normal ağ kurma katkısı sağlamadığını doğrula.
+## 69 | AĞLAR, OPERASYONLAR VE İŞBİRLİĞİ HAZIRLIĞI
+İstihbarat ağı hedef ülke, bölge kapsamı, güç, görünürlük riski ve aktif ajan katkısı taşısın.
+Ağ gücü zamanla artsın; ajan çekilmesi ve karşı istihbarat etkisiyle kademeli zayıflayabilsin.
+Operasyon için gereken ağ, personel, ekipman, hazırlık ve süre açıkça tanımlansın.
+Hazırlık aşamasında kaynak ayırma ile icra aşamasında tüketimi ayrı kaydet.
+Sanayi bilgisi, askerî sızma, teknoloji edinimi ve işbirliği hazırlığı gibi soyut görev türleri oluştur.
+Teknoloji edinimi uygun bilgi veya araştırma ilerlemesi sağlayabilir; bütün teknoloji ağacını bir anda açmasın.
+İşbirliği hazırlığı savaş sonrası uyum ve yönetim koşullarını etkilesin; her durumda anında teslim üretmesin.
+Direniş desteği hedef bölgelerin mevcut işgal durumuna bağlı olsun.
+Siyasi etki veya darbe hazırlığı yerel destek ve uygun koşullar olmadan kesin sonuç vermesin.
+Başarı tam, kısmi, başarısızlık veya açığa çıkma gibi sonuç türleri taşısın.
+Sonuç olasılığı ağ, uzmanlık, savunma ve hazırlıktan türesin; kesinlik düzeyi oyuncuya uygun biçimde sunulsun.
+Operasyonun sonuç çekilişi belirli kayıtlı aşamada yapılsın; pencereyi yeniden açmak sonucu değiştirmesin.
+Yakalanan ajan kurtarma görevi mevcut konum ve istihbarat durumuna bağlı ayrı operasyon olsun.
+Tekrarlanan operasyonlar azalan fayda, bekleme veya artan düşman farkındalığı taşıyabilsin.
+Operasyon raporu maliyet, kazanım, kayıp ve devam etkilerini açıkça göstersin.
+Yapay zekâ operasyon değerini ülkenin yakın savaş planı ve bilgi açığıyla karşılaştırsın.
+Görsel istihbarat işaretleri gerçek ağ kapsamını göstersin; tüm düşman haritasını kesin açmasın.
+Testte eksik ağ gücüyle operasyonun kaynak harcamadan uygunluk dışı kaldığını doğrula.
+Testte aynı sonuç olayının işbirliği bonusunu ikinci kez uygulamadığını doğrula.
+## 70 | ŞİFRE ÇÖZME, KEŞİF VE SAVAŞ SİSİ
+Ekonomi, kara, hava ve deniz istihbaratını ayrı doğruluk seviyeleriyle tut.
+Bilgi kaydı gözlem zamanı, kaynak, güven ve tahmini aralık taşısın.
+Eski bilgi zamanla belirsizleşsin; bir kez görülen tümen sonsuza kadar canlı konum paylaşmasın.
+Düşman tümen sayısı düşük istihbaratta aralık olarak gösterilsin; bilinmeyen değer sıfır değildir.
+Harita modeli görünmese bile bilgi panelinden gizli kesin değerlerin sızmasını engelle.
+Şifre çözme hedef ülkeye karşı biriken hazırlık ve teknoloji farkı üzerinden ilerlesin.
+Hazır şifre avantajını kullanmak belirli süreli istihbarat veya savaş desteği sağlayabilsin.
+Kullanım sonrası karşı tarafın güvenlik yenilemesi ve yeniden hazırlık koşulları tanımlansın.
+Radar, keşif uçağı, ajan ağı ve muharebe gözlemleri farklı bilgi kaynakları olarak birleşsin.
+Kaynakların güveni farklıysa basit kesin toplam yerine uygun ağırlıklı tahmin kullan.
+Müttefik paylaşımı yalnız paylaşan ülkenin eriştiği bilgiyi ve tanımlı hassasiyeti aktarabilsin.
+Yapay zekâ karar girdileri oyuncuyla aynı gözlem katmanından gelsin.
+Geliştirici tam görünümünü normal yapay zekâ veri yolundan ayrı tut.
+Tahmini düşman sanayisi ile bilinen bina hasarı arasında çelişki varsa güven seviyesi gösterilsin.
+Keşif kaybı saldırı planındaki risk aralığını artırabilsin.
+Oyuncu “neden bu kadar belirsiz?” sorusuna kaynak ve tarih açıklamasıyla yanıt alabilsin.
+Kayıt yükleme bilgi yaşını ve gözlem tarihçesini doğru sürdürsün.
+Testte gizli düşman birliği hareketinin hiçbir görünür gözlem yokken arayüze yansımadığını doğrula.
+Testte yapay zekânın tahmin nesnesi yerine yetkili düşman durumuna doğrudan erişmediğini doğrula.
+## 71 | İŞGAL YÖNETİMİ, DİRENİŞ, UYUM VE GARNİZON
+İşgal edilen bölgenin sahibi ve kontrol edeni farklı kalsın; ekonomik erişim işgal koşullarından türesin.
+Direniş ve uyumu ayrı değişkenler olarak tut; biri diğerinin otomatik ters yüzdesi olmasın.
+Direniş hedefi yönetim biçimi, savaş, dış destek, yerel durum ve garnizon yeterliliğiyle değişsin.
+Uyum zaman, istikrar, yönetim yaklaşımı ve işbirliği hazırlığından etkilensin.
+İşgal yasaları sanayi erişimi, kaynak, insan gücü, garnizon yükü ve direnç arasında tercih oluştursun.
+Garnizon ihtiyacı bölge nüfusu, direnç ve yasa koşullarından hesaplanabilsin.
+Garnizon şablonları personel ve ekipman havuzlarını gerçekten kullansın; görünmez ücretsiz kuvvet oluşturma.
+Haritada her güvenlik birliğini tek tek yönetmek gerekmeyebilir; idari dağıtım sonucu muhasebede izlenebilir olsun.
+Askerî polis ve uygun güvenlik ekipmanı bastırma kapasitesini etkilesin.
+Eksik personel veya ekipman beklenen güvenlik etkisini düşürsün.
+Direniş olayları üretim aksaması, altyapı hasarı ve ikmal kesintisi gibi soyut sonuçlar oluştursun.
+Olayların sıklığı güncel direnç ve karşı önlemlerden türesin; sabit rastgele ceza olmasın.
+İşgalden elde edilen fabrika ve kaynak verimi uyum, hasar ve politika ile açık hesaplanabilsin.
+Bölge özgürleşince garnizon tahsisleri ve işgal etkileri doğru statüye geçsin.
+İşbirlikçi yönetim oluşumu belirli uyum, siyasi ve savaş koşulları gerektirsin.
+Yapay zekâ kısa vadeli kaynak çıkarı ile uzun vadeli garnizon maliyetini karşılaştırsın.
+İşgal paneli net ekonomik fayda, güvenlik maliyeti, direnç ve uyum eğilimini birlikte göster.
+Testte garnizon ekipmanının aynı anda saha tümenine tahsis edilmediğini doğrula.
+Testte yüksek direnç nedeniyle oluşan ray hasarının gerçek ikmal kapasitesini etkilediğini doğrula.
+## 72 | BAĞLI DEVLETLER, ÖZERKLİK VE SÜRGÜN HÜKÜMETLERİ
+Bağlı devlet düzeyi dış politika, sanayi katkısı, kaynak erişimi ve askerî yükümlülükler tanımlasın [K15].
+Özerklik puanı yardım, ticaret, savaş katkısı ve siyasi kararlardan değişebilsin.
+Düzey geçişi eşik yanında siyasi maliyet ve uygunluk koşulu taşısın.
+Üst devletin aldığı sanayi katkısı bağlı devletin kullanılabilir kapasitesiyle muhasebede uzlaşsın.
+Bağlı devlet nüfusuna erişim seçilen askerî düzen ve özerklik koşullarına bağlı olsun.
+Bağlı devlet şablonundan oluşturulan birliğin personel ve ekipman kaynağı açık tanımlansın.
+Bağımsızlık talebi kabul, müzakere, kriz veya savaş gibi sonuçlara yol açabilsin.
+Üst devlet değişimi devam eden ticaret, üs ve ordu yetkilerini tutarlı güncellesin.
+İttifak üyeliği ile bağlı devlet statüsü aynı ilişki sayılmasın; birlikte veya ayrı bulunabilsin.
+Topraklarını kaybeden uygun hükümet müttefik desteğiyle sürgünde devam edebilsin [K08].
+Sürgün hükümeti meşruiyet, dış destek, personel ve kurtuluş hedefi taşısın.
+Sürgün birlikleri gerçek insan gücü ve ekipman kaynaklarından oluşturulsun.
+Sürgün hava personeli veya deneyimli birlik katkısı uygun destek ülkesine tanımlı anlaşmayla bağlansın.
+Ülke kurtarıldığında yönetim, kontrol, askerî erişim ve birlik sahipliği ilgili kurallarla güncellensin.
+Ülkenin bütün topraklarının kaybı ile siyasi varlığının sona ermesi aynı otomatik işlem olmasın.
+Yapay zekâ özerklik hedefini güvenlik, sanayi ve ittifak ihtiyacıyla değerlendirsin.
+Panel üst devlet ve bağlı devlet açısından karşılıklı fayda ve yükümlülükleri göstersin.
+Testte özerklik düzeyi değişince sanayi payının iki ülkede aynı muhasebeyle güncellendiğini doğrula.
+Testte sürgün hükümetinin ülkeye dönmesiyle aynı hükümetin iki kopyasının oluşmadığını doğrula.
+## 73 | İÇ SAVAŞLAR, GÖNÜLLÜLER VE SINIR ÇATIŞMALARI
+İç savaş hazırlığı siyasi destek, bölgesel kontrol, ordu sadakati ve olay koşullarına bağlı olsun.
+Savaş başladığında toprak, personel, ekipman, gemi ve sanayiyi tanımlı bölüşüm kurallarıyla dağıt.
+İki tarafın toplam varlığı açıklanan olay katkıları dışında önceki ülkenin toplamını aşmasın.
+Bölgesel sadakat haritayı tamamen rastgele boyamaktan daha belirleyici olsun.
+Komutan ve birlik sadakati başlangıç verisi ve oyuncunun hazırlık kararlarıyla değişebilsin.
+İç savaş tarafları kendi yönetim, diplomasi, üretim ve araştırma süreçlerini kullanabilsin.
+Üçüncü ülkeler uygun koşullarda gönüllü, hava desteği veya ekipman yardımı gönderebilsin.
+Gönüllü sayısı ve türü kapasite, politika ve savaş koşullarıyla sınırlandırılsın.
+Gönüllü birliğin sahipliği ve yerel emir yetkisi açık olsun; aynı tümen iki savaşta bulunamasın.
+Gidiş ve dönüş gerçek süre ve erişim gerektirsin; birlikler dünya üzerinde anında atlamasın.
+Geri çağırma kuşatma ve güvenli dönüş koşullarını kontrol etsin; yeniden gönderim için bekleme kuralı uygulanabilsin [K14].
+Sınır çatışması sınırlı alan, katılan kuvvet, süre ve sonuç kurallarıyla tam savaştan ayrışsın.
+Sınırlı çatışmanın tırmanması ayrı siyasi karar veya olay şartına bağlı olsun.
+Çatışma sonucu ekipman kaybı, deneyim, kontrol ve diplomatik etki gerçek kayıtlara işlensin.
+İç savaş sonunda hükümet birleşmesi ve kalan birliklerin durumu tutarlı çözülmeli.
+Yapay zekâ dış gönüllü gönderirken kendi savunma ihtiyacını ve geri dönüş riskini değerlendirsin.
+Oyuncu sınırlı çatışmaya hangi kuvvetlerin ve hangi koşullarda katılacağını görebilsin.
+Testte iç savaş kaynak bölüşümünün toplam muhasebesini başlangıç dünya durumuyla karşılaştır.
+Testte kuşatılmış gönüllü birliğin geri çağırma komutuyla güvenli ülkeye ışınlanmadığını doğrula.
+## 74 | SAVAŞ DURUMU, KATKI, TESLİM VE BÜYÜK GÜÇLER
+Her savaş kimlik, neden, hedefler, saldıran blok, savunan blok ve katılım tarihçesi taşısın.
+Ülkeler arası savaş ilişkilerini bu kayıtlardan türet; çelişen iki ayrı kaynak kullanma.
+Birden fazla savaşın birleşmesi veya ayrı kalması için açık kurallar tanımla.
+Katkıyı kontrol kazanımı, etkili muharebe, hava, deniz ve destek faaliyetlerinden hesapla.
+Gereksiz personel kaybı en verimli katkı puanı üretme yolu olmasın.
+Aynı muharebe katkısını farklı raporlardan iki kez sayma.
+Zafer noktaları şehir ve stratejik alanlarla ilişkilendirilsin; her bölge aynı teslim ağırlığını taşımasın.
+Teslim baskısı kaybedilen önemli bölgeler, siyasi koşullar ve devam etme kapasitesinden türesin.
+Başkent kaybı tek başına bütün ülkelerde otomatik teslim yaratmasın.
+Büyük güç statüsü sanayi, savaş rolü ve senaryo koşullarına göre belirlenebilsin.
+Bir ülkenin teslimi ile bütün savaş bloğunun yenilgisi farklı durumlar olsun.
+Teslim olan ülkenin donanma, dış birlik, sürgün yönetimi ve bağlı devletleri uygun kurallarla değerlendirilsin.
+Toprak kontrolü değişirken müttefik işgali ve hak sahipliği ayrı kayıtlar taşısın.
+Savaş ekranı katkı, kayıp, hedef, teslim baskısı ve bilinen güç dengesini göstersin.
+Beyaz barış veya müzakere uygun senaryo ve hedeflerde mümkün olsun; her savaş tek yöntemle bitmek zorunda kalmasın.
+Yapay zekâ savaşın kazanılabilirliğini hedef maliyeti, müttefikler ve ekonomik dayanımla değerlendirsin.
+Savaş bitişi alan olaylarıyla cephe, diplomasi, üretim yasası ve barış sürecine bildirilsin.
+Testte bir küçük katılımcının tesliminin yanlışlıkla bütün büyük ittifakı yenilmiş saymadığını doğrula.
+Testte aynı savaş katkısı olayının tekrar işlenmesinin puanı artırmadığını doğrula.
+## 75 | BARIŞ KONFERANSI VE ANLAŞMANIN UYGULANMASI
+Konferans katılımcıları gerçek savaş katkısı ve uygun taraf ilişkilerinden belirlensin.
+Katılımcıların talep bütçesi, mevcut teklifler ve hedefleri ayrı durum olarak saklansın.
+Toprak alma, bağımsız devlet, bağlı devlet, silahsız bölge, kaynak hakkı ve sanayi tazminatı talepleri olsun [K03].
+Uygun gemilerin devri ayrı talep türü olsun; aynı gemi iki ülkeye kesin atanamasın.
+Her talebin maliyeti, hedefi, uygunluğu, bağımlılığı ve diğer taleplerle çatışması tanımlansın.
+Komşuluk ve ulaşılabilirlik gibi stratejik ölçütler yapay zekâ tercihine yansısın.
+Çatışan teklifler tur veya açık öncelik çözümüyle sonuçlansın; arayüzde gizli rastgele sahiplik oluşmasın.
+Bir ülkenin bağımsızlığı kurulurken başkent, hükümet, çekirdek alan ve başlangıç kapasitesi tutarlı atansın.
+Kaynak hakkı süresi ve payı kaynak bilançosuna gerçek anlaşma olarak girsin.
+Sanayi tazminatı gerçek kapasite aktarımı veya kullanım hakkı şeklinde açık muhasebe taşısın.
+Silahsız bölge uygun birlik yerleşimi ve tahkimat koşullarını etkilesin.
+Anlaşma önizlemesi yeni sınırları, bağlı devletleri ve yükümlülükleri haritada göstersin.
+Kesinleşen anlaşma tek tutarlı işlem paketiyle sahiplik ve diplomatik durumu güncellesin.
+Geçiş hakkını kaybeden birliklere güvenli geri dönüş veya tanımlı tahliye süreci oluştur.
+Yeni sınırlar ikmal, ticaret, üs erişimi ve işgal yönetimini yeniden değerlendirsin.
+Yapay zekâ erişilemeyen dağınık toprakları sırf puanı var diye toplamayı önceliklendirmesin.
+Savaş sonrası rapor kazanım, ödeme, süreli hak ve yeni riskleri oyuncuya sunsun.
+Testte bir eyaletin aynı konferansta iki farklı nihai sahibinin oluşmadığını doğrula.
+Testte barış sonrası düşman bölgesinde kalan birliklerin geçersiz savaş döngüsünde takılmadığını doğrula.
+## 76 | ARAŞTIRMA TESİSLERİ, BİLİM İNSANLARI VE ÖZEL PROJELER
+Özel projeleri normal teknoloji yuvalarından ayrı tesis, bilim insanı ve sanayi taahhüdüyle yönet [K06].
+Tesis türleri kara, hava, deniz, elektronik ve stratejik araştırma alanlarına ayrılabilsin.
+Bilim insanı uzmanlık, deneyim, görev ve uygunluk bilgisi taşısın.
+Aynı bilim insanı farklı tesislerde eşzamanlı tam verimle çalışamasın.
+Proje ön koşulu teknoloji, bilimsel birikim, tesis seviyesi ve kaynak erişimini kapsasın.
+Aşamalar teori, prototip, deneme ve uygulanabilir tasarım olarak veriyle tanımlansın.
+Prototip üretimi gerçek ekipman veya üretim kapasitesi maliyeti gerektirsin.
+Deneme sonucu kayıtlı rastgelelikle oluşsun; aynı kaydı açmak sonsuz farklı sonuç aracı olmasın.
+Ara kararlar daha hızlı ilerleme ile maliyet veya başarısızlık riski arasında seçim sunsun.
+Jet uçak, ileri roket, gelişmiş radar, deneysel zırhlı ve ileri deniz sistemleri uygun proje aileleri olsun.
+Ağır deneysel kara araçları, helikopter desteği ve özel denizaltı gibi içerikler soyut modül ve rol tanımlarıyla açılabilsin.
+Her ileri projenin teknik ayrıntısı oyun içi istatistik ve maliyet düzeyinde kalsın.
+Proje tamamlanması tasarım, modül, bina veya görev erişimi açsın; sınırsız hazır araç vermesin.
+Tesis hasarı veya işgali ilerlemeyi ve bilim insanının görev durumunu uygun kurallarla etkilesin.
+Tesis taşınması destekleniyorsa hazırlık, kayıp riskleri ve devam süreci açık olsun.
+Yapay zekâ özel projeyi yakın ihtiyacı, uzun vade getirisi ve sanayi maliyetiyle değerlendirsin.
+Proje ekranı ilerleme, birikim, bilim insanı katkısı ve üretime geçiş ihtiyacını göstersin.
+Testte proje tamamlanmadan ilgili özel tasarımın üretime alınamadığını doğrula.
+Testte bilim insanı değiştirilince ilerleme ve bonusların tanımlı kurala uygun güncellendiğini doğrula.
+## 77 | BASKINLAR, ROKETLER VE SOYUT STRATEJİK SİLAHLAR
+Baskın görevleri belirli hedef, uygun kuvvet, hazırlık, istihbarat, maliyet ve başarı koşulları taşısın [K06].
+Hedef türleri askerî liman, araştırma tesisi, sanayi altyapısı ve oyun içi esir kurtarma olabilir.
+Baskın normal sürekli bombardımandan farklı tekil hazırlık ve sonuç süreci kullansın.
+Göreve ayrılan birlik, uçak veya gemi aynı sürede başka görevde tam kapasite çalışmasın.
+Başarı hesabı hazırlık, uzmanlık, bilgi doğruluğu, hava ve savunma düzeyini kullansın.
+Sonuç tam başarı, kısmi başarı, başarısızlık veya vazgeçme olarak kaydedilsin.
+Başarılı baskın hedefin gerçek kapasitesini süreli hasar veya görev etkisiyle değiştirsin.
+Esir komutan kurtarma sonucu karakterin görev durumunu gerçek biçimde güncellesin.
+Kayıplar ilgili personel ve ekipman havuzlarından düşsün; haber metniyle sınırlı kalmasın.
+Roket tesisleri uygun teknoloji, üretim ve görev kapasitesi gerektiren stratejik saldırı altyapısı olsun.
+Güdümlü veya hava savunma füzesi gibi geç dönem içerikleri soyut menzil, stok ve etkinlik parametreleriyle temsil et.
+Nükleer araştırma ve stratejik kullanım yalnız oyun içi maliyet, süre, görev ve diplomatik sonuç olarak modellensin.
+Gerçek dünyada üretim, zenginleştirme, yapım veya saldırı icrasına yarayan teknik talimat verme.
+Stratejik kullanım koşulları uygun taşıma, menzil, hazırlık ve savunma değerlendirmesine bağlı olsun.
+Etki bölgesel bina, birlik hazırlığı ve siyasi baskı üzerinden hesaplanabilir; otomatik koşulsuz dünya zaferi vermesin.
+Yapay zekâ böyle bir seçeneği maliyet, görev hedefi ve diplomatik sonuçlarla birlikte değerlendirsin.
+Görsel anlatım ölçülü ve soyut olsun; sonuç ekranı gerçek oyun etkilerini açıkça göstersin.
+Testte stratejik görev stok ve taşıma şartları karşılanmadan başlatılamasın.
+Testte baskın sonucu aynı hedefe kayıttan tekrar uygulandığında ek hasar çoğalmasın.
+## 78 | ALMANYA, AVUSTURYA VE MACARİSTAN İÇERİĞİ
+Bu ülke paketleri için siyasi, ekonomik, askerî ve diplomatik yolları ortak motor üzerinde özgün içerikle kur [K06].
+Almanya'nın sanayi genişlemesini kaynak, tüketim yükü, askerî hazırlık ve dış ticaret ihtiyaçlarıyla ilişkilendir.
+Siyasi yollar tarihsel eğilim, monarşik dönüş, demokratik reform ve farklı yönetim seçeneklerini koşullu dallara ayırsın.
+Yeni yönetim yalnız lider portresi değil yasa, danışman, ittifak ve ulusal etki değişimi oluştursun.
+Bölgesel talepler diplomatik baskı, hedefin desteği, garanti ve savaş riski üzerinden çözümlensin.
+Askerî yol kara kuvveti, hava gücü, deniz baskını ve özel projeler arasında gerçek kaynak tercihi getirsin.
+Sanayi programları doğrudan sınırsız fabrika ödülü yerine inşaat, dönüşüm ve verim süreçlerine bağlansın.
+Avusturya bağımsız kalma, dış destek ve bölgesel birlik yollarında uygun diplomatik koşullar kullansın.
+Birleşme veya egemenlik değişimi nüfus, ordu ve stokları tutarlı aktarım işlemiyle etkilesin.
+Avusturya'nın sınırlı kapasitesi dağ savunması, uzman ekipman veya ittifak katkısı gibi seçeneklerle anlamlı olsun.
+Macaristan insan gücü ve sanayi dengesini lisans, uzmanlaşma ve bölgesel diplomasiyle yönetebilsin.
+Bölgesel federasyon veya tarihsel devlet kurma yolları gerçek bölge ve siyasi koşullar gerektirsin.
+Ortak hanedan veya siyasi bağ tek olayla bütün komşu ülkeleri koşulsuz birleştirmesin.
+Ülke olayları komutan, hükümet ve araştırma kuruluşu gelişimini gerçek sisteme bağlasın.
+Tarihsel karakter, sınır ve başlangıç değerleri kaynaklı veri olsun; örnek denge sayıları ayrıca etiketlensin.
+Yapay zekâ tarihsel modda ilgili eğilimleri takip etsin; değişen güç dengesinde uygulanabilir alternatif seçebilsin.
+Her siyasi yol için en az bir savunma, bir ekonomi ve bir diplomasi kabul senaryosu tanımla.
+Testte ülke birleşmesi sırasında aynı stok ve fabrikanın iki ülkede birden sayılmadığını doğrula.
+Testte karşıt siyasi dalların aynı kampanyada çelişen yönetimler oluşturmadığını doğrula.
+## 79 | SOVYETLER, POLONYA VE BALTIK ÜLKELERİ İÇERİĞİ
+Sovyet içerik paketinde parti içi denge, yönetim güveni, sanayi ve geniş coğrafyada askerî hazırlık ilişkili olsun [K02].
+İç siyasi baskı veya muhalefet olaylarını ölçülü soyut kurum ve komutan etkileriyle temsil et.
+Kararların siyasi faydası ile ordu kadrosu, istikrar ve araştırma maliyetini birlikte göster.
+Alternatif yönetim yolları kendi koşulları ve olay zincirleriyle açılsın; tarihsel sonucu zorunlu kılma.
+Sanayi yerleşimi ve uygun taşınma kararları üretim sürekliliği ile taşınma maliyeti arasında tercih yaratsın.
+Geniş cephede ray kapasitesi, kış hazırlığı ve rezerv yönetimi temel askerî sorunlar olsun.
+Ordu reformu yalnız saldırı bonusu değil komuta, eğitim ve doktrin uygulamasını değiştirsin.
+Polonya'da yönetim reformu, askerî siyaset ve dış destek yolları birbirine bağlı kararlar taşısın.
+Savunma hazırlığı tahkimat, hava savunması, lojistik ve seferberlik arasında sanayi tercihi gerektirsin.
+Bağımsız blok veya dış ittifak yolunda komşuların kabul hesabı gerçek diplomasi motorundan gelsin.
+Monarşik veya başka alternatif yollar yönetim uygunluğu ve yerel destek gerektirsin.
+Baltık ülkeleri ortak bölgesel mekanikleri ve ülkeye özel kaynak, nüfus ve siyasi sorunları kullansın.
+Bölgesel birlik seçenekleri savaş tehdidi, ilişkiler ve yerel yönetim koşullarına bağlı olsun.
+Büyük güce yakınlaşma kısa vadeli güvenlik ile özerklik maliyeti arasında denge oluştursun.
+Küçük ülke savunması uygun arazi, eğitim ve yardım anlaşmalarıyla anlamlı hale gelsin.
+Ülke özel içerikleri genel seferberlik ve stok muhasebesini atlayarak ücretsiz ordular yaratmasın.
+Yapay zekâ büyük saldırı tehdidini erken algılayıp savunma ve diplomasi hazırlığı yapabilsin.
+Testte sanayi taşınması sırasında kapasitenin kaynak ve hedefte aynı anda tam çalışmadığını doğrula.
+Testte bölgesel birlik kararının bütün gerekli ülke ve toprak şartlarını denetlediğini doğrula.
+## 80 | BRİTANYA, ABD, KANADA, YENİ ZELANDA VE GÜNEY AFRİKA
+Britanya paketinde deniz yolları, uzak üsler, bağlı devletler ve hava savunması ortak strateji oluştursun [K08,K15].
+İmparatorluk ilişkileri özerklik, sanayi katkısı ve ortak savaş alanları üzerinden gerçek mekanik taşısın.
+Siyasi alternatifler dekolonizasyon, farklı yönetim veya yeni ittifak yönleri için koşullu dallar sunsun.
+Denizaşırı cephe tercihleri konvoy, yakıt ve liman kapasitesiyle sınırlansın.
+ABD paketinde iç siyasi onay, ekonomik toparlanma ve askerî sanayi dönüşümü birbirine bağlansın.
+Parlamento desteği kullanılan kararlar uygun onay maliyeti taşısın; fabrika sayısı her sorunu tek başına çözmesin.
+Savaş öncesi hazırlık ve dış yardım ülkenin siyasi koşullarına bağlı anlamlı faaliyet sunsun.
+İki okyanusta güç kullanımı gemi, üs, hava ve taşıma kapasitesi arasında tercih getirsin.
+ABD alternatif siyasi yolları gerçek destek ve kriz süreçleri gerektirsin.
+Kanada insan gücü, sanayi uzmanlaşması ve müttefik katkısı arasında karar verebilsin.
+Bağımsız hareket veya sıkı iş birliği özerklik ve diplomasi sistemlerine bağlansın.
+Yeni Zelanda küçük nüfusla uzman kara, hava veya deniz katkısı sağlayabilsin.
+Uzak coğrafyadaki birlik gönderme kararı taşıma ve üs erişimini gerçekten gerektirsin.
+Güney Afrika iç siyasi denge, sanayi ve bölgesel strateji üzerinden ayrışsın.
+Ülke tarihindeki toplumsal çatışmaları açıklayıcı ve ölçülü içerikle temsil et; ayrımcılığı öven anlatım kullanma.
+Bu ülkelerin ortak araştırma ve lisans yolları gerçek üretim ihtiyacını desteklesin.
+Yapay zekâ ana ülke savunması ile müttefik yardımını kapasitesine göre dengelesin.
+Testte bağlı devlet katkılarının üst ülke ve yerel ülke ekonomilerinde karşılıklı uzlaştığını doğrula.
+Testte uzak cepheye gönderilen ordunun konvoy ve liman kapasitesini kullandığını doğrula.
+## 81 | FRANSA, İTALYA, İSVİÇRE, ETİYOPYA VE BENELÜKS
+Fransa paketinde siyasi birlik, askerî hazırlık, sanayi ve ittifak güveni arasında tercih oluştur.
+Savunma hattı yatırımı hareketli ordu ve hava kuvvetine ayrılmayan kapasite maliyeti taşısın.
+Yenilgi halinde farklı yönetimler, sürgün ve direniş yolları gerçek kontrol ve meşruiyet kurallarıyla açılsın.
+Alternatif siyasi yollar diplomasi ve ulusal etkileri değiştirerek farklı stratejiler doğursun.
+İtalya'da yönetim güç dengesi, ordu reformu ve kara-deniz öncelikleri ortak sistemlerle çalışsın [K03].
+Akdeniz harekâtları yakıt, konvoy ve liman güvenliğini zorunlu stratejik mesele haline getirsin.
+Monarşi, farklı hükümet veya tarihsel eğilim seçenekleri siyasi destek ve olay koşulları gerektirsin.
+Bölgesel genişleme gerçek işgal ve garnizon yükü yaratsın; harita rengi dışında sonuçsuz kalmasın.
+İsviçre tarafsızlık, yerel savunma ve rakip siyasi gruplar arasında dengeyle ayrışsın [K03].
+Dağ savunması ve seferberlik kapasitesi sanayi ve ekonomik faaliyet üzerinde maliyet taşısın.
+Etik ticaret veya tarafsızlık kararları kullanılıyorsa sonuçlarını diplomatik ve ekonomik düzeyde açıkça göster.
+Etiyopya direniş, dış yardım ve uygun sürgün hükümeti yollarıyla oynanabilir kalsın [K03].
+Zayıf sanayinin sorunları lisans, yardım, arazi ve hazırlıkla yönetilebilsin; ücretsiz modern ordu verilmesin.
+Belçika ve Kongo ilişkisi kaynak, yönetim, savunma ve sürgün seçenekleriyle gerçek bağ kursun [K06].
+Hollanda deniz ticareti, sömürge ilişkileri ve büyük güç baskısı arasında diplomatik seçimler sunsun [K08].
+Benelüks bölgesel iş birliği hedefleri farklı ülkelerin kabul ve güvenlik hesabına bağlı olsun.
+Yapay zekâ küçük ülke savunmasında kritik liman ve başkentleri korurken ikmal ve tahliye seçeneklerini değerlendirsin.
+Testte yenilgi sonrası iki yönetim oluştuğunda aynı donanma ve stokların iki kez dağıtılmadığını doğrula.
+Testte tarafsızlık politikasının savaş ve üs erişim kurallarına gerçek etkisini doğrula.
+## 82 | JAPONYA, ÇİN YÖNETİMLERİ VE YEREL GÜÇLER
+Japonya paketinde kara-deniz kurumsal rekabeti, kaynak bağımlılığı ve uzak harekât hazırlığı birlikte çalışsın [K07].
+Ordu ve donanma talepleri gerçek fabrika, tersane, yakıt ve siyasi kaynak paylaşımına bağlansın.
+Ada stratejisi liman, hava üssü, taşıyıcı ve konvoy planlarını gerektirsin.
+Siyasi alternatifler dış ilişkiler, kurumsal denge ve askerî hedefleri değiştiren koşullu yollar olsun.
+Kaynak ambargosu diplomasi ve ticaret üzerinden gerçek üretim açığı oluştursun.
+Milliyetçi Çin yerel güçlerle iş birliği, merkezîleşme, ordu reformu ve dış yardım seçenekleri taşısın [K07].
+Merkezî kontrol arttıkça personel ve sanayi erişimi tanımlı süreçle değişsin.
+Savaş ekonomisi ve sanayi yerleşimi geniş coğrafyadaki ikmal ihtiyacına bağlansın.
+Komünist Çin yerel destek, siyasi örgütlenme, askerî gelişim ve birlik arayışını farklı kaynaklarla yönetsin [K07].
+Yerel destek asker toplama ve bölgesel yönetimi etkilesin; sınırsız ücretsiz birlik kaynağı olmasın.
+Birleşik cephe veya geçici iş birliği ortak düşman ve siyasi güven koşullarına bağlı olsun.
+İş birliği bittiğinde birlik, bölge ve diplomatik yetkiler açık kurallarla yeniden düzenlensin.
+Yerel savaş ağaları genel ülkenin yalnız farklı renkli kopyası olmasın; bölgesel hedef ve güç tabanı taşısın.
+Sınır çatışmaları ve baskı kararları ilgili sınırlı savaş motorunu kullansın.
+Birleşme veya bağlılık olayları gerçek stok, personel ve komutan aktarımı yapsın.
+Büyük nehirler, dağlar ve zayıf altyapı operasyon planında gerçek rol oynasın.
+Yapay zekâ çok geniş cephede gereksiz saldırı yerine önemli şehir ve ikmal eksenlerini önceliklendirsin.
+Testte geçici ortak cephe anlaşmasının tarafları kalıcı aynı ülke gibi birleştirmediğini doğrula.
+Testte yerel güç katılımının mevcut orduları kopyalamadan uygun yönetime aktardığını doğrula.
+## 83 | TÜRKİYE: SİYASET, BOĞAZLAR VE DIŞ POLİTİKA
+Türkiye paketini yalnız ek bir bayrak değil özgün siyasi, ekonomik ve diplomatik süreçlerle oluştur [K10].
+Başlangıç yönetimi, kurumlar ve karakterler kaynaklı senaryo verisinden gelsin.
+Reformların devamı, farklı yönetim arayışları ve bölgesel ittifak seçenekleri koşullu odak dalları taşısın.
+Bir siyasi yolun açılması destek, karar hazırlığı ve uygun olaylarla gerçekleşsin.
+Yönetim değişimi danışman, yasa, ulusal ruh ve diplomatik eğilimleri gerçek biçimde etkilesin.
+İç grupların desteğini ulusal ve bölgesel etkilerle modelle; tüm toplumu tek tepkili nesne sayma.
+İstikrarı artıran karar sanayi veya siyasi kaynak maliyeti taşıyabilsin.
+Boğazlar özel geçiş bağlantıları ve diplomatik kurallarla modellenmeli; yalnız harita dekoru olmasın.
+Geçiş düzeninin değişmesi ticaret, deniz görevi, güvenlik ve dış ilişkilere yansısın.
+Diplomatik baskı karşısında kabul, dengeleme veya direnme seçenekleri farklı riskler taşısın.
+Balkan iş birliği yolu ortak savunma, ticaret ve araştırma anlaşmalarıyla gerçek ittifak oluşturabilsin.
+Tarafsızlık oyuncuya silah ticareti, lisans, savunma yatırımı ve denge diplomasisiyle aktif oynanış sunsun.
+Büyük devletlerden birine yaklaşmak yardım veya teknoloji erişimi sağlarken bağımsız hareket maliyeti yaratabilsin.
+Alternatif hanedan veya yönetim yolları gerçekleşmiş tarih gibi değil varsayımsal kampanya yolu olarak etiketlensin.
+Bölgesel talepler savaş hedefi ve kabul hesabı üzerinden yürüsün; tek odakla bütün komşular koşulsuz katılmasın.
+Dış politika ekranı boğaz düzeni, garantiler ve ittifak yükümlülüklerini tek yerde özetlesin.
+Yapay zekâ Türkiye'si çevresindeki tehdit, ticaret ve ordusunun hazırlığını birlikte değerlendirsin.
+Testte boğaz kuralı değişiminin ilgili deniz rotalarına doğru erişim sonucu verdiğini doğrula.
+Testte karşıt siyasi yolların aynı anda çelişkili hükümet ve yasa oluşturmadığını doğrula.
+## 84 | TÜRKİYE: SANAYİ, ORDU VE BALKAN KOMŞULARI
+Türkiye sanayileşmesini fabrika, demiryolu, kaynak erişimi ve dış teknik iş birliği üzerinden kur.
+Sınırlı kapasite piyade modernizasyonu, topçu, hava savunması, donanma ve ağır sanayi arasında tercih gerektirsin.
+Sanayi odağı tamamlanması uygun inşaat kapasitesi, süreli etki veya gerçek yapı projesi oluştursun.
+Yabancı lisans ve ekipman alımı yerli üretimle karşılaştırılabilir maliyet ve teslim süresi taşısın.
+Edirne çevresindeki sınır savunması, İstanbul ve boğaz güvenliği farklı operasyon hedefleri oluştursun.
+İç bölgelere uzanan demiryolları ordunun farklı cephelere taşınmasında gerçek kapasite gerektirsin.
+Doğudaki dağlık bölgeler hareket, ikmal ve uygun birlik seçimini etkilesin.
+Ordunun modernizasyonu şablon, eğitim, doktrin ve yeni ekipmanın dağıtımından oluşsun.
+Hava savunması radar, üs, avcı ve bölgesel uçaksavar tercihleriyle kurulabilsin.
+Donanma yolu kıyı güvenliği, mayın, denizaltı veya sınırlı yüzey gücü arasında kaynak dengesine dayansın.
+Ülkeye özgü özel birlikler varsa teknoloji ve ekipman gereksinimleri ortak katalogla tanımlansın.
+Yunanistan paketinde siyasi bölünme, deniz erişimi, dış destek ve alternatif yönetim yolları olsun [K10].
+Bulgaristan paketinde iç gruplar, bölgesel talepler ve büyük devlet baskısı ortak diplomasiye bağlansın [K10].
+Üç ülkenin ilişkileri tarihsel eğilim ve güncel oyun olaylarından oluşsun; her kampanyada zorunlu aynı savaş çıkmasın.
+Bölgesel ittifak başarısı bütün üyelerin kabul ve katkı şartlarını gerçekten gerektirsin.
+Başlangıç fabrika, kaynak ve nüfus rakamlarını doğrulanmış veri ile oyun dengesi alanlarında ayrı tut.
+Yapay zekâ uygun birlik hazırlığı olmadan dağ veya boğaz üzerinden anlamsız sürekli saldırı yapmasın.
+Testte yeni demiryolu yatırımı doğu veya batı cephesine ulaşan gerçek ikmal kapasitesini artırsın.
+Testte savunma, tarafsız ticaret ve ittifak kampanyalarının üçü de oynanabilir ilerleme yolu sunsun.
+## 85 | FİNLANDİYA, İSVEÇ, NORVEÇ VE DANİMARKA
+Finlandiya savunması arazi, kış hazırlığı, eğitim ve sınırlı sanayinin doğru kullanımına dayansın [K04].
+Yerel savunma avantajları uygun bölgelerle sınırlansın; bütün dünyada koşulsuz üstünlük vermesin.
+Dış yardım ve diplomatik destek gerçek teslimat ve kabul koşulları taşısın.
+Alternatif siyasi yollar yeni ilişkiler ve savaş riskleri yaratsın.
+İsveç sanayi, silah tasarımı, ihracat ve tarafsızlık üzerinden farklı bir güç yolu sunabilsin [K04].
+Sanayi gelişimi çalışma ilişkileri ve siyasi istikrarla etkileşsin.
+Silah ihracatı uluslararası pazarın gerçek sözleşmelerini kullansın; yalnız odak ödülü olarak çalışmasın.
+Norveç kıyı savunması, liman güvenliği, deniz taşımacılığı ve seferberlik hazırlığına odaklanabilsin [K04].
+Uzun kıyı hattında her noktaya eşit tümen yığmak yerine kritik liman ve üs seçimi anlamlı olsun.
+Denizden gelen tehditte tahliye, müttefik destek ve sürgün seçenekleri uygun koşullarda açılsın.
+Danimarka tarafsızlık, diplomatik denge ve hızlı savunma hazırlığı arasında seçimler taşısın [K04].
+Kısa hazırlık süresi küçük ülkenin bütün seçeneklerini anlamsızlaştırmasın; diplomasi ve uzmanlaşma yolları bulunsun.
+Bölgesel birlik veya İskandinav iş birliği karşılıklı siyasi kabul gerektirsin.
+Birleşme gerçekleşirse ülkelerin sanayi, personel ve donanmaları tutarlı birleşme işlemi kullansın.
+Kayak, soğuk iklim veya bölgesel taşıma birlikleri görev uygunluğu ve ekipman maliyeti taşısın.
+Ülke özel kurumları ortak MIO, ticaret, komuta ve işgal sistemlerini kullansın.
+Yapay zekâ kış ve kıyı koşullarını harekât zamanlamasında gerçek girdi olarak kullansın.
+Testte kış avantajının yalnız ilgili iklim ve birlik şartlarında uygulandığını doğrula.
+Testte tarafsız silah ihracatı yolunun sanayi kazancı ve diplomatik risk oluşturduğunu doğrula.
+## 86 | İBERYA, ROMANYA, YUGOSLAVYA VE ÇEKOSLOVAKYA
+İspanya içerik paketinde iç savaş hazırlığı, bölgesel destek ve farklı siyasi taraflar ortak motoru kullansın.
+İç savaşın birden fazla tarafı varsa ittifak ve düşmanlık ilişkileri açık ayrı savaş kayıtları taşısın.
+Dış gönüllü ve yardım etkileri gerçek personel, ekipman ve ulaşım süreçleriyle oluşsun.
+Portekiz sanayi, denizaşırı bölgeler, tarafsızlık ve bölgesel diplomasiyle ayrışsın.
+Romanya kaynak erişimi, büyük güç baskısı, yönetim ve askerî hazırlık arasında tercih sunsun [K16].
+Petrol üretimi diplomatik değer taşısın; kaynak zenginliği tek başına modern ordu vermesin.
+Yugoslavya iç bölgesel denge, yönetim reformu ve dış güvenlik sorunlarını ortak kurum sistemiyle modelle.
+Merkezîleşme veya federal yapı tercihleri insan gücü, istikrar ve yönetim maliyetini etkilesin.
+Çekoslovakya silah sanayisi, ittifak arayışı ve savunma hazırlığı üzerinden güçlü fakat riskli bir konum taşısın [K13].
+Bölünmüş ülke mekanizması siyasi gruplar ve yönetim kararlarına bağlı gerçek durumlar oluştursun.
+Ordu hazırlığı güç dengesi askerî destek ve seferberlik kararlarını etkilesin.
+Demokratik, komünist, monarşik veya askerî yönetim yolları farklı kabul ve kurum şartları gerektirsin.
+Silah ihracatı ve sanayi uzmanlaşması uluslararası pazar ve kuruluş sistemine bağlansın.
+Dış toprak talepleri garanti, müttefik güveni ve savunma hazırlığıyla sonuçlansın; senaryo cevabı her zaman aynı olmasın.
+Uygun yenilgi veya işgal halinde sürgün ve direniş seçenekleri açılsın.
+Ülkeye özgü anıt ve şehir modelleri özgün veya lisanslı varlıklarla sağlansın.
+Yapay zekâ ittifak vaatlerini gerçek savaş desteği ve erişim kapasitesiyle değerlendirsin.
+Testte iç savaş bölünmesinin bölgesel sanayi ve stokları tutarlı paylaştırdığını doğrula.
+Testte ordu hazırlığı eşiğinin ilgili siyasi kararları doğru açtığını doğrula.
+## 87 | İRAN, IRAK, AFGANİSTAN VE HİNDİSTAN
+İran paketinde dış baskı, kaynak, modernizasyon ve bölgesel güvenlik kararları birbirine bağlansın [K12].
+Bağımsızlık arayışı ile büyük güç yakınlaşması farklı diplomatik ve sanayi sonuçları oluştursun.
+Altyapı ve ordu yatırımları dağ, geniş mesafe ve taşıma kapasitesiyle sınırlansın.
+Irak'ta yönetim dengesi, dış bağlılık, petrol ve bölgesel birlik hedefleri mekanik karşılık taşısın [K12].
+İç toplumsal grupları insanları aşağılayan kalıplarla değil soyut siyasi destek ve kurum verisiyle temsil et.
+Petrol anlaşmaları kaynak, sanayi katkısı ve diplomatik bağımlılık üzerinden çalışsın.
+Afganistan tarafsızlık, yerel yönetim, sanayileşme ve bölgesel güç arayışı arasında seçenekler sunsun [K12].
+Dağlık coğrafya savunma avantajı yanında inşaat ve lojistik maliyeti de oluştursun.
+Hızlı sanayileşme tek odakla tamamlanmasın; yapı, araştırma ve iş gücü süreçlerine yayılsın.
+Hindistan paketinde bağımsızlık hareketi, merkezî yönetim ve yerel siyasi yapı ilişkileri bulunsun [K12].
+Savaş katkısı ve özerklik gelişimi gerçek personel, sanayi ve yardım muhasebesiyle bağlansın.
+Bağımsızlık veya bölünme olayları toprak, ordu, stok ve yönetim aktarımı gerektirsin.
+Yerel devletler ve alternatif yönetim yolları uygun siyasi ve coğrafi şartlarla açılsın.
+Farklı tarihsel veya varsayımsal restorasyon yolları açık alternatif tarih etiketi taşısın.
+Bölgesel askerî uzmanlaşma iklim, arazi ve üretim kapasitesine uygun olsun.
+Ülkeye özgü taşıma veya birlik modelleri gerçek şablon ve ekipman rolüyle ilişkilendirilsin.
+Yapay zekâ geniş nüfus ile kullanılabilir eğitimli ve donanımlı personelin farklı olduğunu hesaba katsın.
+Testte bağımsızlık sonrası aynı tümenlerin eski ve yeni devlette çift kayda dönüşmediğini doğrula.
+Testte petrol anlaşması değişiminin kaynak erişimi ve sanayi katkısına birlikte yansıdığını doğrula.
+## 88 | MEKSİKA, BREZİLYA, ARJANTİN, ŞİLİ VE DİĞER AMERİKALAR
+Meksika paketinde iç siyaset, sanayi, dış ilişki ve bölgesel strateji için özgün koşullu yollar oluştur [K08].
+Yönetim değişimleri kaynak veya kurum erişimini etkileyebilir; yalnız bayrak değişimine indirgenmesin.
+Brezilya siyasi düzen, anayasal denge, sanayi ve dış savaşa katkı arasında seçimler taşısın [K11].
+Büyük coğrafyada altyapı ve eğitim kapasitesi geniş personel potansiyelinin kullanımını sınırlandırsın.
+Arjantin iç siyasi sorunlar, sanayi gelişimi ve dış ilişki tercihleri üzerinden ayrışsın [K11].
+Şili siyasi rekabet, yenilenme ve bölgesel iş birliği yollarını ortak karar sistemiyle kullansın [K11].
+Bu ülkelerin demokratik ve alternatif yönetim yolları destek, maliyet ve uygunluk koşulları taşısın.
+Paraguay ve Uruguay için küçük fakat oynanabilir ekonomi, savunma ve diplomasi içerikleri sağla [K11].
+Diğer Amerika ülkeleri kaynak, coğrafya ve komşuluklarına uyarlanmış genel içerik paketleri alsın.
+Bölgesel birleşme veya yeni devlet oluşturma hedefleri gerçek toprak ve diplomatik şartlar gerektirsin.
+Kıtalar arası savaş katkısı konvoy, üs erişimi ve deniz güvenliğine bağlı olsun.
+Silah pazarı ve lisanslı üretim küçük veya tarafsız ülkeler için anlamlı uzmanlaşma yolu sunsun.
+Sanayi kuruluşları yerel üretim gücüne ve araştırma kapasitesine uygun gelişsin.
+İç krizler sürekli rastgele ceza değil oyuncunun kararlarıyla yönetilebilen süreçler olsun.
+Alternatif tarih dallarının tarihsel olaylarla ayrımı metin ve görsel işaretlerle anlaşılır kalsın.
+Ülkeye özgü birlik sesleri ve modelleri özgün veya lisanslı kaynaklardan sağlansın.
+Yapay zekâ bölgesel güvenlik ile uzak ittifak savaşına katkı arasında kapasite dengesi kursun.
+Testte uzak cephe katkısının ülkenin kendi savunmasını kuralsız tamamen boşaltmadığını doğrula.
+Testte bölgesel birleşme şartları eksikken kararın kaynak tüketmeden açık uygunluk sonucu verdiğini doğrula.
+## 89 | AVUSTRALYA, SİYAM, ENDONEZYA VE FİLİPİNLER
+Avustralya paketinde iç ihtiyaçlar, seçimler, müttefik yükümlülükleri ve Pasifik güvenliği birlikte çalışsın [K09].
+Dağınık nüfus ve uzun mesafeler insan gücü, altyapı ve kıyı savunması kararlarını etkilesin.
+Kaynak geliştirme sanayi kapasitesine ve dış ticarete gerçek katkı sağlasın.
+Farklı siyasi yollar müttefik ilişkisi ve savaş hazırlığını değiştirerek alternatif kampanya sunsun.
+Siyam'da sivil ve askerî etki dengesi yasa, modernizasyon ve dış politika kararlarını belirlesin [K09].
+Sanayileşme, kauçuk ve uygun yerel kaynak geliştirme ray ve yol erişimine bağlansın.
+Büyük güçler arasında dengeleme, yakınlaşma veya direnme seçenekleri kabul ve savaş riskini kullansın.
+Bölgesel genişleme hedefleri gerçek ikmal ve işgal maliyeti taşısın.
+Endonezya veya Hollanda Doğu Hint Adaları statüsü senaryo tarihine ve yönetim durumuna bağlı isimlendirilsin [K09].
+Kaynak zenginliği düşük fabrika kapasitesiyle birlikte ele alınsın; ihracat ve sanayileşme yolları ayrışsın.
+Özerklik, bağlılık veya bağımsızlık süreci gerçek siyasi ve savaş koşullarından beslensin.
+İşgal sonrası bağımsızlık fırsatları kontrol, yerel destek ve dış güç durumuna bağlı olsun.
+Filipinler ada savunması, bağımsızlık ve dış destek arasında farklı yollar sunsun [K07].
+Uzak adaların korunması liman, hava üssü, konvoy ve yerel kuvvet dağılımı gerektirsin.
+Bölgedeki deniz görevleri kara cepheleriyle aynı plan kapsamında koordine edilebilsin.
+Ülkeye özel ağaçlar ortak araştırma, üretim ve lojistik hesaplarını atlayarak ücretsiz güç üretmesin.
+Yapay zekâ ada kaybı sonrasında yeni ikmal rotası ve güvenli savunma hattı değerlendirsin.
+Testte bağımsızlık kararı ülke sahipliği, anlaşmalar ve birlik yetkilerini birlikte güncellesin.
+Testte limanı kesilmiş adadaki ordunun yerel rezerv sonrası gerçek ikmal açığı yaşadığını doğrula.
+## 90 | GENEL ÜLKELER, OLUŞTURULABİLİR DEVLETLER VE İÇERİK TAMLIĞI
+Her oynanabilir ülke en az ekonomi, ordu, araştırma, diplomasi ve siyasi gelişim yolu taşısın.
+Genel odak ağacı ülkenin kaynak, nüfus, kıyı ve komşuluk durumuna göre anlamlı seçenekler sunsun.
+Sürekli odaklar seçiliyken zaman veya siyasi kapasite tüketip tanımlı devamlı etki üretsin.
+Sürekli odağın normal odak ilerlemesiyle aynı anda nasıl çalışacağı açık kampanya kuralı olsun.
+Oluşturulabilir devletler gerekli bölgeler, yönetim, barış veya savaş şartlarıyla tanımlansın.
+Karar gerçekleşince ad, bayrak, çekirdek hakları ve yönetim etkileri tutarlı güncellensin.
+Çekirdek toprak kazanımı bedelsiz her bölgeye uygulanmasın; içerik koşulu ve süreç gerektirsin.
+Serbest bırakılabilir ülkeler başkent, hükümet, temel ordu ve diplomatik statü tanımları taşısın.
+Yeni ülke varlıkları mevcut bölge ve kaynaklardan ayrılırken toplam muhasebe tutarlı kalsın.
+Ülke içerik envanteri odak sayısı, karar ailesi, olay zinciri, karakter ve özel mekanik referanslarını raporlasın.
+Kaynakla doğrulanmış mekanik, özgün uyarlama ve araştırma bekleyen içerik ayrı durumlar olsun.
+Yayımlanmamış ülke yenilemelerini tamamlanmış HOI4 özelliği diye kabul etme.
+Her ülkenin bütün olay adlarının birebir yazıldığı iddiası yerine gerçek kapsama tablosunu üret.
+İçerik metinlerini özgün yaz; tarihsel bilgi kaynaklarını veri kaydında belirt.
+Yerelleştirme, ikon ve portre eksiklerinde belirgin ama çalışır temsil kullan; tamamlandı durumunu gerçeğe uygun tut.
+Yapay zekâ genel ülke hedeflerini coğrafi ve ekonomik sınırlara göre seçsin.
+İçerik doğrulayıcı kilitli sonsuz dal, erişilemeyen karar ve eksik ülke hedefini bulsun.
+Testte rastgele seçilen küçük ülkelerle üretim, diplomasi ve savunma döngüsünün oynanabildiğini doğrula.
+Testte yeni devlet oluşumunun aynı eyaleti iki nihai sahibin kaydına yazmadığını doğrula.
+## 91 | STRATEJİK, EKONOMİK VE DİPLOMATİK YAPAY ZEKÂ
+Yapay zekâyı stratejik hedef, ekonomi, diplomasi, operasyon ve yerel karar katmanlarına ayır.
+Stratejik katman savunma, sanayileşme, kaynak güvenliği, ittifak ve sınırlı genişleme gibi öncelikler seçsin.
+Hedef puanı beklenen fayda − askerî maliyet − ekonomik maliyet − ikmal riski − diplomatik risk şeklinde ayrıştırılabilsin.
+Her ülke yalnız kendi gözlem ve tahmin katmanını kullansın; gizli düşman durumuna doğrudan erişmesin.
+Belirsizlik arttığında tahmini güç için daha geniş aralık ve uygun risk payı uygula.
+Ekonomik katman stok hedefi, kayıp hızı, eğitim talebi ve stratejik takvime göre üretim ihtiyacı hesaplasın.
+Örnek stok hedefi günlük beklenen kayıp × hazırlık günü + planlanan eğitim ihtiyacı şeklinde kurulabilir.
+Hedef açığını mevcut üretim, ithalat, yardım ve teslim süresiyle karşılaştır.
+Fabrika yatırımı kararında geri dönüş süresi ve beklenen savaş başlangıcı dikkate alınsın.
+İnsan gücü açığında yeni tümen kuyruğu, şablon, yasa ve dış yardım birlikte değerlendirilsin.
+Ticaret seçiminde tek satıcı bağımlılığı, rota riski ve siyasi tehdit ceza oluştursun.
+Diplomatik kabul ortak güvenlik, güven, çıkar ve yükümlülük maliyetinden türesin.
+Strateji değişimi için puan farkı, bekleme süresi ve mevcut yatırım maliyeti kullan; sürekli yön değiştirme olmasın.
+Ülkeye özgü kişilik eğilimleri karar ağırlıklarını değiştirir; uygunluk kurallarını atlamaz.
+Tarihsel mod eğilimlere öncelik verirken değişen dünya koşullarına uygulanabilir yanıt üretsin.
+Zorluk seviyeleri plan kalitesi, hesap bütçesi ve hata payıyla ayrışsın; ek kaynak avantajı varsa açıkça göster.
+Geliştirici paneli seçilen hedefin gerekçesini ve reddedilen alternatiflerin puanını kaydetsin.
+Testte yüksek ekipman açığı olan ülkenin gereksiz yeni eğitim yerine takviyeyi değerlendirdiğini doğrula.
+Testte belirsiz düşman bilgisiyle alınan kararın görünmeyen kesin birlik sayısına bağımlı olmadığını doğrula.
+## 92 | OPERASYONEL YAPAY ZEKÂ VE MÜŞTEREK HAREKÂT
+Operasyon planı hedef, atanmış kuvvet, hazırlık şartı, ikmal öngörüsü ve vazgeçme eşiği taşısın.
+Kara saldırısı öncesi kuvvet oranı, organizasyon, ikmal, hava ve geri bağlantı güvenliğini değerlendir.
+Tankları uygun yarma noktasında yoğunlaştır; piyadeyi cephenin açık kalan bölümlerine dağıt.
+Kuşatma riski artan birlikler için güvenli geri hat ve yardım planı oluştur.
+İkmal yetersizliğinde yeni tümen yığmak yerine hat onarımı, motorize dağıtım ve plan erteleme seçeneklerini karşılaştır.
+Cephe atamasında gereksiz hareket maliyeti ve mevcut siper avantajını hesaba kat.
+Hava kuvvetleri kara hedefleriyle uyumlu üs ve görev bölgesi seçsin.
+Yüksek kayıp oranında uçakları aynı başarısız göreve sınırsız göndermek yerine tasarım ve görev yoğunluğunu değiştir.
+Donanma devriye, vurucu kuvvet, eskort ve onarım arasında rol dengesini korusun.
+Deniz çıkarması planı liman, konvoy, deniz güvenliği ve kıyı sonrası ikmali birlikte hazırlasın.
+Paraşüt hedefi kısa vadeli kontrol kadar sonrasındaki bağlantı ve kurtarılabilirlik açısından değerlendirilsin.
+Müttefik yardım planı gönderen ülkenin kritik savunma sınırını aşmasın.
+Baskın ve özel proje kullanımı ana stratejinin kaynak bütçesi içinde kalsın.
+Başarısız planların nedenini kaydet; aynı değişmeyen koşullarda aynı saldırıyı sürekli tekrarlama.
+Taktik karar sıklığını savaş önemine göre artır; uzak barış ülkelerinde aynı bütçeyi harcama.
+Oyuncu otomasyon verdiğinde yardımcı kararlarını görebilsin ve belirli emirlerle önceliklendirebilsin.
+Her operasyon açık tamamlanma, başarısızlık veya yeniden planlama durumuna geçebilsin.
+Testte kaybedilen liman sonrası çıkarma ordusunun yeni ikmal ve tahliye ihtiyacını değerlendirdiğini doğrula.
+Testte risk eşiği aşılmış saldırının temkinli ayarda yeniden planlandığını doğrula.
+## 93 | KAYIT, TEKRAR OYNATMA VE VERİ GEÇİŞLERİ
+Kayıt bütün yetkili simülasyon durumunu, olay bayraklarını, emirleri, sevkiyatları ve üreteç durumlarını içersin.
+Grafik nesnelerini değil sahneyi tekrar oluşturabilecek oyun verisini sakla.
+Kayıt başlığı şema sürümü, oyun sürümü, senaryo, içerik paketi karması ve oluşturulma tarihini taşısın.
+Yerel depolama için uygun IndexedDB işlemleri kullan; tarayıcı depolamasının her koşulda kalıcı olduğunu varsayma.
+Otomatik kayıt atomik bütünlük sağlasın; yarım yazılmış kayıt geçerli kampanya olarak sunulmasın.
+Son geçerli kayıt ve yeni kayıt durumları doğrulanabilir metadata taşısın.
+Depolama kotası, izin sorunu ve bozuk kayıt anlaşılır mesajla bildirilsin.
+Dışa aktarma ve içe aktarma dosyası boyut, şema ve referans tutarlılığı açısından doğrulansın.
+Şema sürümü değişiklikleri açık migration fonksiyonlarıyla dönüştürülsün.
+Uyumsuz içerik paketi durumunda hangi veri veya mekanik sürümünün gerektiği gösterilsin.
+Komut günlüğü ve düzenli anlık görüntüler tekrar oynatmayı ve hata incelemeyi desteklesin.
+Tekrar oynatma grafik kamerayı değiştirmeye izin verebilir; geçmiş simülasyon komutları sabit kalmalı.
+Tek kayıtlı meydan okuma modu yerel kayıt politikasını sınırlar; değiştirilemez güvenlik garantisi olarak sunulmasın.
+İçerik paketleri odak, olay, ekipman ve ülke verisi ekleyebilsin; güvenli şemalarla doğrulansın.
+Paketlere sınırsız dosya veya kod yürütme yetkisi verilmesin.
+Kayıt sıkıştırması uygulanıyorsa açma boyutu ve süre sınırlarıyla kaynak tüketimini kontrol et.
+Oyuncu kayıt kartında tarih, ülke, savaş özeti ve uyumluluğu görebilsin.
+Testte savaş ortasında kaydet-yükle sonrasında aynı komutların aynı dünya karmasını verdiğini doğrula.
+Testte bozuk veya aşırı büyük dosyanın açık hata verip mevcut kampanyayı etkilemediğini doğrula.
+## 94 | PERFORMANS, DONANIM DÜZEYLERİ VE WEB PAKETLEME
+Düşük, orta, yüksek ve ultra grafik profilleri gerçek çözünürlük, gölge, model ve efekt maliyetlerini değiştirsin.
+Hedef masaüstünde orta profilde 60 FPS olabilir; ölçülmeden performans garantisi verme.
+Kare süresi, simülasyon saat süresi, bellek, çizim çağrısı ve varlık yükleme boyutunu ayrı ölç.
+Tekrarlanan nesnelerde örnekleme, uzaklık ayrıntısı, görünürlük eleme ve doku atlası gibi uygun yöntemler kullan.
+Animasyon güncellemelerini mesafe ve görünürlükle sınırla; uzaktaki bütün askerlerde tam iskelet hesabı yapma.
+Harita ve büyük modelleri bölgesel yükle; ilk açılışta bütün dünyanın en yüksek ayrıntısını indirme.
+Oyun simülasyonu yüksek hızda yetişmezse adım atlamak yerine gerçek zamanda daha yavaş ilerlesin.
+Bellek ölçümünü uzun kampanyada takip et; olay tarihçesi ve görsel havuzlar sınırsız büyümesin.
+WebGL bağlam kaybında kaynakları uygun biçimde yeniden kurup son geçerli dünya görünümünü göster.
+WebGPU gibi isteğe bağlı yol kullanılıyorsa desteklenmeyen cihaz için işlevsel grafik yolu bulunsun.
+Sunucu tarafı render kullanan projede tarayıcıya özgü motoru uygun istemci sınırında başlat.
+Paketlenmiş Worker ve varlık yollarını gerçek üretim rotasında test et; yalnız geliştirme sunucusunda çalışması yetmez.
+İlk yükleme ve çevrimdışı önbellek durumlarını açık göster; indirilmeyen varlığı varmış gibi sunma.
+Kayıt ve varlık sürümleri uyumlu olsun; önbellekten gelen eski kod yeni veriyi sessizce yanlış yorumlamasın.
+Mobil cihazda dokunma alanı, bellek ve ısınma sınırlamalarına göre okunabilir düşük profil sun.
+Hata günlükleri gerekli teknik bilgiyi toplasın; kullanıcı verisini izinsiz dışarı gönderme.
+Çalışan sürümü hedef web ortamında doğrula; dağıtım yapılmadıysa yapılmış gibi bildirme.
+Testte en az düşük, orta ve yüksek yoğunluklu dünya senaryolarında performans ölçümlerini kaydet.
+Testte on yıllık hızlandırılmış kampanyada bellek büyümesi ve simülasyon maliyetini incele.
+## 95 | ERİŞİLEBİLİRLİK, YERELLEŞTİRME VE ÖĞRETİCİ
+Türkçe ve İngilizce metinler kararlı yerelleştirme anahtarlarından gelsin.
+Sayı, tarih, çoğul ve birim biçimlerini dil kurallarıyla formatla; metne gömülü tek biçim kullanma.
+Arayüz ölçeği, yazı boyutu ve panel yerleşimi farklı ekranlarda ayarlanabilsin.
+Renk körlüğünde dost, düşman, ikmal ve hava durumları yalnız renk farkına dayanmasın.
+Simgelere açıklama ve klavye odağı ekle; kritik işlem fare kullanımına zorunlu bağlı olmasın.
+Kısayollar değiştirilebilir olsun; çakışan atamalar kullanıcıya bildirilsin.
+Savaş efekti, ışık parlaması, ekran sarsıntısı ve ses yoğunluğu bağımsız azaltılabilsin.
+Bilgi balonları açıklamanın içine ilerleyebilen sabitlenmiş ayrıntı görünümü sunabilsin.
+Öğretici gerçek kampanya komutlarıyla fabrika kurdurma, üretim atama ve tümen eğitme adımları içersin.
+Öğretici adım tamamlanması düğmeye basmaya değil gerçek simülasyon sonucuna bağlı olsun.
+İleri öğreticide ikmal darboğazı, hava desteği, çıkarma, istihbarat ve barış konferansı senaryoları bulunsun.
+Oyuncu yanlış karar verdiğinde mümkün düzeltme seçenekleri açıklansın; öğretici geri dönüşsüz kilitlenmesin.
+Oyun içi ansiklopedi formül bileşenlerini, kavramları ve ilgili panellere geçişi içersin.
+Yeni oyuncu modu yönetim yardımcısı sunarken hangi işlemin otomatik yapıldığını açıkça göstersin.
+Tam otomasyon yerine üretim veya cephe gibi tek alanın yardımcılığı seçilebilsin.
+Sesli anlatım kullanılıyorsa altyazı ve ses kapatma seçeneği bulunsun.
+Çeviriler tarihsel kişi ve yer adlarında tutarlı sözlük kullansın.
+Testte büyük yazı ölçeğinde temel komutların ekran dışına erişilemez biçimde taşmadığını doğrula.
+Testte öğreticiyi kaynak eksikliği veya farklı araştırma seçimiyle oynayıp ilerlemenin kilitlenmediğini doğrula.
+## 96 | RAPORLAR, BAŞARIMLAR VE KAMPANYA SONU
+Aylık rapor üretim, tüketim, kayıp, inşaat, araştırma ve siyasi değişimi önceki dönemle karşılaştırsın.
+Muharebe geçmişi yer, süre, katılım, kayıp ve sonucu gerçek savaş kayıtlarından alsın.
+Birlik ve gemi geçmişi ilgili komutan, madalya ve önemli görevleri kronolojik göstersin.
+İstihbarat nedeniyle kesin bilinmeyen düşman kaybı tahmin olarak etiketlensin.
+Ekonomi raporu üretim açığının kaynak, enerji, fabrika veya teslimat sorunundan doğduğunu ayrıştırsın.
+Savaş katkı raporu puanın hangi faaliyetlerden geldiğini açıklasın.
+Başarımlar tek oyunculu kurallar, senaryo, ülke ve olay şartlarıyla doğrulansın.
+Başarım koşulları yalnız arayüzde yazmasın; test edilebilir değerlendirme fonksiyonları taşısın.
+Yerel kariyer kaydı oyuncunun kampanyalarından özet istatistik tutabilir; çevrimiçi hesap zorunlu olmasın.
+Başarım kazanımı aynı koşul için tekrar tekrar ödül üretmesin.
+Ülkeye özgü hedefler bağımsızlığı sürdürme, sanayileşme, savunma, kurtarma ve diplomatik başarıyı kapsasın.
+Dünya fethi tek geçerli başarı ölçütü olmasın.
+Kampanya özeti sınır değişimleri, sanayi büyümesi, önemli savaşlar ve diplomatik dönüşümleri zaman çizelgesinde sunsun.
+Harita tekrar gösterimi kayıtlı kontrol değişimlerinden türesin; sonuçları yeniden rastgele üretmesin.
+Hedef yılına ulaşınca devam etme veya sonuç ekranına geçme seçeneği ver.
+Kişisel istatistikler gerçek ölçümden gelsin; kullanıcıyı övmek için uydurma başarı yüzdeleri oluşturma.
+Rapor dışa aktarımı metin veya veri biçiminde sunulabilir; tam kayıtla karıştırılmasın.
+Testte savaş raporundaki ekipman kayıplarının lojistik muhasebesiyle aynı olduğunu doğrula.
+Testte hedef yılı sonrasında devam eden kampanyada zaman ve olay döngüsünün doğru çalıştığını doğrula.
+## 97 | BİRİM TESTLERİ, DEĞİŞMEZ KURALLAR VE STRES TESTİ
+Bütün modüllerin hesap fonksiyonları kontrollü küçük veri örnekleriyle birim testine sahip olsun.
+Üretim testinde maliyet, verimlilik, kaynak ve kesirli puanın beklenen sonucu verdiğini doğrula.
+İnsan gücü testinde potansiyel, hazır havuz, eğitim, aktif hizmet ve kayıpların toplam tutarlılığını denetle.
+Stok testinde depo, sevkiyat, cephe, onarım ve dönüşüm arasında çift kullanım olmadığını doğrula.
+Yol bulma testinde kara, nehir, boğaz, geçiş izni ve deniz nakli kısıtlarını ayrı örnekle.
+İkmal testinde bütün kenar ve düğüm kapasitelerinin toplam akıştan az kalmadığını denetle.
+Savaş testinde simetrik tarafların işlem sırasından sistematik avantaj almadığını doğrula.
+Hava testinde görev dışı veya menzil dışı uçakların tam etkinlik vermediğini doğrula.
+Deniz testinde batan ve onarımdaki gemilerin aktif görev hesabına yanlış katılmadığını doğrula.
+Diplomasi testinde aynı çift için çelişen savaş ve anlaşma durumlarını yakala.
+Olay testinde tek seferlik ödül ve süreli etkilerin tekrarlanmadığını doğrula.
+Odak testinde döngü, eksik ön koşul ve geçersiz hedef ülke referansını yakala.
+Barış testinde aynı eyalet ve geminin birden fazla nihai sahibi oluşmasını engelle.
+Yapay zekâ testinde kararların uygunluk, stok ve istihbarat sınırlarını aşıp aşmadığını denetle.
+Grafik testi kamera, efekt ve kalite değişiminin simülasyon karmasını değiştirmediğini doğrulasın.
+Kayıt testi devam eden savaş, operasyon ve sevkiyat ortasında yüklemenin aynı sonucu verdiğini doğrulasın.
+Rastgele geçerli dünyalar üretip kaynak ve erişim değişmezlerini uzun diziler boyunca sınayan özellik testleri ekle.
+Uzun kampanya testinde sonsuz olay döngüsü, sahipsiz birlik, negatif stok ve kalıcı bellek artışını raporla.
+Çalıştırılmamış testi başarılı diye işaretleme; araç, sonuç ve hata özeti gerçek yürütmeden gelsin.
+## 98 | UÇTAN UCA OYNANABİLİRLİK SENARYOLARI
+Türkiye 1936 senaryosunda bir askerî fabrika kur, kaynak açığını ticaretle karşıla ve topçu hattı başlat.
+Üretilen ekipmanla tümen eğit, komutan ve cephe ata; personel ve ekipmanın bütün aşamalarda izlendiğini doğrula.
+Bir teknoloji tamamlayıp yeni tasarıma geç; eski ekipmanın depoda ve birliklerde uygun kaldığını doğrula.
+Kontrollü test savaşında saldırı, geri çekilme, kuşatma ve bölge kontrol değişimini aynı kampanyada çalıştır.
+Yeni ele geçirilen rayı onar; ikmal kapasitesinin hazırlık sonrası yükseldiğini gözle.
+İşgal yönetimini değiştir; garnizon ihtiyacı, kaynak verimi ve direniş eğiliminin gerçek farkını ölç.
+Bir hava üssünü kapasitesinin üstüne doldur; görev etkinliği cezasını ve çözümünü göster.
+Konvoy baskını senaryosunda ticaret teslimatı ve cephe ikmalinin kayıplardan etkilendiğini doğrula.
+Çıkarma senaryosunda liman, deniz güvenliği, taşıma ve kıyı sonrası ikmal şartlarını birlikte sınama.
+Casusluk senaryosunda ağ kur, operasyon hazırla ve sonuçların bilgi veya işbirliği durumuna yansıdığını doğrula.
+Karargâhı cepheye taşı, bağlantıyı kes ve komuta etkisindeki değişimi gerçek savaş hesabında karşılaştır.
+İç savaş senaryosunda toprak, ordu, donanma ve stok bölüşüm toplamlarını kontrol et.
+Silah pazarı senaryosunda ödeme, sevkiyat, kısmi kayıp ve teslimat zincirini tamamla.
+Özel proje senaryosunda tesis ve bilim insanıyla prototip geliştirip açılan tasarımı üretime al.
+İttifak senaryosunda ortak hedef tanımla, müttefik katkısı iste ve yükümlülükleri izle.
+Barış konferansında toprak, kaynak hakkı ve gemi talebini kesinleştir; yeni dünya sahipliğini doğrula.
+Bu süreçlerin ortasında kaydet, yükle ve aynı komutlarla devam ederek dünya karmasını karşılaştır.
+Bir küçük ülke, bir deniz gücü ve bir büyük kara gücüyle uzun kampanya kabul testini tekrarla.
+Kabul raporunda her adımın komutunu, beklenen sonucu, gerçek sonucu ve kullanılan kayıt kimliğini belirt.
+## 99 | UYGULAMA BAĞIMLILIKLARI VE TESLİM ÖLÇÜTLERİ
+Önce komut, zaman, veri ve kayıt çekirdeğini küçük doğrulanabilir dünyada çalıştır.
+Harita seçimi ve 3D görünümü bu çekirdeğin gerçek verisine bağla.
+İnşaat, kaynak, üretim, eğitim ve hareketi uçtan uca ilk oynanabilir döngü olarak birleştir.
+Ardından ikmal, savaş, kontrol değişimi ve kayıp tamamlama sistemlerini aynı döngüye bağla.
+Diplomasi, araştırma, hava, deniz, işgal, teslim ve barışla tamamlanabilir kampanya oluştur.
+Tasarımcılar, sanayi kuruluşları, istihbarat, karargâh ve özel projeleri ortak muhasebeyi kullanarak ekle.
+Ülke paketlerini gerçek mekaniklere bağla; yalnız görsel odak ağacı ve açıklama metni üretme.
+Her bölüm için veri, hesap, arayüz, yapay zekâ, 3D gösterim ve test durumunu ayrı takip et.
+Bir panelin açılması ilgili mekanik tamamlandı demek değildir; oyuncu kararının gerçek sonucu ölçülebilsin.
+Her çalışma adımı uygulanmış kod, doğrulanmış test ve açık kalan teknik bağımlılık özetiyle sonuçlansın.
+Büyük hedefi tek dev dosyaya yerleştirmek yerine sorumluluğu ayrılmış modüllerde uygula.
+Temsilî görsel varlık kullanılan alanları sanat envanterinde açık göster; üretime hazır varlıkla karıştırma.
+Eksik içerik veya doğrulanmamış tarihi veri için açık durum kullan; uydurma kesin veriyle boşluk doldurma.
+Typecheck, lint, birim, entegrasyon ve üretim derlemesi proje araçlarına göre gerçekten çalıştırılsın.
+Dağıtım hedefi ancak gerekli ortam ve kullanıcı yetkisi varsa uygulanıp gerçek sonuçla raporlansın.
+Çalışma durumu özetleri sonraki geliştirme oturumunun hangi testten ve modülden devam edeceğini belirlesin.
+Bu metni yeniden anlatmakla yetinme; repository üzerinde ilk bağımlılık grubunun gerçek kodunu ve testini uygula.
+Tamamlanan sürümde oyuncu üretimden savaşa, işgalden barışa ve kayıtla devam etmeye uzanan zinciri oynayabilsin.
+Son ölçüt özellik sayısı değil, bütün sistemlerin aynı kampanyada tutarlı, açıklanabilir ve test edilmiş işlemesidir.
+## 100 | RESMÎ KAPSAM KAYNAKLARI VE KULLANIM NOTU
+Doğrulama tarihi: 2 Kasım 2026; aşağıdaki kaynaklar mekanik kapsamı içindir, özgün algoritmaların birebir HOI4 formülü olduğunu göstermez.
+[K01] Ana oyun kapsamı: https://www.paradoxinteractive.com/games/hearts-of-iron-iv/about
+[K02] No Step Back: https://www.paradoxinteractive.com/games/hearts-of-iron-iv/add-ons/hearts-of-iron-iv-no-step-back
+[K03] By Blood Alone: https://www.paradoxinteractive.com/games/hearts-of-iron-iv/add-ons/hearts-of-iron-iv-by-blood-alone
+[K04] Arms Against Tyranny: https://www.paradoxinteractive.com/games/hearts-of-iron-iv/add-ons/hearts-of-iron-iv-arms-against-tyranny
+[K05] La Résistance: https://www.paradoxinteractive.com/games/hearts-of-iron-iv/add-ons/hearts-of-iron-iv-la-resistance
+[K06] Götterdämmerung: https://www.paradoxinteractive.com/games/hearts-of-iron-iv/add-ons/hearts-of-iron-iv-gotterdammerung
+[K07] No Compromise, No Surrender: https://www.paradoxinteractive.com/games/hearts-of-iron-iv/add-ons/hearts-of-iron-iv-no-compromise-no-surrender
+[K08] Man the Guns: https://www.paradoxinteractive.com/media/press-releases/paradox-interactive/paradox-announces-release-date-for-hearts-of-iron-iv-man-the-guns
+[K09] Thunder At Our Gates ve alay desteği: https://www.paradoxinteractive.com/media/press-releases/paradox-interactive/stand-strong-against-overseas-conquerors-in-thunder-at-our-gates
+[K10] Battle for the Bosporus: https://www.paradoxinteractive.com/games/hearts-of-iron-iv/add-ons/hearts-of-iron-iv-battle-for-the-bosporus
+[K11] Trial of Allegiance: https://www.paradoxinteractive.com/games/hearts-of-iron-iv/add-ons/hearts-of-iron-iv-trial-of-allegiance
+[K12] Graveyard of Empires: https://www.paradoxinteractive.com/games/hearts-of-iron-iv/add-ons/hearts-of-iron-iv-graveyard-of-empires
+[K13] Peace for Our Time: https://www.paradoxinteractive.com/games/hearts-of-iron-iv/add-ons/hearts-of-iron-iv-peace-for-our-time
+[K14] Resmî 1.19.4 kalite notları ve enerji beta ayrımı: https://steamcommunity.com/app/394360/announcements/
+[K15] Together for Victory: https://store.steampowered.com/app/530760/Expansion__Hearts_of_Iron_IV_Together_for_Victory/
+[K16] Death or Dishonor: https://store.steampowered.com/app/584140/Expansion__Hearts_of_Iron_IV_Death_or_Dishonor/
+[K17] Waking the Tiger: https://store.steampowered.com/app/702350/Expansion__Hearts_of_Iron_IV_Waking_the_Tiger/
+Kaynaklardan özellik ailesini doğrula; yayımlanmamış içerik, tarihsel tahmin ve Europa War denge tercihlerini ayrı etiketle.

@@ -1,5 +1,6 @@
 "use client";
 import CommandCenter from "./CommandCenter";
+import ActionPreview from "./ActionPreview";
 import {
   AirNavalPanel,
   ArmyTools,
@@ -29,10 +30,8 @@ import { armyMovementWarnings, armyStatus } from "./army-status";
 import { COMMANDER_CAPACITY } from "./commander-roster";
 import {
   capacity,
-  controlled,
   dateLabel,
   GEOGRAPHY,
-  MAP,
   localSupply,
   militaryPower,
   navalPower,
@@ -414,6 +413,10 @@ export default function WarPanels({
               </select>
             </label>
             <p>{BUILDINGS[building].description}</p>
+            <ActionPreview
+              world={w}
+              action={{ type: "build", province: p.id, building }}
+            />
             <button
               className={styles.primary}
               onClick={() =>
@@ -754,6 +757,15 @@ export default function WarPanels({
             .map(([id, n]) => `${n} ${EQUIPMENT[id as Equipment].name}`)
             .join(", ")}
         </p>
+        <ActionPreview
+          world={w}
+          action={{
+            type: "recruit",
+            unit,
+            province:
+              p.controller === c.id && p.owner === c.id ? p.id : c.capital,
+          }}
+        />
         <button
           className={styles.primary}
           onClick={() =>

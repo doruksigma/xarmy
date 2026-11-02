@@ -18,6 +18,7 @@ import {
 } from "./catalog";
 import { GEOGRAPHY, MAP, event, uid } from "./world";
 import { COMMANDER_CAPACITY, MAX_COMMANDERS } from "./commander-roster";
+import { isValidCommandState } from "./command-types";
 import type { Building, Country, World } from "./types";
 
 type Validator = (value: unknown) => boolean;
@@ -56,7 +57,7 @@ const shape =
     object(x) &&
     Object.keys(x).length === Object.keys(fields).length &&
     Object.entries(fields).every(([k, v]) => Object.hasOwn(x, k) && v(x[k]));
-// Existing saves keep their exact shape; a coordinated march adds one validated field.
+// Existing saves keep their exact shape; new optional fields are validated strictly.
 const shapeWithOptionalField = (
   fields: Record<string, Validator>,
   key: string,
@@ -351,7 +352,11 @@ const worldFields: Record<string, Validator> = {
   ),
   firedEvents: arr(str, 200),
 };
-const schema = shape(worldFields);
+const schema = shapeWithOptionalField(
+  worldFields,
+  "commandState",
+  isValidCommandState,
+);
 function validateWithRegions(
   value: unknown,
   regionIds: readonly string[],
@@ -361,6 +366,14 @@ function validateWithRegions(
   const w = value as World,
     ids = Object.keys(w.countries),
     has = (id: string) => ids.includes(id);
+  // Receipts may refer to completed or destroyed assets, but their issuer and
+  // execution time must belong to this campaign. Never repair a corrupt ledger:
+  // doing so could allow an already-paid command to execute again after loading.
+  if (
+    Object.hasOwn(w, "commandState") &&
+    !isValidCommandState(w.commandState, ids, w.day * 24)
+  )
+    return false;
   if (
     !has(w.player) ||
     Object.keys(w.provinces).length !== regionIds.length ||
@@ -804,6 +817,7 @@ export function migrateLegacy(value: unknown): World {
   if (
     !object(value) ||
     value.version !== 1 ||
+    Object.hasOwn(value, "commandState") ||
     !object(value.countries) ||
     !object(value.provinces) ||
     !Array.isArray(value.armies)

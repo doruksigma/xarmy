@@ -1,3 +1,5 @@
+import type { CommandState } from "./command-types";
+
 export type Terrain =
   | "plains"
   | "urban"
@@ -247,6 +249,8 @@ export interface GameEvent {
   kind: "info" | "war" | "economy" | "politics";
 }
 export interface World {
+  /** Optional for legacy v2 saves; recorded only after a protocol command succeeds. */
+  commandState?: CommandState;
   version: 2;
   player: string;
   mode: "historical" | "alternative";

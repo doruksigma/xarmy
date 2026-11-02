@@ -7,8 +7,9 @@ import WarMap, { type MapMode } from "./strategy/WarMap";
 import WarPanels, { Meter, number, TABS, type Tab } from "./strategy/WarPanels";
 import CommanderBar from "./strategy/CommanderBar";
 import MapPresentationBoundary from "./strategy/MapPresentationBoundary";
-import { applyAction, createWorld } from "./strategy/engine";
-import { dateLabel, GEOGRAPHY, MAP, surrender } from "./strategy/world";
+import { createWorld } from "./strategy/engine";
+import { createCommand, executeCommand } from "./strategy/commands";
+import { dateLabel, MAP, surrender } from "./strategy/world";
 import {
   decodeSave,
   encodeSave,
@@ -346,13 +347,13 @@ export default function EuropaWarClient() {
       if (transitionPending.current) return false;
       const w = current.current;
       if (!w) return false;
-      const result = applyAction(w, a);
-      if (result.error) {
-        say(result.error);
+      const result = executeCommand(w, createCommand(w, a), w.player);
+      if (result.status === "rejected") {
+        say(result.message);
         setPanel(true);
         return false;
       } else {
-        setWorld(result.world);
+        if (result.world !== w) setWorld(result.world);
         const count = "armies" in a ? new Set(a.armies).size : 1,
           movementOrder =
             [
@@ -389,7 +390,7 @@ export default function EuropaWarClient() {
         return true;
       }
     },
-    [current, setWorld, paused],
+    [current, setWorld, paused, say],
   );
   function onArmy(id: string) {
     onArmies([id]);
