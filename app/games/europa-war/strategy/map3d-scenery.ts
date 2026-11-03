@@ -637,10 +637,12 @@ export function createScenery(
         const width = (urban ? 1.8 : 1.45) + random() * 0.55;
         const depth = width * (0.85 + random() * 0.25);
         const height = urban ? 2.6 + random() * 2.3 : 1.4 + random() * 1.1;
-        const tint = [0xa8a18d, 0xaea596, 0x999d93, 0xa39380, 0xb5ad98][
+        // Weathered slate masonry and subdued brick stay legible in moonlight
+        // without turning settlements into bright beige patches on the atlas.
+        const tint = [0x737d86, 0x82868a, 0x6d7b78, 0x827a75, 0x8c8d85][
           Math.floor(random() * 5)
         ];
-        const roofTint = [0x795b4b, 0x6b6256, 0x735b52, 0x555f61][
+        const roofTint = [0x655052, 0x535961, 0x685655, 0x48575f][
           Math.floor(random() * 4)
         ];
         const keep = random(),
@@ -691,7 +693,7 @@ export function createScenery(
           width + 0.13,
           foundation,
           depth + 0.13,
-          0x8e8979,
+          0x69747d,
           orientation,
           lift - foundation,
         );
@@ -704,7 +706,7 @@ export function createScenery(
             width,
             height * 0.35,
             depth,
-            0x625a4c,
+            0x4c535a,
             orientation,
             lift,
           );
@@ -724,7 +726,7 @@ export function createScenery(
             width * 0.8,
             0.7,
             depth * 0.8,
-            0x777164,
+            0x59656b,
             orientation,
             lift,
           );
@@ -784,7 +786,7 @@ export function createScenery(
             0.31,
             1,
             0.31,
-            0x8e6c59,
+            0x705a57,
             orientation,
             lift + height + 0.25,
           );
@@ -795,7 +797,7 @@ export function createScenery(
             0.4,
             0.12,
             0.4,
-            0x615b50,
+            0x4b535a,
             orientation,
             lift + height + 1.2,
           );
@@ -882,10 +884,10 @@ export function createScenery(
         }
         for (const cottage of fallbackSites.get(p.id) ?? []) {
           const { x, z, width, depth, angle } = cottage;
-          const instance = item(0, x, z, width, 2.1, depth, 0xcbbf9d, angle);
+          const instance = item(0, x, z, width, 2.1, depth, 0x858b90, angle);
           recordHouse(x, z, width, depth, 2.1, angle, instance);
           item(2, x, z, width, 2.1, depth, 0x34484a, angle);
-          item(1, x, z, width, 0.9, depth, 0x805644, angle, 2.1);
+          item(1, x, z, width, 0.9, depth, 0x655052, angle, 2.1);
         }
       }
       // Sparse orchard edges as well as layered forest groups make cities feel settled.
@@ -910,7 +912,7 @@ export function createScenery(
           !footprint(p.id, x, z, size, size)
         )
           continue;
-        item(10, x, z, 0.55, size * 0.9, 0.55, 0x6f5c45);
+        item(10, x, z, 0.55, size * 0.9, 0.55, 0x4c4d48);
         item(
           pineTree ? 8 : 9,
           x,
@@ -918,7 +920,7 @@ export function createScenery(
           size,
           size * (pineTree ? 1.65 : 1.08),
           size,
-          pineTree ? 0x445d45 : 0x657453,
+          pineTree ? 0x344b43 : 0x4c6053,
           0,
           size * 0.5,
         );
@@ -940,7 +942,7 @@ export function createScenery(
               size,
               size * 0.55,
               size * 0.8,
-              p.terrain === "desert" ? 0xb39b70 : 0x7a8178,
+              p.terrain === "desert" ? 0x8d8573 : 0x64717a,
               random() * 4,
               -0.2,
             );
@@ -991,10 +993,10 @@ export function createScenery(
           height,
           4.2,
           state.damage > 50
-            ? 0x605c53
+            ? 0x50575d
             : i < state.buildings.military
-              ? 0x8c8070
-              : 0x999282,
+              ? 0x6f7379
+              : 0x7d868b,
           orientation,
         );
         if (state.damage <= 50) {
@@ -1005,7 +1007,7 @@ export function createScenery(
             4.5,
             1.15,
             4.2,
-            0x6c7776,
+            0x52646e,
             orientation,
             height,
           );
@@ -1014,7 +1016,7 @@ export function createScenery(
             x: point.x + Math.cos(orientation) * 1.4,
             z: point.z - Math.sin(orientation) * 1.4,
           };
-          item(6, chimneyPoint.x, chimneyPoint.z, 0.85, 6, 0.85, 0x916e59);
+          item(6, chimneyPoint.x, chimneyPoint.z, 0.85, 6, 0.85, 0x745e59);
         }
       }
       if (state.buildings.airfield > 0) {
@@ -1027,7 +1029,7 @@ export function createScenery(
             2.2,
             0.07,
             23,
-            0x575d56,
+            0x454f57,
             orientation,
             0.1,
           );
@@ -1041,7 +1043,7 @@ export function createScenery(
               0.13,
               0.018,
               0.95,
-              0xc5c6b0,
+              0x999f9f,
               orientation,
               0.18,
             );
@@ -1049,30 +1051,30 @@ export function createScenery(
         }
         const hangar = facility(-19, 4, 4.1, 6);
         if (hangar) {
-          item(0, hangar.x, hangar.z, 4.1, 1.1, 6, 0x989b8b, orientation);
-          item(12, hangar.x, hangar.z, 4.1, 1.9, 6, 0x7c8781, orientation, 1.1);
+          item(0, hangar.x, hangar.z, 4.1, 1.1, 6, 0x7c878d, orientation);
+          item(12, hangar.x, hangar.z, 4.1, 1.9, 6, 0x596d77, orientation, 1.1);
           item(5, hangar.x, hangar.z, 4.1, 1.4, 6, 0x405354, orientation);
         }
       }
       if (state.buildings.dock > 0 && p.port) {
         const dock = facility(5, 15, 10, 3);
         if (dock) {
-          item(0, dock.x, dock.z, 10, 0.55, 3, 0x8f8267, orientation);
-          item(0, dock.x, dock.z, 4, 2.1, 2.5, 0xb0a48a, orientation, 0.55);
-          item(1, dock.x, dock.z, 4, 0.9, 2.5, 0x6c6a5d, orientation, 2.65);
+          item(0, dock.x, dock.z, 10, 0.55, 3, 0x626d73, orientation);
+          item(0, dock.x, dock.z, 4, 2.1, 2.5, 0x858a8d, orientation, 0.55);
+          item(1, dock.x, dock.z, 4, 0.9, 2.5, 0x53616a, orientation, 2.65);
           item(5, dock.x, dock.z, 4, 2.1, 2.5, 0x40565a, orientation, 0.55);
         }
       }
       if (state.buildings.refinery > 0)
         for (let i = 0; i < Math.min(3, state.buildings.refinery + 1); i++) {
           const tank = facility(-8 + i * 3.8, -13, 2.7, 2.7);
-          if (tank) item(7, tank.x, tank.z, 2.7, 3.1, 2.7, 0xb4b8ac);
+          if (tank) item(7, tank.x, tank.z, 2.7, 3.1, 2.7, 0x8e9ba3);
         }
       if (construction.has(p.id)) {
         const crane = facility(10, -10, 5, 1);
         if (crane) {
-          item(0, crane.x, crane.z, 0.4, 8, 0.4, 0xd7ad53);
-          item(0, crane.x, crane.z, 5, 0.35, 0.35, 0xd7ad53, orientation, 7.5);
+          item(0, crane.x, crane.z, 0.4, 8, 0.4, 0x9f8a5e);
+          item(0, crane.x, crane.z, 5, 0.35, 0.35, 0x9f8a5e, orientation, 7.5);
           item(0, crane.x, crane.z, 0.15, 3.4, 0.15, 0x5c6460, 0, 4.2);
         }
       }
@@ -1109,20 +1111,24 @@ export function createScenery(
       if (current) update(current);
     },
     updateLOD(distance: number) {
+      // Continental views use terrain, boundaries and separate city lights.
+      // Keep all settlement instances resident so zooming back restores every
+      // city immediately, without rebuilding geometry or changing world data.
+      group.visible = distance < 950;
       meshes[2].visible =
         meshes[3].visible =
         meshes[5].visible =
-          distance < 950;
-      meshes[6].visible = distance < 1400;
+          distance < 520;
+      meshes[6].visible = distance < 720;
       meshes[8].visible =
         meshes[9].visible =
         meshes[10].visible =
-          distance < 1350;
-      meshes[11].visible = distance < 1050;
+          distance < 760;
+      meshes[11].visible = distance < 650;
       meshes[1].visible =
         meshes[4].visible =
         meshes[12].visible =
-          distance < 1800;
+          distance < 950;
     },
     dispose() {
       if (disposed) return;

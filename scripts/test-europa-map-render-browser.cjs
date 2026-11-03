@@ -30,6 +30,9 @@ const {
   encodeSave,
   decodeSave,
 } = require("../app/games/europa-war/strategy/storage.ts");
+const {
+  politicalCountryColor,
+} = require("../app/games/europa-war/strategy/map3d-cartography-palette.ts");
 const base = process.env.EUROPA_BASE_URL || "http://localhost:3000";
 const output =
   process.env.EUROPA_ARTIFACT_DIR || "/tmp/xarmy-europa-map-render";
@@ -129,12 +132,18 @@ fs.mkdirSync(output, { recursive: true });
     await load(world);
     await focus(target);
     await mode("political");
-    await expectedFill(target, world.countries.poland.color);
+    await expectedFill(
+      target,
+      politicalCountryColor("poland", world.countries.poland.color),
+    );
     assert.equal(await occupationCount(target), 0);
     await page
       .getByRole("button", { name: "Zamanı başlat", exact: true })
       .click();
-    await expectedFill(target, world.countries.germany.color);
+    await expectedFill(
+      target,
+      politicalCountryColor("germany", world.countries.germany.color),
+    );
     await page
       .getByRole("button", { name: "Zamanı duraklat", exact: true })
       .click();
@@ -155,7 +164,10 @@ fs.mkdirSync(output, { recursive: true });
     );
     await load(world);
     await focus(target);
-    await expectedFill(target, world.countries.poland.color);
+    await expectedFill(
+      target,
+      politicalCountryColor("poland", world.countries.poland.color),
+    );
     assert.equal(
       await region(target).getAttribute("aria-label"),
       `${GEOGRAPHY[target].name}, ${world.countries.poland.name}`,
@@ -169,7 +181,7 @@ fs.mkdirSync(output, { recursive: true });
     const peace = createWorld("germany", "historical", 1936, "normal");
     await load(peace);
     await focus(target);
-    await expectedFill(target, "#71756a");
+    await expectedFill(target, "#48515b");
     peace.countries.germany.allies.push("poland");
     peace.countries.poland.allies.push("germany");
     await load(peace);

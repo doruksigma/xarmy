@@ -21,8 +21,8 @@ const LIMITS = {
   trains: { low: 6, medium: 12, high: 20, ultra: 32 },
   sleepers: 10000,
   stations: 96,
-  hiddenDistance: 1400,
-  sleeperDistance: 1000,
+  hiddenDistance: 850,
+  sleeperDistance: 620,
   speed: 4.2,
 } as const;
 export interface RailwayStats {
@@ -82,8 +82,8 @@ function box(
 ): Part {
   return { geometry: new THREE.BoxGeometry(w, h, d).translate(x, y, z), color };
 }
-const RED = 0x853e30,
-  WOOD = 0x997051;
+const RED = 0x655052,
+  WOOD = 0x625b53;
 function station() {
   const roof = new THREE.CylinderGeometry(2.5, 2.5, 5.3, 3)
     .rotateZ(Math.PI / 2)
@@ -91,8 +91,8 @@ function station() {
     .scale(1, 0.55, 1)
     .translate(0, 2.4, 0);
   const p: Part[] = [
-    box(5.1, 0.3, 4, 0, 0.14, 0, 0x8c8f84),
-    box(4.5, 2, 2.8, 0, 1.3, 0, 0xd3c1a0),
+    box(5.1, 0.3, 4, 0, 0.14, 0, 0x586770),
+    box(4.5, 2, 2.8, 0, 1.3, 0, 0x858b90),
     { geometry: roof, color: RED },
   ];
   for (const z of [-1.41, 1.41]) {
@@ -187,18 +187,18 @@ export function createRailways(
     metalness: 0.22,
   });
   const trackMaterial = new THREE.MeshStandardMaterial({
-    color: 0xaab8bb,
-    metalness: 0.82,
-    roughness: 0.3,
+    color: 0x758691,
+    metalness: 0.65,
+    roughness: 0.5,
   });
   const gravel = new Uint8Array(64 * 64 * 4);
   let seed = 45139;
   for (let i = 0; i < gravel.length; i += 4) {
     seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
-    const grain = 75 + (seed >>> 24) * 0.42;
+    const grain = 45 + (seed >>> 24) * 0.24;
     gravel[i] = grain;
-    gravel[i + 1] = grain * 0.95;
-    gravel[i + 2] = grain * 0.85;
+    gravel[i + 1] = grain * 1.03;
+    gravel[i + 2] = grain * 1.08;
     gravel[i + 3] = 255;
   }
   const gravelTexture = new THREE.DataTexture(gravel, 64, 64);
@@ -215,7 +215,7 @@ export function createRailways(
     bumpScale: 0.07,
   });
   const sleeperMaterial = new THREE.MeshStandardMaterial({
-    color: 0x5b4431,
+    color: 0x494d50,
     roughness: 1,
   });
   const tracks = new THREE.Mesh(new THREE.BufferGeometry(), trackMaterial);
@@ -239,6 +239,7 @@ export function createRailways(
     material,
     LIMITS.stations,
   );
+  stations.name = "railway-stations";
   const trains = createTrainModels(group);
   for (const mesh of [sleepers, stations]) {
     mesh.count = 0;
@@ -773,7 +774,7 @@ export function createRailways(
         TRAIN_WORLD_SCALE +
       4;
     const bounds = windowBounds();
-    const candidates = network.routes
+    const candidates = (visible ? network.routes : [])
       .map((route, index) => {
         const withTender = route.length >= minimumRoute;
         if (
@@ -902,8 +903,12 @@ export function createRailways(
       });
     }
     trains.update(poses, clock, { quality, paused: false, reduced: false });
+    // Hide physical transport details in the continental atlas. The connected
+    // network and traffic clock stay intact; a near zoom restores the current
+    // traffic positions rather than rebuilding routes or restarting trains.
+    tracks.visible = ballast.visible = visible;
     sleepers.visible =
-      distance <= (quality === "low" ? 650 : LIMITS.sleeperDistance);
+      visible && distance <= (quality === "low" ? 520 : LIMITS.sleeperDistance);
     stations.visible = visible;
     stats.trains = count;
     stats.progress = clock;

@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
   countryLabelSignature,
   countryMapLabels,
+  countryLabelsOverlap,
 } from "./map3d-country-labels";
 import { createWorld, GEOGRAPHY } from "./world";
 
@@ -48,4 +49,41 @@ test("Separated occupied territory cannot drag the home label into the sea", () 
   const label = countryMapLabels(world).find((l) => l.country === "turkey")!;
   assert.equal(label.province, home.province);
   assert.notEqual(label.province, remote);
+});
+
+test("Elongated territories orient their labels geographically and survive save round trips", () => {
+  const world = createWorld("turkey", "historical", 1936);
+  const labels = countryMapLabels(world);
+  assert.deepEqual(countryMapLabels(structuredClone(world)), labels);
+  for (const label of labels) {
+    assert.ok(Math.abs(Math.hypot(label.axisX, label.axisY) - 1) < 1e-9);
+    assert.ok(Number.isFinite(label.span) && label.span >= 18);
+    assert.ok(Number.isFinite(label.minorSpan) && label.minorSpan >= 14);
+    assert.ok(label.axisX >= 0, "Text direction must remain readable");
+  }
+  const italy = labels.find((l) => l.country === "italy")!;
+  const sweden = labels.find((l) => l.country === "sweden")!;
+  const turkey = labels.find((l) => l.country === "turkey")!;
+  assert.ok(italy.axisY > 0.5, "Italy follows its southeast peninsula");
+  assert.ok(sweden.axisY < -0.5, "Sweden follows its northeast coast");
+  assert.ok(Math.abs(turkey.axisY) < 0.25, "Anatolia reads west to east");
+});
+
+test("Rotated neighbouring labels reserve their ink, not empty bounding-box corners", () => {
+  const a = { x: 0, y: 0, width: 100, height: 10, angle: Math.PI / 4 };
+  const parallel = { ...a, x: -20, y: 20 };
+  assert.equal(countryLabelsOverlap(a, parallel), false);
+  assert.equal(countryLabelsOverlap(parallel, a), false);
+  assert.equal(countryLabelsOverlap(a, { ...a, angle: -Math.PI / 4 }), true);
+  assert.equal(countryLabelsOverlap(a, { ...a, width: 5, height: 2 }), true);
+  const horizontal = { ...a, angle: 0 };
+  assert.equal(
+    countryLabelsOverlap(horizontal, { ...horizontal, y: 16 }),
+    true,
+    "Padding keeps nearby captions apart",
+  );
+  assert.equal(
+    countryLabelsOverlap(horizontal, { ...horizontal, y: 16 }, 0),
+    false,
+  );
 });

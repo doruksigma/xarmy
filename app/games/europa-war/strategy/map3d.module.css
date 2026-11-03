@@ -2,7 +2,7 @@
   position: absolute;
   inset: 0;
   overflow: hidden;
-  background: #17323c;
+  background: #050b18;
   isolation: isolate;
 }
 .canvas {
@@ -28,13 +28,14 @@
   top: 0;
   pointer-events: none;
   white-space: nowrap;
-  color: #242a25;
-  font-family: Georgia, "Times New Roman", serif;
+  color: #e4e8ef;
+  font-family: "Arial Narrow", Arial, sans-serif;
   font-weight: 700;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.12em;
   text-shadow:
-    0 1px 1px #e9e1c9b3,
-    0 -1px 1px #e9e1c988;
+    0 1px 2px #020612,
+    1px 0 2px #020612,
+    -1px 0 2px #020612;
   opacity: 0.9;
 }
 .labels :global(.map3d-label) {
@@ -45,7 +46,7 @@
   white-space: nowrap;
   padding: 2px 4px;
   border: 0;
-  background: #162722bd;
+  background: #0d182bbd;
   box-shadow: 0 1px 5px #0006;
   color: #eee4ca;
   font-size: 10px;
@@ -57,12 +58,12 @@
 .labels :global(.map3d-label[data-kind="capital"]) {
   font-size: 11px;
   color: #fff1cb;
-  background: #1729239c;
+  background: #0d182b9c;
 }
 .labels :global(.map3d-label[data-kind="sea"]) {
   background: transparent;
   box-shadow: none;
-  color: #a4c2c2;
+  color: #8294b4;
   letter-spacing: 0.16em;
   font-size: 11px;
   font-style: italic;
@@ -124,7 +125,7 @@
   width: 230px;
   padding: 12px;
   border: 1px solid #7e8b79;
-  background: #172821eb;
+  background: #0d182beb;
   color: #e5e2ca;
   border-radius: 4px;
   font-size: 11px;
@@ -146,7 +147,7 @@
   border: 1px solid #607068;
   border-radius: 3px;
   padding: 10px 12px;
-  background: #182e2be8;
+  background: #0d182be8;
   color: #ebead5;
   font: 12px Arial;
 }
@@ -154,7 +155,7 @@
   display: grid;
   margin-top: 4px;
   border: 1px solid #617265;
-  background: #172a24f7;
+  background: #0d182bf7;
   max-height: 245px;
   overflow: auto;
 }

@@ -10,6 +10,11 @@ import styles from "../europa.module.css";
 import atlas from "./map.module.css";
 import mapAssets from "./map-assets.json";
 import MinimapBackdrop from "./MinimapBackdrop";
+import { countryMapLabels } from "./map3d-country-labels";
+import {
+  CARTOGRAPHIC_TERRAINS,
+  politicalCountryColor,
+} from "./map3d-cartography-palette";
 import {
   CAMERA_OVERSCAN,
   CAMERA_SETTLE_MS,
@@ -111,9 +116,14 @@ const MAP_BACKGROUND = (
   <>
     <defs>
       <radialGradient id="sea-glow">
-        <stop stopColor="#476268" />
-        <stop offset=".65" stopColor="#233f48" />
-        <stop offset="1" stopColor="#10262e" />
+        <stop stopColor="#132541" />
+        <stop offset=".65" stopColor="#0b1930" />
+        <stop offset="1" stopColor="#050b19" />
+      </radialGradient>
+      <radialGradient id="night-city-glow">
+        <stop stopColor="#ffe7b9" stopOpacity=".7" />
+        <stop offset=".3" stopColor="#e6ad66" stopOpacity=".28" />
+        <stop offset="1" stopColor="#d78b50" stopOpacity="0" />
       </radialGradient>
       <pattern
         id="sea-grid"
@@ -124,11 +134,11 @@ const MAP_BACKGROUND = (
         <path
           d="M80 0H0V80"
           fill="none"
-          stroke="#b2c7bf"
+          stroke="#7287a5"
           strokeWidth=".5"
-          opacity=".12"
+          opacity=".07"
         />
-        <path d="M39 40H41M40 39V41" stroke="#bbd0c9" opacity=".35" />
+        <path d="M39 40H41M40 39V41" stroke="#8c9eb9" opacity=".17" />
       </pattern>
       <pattern
         id="sea-lines"
@@ -138,7 +148,7 @@ const MAP_BACKGROUND = (
       >
         <path
           d="M-20 35Q50 5 120 40T230 40M-20 41Q50 11 120 46T230 46M-20 47Q50 17 120 52T230 52M-25 120Q50 85 120 112T230 112M-25 126Q50 91 120 118T230 118"
-          stroke="#89a6a2"
+          stroke="#7488a8"
           strokeWidth=".5"
           fill="none"
           opacity=".08"
@@ -264,7 +274,7 @@ const ProvinceRegion = memo(function ProvinceRegion({
         d={province.path}
         fill={fill}
         fillRule="evenodd"
-        stroke={close ? "#b1b99a" : "#2c3c33"}
+        stroke={close ? "#202632" : "#272d38"}
         strokeWidth={(close ? 1 : detailed ? 0.7 : 0.45) * strokeScale}
         className={styles.province}
         role="button"
@@ -462,48 +472,60 @@ function WarMap({
       return count * 31;
     });
   }, [formations]);
-  const countryLabels = useMemo(() => {
-    // Group once instead of rescanning every province for every country on
-    // each simulated day. Ownership still updates immediately after combat.
-    const territories = new Map<string, typeof MAP.provinces>();
-    for (const p of MAP.provinces) {
-      const controller = world.provinces[p.id].controller;
-      if (!territories.has(controller)) territories.set(controller, []);
-      territories.get(controller)!.push(p);
-    }
-    return Object.values(world.countries)
-      .map((c) => {
-        const lands = territories.get(c.id);
-        if (!lands?.length) return null;
-        const x = lands.reduce((n, p) => n + p.x, 0) / lands.length;
-        const y = lands.reduce((n, p) => n + p.y, 0) / lands.length;
-        const anchor = lands.reduce(
-          (best, p) =>
-            Math.hypot(p.x - x, p.y - y) < Math.hypot(best.x - x, best.y - y)
-              ? p
-              : best,
-          lands[0],
+  const countryLabels = useMemo(
+    () =>
+      countryMapLabels(world).map((label) => {
+        const country = world.countries[label.country];
+        const name = (
+          country.id === "uk" ? "Britanya" : country.name
+        ).toLocaleUpperCase("tr-TR");
+        const letterSpacing = close ? 1.3 : label.provinces > 5 ? 2 : 1;
+        const fontSize = Math.max(
+          7,
+          Math.min(
+            close
+              ? 8.5
+              : label.provinces > 8
+                ? 16
+                : label.provinces > 3
+                  ? 12
+                  : 9,
+            (label.span * 0.92 - name.length * letterSpacing) /
+              (name.length * 0.66),
+          ),
         );
+        // Use the same connected landmass and long axis as the 3D atlas.
+        // A small perpendicular offset keeps the national name off its city.
+        const offset = detailed ? 18 : 14;
         return {
-          country: c,
-          lands: lands.length,
-          x: anchor.x + (c.id === "uk" ? 22 : c.id === "ireland" ? -12 : 0),
-          y: anchor.y - (detailed ? 25 : 19) + (c.id === "ireland" ? 17 : 0),
+          country,
+          name,
+          x: label.x + label.axisY * offset,
+          y: label.y - label.axisX * offset,
+          angle: (Math.atan2(label.axisY, label.axisX) * 180) / Math.PI,
+          axisX: label.axisX,
+          axisY: label.axisY,
+          fontSize,
+          letterSpacing,
+          width: name.length * (fontSize * 0.66 + letterSpacing),
         };
-      })
-      .filter((x) => x !== null);
-  }, [world, detailed]);
+      }),
+    [world, close, detailed],
+  );
   const cityLabels = useMemo(() => {
     // Capitals are named at every zoom. Other names appear only on selection.
     type Box = { x: number; y: number; w: number; h: number };
     const boxes: Box[] = [];
-    for (const l of countryLabels)
-      boxes.push({
-        x: l.x - l.country.name.length * 3.5,
-        y: l.y - 9,
-        w: l.country.name.length * 7,
-        h: 12,
-      });
+    for (const label of countryLabels) {
+      // Reserve the rotated label's screen-aligned bounds for city captions.
+      const w =
+        Math.abs(label.axisX) * label.width +
+        Math.abs(label.axisY) * label.fontSize;
+      const h =
+        Math.abs(label.axisY) * label.width +
+        Math.abs(label.axisX) * label.fontSize;
+      boxes.push({ x: label.x - w / 2, y: label.y - h / 2, w, h });
+    }
     for (const f of formations) {
       const p = GEOGRAPHY[f[0].province];
       boxes.push({
@@ -747,8 +769,8 @@ function WarMap({
           <path
             key={c.id}
             d={c.path}
-            fill="#98b7b2"
-            stroke="#a0b8ac"
+            fill="#132039"
+            stroke="#7284a0"
             strokeWidth="6"
             strokeLinejoin="round"
             opacity=".13"
@@ -766,7 +788,7 @@ function WarMap({
             key={c.id}
             d={c.path}
             fill="none"
-            stroke="#26362e"
+            stroke="#080c12"
             strokeWidth={(close ? 1.8 : 1.6) * strokeScale}
             opacity=".85"
           />
@@ -776,9 +798,9 @@ function WarMap({
             key={c.id}
             d={c.path}
             fill="none"
-            stroke="#e9dfbf"
-            strokeWidth={0.55 * strokeScale}
-            opacity=".35"
+            stroke="#47505f"
+            strokeWidth={0.45 * strokeScale}
+            opacity=".65"
           />
         ))}
       </g>
@@ -795,14 +817,14 @@ function WarMap({
           .map((g) => {
             const p = world.provinces[g.id],
               country = world.countries[p.controller];
-            let fill = country.color;
+            let fill = politicalCountryColor(country.id, country.color);
             if (mode === "terrain")
-              fill = TERRAINS[GEOGRAPHY[g.id].terrain].color;
+              fill = `#${CARTOGRAPHIC_TERRAINS[GEOGRAPHY[g.id].terrain].color.toString(16).padStart(6, "0")}`;
             if (mode === "supply")
               fill =
                 p.controller === world.player
                   ? `hsl(${localSupply(world, world.player, p.id, renderNetwork) * 110} 29% 42%)`
-                  : "#53615b";
+                  : "#3c4854";
             if (mode === "military")
               fill =
                 p.controller === world.player
@@ -811,14 +833,14 @@ function WarMap({
                     ? "#a46d60"
                     : player.allies.includes(p.controller)
                       ? "#79979d"
-                      : "#71756a";
+                      : "#48515b";
             if (mode === "air" || mode === "naval")
               fill =
                 p.controller === world.player
                   ? "#708d83"
                   : player.wars.includes(p.controller)
                     ? "#916f62"
-                    : "#59695f";
+                    : "#3c4a57";
             return (
               <ProvinceRegion
                 key={g.id}
@@ -844,7 +866,8 @@ function WarMap({
             preserveAspectRatio="none"
             pointerEvents="none"
             data-testid="terrain-overlay"
-            opacity={mode === "military" || mode === "supply" ? 0.58 : 1}
+            className={atlas.terrainRelief}
+            opacity={mode === "military" || mode === "supply" ? 0.45 : 0.85}
           />
         )}
         <g pointerEvents="none">
@@ -884,14 +907,14 @@ function WarMap({
                   <path
                     d={curvedPath(a.x, a.y, b.x, b.y)}
                     fill="none"
-                    stroke={mode === "supply" ? "#bad59c" : "#343d2e"}
+                    stroke={mode === "supply" ? "#bad59c" : "#1b2330"}
                     strokeWidth={(mode === "supply" ? 2 : 0.9) * strokeScale}
                     opacity={mode === "supply" ? 0.7 : 0.4}
                   />
                   <path
                     d={curvedPath(a.x, a.y, b.x, b.y)}
                     fill="none"
-                    stroke={mode === "supply" ? "#182c28" : "#eadfbd"}
+                    stroke={mode === "supply" ? "#182c28" : "#a2abb9"}
                     strokeWidth={0.65 * strokeScale}
                     strokeDasharray={`${2 * strokeScale} ${4 * strokeScale}`}
                     opacity=".65"
@@ -953,23 +976,14 @@ function WarMap({
                 y={label.y}
                 textAnchor="middle"
                 className={atlas.nationName}
+                transform={`rotate(${label.angle} ${label.x} ${label.y})`}
+                dominantBaseline="middle"
                 style={{
-                  fontSize: close
-                    ? 8.5
-                    : label.lands > 8
-                      ? 15
-                      : label.lands > 3
-                        ? 12
-                        : 9,
-                  letterSpacing: close ? 1.3 : label.lands > 5 ? 2.5 : 1.1,
+                  fontSize: label.fontSize,
+                  letterSpacing: label.letterSpacing,
                 }}
               >
-                {(c.id === "uk"
-                  ? "Britanya"
-                  : c.id === "spain"
-                    ? "İspanya"
-                    : c.name
-                ).toLocaleUpperCase("tr-TR")}
+                {label.name}
               </text>
             </g>
           );
@@ -990,19 +1004,27 @@ function WarMap({
               return null;
             return (
               <g key={p.id} data-city={p.id}>
+                {/* One shared gradient, no filter or animation per city. */}
+                <circle
+                  cx={p.x}
+                  cy={p.y}
+                  r={(capital ? 13 : p.vp > 3 ? 8 : 6) * markerSize}
+                  fill="url(#night-city-glow)"
+                  opacity={capital ? 0.9 : 0.65}
+                />
                 {capital ? (
                   <g
                     transform={`translate(${p.x} ${p.y}) scale(${markerSize})`}
                   >
                     <circle
                       r="5.2"
-                      fill="#efe0b5"
-                      stroke="#293e32"
+                      fill="#182337"
+                      stroke="#f5e7ca"
                       strokeWidth="1"
                     />
                     <path
                       d="M0-3L.8-1 3-1 1.2.5 2 3 0 1.5-2 3-1.2.5-3-1-.8-1Z"
-                      fill="#5b4930"
+                      fill="#fff1d6"
                     />
                   </g>
                 ) : (
@@ -1010,8 +1032,8 @@ function WarMap({
                     cx={p.x}
                     cy={p.y}
                     r={(p.vp > 3 ? 2.6 : 2) * markerSize}
-                    fill={p.id === selected ? "#fff1c8" : "#dccda6"}
-                    stroke="#334533"
+                    fill={p.id === selected ? "#fff4dc" : "#edc890"}
+                    stroke="#283246"
                     strokeWidth={0.8 * markerSize}
                   />
                 )}
@@ -2065,8 +2087,10 @@ function WarMap({
             );
           }}
         >
-          <rect width="1320" height="880" fill="#18323a" />
-          <MinimapBackdrop world={world} />
+          <rect width="1320" height="880" fill="#071222" />
+          <g className={atlas.overviewTerrain}>
+            <MinimapBackdrop world={world} />
+          </g>
           <rect
             ref={overviewRef}
             x={view.x}

@@ -97,21 +97,38 @@ test("Bütün yerel rayların kaldırılması veya başkent kaybı görünür tr
   railways.dispose();
 });
 
-test("Kalite tren bütçesini sınırlar, uzak LOD gerçek çizilen sayıyı raporlar", () => {
-  const railways = createRailways(new THREE.Scene());
-  railways.update(createWorld("turkey", "historical"));
+test("Kalite tren bütçesini sınırlar; uzak atlas rayları gizlerken trafik saatini korur", () => {
+  const scene = new THREE.Scene(),
+    railways = createRailways(scene),
+    world = createWorld("turkey", "historical"),
+    snapshot = JSON.stringify(world);
+  railways.update(world);
+  const tracks = scene.getObjectByName("railway-steel-rails")!,
+    ballast = scene.getObjectByName("railway-gravel-ballast")!,
+    sleepers = scene.getObjectByName("railway-timber-sleepers")!,
+    stations = scene.getObjectByName("railway-stations")!;
   railways.setQuality("ultra");
   railways.animate(0, running);
   assert.ok(railways.stats.trains > 0 && railways.stats.trains <= 32);
   railways.setQuality("low");
   assert.ok(railways.stats.trains > 0 && railways.stats.trains <= 6);
-  const visible = railways.stats.trains;
-  railways.animate(0.1, { ...running, distance: 1500 });
+  const visible = railways.stats.trains,
+    initialPositions = structuredClone(railways.stats.positions);
+  assert.ok(tracks.visible && ballast.visible && stations.visible);
+  railways.animate(0.1, { ...running, distance: 1100 });
   assert.equal(railways.stats.trains, 0);
   assert.deepEqual(railways.stats.positions, []);
   assert.ok(railways.stats.edges > 0);
-  railways.animate(0.2, running);
+  for (const mesh of [tracks, ballast, sleepers, stations])
+    assert.equal(mesh.visible, false, `${mesh.name} remains out of the atlas`);
+  const hiddenClock = railways.stats.progress;
+  railways.animate(0.2, { ...running, distance: 1100 });
+  assert.ok(railways.stats.progress > hiddenClock);
+  railways.animate(0.3, running);
   assert.equal(railways.stats.trains, visible);
+  assert.ok(tracks.visible && ballast.visible && stations.visible);
+  assert.notDeepEqual(railways.stats.positions, initialPositions);
+  assert.equal(JSON.stringify(world), snapshot);
   railways.dispose();
 });
 

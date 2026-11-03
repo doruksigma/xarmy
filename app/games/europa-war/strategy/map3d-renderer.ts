@@ -11,6 +11,8 @@ import {
   provinceOutline,
 } from "./map3d-geometry";
 import { createScenery } from "./map3d-scenery";
+import { createCityLights } from "./map3d-city-lights";
+import { politicalCountryColor } from "./map3d-cartography-palette";
 import {
   createUnitModels,
   UNIT_LABEL_HEIGHT,
@@ -31,6 +33,8 @@ import { createTerrainSurfaceSampler } from "./map3d-surface";
 import {
   countryLabelSignature,
   countryMapLabels,
+  countryLabelsOverlap,
+  type ScreenCountryLabel,
   type CountryMapLabel,
 } from "./map3d-country-labels";
 import {
@@ -120,6 +124,7 @@ export class Map3DRenderer {
   private land: THREE.Mesh;
   private scenery: ReturnType<typeof createScenery>;
   private units: ReturnType<typeof createUnitModels>;
+  private cityLights: ReturnType<typeof createCityLights>;
   private railways: ReturnType<typeof createRailways>;
   private airNaval: ReturnType<typeof createAirNavalVisuals>;
   private unitFrustum = new THREE.Frustum();
@@ -127,7 +132,7 @@ export class Map3DRenderer {
   private unitBounds = new THREE.Sphere();
   private visibleUnits: Formation[] = [];
   private sea: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>;
-  private sun = new THREE.DirectionalLight(0xffe8bb, 2.6);
+  private sun = new THREE.DirectionalLight(0xc8d7ef, 1.7);
   private selection: THREE.LineSegments | null = null;
   private routes = new THREE.LineSegments(
     new THREE.BufferGeometry(),
@@ -152,6 +157,8 @@ export class Map3DRenderer {
     element: HTMLSpanElement;
     label: CountryMapLabel;
     position: THREE.Vector3;
+    axisFrom: THREE.Vector3;
+    axisTo: THREE.Vector3;
   }[] = [];
   private countrySignature = "";
   private viewpoint: MapViewpoint = "strategic";
@@ -188,7 +195,7 @@ export class Map3DRenderer {
   private cartography: ReturnType<typeof configureCartographicTerrain>;
   private politicalBorders: ReturnType<typeof createPoliticalBorders>;
   private coastMaterial = new THREE.MeshStandardMaterial({
-    color: 0x686957,
+    color: 0x111b2a,
     roughness: 0.95,
   });
   private provinceColors = new Map<string, number>();
@@ -212,11 +219,11 @@ export class Map3DRenderer {
       });
       this.renderer.outputColorSpace = THREE.SRGBColorSpace;
       this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-      this.renderer.toneMappingExposure = 1.08;
+      this.renderer.toneMappingExposure = 1.05;
       this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-      this.scene.background = new THREE.Color(0x17323c);
-      this.scene.fog = new THREE.Fog(0x17323c, 1200, 3200);
-      this.scene.add(new THREE.HemisphereLight(0xc9e1e4, 0x544f38, 2));
+      this.scene.background = new THREE.Color(0x050b18);
+      this.scene.fog = new THREE.Fog(0x050b18, 1200, 3200);
+      this.scene.add(new THREE.HemisphereLight(0x99b1db, 0x0b111d, 0.85));
       this.sun.position.set(-300, 550, 250);
       this.sun.target.position.set(0, 0, 0);
       this.sun.castShadow = true;
@@ -260,9 +267,9 @@ export class Map3DRenderer {
       coast.receiveShadow = true;
       this.scene.add(coast);
       this.borderMaterial = new THREE.LineBasicMaterial({
-        color: 0xe0d9bd,
+        color: 0x151d2b,
         transparent: true,
-        opacity: 0.38,
+        opacity: 0.45,
         depthWrite: false,
       });
       const borders = new THREE.LineSegments(
@@ -284,13 +291,29 @@ export class Map3DRenderer {
           },
           vertexShader:
             "varying vec3 worldPos;void main(){vec4 p=modelMatrix*vec4(position,1.);worldPos=p.xyz;gl_Position=projectionMatrix*viewMatrix*p;}",
-          fragmentShader: `varying vec3 worldPos;uniform float time;uniform float detail;void main(){float w=sin(worldPos.x*.06+worldPos.z*.045+time*.45)*sin(worldPos.z*.12-time*.25);float fine=pow(max(0.,sin(worldPos.x*.19+worldPos.z*.09+time*.35)),25.);vec3 deep=vec3(.028,.11,.145);vec3 shallow=vec3(.08,.22,.25);vec3 col=mix(deep,shallow,.45+w*.14);col+=vec3(.012,.018,.018)*fine*detail;float grid=step(.988,fract(worldPos.x/80.))+step(.988,fract(worldPos.z/80.));col+=grid*.009;gl_FragColor=vec4(col,1.);}`,
+          fragmentShader: `
+varying vec3 worldPos;
+uniform float time;
+uniform float detail;
+void main() {
+  float swell = sin(worldPos.x * .008 + worldPos.z * .012 + time * .08)
+              * sin(worldPos.z * .019 - time * .05);
+  float ripple = pow(max(0., sin(worldPos.x * .11 + worldPos.z * .07 + time * .2)), 28.);
+  vec3 deep = vec3(.0015, .0035, .014);
+  vec3 shallow = vec3(.004, .012, .04);
+  vec3 color = mix(deep, shallow, .4 + swell * .22);
+  color += vec3(.0004, .001, .002) * ripple * detail;
+  gl_FragColor = vec4(color, 1.);
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
+}`,
         }),
       );
       this.sea.rotation.x = -Math.PI / 2;
       this.sea.position.y = -0.4;
       this.scene.add(this.sea);
       this.scenery = createScenery(this.scene, this.surfaceHeightAt);
+      this.cityLights = createCityLights(this.scene, this.surfaceHeightAt);
       this.units = createUnitModels(
         this.scene,
         (x, z) => this.surfaceHeightAt(x + HALF_X, z + HALF_Z) + 0.12,
@@ -329,6 +352,7 @@ export class Map3DRenderer {
       });
       this.setQuality(quality);
       this.canvas.dataset.viewpoint = this.viewpoint;
+      this.canvas.dataset.atlasStyle = "night";
       this.resize();
       this.update(state);
       this.focusProvince(
@@ -398,6 +422,7 @@ export class Map3DRenderer {
     this.sun.shadow.mapSize.set(preset.shadows || 512, preset.shadows || 512);
     this.sun.shadow.needsUpdate = true;
     this.scenery.setQuality(value);
+    this.cityLights.setQuality(value);
     this.publishCityCoverage();
     this.railways.setQuality(value);
     this.sea.material.uniforms.detail.value = value === "low" ? 0 : 1;
@@ -488,6 +513,7 @@ export class Map3DRenderer {
         )
         .slice(-32);
       this.scenery.update(state.world);
+      this.cityLights.update(state.world);
       this.updateCountryLabels();
       this.politicalBorders.update(state.world);
       this.publishCityCoverage();
@@ -539,42 +565,80 @@ export class Map3DRenderer {
       element.dataset.mapCountry = label.country;
       element.setAttribute("aria-hidden", "true");
       this.labels.prepend(element);
-      return { element, label, position: this.point(label.x, label.y, 3) };
+      const position = this.point(label.x, label.y, 3);
+      const offset = new THREE.Vector3(
+        label.axisX,
+        0,
+        label.axisY,
+      ).multiplyScalar(label.span / 2);
+      return {
+        element,
+        label,
+        position,
+        axisFrom: position.clone().sub(offset),
+        axisTo: position.clone().add(offset),
+      };
     });
   }
   private drawCountryLabels() {
     const distance = this.camera.position.distanceTo(this.controls.target);
-    const occupied: { x: number; y: number; w: number; h: number }[] = [];
-    for (const { element, label, position } of this.countryLabels) {
+    const occupied: ScreenCountryLabel[] = [];
+    for (const { element, label, position, axisFrom, axisTo } of this
+      .countryLabels) {
+      VEC.copy(axisFrom).project(this.camera);
+      const fromX = ((VEC.x + 1) * this.width) / 2;
+      const fromY = ((1 - VEC.y) * this.height) / 2;
+      VEC.copy(axisTo).project(this.camera);
+      const dx = ((VEC.x + 1) * this.width) / 2 - fromX;
+      const dy = ((1 - VEC.y) * this.height) / 2 - fromY;
+      let angle = Math.atan2(dy, dx);
+      if (angle > Math.PI / 2) angle -= Math.PI;
+      if (angle < -Math.PI / 2) angle += Math.PI;
+      const span = Math.hypot(dx, dy);
+      const textLength = element.textContent!.length;
+      const idealFont = THREE.MathUtils.clamp(
+        span / (textLength * 0.76 + 2),
+        9,
+        36,
+      );
       VEC.copy(position).project(this.camera);
       const x = ((VEC.x + 1) * this.width) / 2;
-      const y = ((1 - VEC.y) * this.height) / 2 - 20;
-      const font = THREE.MathUtils.clamp(
-        11 + (label.extent / distance) * 16,
-        11,
-        23,
-      );
-      const width = label.name.length * font * 0.68 + 12;
-      const enoughSpace = (label.extent * this.height) / distance > width * 0.5;
-      const visible =
-        distance > 300 &&
-        VEC.z > -1 &&
-        VEC.z < 1 &&
-        x > width / 2 &&
-        x < this.width - width / 2 &&
-        y > 35 &&
-        y < this.height - 35 &&
-        (enoughSpace || label.country === this.props.world.player) &&
-        !occupied.some(
-          (box) =>
-            Math.abs(box.x - x) < (box.w + width) / 2 &&
-            Math.abs(box.y - y) < box.h,
-        );
-      element.style.display = visible ? "" : "none";
-      if (!visible) continue;
+      const y = ((1 - VEC.y) * this.height) / 2 - 18;
+      let placed: ScreenCountryLabel | undefined;
+      let font = idealFont;
+      if (distance > 300 && VEC.z > -1 && VEC.z < 1) {
+        for (const scale of [1, 0.82, 0.66, 0.5]) {
+          font = Math.max(9, idealFont * scale);
+          const width = textLength * font * 0.76 + 8;
+          const height = font * 1.3;
+          const boxWidth =
+            Math.abs(Math.cos(angle)) * width +
+            Math.abs(Math.sin(angle)) * height;
+          const boxHeight =
+            Math.abs(Math.sin(angle)) * width +
+            Math.abs(Math.cos(angle)) * height;
+          const candidate = { x, y, width, height, angle };
+          if (
+            x > boxWidth / 2 &&
+            x < this.width - boxWidth / 2 &&
+            y > boxHeight / 2 + 12 &&
+            y < this.height - boxHeight / 2 - 12 &&
+            (span > width * 0.75 ||
+              label.country === this.props.world.player) &&
+            !occupied.some((box) => countryLabelsOverlap(box, candidate))
+          ) {
+            placed = candidate;
+            break;
+          }
+        }
+      }
+      element.style.display = placed ? "" : "none";
+      if (!placed) continue;
       element.style.fontSize = `${font.toFixed(1)}px`;
-      element.style.transform = `translate(${x.toFixed(1)}px,${y.toFixed(1)}px) translate(-50%,-50%)`;
-      occupied.push({ x, y, w: width, h: font + 12 });
+      const degrees = ((angle * 180) / Math.PI).toFixed(1);
+      element.dataset.angle = degrees;
+      element.style.transform = `translate(${x.toFixed(1)}px,${y.toFixed(1)}px) translate(-50%,-50%) rotate(${degrees}deg)`;
+      occupied.push(placed);
     }
   }
   private colorMap() {
@@ -605,12 +669,21 @@ export class Map3DRenderer {
               : 0x8a9082,
         );
       else if (mode === "air")
-        color
-          .set(province.buildings.airfield > 0 ? 0x99b8b8 : country.color)
-          .lerp(terrain, 0.3);
+        color.set(
+          province.buildings.airfield > 0
+            ? 0x7197a5
+            : politicalCountryColor(province.controller, country.color),
+        );
       else if (mode === "naval")
-        color.set(p.port ? 0xd0ba7e : country.color).lerp(terrain, 0.25);
-      else color.set(country.color).lerp(terrain, 0.28);
+        color.set(
+          p.port
+            ? 0xb49a65
+            : politicalCountryColor(province.controller, country.color),
+        );
+      else
+        color
+          .set(politicalCountryColor(province.controller, country.color))
+          .lerp(terrain, 0.06);
       const hex = color.getHex();
       if (this.provinceColors.get(p.id) !== hex) {
         colorTerrain(this.terrain, p.id, color);
@@ -1218,6 +1291,12 @@ export class Map3DRenderer {
       this.scenery.updateLOD(
         this.camera.position.distanceTo(this.controls.target),
       );
+      this.cityLights.updateView(
+        this.camera.position.distanceTo(this.controls.target),
+      );
+      this.canvas.dataset.nightCityLights = JSON.stringify(
+        this.cityLights.stats(),
+      );
       this.updateUnitMatrices(now);
       this.railways.animate(now / 1000, {
         paused: !!this.props.paused,
@@ -1356,6 +1435,7 @@ export class Map3DRenderer {
     this.railways?.dispose();
     this.airNaval?.dispose();
     this.scenery?.dispose();
+    this.cityLights?.dispose();
     this.politicalBorders?.dispose();
     this.cartography?.dispose();
     this.terrain?.dispose();

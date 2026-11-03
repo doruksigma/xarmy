@@ -1,5 +1,5 @@
 .atlas {
-  background: #1c3640;
+  background: #071020;
   isolation: isolate;
   overflow: hidden;
 }
@@ -16,31 +16,38 @@
     serif;
   text-anchor: middle;
   letter-spacing: 3px;
-  fill: #c0d1c4;
+  fill: #a9b9d0;
   opacity: 0.4;
   pointer-events: none;
   paint-order: stroke;
-  stroke: #243e44;
+  stroke: #0b1930;
   stroke-width: 2px;
 }
 .nationName {
-  font-family: Georgia, "Times New Roman", serif;
-  font-weight: 600;
-  fill: #f3e6c4;
+  font-family: Arial, Helvetica, sans-serif;
+  font-weight: 700;
+  fill: #f2f3f7;
   paint-order: stroke;
-  stroke: #263a30ad;
-  stroke-width: 2.2px;
+  stroke: #111b2bd9;
+  stroke-width: 2px;
   stroke-linejoin: round;
-  text-shadow: 0 1px 1px #17231c;
+  text-shadow: 0 1px 1px #030815;
 }
 .cityName {
   font-family: Arial, sans-serif;
-  fill: #f3e7cb;
+  fill: #f0e5cf;
   font-weight: 500;
   paint-order: stroke;
-  stroke: #344a3b;
+  stroke: #172438;
   stroke-width: 1.8px;
   stroke-linejoin: round;
+}
+.terrainRelief {
+  /* Tone one cached bitmap; avoid an SVG filter for every relief feature. */
+  filter: grayscale(0.65) saturate(0.45) brightness(0.9) hue-rotate(155deg);
+}
+.overviewTerrain {
+  filter: saturate(0.6) brightness(0.8);
 }
 .borders {
   mix-blend-mode: normal;
@@ -87,7 +94,7 @@
   right: 28px;
   top: 126px;
   width: 44px;
-  color: #c7d2b5;
+  color: #b8c5d7;
   opacity: 0.55;
   pointer-events: none;
   text-align: center;
@@ -108,10 +115,10 @@
   bottom: 76px;
   width: 150px;
   padding: 5px;
-  border: 1px solid #81907a66;
-  background: #152f31e8;
+  border: 1px solid #8b9db366;
+  background: #101c30ed;
   border-radius: 3px;
-  box-shadow: 0 4px 14px #081e2333;
+  box-shadow: 0 4px 14px #02061266;
 }
 .overview > span {
   display: flex;
@@ -121,7 +128,7 @@
     7px Arial,
     sans-serif;
   letter-spacing: 1.5px;
-  color: #b4c3ae;
+  color: #aabbd0;
 }
 .overview b {
   font-weight: 400;
@@ -147,11 +154,11 @@
   min-width: 180px;
   max-width: 270px;
   padding: 14px 18px;
-  background: #142b28f0;
-  border: 1px solid #82947d66;
+  background: #101b2ef0;
+  border: 1px solid #8294ad66;
   border-left: 2px solid #d9bd84;
-  box-shadow: 0 5px 16px #11242055;
-  color: #d7dcc5;
+  box-shadow: 0 5px 16px #02091866;
+  color: #dce2eb;
   pointer-events: none;
 }
 .regionInfo strong {
@@ -165,7 +172,7 @@
 }
 .regionInfo small {
   font-size: 9px;
-  color: #a6b6a0;
+  color: #a6b5cb;
 }
 .infoLine {
   display: flex;
@@ -187,12 +194,12 @@
   display: grid;
   gap: 6px;
   width: 215px;
-  background: #122d32f2;
-  border: 1px solid #668b8c;
+  background: #101d32f2;
+  border: 1px solid #586c88;
   padding: 14px 16px;
   border-radius: 3px;
-  color: #d6e2cf;
-  box-shadow: 0 3px 14px #11232944;
+  color: #d6dfeb;
+  box-shadow: 0 3px 14px #030a1944;
 }
 .layerInfo strong {
   font:
@@ -206,7 +213,7 @@
 }
 .layerInfo small {
   font-size: 9px;
-  color: #a8beb6;
+  color: #abbcd2;
 }
 .layerInfo button {
   position: absolute;
@@ -286,19 +293,19 @@
 }
 .search input {
   width: 100%;
-  background: #142d2de8;
-  border: 1px solid #8b9c7a66;
-  color: #eee1bf;
+  background: #101d32ed;
+  border: 1px solid #8b9db366;
+  color: #e7eaf0;
   border-radius: 3px;
   padding: 9px 12px;
   font-size: 12px;
 }
 .search input::placeholder {
-  color: #b7c5b1;
+  color: #b7c4d5;
 }
 .search > div {
-  background: #142d2df5;
-  border: 1px solid #8b9c7a66;
+  background: #101d32f5;
+  border: 1px solid #8b9db366;
   max-height: 240px;
   overflow: auto;
 }
@@ -310,17 +317,17 @@
   text-align: left;
   background: transparent;
   border: 0;
-  border-bottom: 1px solid #82977a33;
+  border-bottom: 1px solid #8297b033;
   padding: 10px;
-  color: #eee1bf;
+  color: #e7eaf0;
   font-size: 12px;
   cursor: pointer;
 }
 .search button:hover {
-  background: #59664755;
+  background: #52698455;
 }
 .search small {
-  color: #a9bda4;
+  color: #a9bdd5;
   font-size: 10px;
 }
 .search p {
@@ -340,10 +347,10 @@
   align-items: center;
   gap: 5px;
   padding: 7px 9px;
-  border: 1px solid #6e817866;
+  border: 1px solid #7084a066;
   border-radius: 4px;
-  background: #132c2bef;
-  color: #a6b8b1;
+  background: #101d32ef;
+  color: #a6b8cf;
   font-size: 10px;
   line-height: 1.2;
   cursor: pointer;
@@ -351,7 +358,7 @@
 .mapOptions button[aria-pressed="true"] {
   border-color: #b9bc8a99;
   color: #e6e5bb;
-  background: #33463aed;
+  background: #2c3d57ed;
 }
 .mapOptions button:focus-visible {
   outline: 2px solid #ffe4a4;
@@ -376,7 +383,7 @@
   align-items: center;
   gap: 5px;
   margin-top: 5px;
-  color: #c8d0bb;
+  color: #c8d3e2;
 }
 .readinessLegend i {
   display: inline-block;

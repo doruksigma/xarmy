@@ -9,6 +9,10 @@ export interface CountryMapLabel {
   y: number;
   extent: number;
   provinces: number;
+  axisX: number;
+  axisY: number;
+  span: number;
+  minorSpan: number;
 }
 
 /** Label the largest connected controlled landmass, never its sea centroid.
@@ -53,6 +57,30 @@ export function countryMapLabels(world: World): CountryMapLabel[] {
       const places = ids.map((id) => GEOGRAPHY[id]);
       const cx = places.reduce((s, p) => s + p.x, 0) / places.length;
       const cy = places.reduce((s, p) => s + p.y, 0) / places.length;
+      // A territory's long axis gives readable, geographic label placement
+      // without handwritten country rotations or a graphics-library import.
+      let xx = 0,
+        yy = 0,
+        xy = 0;
+      for (const p of places) {
+        const dx = p.x - cx,
+          dy = p.y - cy;
+        xx += dx * dx;
+        yy += dy * dy;
+        xy += dx * dy;
+      }
+      const spread = Math.hypot(xx - yy, 2 * xy);
+      const elongated =
+        (xx + yy + spread) / Math.max(1, xx + yy - spread) > 1.6;
+      const angle = elongated ? Math.atan2(2 * xy, xx - yy) / 2 : 0;
+      const axisX = Math.cos(angle),
+        axisY = Math.sin(angle);
+      const along = places.map((p) => (p.x - cx) * axisX + (p.y - cy) * axisY);
+      const across = places.map(
+        (p) => -(p.x - cx) * axisY + (p.y - cy) * axisX,
+      );
+      const span = Math.max(...along) - Math.min(...along) + 18;
+      const minorSpan = Math.max(...across) - Math.min(...across) + 14;
       const anchor = places.reduce((best, p) =>
         Math.hypot(p.x - cx, p.y - cy) < Math.hypot(best.x - cx, best.y - cy)
           ? p
@@ -73,10 +101,52 @@ export function countryMapLabels(world: World): CountryMapLabel[] {
           y: anchor.y,
           extent,
           provinces: ids.length,
+          axisX,
+          axisY,
+          span,
+          minorSpan,
         },
       ];
     })
     .sort(
       (a, b) => b.provinces - a.provinces || a.country.localeCompare(b.country),
     );
+}
+
+export interface ScreenCountryLabel {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  angle: number;
+}
+
+/** Separating-axis test: a diagonal country's empty bounding-box corners
+ * must not suppress the name of a neighbouring country. */
+export function countryLabelsOverlap(
+  a: ScreenCountryLabel,
+  b: ScreenCountryLabel,
+  padding = 4,
+): boolean {
+  const ax = Math.cos(a.angle),
+    ay = Math.sin(a.angle);
+  const bx = Math.cos(b.angle),
+    by = Math.sin(b.angle);
+  const dx = b.x - a.x,
+    dy = b.y - a.y;
+  for (const [x, y] of [
+    [ax, ay],
+    [-ay, ax],
+    [bx, by],
+    [-by, bx],
+  ]) {
+    const radiusA =
+      (a.width / 2 + padding) * Math.abs(x * ax + y * ay) +
+      (a.height / 2 + padding) * Math.abs(-x * ay + y * ax);
+    const radiusB =
+      (b.width / 2 + padding) * Math.abs(x * bx + y * by) +
+      (b.height / 2 + padding) * Math.abs(-x * by + y * bx);
+    if (Math.abs(dx * x + dy * y) > radiusA + radiusB) return false;
+  }
+  return true;
 }

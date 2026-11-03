@@ -282,6 +282,77 @@ Hava/deniz sonuçları günlük hesaplanır. Ortak savaş sisi, tam savaş olay
 defteri, eşzamanlı saatlik hava/deniz çözümü, modüler tasarımcılar ve aşağıdaki
 tabloda belirtilen diğer açık işler bu aşamada tamamlanmış sayılmaz.
 
+## Devam çalışması: karanlık gece atlası — 3 Kasım 2026
+
+- `map3d-cartography-palette.ts`, `map3d-cartography.ts`: 2D/3D ortak,
+  düşük doygunluklu özgün siyasi renkler; soğuk orman dokusu, koyu arazi
+  katmanları ve prosedürel karlı dağ sırtları. Siyasi renklerin kimliği ve
+  askerî/ikmal katmanlarının anlamı korunur. Bu bir mevsim veya hava motoru
+  değildir; mevcut coğrafya ve tarihsel senaryo verileri değiştirilmez.
+- `map3d-renderer.ts`, `WarMap.tsx`, harita stilleri: lacivert deniz/ufuk,
+  düşük kontrastlı su hareketi, soğuk ortam ışığı ve açık renk başkent işaretleri.
+  2D harita da aynı gece paletini ve tek ortak şehir ışığı gradyanını kullanır.
+  Harita seçimi, şehir seçimi ve mevcut katmanlar aynı sefer üzerinde çalışır.
+- `map3d-country-labels.ts`: ülke adları, kontrol edilen en büyük bağlantılı
+  kara parçasının uzun eksenine göre yerleşir ve döner. 3D etiketler ekran
+  genişliğine göre ölçeklenir; çakışma ve yakın görünüm elemesi uygulanır.
+  Eğimli yazıların boş kutu köşeleri komşu ülkeyi gizlemez; gerçek döndürülmüş
+  dikdörtgen kesişimi ve dört adımlı yazı küçültmesi kullanılır. Geniş görünümde
+  Fransa adının Almanya tarafından gereksiz gizlenmesi böylece giderildi.
+  Ülke adları için kamera–odak uzaklığı 300 birimin üzerinde olmalıdır.
+- `map3d-city-lights.ts`: **447 şehir** için arazi üzerinde sıcak ışık
+  çekirdekleri, başlangıçtaki **29 başkent** için daha güçlü vurgu.
+  Düşük/Orta/Yüksek/Ultra ayarlarında mevcut veriyle sırasıyla
+  **447 / 893 / 1.338 / 1.783** ışık örneği tek instanced çizim çağrısında
+  çizilir. Şehir başına en fazla 1/2/3/4 örnek vardır; kıyı dışında kalan
+  ek noktalar eklenmez. Harici doku, dinamik noktasal ışık, tam ekran bloom
+  veya ışık başına zamanlayıcı kullanılmaz. Coğrafya önbelleklidir;
+  kamera hareketi yalnız shader boyutunu, kalite yalnız örnek sayısını değiştirir.
+  Başkent yeri değişmedikçe saatlik dünya güncellemesi ışık tamponlarını yenilemez.
+- `map3d-scenery.ts`, `map3d-railways.ts`: kıta görünümünde minyatür kalabalığı
+  azaltılır. Yerleşimler 950 birim ve üzerinde, ray/istasyon/trenler 850 birimin
+  üzerinde gizlenir. Pencere ve tesis ayrıntıları 520, kayalar 650, bacalar 720,
+  ağaçlar 760 birimin altında görünür; traversler Düşükte en fazla 520, diğer
+  ayarlarda 620 birime kadar çizilir. Birimler kamera–odak mesafesidir.
+  Yakınlaştırmada yerleşim örnekleri yeniden oluşturulmaz; bütün bölgelerdeki
+  bina verisi ve oyuncunun başkentine bağlı ray görünürlük kuralı korunur.
+
+**Simülasyon ve kapsam:** Bu gece teması `World`, savaş hasarı, üretim, tarih
+veya sefer RNG akışını değiştirmez. Şehir ışıkları bilinen coğrafyadır;
+gizli düşman hasarı, altyapısı veya askerleri ışık üzerinden açığa çıkarılmaz.
+Işıklar sefer saatine bağlı bir gece/gündüz sistemi değildir. Mevcut Avrupa
+çokgenleri kullanılır; HOI4 harita dosyaları veya görselleri eklenmemiştir.
+Bu görsel aşama, 2.000 satırlık şartnamenin aşağıdaki açık mekaniklerini
+tamamlanmış hale getirmez. Hava/deniz hasar hesabı hâlâ günlüktür.
+
+**Bu aşamanın doğrulaması:** Geometri, yüzey, görsel bütçeler, yerleşimler,
+raylar, kartografya, ülke etiketleri, şehir ışıkları, hava/deniz gösterimi ve
+birlik olaylarını kapsayan **88/88** odaklı test geçti. Görsel incelemede bulunan
+etiket çakışması düzeltmesinden sonra ilgili etiket paketi **5/5** olarak yeniden
+geçti; bu sayı önceki paketteki dört testi de içerir. Son kaynaklarla üretim
+derlemesi, TypeScript ve lint başarılı.
+
+Gerçek Chromium'da `test-europa-night-browser.cjs` ile masaüstü ve dokunmatik
+mobil boyutta **16/16** kontrol geçti. Gerçek WebGL çizimi, Fransa/Almanya
+etiketleri, kaliteye bağlı tek çizimlik ışık bütçesi, kıta/şehir LOD geçişi,
+oyuncunun bağlı trenleri, duraklatılmış seferde tren hareketi, tekerlek/pinch,
+2D dönüş, klavye seçimi ve bütün kayıt dünyasının değişmezliği doğrulandı.
+`test-europa-map-render-browser.cjs` ayrıca **6/6** kontrolle gerçek ele geçirme,
+renk/sahip/işgal/birlik güncellemesi, diplomasi ve ikmal katmanlarını doğruladı.
+`test-europa-theater-browser.cjs` yalnız hava/deniz bölümünde ayrıca
+**10/10** masaüstü/mobil kontrolü geçti: gerçek görev hareketi, uçak kaybı,
+gemi hasarı, bombardıman etkisi, duraklatma/azaltılmış hareket ve içe aktarılan
+kayda sahte çatışma eklenmemesi. Üç tarayıcı paketinin toplam **32** kontrolünde
+konsol veya sayfa hatası yok. Masaüstü ve mobil kıta/Orta Avrupa/Ankara/2D ve
+hava-deniz çatışması ekran görüntüleri incelendi.
+
+Bu tarayıcı koşusunda Düşük kıta görünümü **9 çizim çağrısı / 84.316 üçgen**,
+Ankara yakın görünümü bir trenle **32 çağrı / 381.802 üçgen** gösterdi.
+Bunlar yazılımsal WebGL ortamının çizim sayılarıdır; fiziksel telefonda 60 FPS
+ölçümü değildir.
+Bu aşamada uzun 1936–1945 seferi ve diğer oyunların tam regresyonları yeniden
+çalıştırılmadı; yukarıdaki sonuçları önceki aşamaya aittir.
+
 ## 1–100 kapsamı: mevcut temel ve kalan işler
 
 Dosya adları aksi belirtilmedikçe `app/games/europa-war/strategy/` altındadır.

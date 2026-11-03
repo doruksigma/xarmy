@@ -249,7 +249,7 @@ test("Gün, tümen ve yabancı kontrol değişimleri şehir instance tamponları
   scenery.dispose();
 });
 
-test("Uzak LOD bina gövdelerini korur; mesh, geometri ve materyaller yalnız bir kez bırakılır", () => {
+test("Uzak atlas binaları çizmez, yakınlaşınca aynı şehirleri geri getirir; kaynaklar bir kez bırakılır", () => {
   const world = createWorld("turkey", "historical"),
     scene = new THREE.Scene(),
     scenery = createScenery(scene);
@@ -257,13 +257,30 @@ test("Uzak LOD bina gövdelerini korur; mesh, geometri ve materyaller yalnız bi
   const group = scene.getObjectByName("province-scenery")!,
     body = scene.getObjectByName("scenery-masonry") as THREE.InstancedMesh;
   const rebuilds = scenery.stats.rebuilds,
-    bodyCount = body.count;
+    bodyCount = body.count,
+    houses = scenery.houses.slice(),
+    snapshot = JSON.stringify(world);
+  assert.equal(scenery.stats.emptyProvinces.length, 0);
+  assert.equal(
+    Object.keys(scenery.stats.housesByProvince).length,
+    Object.keys(GEOGRAPHY).length,
+  );
   scenery.updateLOD(2000);
+  assert.equal(group.visible, false, "Continental atlas omits physical models");
   assert.ok(body.visible && body.count === bodyCount);
   assert.equal(scene.getObjectByName("scenery-urban-windows")!.visible, false);
+  scenery.updateLOD(800);
+  assert.equal(group.visible, true, "Regional view restores city silhouettes");
+  assert.equal(scene.getObjectByName("scenery-urban-windows")!.visible, false);
+  assert.equal(scene.getObjectByName("scenery-pines")!.visible, false);
   scenery.updateLOD(200);
+  assert.equal(group.visible, true);
   assert.equal(scene.getObjectByName("scenery-urban-windows")!.visible, true);
+  assert.equal(scene.getObjectByName("scenery-pines")!.visible, true);
   assert.equal(scenery.stats.rebuilds, rebuilds);
+  assert.equal(body.count, bodyCount);
+  assert.deepEqual(scenery.houses, houses);
+  assert.equal(JSON.stringify(world), snapshot);
   let meshDisposals = 0,
     geometryDisposals = 0,
     materialDisposals = 0;

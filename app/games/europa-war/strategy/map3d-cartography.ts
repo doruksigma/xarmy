@@ -9,14 +9,14 @@ import type { World } from "./types";
 
 export { CARTOGRAPHIC_TERRAINS } from "./map3d-cartography-palette";
 
-/** Two small analytic noise fields replace flat country paint. No texture fetch,
- * downloaded art, simulation random numbers, or per-frame CPU texture upload. */
+/** A cold engraved atlas surface, generated in the material's local space.
+ * No texture downloads, simulation RNG or per-frame CPU texture uploads. */
 export function configureCartographicTerrain(
   material: THREE.MeshStandardMaterial,
 ) {
   const previousCompile = material.onBeforeCompile;
   const previousKey = material.customProgramCacheKey;
-  const terrainWash = { value: 0.22 };
+  const terrainWash = { value: 0.07 };
   material.onBeforeCompile = (shader, renderer) => {
     previousCompile.call(material, shader, renderer);
     shader.uniforms.cartographicWash = terrainWash;
@@ -55,30 +55,36 @@ vec2 atlas = cartographicPosition.xz;
 float broad = atlasNoise(atlas*.043);
 float detail = atlasNoise(atlas*.29);
 float paper = atlasHash(floor(atlas*3.4));
+float folds = 1.0-abs(atlasNoise(atlas*vec2(.108,.054)+broad*.9)*2.0-1.0);
 float forest = 1.0-step(.4,abs(cartographicTerrain-3.));
 float marsh = 1.0-step(.4,abs(cartographicTerrain-4.));
 float desert = 1.0-step(.4,abs(cartographicTerrain-5.));
-float mountain = smoothstep(8.,29.,cartographicPosition.y);
+float mountain = smoothstep(7.,27.,cartographicPosition.y);
 float grove = smoothstep(.36,.7,broad) * smoothstep(.28,.6,detail) * forest;
-float engraving = sin(atlas.x*.72+atlas.y*.31+broad*9.);
-float hatch = smoothstep(.58,.95,engraving) * mountain;
-float grain = .88 + broad*.13 + detail*.045 + (paper-.5)*.025;
-grain -= grove*.13 + hatch*.065;
-vec3 wash = mix(vec3(.36,.40,.28),vec3(.53,.49,.38),desert);
-wash = mix(wash,vec3(.25,.38,.32),marsh*.55+forest*.4);
-wash = mix(wash,vec3(.53,.53,.46),mountain*.65);
+float ridge = smoothstep(.38,.88,folds) * mountain;
+float grain = .76 + broad*.23 + detail*.085 + (paper-.5)*.024;
+grain -= grove*.19 + mountain*(1.0-folds)*.18;
+// Values below are linear-light colours, matching Three's vertex colour space.
+// The political wash is deliberately weak: a black country must stay black,
+// and supply/diplomacy overlays retain the meaning of their categorical hue.
+vec3 wash = mix(vec3(.065,.084,.078),vec3(.19,.16,.11),desert);
+wash = mix(wash,vec3(.028,.052,.039),forest*.7);
+wash = mix(wash,vec3(.03,.06,.066),marsh*.7);
+wash = mix(wash,vec3(.13,.15,.18),mountain*.55);
 diffuseColor.rgb = mix(diffuseColor.rgb, wash, cartographicWash) * grain;
-// Restrained peak chalk leaves the political hue legible across mountain chains.
-diffuseColor.rgb = mix(diffuseColor.rgb,vec3(.69,.70,.65),
-  smoothstep(29.,37.,cartographicPosition.y)*(.12+cartographicWash*.16));`,
+diffuseColor.rgb += vec3(.12,.145,.19)*ridge*.055;
+// Broken snow crests expose the mountain chain rather than bleaching a whole
+// province. This relief remains fixed when time, weather or ownership changes.
+float snow = smoothstep(27.,36.,cartographicPosition.y+folds*3.0) * (.25+folds*.4);
+diffuseColor.rgb = mix(diffuseColor.rgb,vec3(.46,.51,.60),snow);`,
       );
   };
-  material.customProgramCacheKey = () => "xarmy-original-cartography-v1";
+  material.customProgramCacheKey = () => "xarmy-original-night-cartography-v2";
   material.needsUpdate = true;
   return {
     setMode(mode: string) {
       terrainWash.value =
-        mode === "terrain" ? 0.54 : mode === "political" ? 0.22 : 0.12;
+        mode === "terrain" ? 0.32 : mode === "political" ? 0.07 : 0;
     },
     dispose() {
       material.onBeforeCompile = previousCompile;
@@ -210,7 +216,7 @@ export interface PoliticalBorderStats {
   fingerprint: number;
 }
 
-/** Two bounded batches: dark cartographic ink and a narrow national/frontier
+/** One bounded batch: dark cartographic ink and a narrow national/frontier
  * accent. World-space ribbons remain visible on devices with 1px WebGL lines. */
 export function createPoliticalBorders(
   scene: THREE.Scene,
@@ -222,7 +228,7 @@ export function createPoliticalBorders(
     vertexColors: true,
     depthWrite: false,
     transparent: true,
-    opacity: 0.86,
+    opacity: 0.94,
   });
   const mesh = new THREE.Mesh(new THREE.BufferGeometry(), material);
   mesh.renderOrder = 3;
@@ -294,12 +300,13 @@ export function createPoliticalBorders(
       for (const edge of politicalBoundarySegments(world)) {
         if (edge.kind === "coast") {
           stats.coastSegments++;
-          ribbon(edge, 0.27, 0x26484b, 0.18);
+          ribbon(edge, 0.64, 0x070d18, 0.18);
+          ribbon(edge, 0.19, 0x34465c, 0.21);
         } else {
           if (edge.kind === "front") stats.frontSegments++;
           else stats.countrySegments++;
-          ribbon(edge, 0.67, 0x31372d, 0.27);
-          ribbon(edge, 0.23, edge.kind === "front" ? 0xd7a08a : 0xd6ccb0, 0.3);
+          ribbon(edge, 0.82, 0x080c12, 0.27);
+          ribbon(edge, 0.18, edge.kind === "front" ? 0xbd6d62 : 0x47505f, 0.3);
         }
       }
       const geometry = new THREE.BufferGeometry()

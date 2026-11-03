@@ -139,6 +139,57 @@ rakip zorluğunu değiştirmez ve kendiliğinden kaynak harcamaz. İsteğe bağl
 yönetim yardımcıları oyuncunun açtığı alanlarda gerçek komutları uygular.
 Hava/deniz haritalarında kuvvet özeti ve ilgili emir ekranına kısayol bulunur.
 
+## Gece atlası
+
+3 Kasım 2026 görünümü, koyu lacivert deniz ve ufuk, soğuk arazi ışığı,
+düşük doygunluklu ülke renkleri ve sıcak şehir ışıklarını birlikte kullanır.
+Almanya kömür tonunda, Fransa mavi, İtalya yeşil ve Türkiye bordo tonunda
+gösterilir. 2D ve 3D siyasi haritalar aynı özgün ülke paletini paylaşır;
+askerî ve ikmal katmanlarının bilgi renkleri ayrı kalır. Arazi shader'ındaki
+orman kümeleri, dağ sırtları ve kırık kar çizgileri prosedüreldir; yeni
+ölçülmüş yükseklik verisi veya mevsim/hava simülasyonu değildir. Deniz
+dalgaları düşük kontrastlıdır; azaltılmış hareket tercihi hareketlerini durdurur.
+
+Beyaz ülke adları en büyük bağlantılı toprak parçasının uzun eksenine göre
+döner ve kullanılabilir genişliğe göre ölçeklenir. 3D görünümde çakışan veya
+ekran dışında kalan ülke adları gizlenir; kamera uzaklığı 300 birim ve altına
+indiğinde yakın şehir görünümüne yer açarlar. Başkent yıldızları ile başkent
+ve seçili şehir adlarının mevcut seçimi korunur.
+
+Gece ışıkları mevcut **447 şehir** konumundan üretilir; başlangıçtaki
+**29 başkent** daha belirgin çekirdek taşır. Küçük ışık kümeleri kendi bölge
+çokgenlerinin içinde kalır ve çizilen arazi yüksekliğine oturur. Bunlar
+her ülkenin bilinen yerleşim coğrafyasını gösterir; düşman fabrikalarının,
+birliklerinin veya bombardıman hasarının istihbarat göstergesi değildir.
+Saat ve gizli hasar değişiklikleri ışıkları değiştirmez; başkent taşınırsa
+başkent vurgusu yeni konuma geçer. Bu sürekli gece teması, seferin gün/gece
+hesabını değiştirmez.
+
+| 3D grafik ayarı | Mevcut coğrafyada ışık örneği | Şehir başına üst sınır |
+| --- | ---: | ---: |
+| Düşük | 447 | 1 |
+| Orta | 893 | 2 |
+| Yüksek | 1.338 | 3 |
+| Ultra | 1.783 | 4 |
+
+Dar kıyılarda ek küme noktası için uygun kara yoksa o örnek eklenmez; şehir
+çekirdeği korunur. Bütün ışıklar tek instanced çizim çağrısını paylaşır.
+Harici doku, noktasal ışık kaynağı, tam ekran bloom geçişi veya ışık başına
+animasyon döngüsü eklenmez. Geometri bir kez hazırlanır; yakınlaştırma yalnız
+boyut uniform'unu, kalite yalnız çizilen örnek sayısını değiştirir. Görsel
+dağılımın deterministik rastgeleliği seferin `World` verisine veya RNG
+akışına dokunmaz. 2D görünüm aynı sıcak etkiyi ortak bir SVG gradyanıyla verir.
+
+Geniş atlası sade tutmak için kamera–odak uzaklığı **950 birim ve üzerinde**
+bütün yerleşim minyatürleri gizlenir; şehir ışıkları ve harita verisi kalır.
+Yaklaşınca mevcut örnekler yeniden görünür, bina geometrisi tekrar kurulmaz.
+Pencere/tesis ayrıntıları 520, kayalar 650, bacalar 720, ağaçlar 760 birimin
+altında gösterilir. Ray, istasyon ve trenler 850 birimin üzerinde gizlenir;
+travers sınırı Düşükte 520, diğer ayarlarda 620 birimdir. Bunlar kamera
+koordinatlarıdır, kilometre veya ikmal menzili değildir. Oyuncuya ait bağlı
+demiryolu görünürlük kuralı ve gerçek sefer hesapları değişmez. Bu çizim
+bütçeleri fiziksel telefonda ölçülmüş FPS sonucu anlamına gelmez.
+
 ## Hava ve deniz görevlerinin görünümü
 
 Avcı, bombardıman, yüzey savaş gemisi, uçak gemisi ve denizaltı için özgün,

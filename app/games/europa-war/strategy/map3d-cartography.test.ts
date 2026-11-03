@@ -5,9 +5,65 @@ import { createWorld, MAP } from "./world";
 import { buildTerrain } from "./map3d-geometry";
 import {
   CARTOGRAPHIC_TERRAINS,
+  configureCartographicTerrain,
   createPoliticalBorders,
   politicalBoundarySegments,
 } from "./map3d-cartography";
+import {
+  NIGHT_COUNTRY_COLORS,
+  politicalCountryColor,
+} from "./map3d-cartography-palette";
+
+test("Gece atlası bütün ülkeleri kapsar ve yeni ülke renklerini geçerli, ayırt edilebilir biçimde gösterir", () => {
+  for (const country of MAP.countries) {
+    assert.ok(Object.hasOwn(NIGHT_COUNTRY_COLORS, country.id));
+    const css = politicalCountryColor(country.id, country.color);
+    assert.match(css, /^#[\da-f]{6}$/i);
+    assert.ok(new THREE.Color(css).getHSL({ h: 0, s: 0, l: 0 }).l < 0.4);
+  }
+  const rebel = politicalCountryColor("new-republic", "#d9b3b3");
+  assert.match(rebel, /^#[\da-f]{6}$/i);
+  assert.equal(rebel, politicalCountryColor("new-republic", "#d9b3b3"));
+  assert.notEqual(rebel, politicalCountryColor("new-republic", "#9bd9b3"));
+  for (const invalid of ["", "garbage", "#zzzzzz"])
+    assert.match(
+      politicalCountryColor("new-republic", invalid),
+      /^#[\da-f]{6}$/i,
+    );
+  assert.match(politicalCountryColor("__proto__", "#b69"), /^#[\da-f]{6}$/i);
+});
+
+test("Gece kaplaması tematik harita rengini yıkamaz ve malzeme kancalarını temizler", () => {
+  const material = new THREE.MeshStandardMaterial();
+  let previousCalls = 0;
+  const previousCompile = () => {
+    previousCalls++;
+  };
+  const previousKey = () => "original-material-key";
+  material.onBeforeCompile = previousCompile;
+  material.customProgramCacheKey = previousKey;
+  const layer = configureCartographicTerrain(material);
+  const shader = {
+    uniforms: {},
+    vertexShader: "#include <common>\n#include <begin_vertex>",
+    fragmentShader: "#include <common>\n#include <color_fragment>",
+  } as Parameters<typeof material.onBeforeCompile>[0];
+  material.onBeforeCompile(shader, {} as THREE.WebGLRenderer);
+  assert.equal(previousCalls, 1);
+  const wash = shader.uniforms.cartographicWash;
+  layer.setMode("terrain");
+  const terrainWash = wash.value;
+  layer.setMode("political");
+  assert.ok(wash.value > 0 && wash.value < terrainWash);
+  for (const mode of ["supply", "diplomacy", "air", "naval"]) {
+    layer.setMode(mode);
+    assert.equal(wash.value, 0, "Categorical overlays retain their base hue");
+  }
+  layer.dispose();
+  assert.equal(material.onBeforeCompile, previousCompile);
+  assert.equal(material.customProgramCacheKey, previousKey);
+  material.dispose();
+});
 
 test("Arazi kaplaması bütün seçilebilir üçgenlerde doğru gerçek arazi türünü taşır", () => {
   const terrain = buildTerrain({ maxEdge: 32 });
