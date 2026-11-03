@@ -4,9 +4,17 @@ import test from "node:test";
 import * as THREE from "three";
 import {
   createLandModelGeometries,
+  createLandModelGeometry,
+  landModelGeometryKey,
   INFANTRY_NECK_PIVOT,
   type LandModelTier,
 } from "./map3d-land-models";
+
+import {
+  COUNTRY_MODEL_PROFILES,
+  type NationalModelProfile,
+  type InfantryModelProfile,
+} from "./map3d-national-profiles";
 
 const TIERS: LandModelTier[] = [0, 1, 2, 3];
 const PARTS = [
@@ -99,7 +107,7 @@ test("All four model banks retain fifteen animation slots with bounded finite ge
 });
 
 test("Research changes actual infantry, vehicle and gun geometry at every stage", () => {
-  const banks = TIERS.map(createLandModelGeometries);
+  const banks = TIERS.map((tier) => createLandModelGeometries(tier));
   // Hash positions rather than colors: completed research changes actual meshes.
   for (const part of [0, 2, 3, 4, 6, 7, 8, 13]) {
     const hashes = banks.map((parts) => {
@@ -335,5 +343,247 @@ test("Repeated tier creation is deterministic with independently owned disposabl
     });
     assert.equal(disposed, 15);
     dispose(second);
+  }
+});
+
+test("all 29 national rigs retain researched geometry, animation anchors, clearances and safe shape sharing", () => {
+  const signatures = new Map<string, string>();
+  const nationalShapes = new Map<string, Set<string>>(
+    [0, 2, 3, 4].flatMap((part) =>
+      TIERS.map((tier) => [`${part}:${tier}`, new Set<string>()] as const),
+    ),
+  );
+  const hash = (geometry: THREE.BufferGeometry, allAttributes = false) => {
+    const digest = createHash("sha256");
+    for (const name of allAttributes ? Object.keys(ATTRIBUTES) : ["position"]) {
+      const array = geometry.getAttribute(name).array;
+      digest.update(
+        Buffer.from(array.buffer, array.byteOffset, array.byteLength),
+      );
+    }
+    return digest.digest("hex");
+  };
+  for (const profile of Object.values(COUNTRY_MODEL_PROFILES)) {
+    const research = new Map<number, Set<string>>(
+      [0, 2, 3, 4].map((part) => [part, new Set<string>()]),
+    );
+    for (const tier of TIERS) {
+      const parts = createLandModelGeometries(tier, profile);
+      assert.equal(parts.length, 15);
+      let vertices = 0;
+      for (const [part, geometry] of parts.entries()) {
+        const count = geometry.getAttribute("position").count;
+        vertices += count;
+        assert.ok(
+          count > 0 && count < 16000,
+          `${profile.id}/${tier}/${part}: part budget`,
+        );
+        assert.equal(count % 3, 0);
+        for (const [name, itemSize] of Object.entries(ATTRIBUTES)) {
+          const attribute = geometry.getAttribute(name);
+          assert.equal(attribute.itemSize, itemSize);
+          assert.equal(
+            attribute.count,
+            geometry.getAttribute("position").count,
+          );
+          for (const value of attribute.array)
+            assert.ok(
+              Number.isFinite(value),
+              `${profile.id}/${tier}/${part}/${name}`,
+            );
+        }
+        const key = landModelGeometryKey(part, tier, profile),
+          signature = hash(geometry, true);
+        if (signatures.has(key))
+          assert.equal(
+            signature,
+            signatures.get(key),
+            `shared ${key} must have identical buffers`,
+          );
+        else signatures.set(key, signature);
+      }
+      assert.ok(
+        vertices < 55000,
+        `${profile.id}/${tier}: ${vertices} vertices`,
+      );
+      assert.ok(
+        parts[0].boundingBox!.max.y < 3.4 && parts[5].boundingBox!.max.y < 3.4,
+        `${profile.id}/${tier}: torso accessories remain below head rig`,
+      );
+      assert.ok(Math.abs(parts[0].boundingBox!.max.z - 1.97) < 0.005);
+      assert.ok(Math.abs(parts[1].boundingBox!.min.y + 1.66) < 0.005);
+      assert.ok(Math.abs(parts[7].boundingBox!.max.z - 4.21) < 0.005);
+      assert.ok(
+        parts[8].boundingBox!.containsPoint(new THREE.Vector3(0, 1.96, 2.96)),
+      );
+      assert.ok(
+        parts[13].boundingBox!.containsPoint(new THREE.Vector3(0, 0, 0)),
+      );
+      assert.ok(
+        (parts[13].boundingBox!.max.y + INFANTRY_NECK_PIVOT[1]) * 2.45 < 13,
+      );
+      for (const [part, halfWidth, front, rear] of [
+        [2, 5.1, 5.8, 5.8],
+        [3, 3.3, 6.8, 6.6],
+        [4, 3.05, 1.3, 6.9],
+      ]) {
+        const bounds = parts[part].boundingBox!;
+        assert.ok(
+          Math.max(Math.abs(bounds.min.x), bounds.max.x) * 2.45 <= halfWidth,
+          `${profile.id}/${tier}/${part}: width`,
+        );
+        assert.ok(
+          bounds.max.z * 2.45 <= front && -bounds.min.z * 2.45 <= rear,
+          `${profile.id}/${tier}/${part}: length`,
+        );
+      }
+      for (const [part, stages] of research) {
+        stages.add(hash(parts[part]));
+        const shape =
+          part === 0
+            ? [0, 1, 13].map((index) => hash(parts[index])).join(":")
+            : part === 2
+              ? [2, 6].map((index) => hash(parts[index])).join(":")
+              : hash(parts[part]);
+        nationalShapes.get(`${part}:${tier}`)!.add(shape);
+      }
+      dispose(parts);
+    }
+    for (const [part, stages] of research)
+      assert.equal(
+        stages.size,
+        4,
+        `${profile.id}/${PARTS[part]}: four research stages`,
+      );
+  }
+  for (const [part, shapes] of nationalShapes)
+    assert.equal(
+      shapes.size,
+      29,
+      `part/tier ${part}: distinct national silhouettes`,
+    );
+});
+
+const positionSignature = (geometry: THREE.BufferGeometry) => {
+  const array = geometry.getAttribute("position").array;
+  return createHash("sha256")
+    .update(Buffer.from(array.buffer, array.byteOffset, array.byteLength))
+    .digest("hex");
+};
+
+test("advanced national vehicle references change geometry only after the second research stage", () => {
+  const representatives = new Map<string, string>();
+  for (const [id, profile] of Object.entries(COUNTRY_MODEL_PROFILES))
+    representatives.set(
+      [
+        profile.tank.variant,
+        profile.truck.variant,
+        profile.artillery.variant,
+      ].join(":"),
+      id,
+    );
+  assert.ok(representatives.size >= 7);
+  for (const id of representatives.values()) {
+    const profile = COUNTRY_MODEL_PROFILES[id];
+    const generic: NationalModelProfile = {
+      ...profile,
+      tank: { ...profile.tank, variant: undefined },
+      truck: { ...profile.truck, variant: undefined },
+      artillery: { ...profile.artillery, variant: undefined },
+    };
+    const relabeled: NationalModelProfile = {
+      ...profile,
+      label: "Translated country label",
+      tank: { ...profile.tank, modelName: "Translated tank label" },
+      truck: { ...profile.truck, modelName: "Translated truck label" },
+      artillery: { ...profile.artillery, modelName: "Translated gun label" },
+    };
+    for (const tier of TIERS) {
+      for (const part of [2, 6, 3, 4]) {
+        const actual = createLandModelGeometry(part, tier, profile);
+        const baseline = createLandModelGeometry(part, tier, generic);
+        try {
+          assert.equal(
+            landModelGeometryKey(part, tier, profile),
+            landModelGeometryKey(part, tier, relabeled),
+            `${id}/${tier}/${part}: labels do not duplicate cached geometry`,
+          );
+          if (tier < 2) {
+            assert.equal(
+              positionSignature(actual),
+              positionSignature(baseline),
+              `${id}/${tier}/${part}: early equipment is retained`,
+            );
+            assert.equal(
+              landModelGeometryKey(part, tier, profile),
+              landModelGeometryKey(part, tier, generic),
+            );
+          } else {
+            assert.notEqual(
+              positionSignature(actual),
+              positionSignature(baseline),
+              `${id}/${tier}/${part}: reference silhouette is real geometry`,
+            );
+            assert.notEqual(
+              landModelGeometryKey(part, tier, profile),
+              landModelGeometryKey(part, tier, generic),
+            );
+          }
+        } finally {
+          actual.dispose();
+          baseline.dispose();
+        }
+      }
+      for (const part of [7, 8, 9, 10])
+        assert.equal(
+          landModelGeometryKey(part, tier, profile),
+          landModelGeometryKey(part, tier, generic),
+          `${id}: muzzle and moving track rig stays shared`,
+        );
+    }
+  }
+});
+
+test("reference uniform accessories and winter headwear select actual geometry without changing the research tier", () => {
+  const cases: {
+    id: string;
+    change: Partial<InfantryModelProfile>;
+    parts: number[];
+  }[] = [
+    { id: "uk", change: { scarf: false }, parts: [0, 13, 14] },
+    { id: "france", change: { scarf: false }, parts: [0, 13] },
+    { id: "germany", change: { chestCanister: false }, parts: [0] },
+    { id: "ussr", change: { headwear: "helmet" }, parts: [0, 13, 14] },
+    { id: "turkey", change: { headwear: "helmet" }, parts: [13, 14] },
+  ];
+  for (const { id, change, parts } of cases) {
+    const profile = COUNTRY_MODEL_PROFILES[id];
+    const without: NationalModelProfile = {
+      ...profile,
+      infantry: { ...profile.infantry, ...change },
+    };
+    for (const part of parts) {
+      const actual = createLandModelGeometry(part, 0, profile);
+      const stripped = createLandModelGeometry(part, 0, without);
+      try {
+        assert.notEqual(
+          positionSignature(actual),
+          positionSignature(stripped),
+          `${id}/${part}: visible national uniform accessory`,
+        );
+        assert.notEqual(
+          landModelGeometryKey(part, 0, profile),
+          landModelGeometryKey(part, 0, without),
+        );
+      } finally {
+        actual.dispose();
+        stripped.dispose();
+      }
+    }
+    assert.equal(
+      landModelGeometryKey(1, 0, profile),
+      landModelGeometryKey(1, 0, without),
+      `${id}: walking rig is shared`,
+    );
   }
 });

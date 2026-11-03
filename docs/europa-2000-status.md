@@ -628,6 +628,92 @@ Bu koşu fiziksel telefon/Windows FPS testi, tam 1936–1945 sefer testi veya
 canlı site dağıtım doğrulaması değildir. Önceki aşamaların tarayıcı sayıları
 bu aşamanın sayısına eklenmez.
 
+## Ulusal modeller ve komutan rota devamı — 3 Kasım 2026
+
+Başlangıç sürümü `1e60ae0`. Kullanıcının son ülke ve üniforma referanslarıyla
+bölüm 15; komutan sınır yerleşimiyle bölüm 47 ilerletildi. Bu çalışma bütün
+2.000 satırın tamamlandığını veya HOI4 modellerinin kopyalandığını söylemez.
+
+- 29 ülkenin biçim profili: miğfer/şapka, kaput, yaka, kayış, sırt çantası,
+  çizme; tank gövdesi/kulesi, kamyon kabini/brandası ve top kalkanı.
+- Yeni referanslar: Alman atkısı, büyük çanta ve silindirik teçhizat kutusu;
+  Britanya atkı/kayışları; Fransız mavi kaput ve Adrian; Sovyet bej kışlık
+  kaput, kürk yaka ve uşanka; İtalyan M33; Türk haki kaput ve siperli şapka;
+  İsveç gri-yeşil üniforma. Bunlar özgün, oyun ölçeğine uygun geometrilerdir.
+- İleri araştırma görünümü için 10 tank, 10 kamyon ve 7 top tasarım referansı.
+  Tiger I, Churchill, Somua S35, T-34, M13/40, LT vz. 38, Stridsvagn m/42,
+  Türkiye için T-26, Polonya için 7TP ve Hollanda Doğu Hint Adaları CTLS.
+  Büyük ülkelerin tanınan kamyon ve top aileleri de ayrılır. Küçük ülkelerde
+  paylaşılan tasarım aileleri arayüzde açıkça belirtilir; tarihsel üretim veya
+  tam envanter doğruluğu iddiası değildir. Araç imzaları 2–3. görsel kademede
+  belirir; tamamlanmış teknoloji ve mevcut istihbarat kuralları korunur.
+- Yalnız ihtiyaç duyulan geometri parçaları oluşturulur; gerçekten aynı
+  parçalar paylaşılır. Boşta önbellek 64 parça / 180.000 vertex / 4.096 örnek
+  yuvasıyla sınırlıdır. Aktif görünümün 3.072 minyatür ve 128 efekt sınırı,
+  baş hareketi, namlu eksenleri ve sahne kapanışında temizleme korunur.
+  İncelemede bulunan aktif tamponların yalnız büyümesi sorunu da düzeltildi:
+  binlerce birlikten birkaç birliğe geçişte aşırı kapasite hemen, daha küçük
+  düşüşlerde 30 güncelleme sonrası küçülür.
+- MIT lisanslı Muster M40 kabuğunun seçili geometrik formülü uyarlanmıştır.
+  Tam oyun varlıkları içe aktarılmadı. [Kaynak incelemesi](europa-national-assets.md),
+  sabit kaynak sürümü ve tam MIT bildirimi eklenmiştir; bildirim `v5`
+  çevrimdışı pakete de indirilir.
+- Komutan sınır dağıtıcısı artık mevcut arazi/ikmal/mesafe/hız maliyetini
+  kullanır. Dengeli sınır dağıtımı, mevcut konum/atama önceliği, 12 tümen
+  sınırı, hedef ülke yalıtımı ve boş komutanın hareketsizliği korunur.
+  Aynı ülke ve hareket profilleri ortak arama kullanır; her kenarda bütün
+  ordular taranmaz. Önbellek tek emir/gün işlemiyle sınırlıdır; sonraki
+  işlem kontrol/erişim/hasar/ikmal değişikliklerini yeniden değerlendirir.
+
+**Komutan doğrulaması:** Yeni 9 rota testi dâhil 14 dosyada **136/136** test
+geçti. Bu koşu uzun 3.653 günlük kampanya testini de içerir. 447 bölge/240 ve
+480 birlik regresyonunda ordu okumaları 1.200 → 2.400, komşuluk okumaları
+848 → 888 oldu. Gerçek saatlik Ankara–Urfa varışı, karışık tümen grupları,
+eşzamanlılık, kayıt, erişim ve komutan yalıtımı doğrulandı. Kayıt:
+`/workspace/scratch/europa-commander-regression.log`.
+
+**Çevrimdışı doğrulama:** Lisans bildiriminin indirilmesi, çevrimdışı okunması,
+indirme başarısızlığında hazır sayılmaması ve eski tamamlanmış paketin korunması
+dâhil mevcut paket/varlık grubunda **26/26** test geçti.
+
+**Son model doğrulaması:** Son kaynaklarla 20 dosyada **177/177** görsel,
+model, animasyon, araştırma ve arayüz davranışı testi geçti. Bu grubun içindeki
+52 odaklı test; 29 ülke × dört kademenin gerçek geometri farklarını, ortak
+parça anahtarlarının aynı tamponları üretmesini, bütün ileri araç varyantlarını,
+namlu/ayak eksenlerini, normal/boyut/vertex sınırlarını, üniforma ayrıntılarını
+ve tampon büyüme/küçülme/tek seferlik temizliğini kapsar. 52 sayısı 177'ye
+eklenmez. Büyük orduları sekiz ülkede gezip yalnız sekiz birlik bırakma
+regresyonunda aktif örnek kapasitesi önceki 135.168 yuvada kalmak yerine
+ilk duraklatılmış güncellemede en çok 384 yuvaya iner.
+
+- Görsel test kaydı: `/workspace/scratch/europa-national-visual-tests-final.log`.
+- `npm run build`: tam tip/lint ve üretim derlemesi başarılı;
+  `/workspace/scratch/europa-national-build-final.log`.
+- Gerçek üretim sürümü, Chromium/SwiftShader ile 1440×1000 masaüstü ve
+  390×844 dokunmatik mobil emülasyonunda **30/30** tarayıcı kontrolünden geçti;
+  uygulama/konsol hatası yok. Masaüstünde 10 ülke, mobilde Türkiye ve Almanya
+  temel/ileri kademelerde aynı sabit perspektif kamera ve şehir izdüşümüyle
+  karşılaştırıldı. Ulusal araştırma açıklamaları ve tam sefer kaydı eşitliği
+  kontrol edildi. Kamera eylemsizliği karşılaştırmaları bozmaması için ortak
+  public odak/yakınlaştırma kontrolleri kullanıldı ve son kare beklendi.
+- İsyancıların ana ülke modelini devralması, başka ülkenin araştırmasının
+  oyuncu görünümünü değiştirmemesi, boşta baş hareketi/duraklatma/azaltılmış
+  hareket, mobil ayar paneli ve yatay taşma yokluğu geçti.
+- Dört saldıranın gerçek karşılıklı hasarıyla tüfek/tank/top ışıkları ve kamyon
+  farları görüldü; barışçıl kayıt yüklenince eski efektlerin temizlendiği
+  doğrulandı. High çatışma görüntüsü gerçek Low muharebesi duraklatılıp
+  azaltılmış hareket seçilerek alındı; sürekli High FPS ölçümü değildir.
+- Betik: `scripts/test-europa-national-models-browser.cjs`.
+- Rapor: `/workspace/scratch/europa-national-models-browser/report.json`.
+- Görsel inceleme: `desktop-germany-tier3-high.png`,
+  `desktop-upgraded-combat-high-paused.png`, `mobile-turkey-tier3-same-camera.png`
+  (aynı rapor klasöründe). Önceki deneme koşuları son sayılara eklenmez.
+
+Hava maliyeti, stratejik demiryolu nakli, kapasiteli gerçek sevkiyat, bütün
+ülkeler için kaynakla doğrulanmış birebir envanter ve yüksek çözünürlüklü hazır
+karakter/animasyon setleri bu aşamada tamamlanmadı. Fiziksel telefon veya
+Windows donanımında 60 FPS garantisi verilmez.
+
 ## 1–100 kapsamı: mevcut temel ve kalan işler
 
 Dosya adları aksi belirtilmedikçe `app/games/europa-war/strategy/` altındadır.
@@ -654,7 +740,7 @@ yerine kullanılamaz.
 | 37–40 Tasarımcılar ve ekipman | Sabit tank/uçak/gemi katalogları ve üretim maliyetleri (`catalog.ts`, `advanced-catalog.ts`, `production.ts`). | Modüler tasarımcılar, uyumluluk kuralları, sürümler/refit; gerçek tren, zırhlı tren, demiryolu topu ve konvoy stokları. |
 | 41–43 Şablon, destek, eğitim | Sabit birlik türleri, gerçek ekipman tüketen destekler, eğitim kuyruğu ve ikmale bağlı takviye (`planning.ts`, `economy.ts`). | Tabur/alay şablonları, sürümler, bileşik istatistikler, erken konuşlanma ve gerçek sevkiyatlı eğitim/takviye. |
 | 44–46 Komuta, karargâh, kaptan | General beceri/tecrübesi, 12 birlik sınırı, otomatik yeni komutan ve hedef sınır ataması (`commanders.ts`, `commander-roster.ts`). | Ordu grubu/tiyatro, sahra karargâhı, emir gücü, tümen komutanları, gemi kaptanları ve madalyalar. |
-| 47–51 Hareket, cephe, savaş, kuşatma | Saatlik grup hareketi; arazi, mesafe ve mevcut ikmale göre maliyetli manuel/AI emir rotası ve saldırı planı; hedef devlete özel saldır/savun, eşzamanlı hasar ve geri çekilme (`land.ts`, `land-movement-cost.ts`, `planning.ts`, `commanders.ts`). | Komutan sınır dağıtıcısının maliyetli rotaya geçirilmesi, hava etkisi, stratejik demiryolu nakli, genişlik/rezerv/taktik/zırh/delme ve süreli geri çekilme. |
+| 47–51 Hareket, cephe, savaş, kuşatma | Saatlik grup hareketi; arazi, mesafe ve mevcut ikmale göre maliyetli manuel/AI emir rotası, komutan sınır dağıtımı ve saldırı planı; hedef devlete özel saldır/savun, eşzamanlı hasar ve geri çekilme (`land.ts`, `land-movement-cost.ts`, `planning.ts`, `commanders.ts`). | Hava etkisi, stratejik demiryolu nakli, genişlik/rezerv/taktik/zırh/delme ve süreli geri çekilme. |
 | 52–54 İkmal ve taşıma | Başkent bağlantısı, liman/deniz erişimi, yerel altyapı/hasar/yığılma etkileri; oyuncuya ait bağlı ağda görsel trenler (`world.ts`, `map3d-rail-network.ts`). | Ortak tüketilen kenar/düğüm kapasitesi, gerçek tren/kamyon/konvoy tahsisi, sevkiyatlar, son kilometre ve yerel rezervler. Görsel trenler bu hesapların yerine geçmez. |
 | 55–58 Hava kuvvetleri | Stoktan kanat, üs yükü/menzil/hazırlık/yakıt, görevler, kayıp, bombardıman ve paraşüt koşulları (`airnaval.ts`, `operations.ts`). | Pilot/tasarım sürümleri, tespit/temas/sorti evreleri, ayrıntılı görev bölgesi, bina bazlı hasar ve yükle paylaşılan nakliye kapasitesi. |
 | 59–64 Donanma ve çıkarma | Tekil gemi, görev, intikal, yakıt, hasar/onarım, eskort/baskın ve taşıyıcı uçağı stoku (`airnaval.ts`, `military-assets.ts`). | Görev kuvveti hiyerarşisi, fazlı deniz muharebesi, mayınlar/antlaşmalar, gerçek taşıyıcı kanatları ve hazırlık/konvoy/yük tabanlı çıkarma. |

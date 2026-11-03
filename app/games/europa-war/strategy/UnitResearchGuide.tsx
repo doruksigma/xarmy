@@ -6,6 +6,10 @@ import {
 import { researchSlots } from "./politics";
 import type { Country } from "./types";
 import styles from "./unit-research-guide.module.css";
+import {
+  getCountryModelProfile,
+  getNationalModelDescription,
+} from "./map3d-national-profiles";
 
 const ICONS = {
   infantry: "infantry",
@@ -58,18 +62,20 @@ export default function UnitResearchGuide({
   onResearch?: (id: string) => void;
 }) {
   const models = getUnitVisualResearchGuide(country);
+  const national = getCountryModelProfile(country.id);
   return (
     <section
       className={styles.guide}
       aria-label="Birlik modelleri ve araştırma"
       data-unit-research-guide
+      data-national-model-profile={national.id}
     >
       <h3>
         <MilitaryIcon name="infantry" size={19} /> Birliklerin görünümü
       </h3>
       <p className={styles.intro}>
-        Bir sonraki görünüm için ilgili araştırmayı başlat. Haritadaki model,
-        teknoloji tamamlandığında yenilenir.
+        {national.label} modelleri. Üniforma ve araç biçimleri ülkenin
+        görünümünü korur; tamamlanan araştırmalar donanımı geliştirir.
       </p>
       <ul className={styles.models}>
         {models.map((model) => (
@@ -85,6 +91,9 @@ export default function UnitResearchGuide({
               <span>Kademe {model.tier}/3</span>
             </div>
             <p className={styles.stage}>{model.stage}</p>
+            <p className={styles.requirements}>
+              {getNationalModelDescription(national, model.kind)}
+            </p>
             <div className={styles.steps} aria-hidden="true">
               {[0, 1, 2, 3].map((tier) => (
                 <span

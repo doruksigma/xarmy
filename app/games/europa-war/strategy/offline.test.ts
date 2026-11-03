@@ -10,6 +10,7 @@ import { EUROPA_OFFLINE_VERSION as VERSION } from "./offline-protocol";
 const ORIGIN = "https://game.example";
 const PAGE = "/games/europa-war";
 const ICON = "/favicon.ico";
+const MODEL_LICENSE = "/licenses/muster-ww2-MIT.txt";
 const MAIN = "/_next/static/chunks/main-v1.js";
 const STYLE = "/_next/static/css/game-v1.css";
 const WORKER = "/_next/static/chunks/simulation-v1.js";
@@ -120,6 +121,7 @@ async function harness() {
   resource(SHARED, "shared-v1", "application/javascript");
   resource(manifest.terrain.url, "terrain-v1", "image/webp");
   resource(ICON, "site-icon", "image/x-icon");
+  resource(MODEL_LICENSE, "MIT License - Kenton Wang", "text/plain");
   const fetch = async (input: Resource) => {
     const url = absolute(input);
     fetched.push(url);
@@ -203,7 +205,7 @@ test("Offline worker announces its protocol version through the request's messag
 test("A complete offline pack includes worker entry, worker chunks, terrain, site icon and page assets", async () => {
   const h = await harness();
   assertReply(await h.message(cacheMessage()), "EUROPA_READY");
-  for (const path of [PAGE, MAIN, STYLE, BOOTSTRAP, WORKER, SHARED, manifest.terrain.url, ICON]) {
+  for (const path of [PAGE, MAIN, STYLE, BOOTSTRAP, WORKER, SHARED, manifest.terrain.url, ICON, MODEL_LICENSE]) {
     assert.ok(h.fetched.includes(absolute(path)), `The pack must download ${path}`);
   }
   h.goOffline();
@@ -216,6 +218,7 @@ test("A complete offline pack includes worker entry, worker chunks, terrain, sit
     [SHARED, "shared-v1"],
     [manifest.terrain.url, "terrain-v1"],
     [ICON, "site-icon"],
+    [MODEL_LICENSE, "MIT License - Kenton Wang"],
   ]) {
     const response = await h.request(path, path === PAGE ? "navigate" : undefined);
     assert.equal(response?.status, 200, path);
@@ -311,7 +314,7 @@ test("A worker asset report without its scoped bootstrap cannot claim offline re
 });
 
 test("Worker, shared chunk, terrain, site icon and page download failures never report READY", async () => {
-  for (const failed of [BOOTSTRAP, WORKER, SHARED, manifest.terrain.url, ICON, PAGE]) {
+  for (const failed of [BOOTSTRAP, WORKER, SHARED, manifest.terrain.url, ICON, MODEL_LICENSE, PAGE]) {
     const h = await harness();
     h.responses.delete(absolute(failed));
     assertReply(await h.message(cacheMessage()), "EUROPA_FAILED");

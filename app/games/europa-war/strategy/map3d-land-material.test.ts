@@ -4,6 +4,7 @@ import * as THREE from "three";
 import { createLandMaterial } from "./map3d-land-material";
 import { createFieldSurfaceTexture } from "./map3d-material-texture";
 import { createUnitModels } from "./map3d-units";
+import type { Army } from "./types";
 
 /** Use the installed renderer's actual source order, not a synthetic shader. */
 function compileHook(material: THREE.MeshStandardMaterial) {
@@ -131,6 +132,24 @@ test("Surface shading integrates with the real Standard shader without replacing
 test("Shared unit-model teardown releases the procedural texture once with all render batches", () => {
   const scene = new THREE.Scene();
   const models = createUnitModels(scene);
+  assert.equal(models.stats.modelParts, 0);
+  models.update(
+    ["germany", "france"].map((country) => ({
+      armies: Array.from(
+        { length: 4 },
+        (_, index) =>
+          ({ id: `${country}-${index}`, country, type: "infantry" }) as Army,
+      ),
+      position: new THREE.Vector3(),
+      angle: 0,
+      moving: false,
+      tint: 0xffffff,
+      combat: { key: country, target: new THREE.Vector3(80, 0, 80) },
+      capture: { key: country, progress: 0.2 },
+    })),
+    0,
+    { quality: "medium", distance: 450 },
+  );
   const batches = scene.children.filter(
     (object) =>
       object instanceof THREE.InstancedMesh &&
@@ -139,15 +158,29 @@ test("Shared unit-model teardown releases the procedural texture once with all r
         .customProgramCacheKey()
         .startsWith("xarmy-field-unit-"),
   ) as THREE.InstancedMesh[];
-  assert.equal(batches.length, 15);
+  assert.equal(batches.length, models.stats.modelParts);
+  assert.ok(
+    batches.length > 15,
+    "both national model sets share one surface material",
+  );
   const material = batches[0].material as THREE.MeshStandardMaterial;
   assert.ok(batches.every((batch) => batch.material === material));
   const texture = compileHook(material).uniforms.fieldSurfaceMap
     .value as THREE.DataTexture;
-  let released = 0;
+  let released = 0,
+    materialReleased = 0;
+  const geometries = new Map(batches.map((batch) => [batch.geometry, 0]));
+  geometries.forEach((_, geometry) =>
+    geometry.addEventListener("dispose", () =>
+      geometries.set(geometry, geometries.get(geometry)! + 1),
+    ),
+  );
+  material.addEventListener("dispose", () => materialReleased++);
   texture.addEventListener("dispose", () => released++);
   models.dispose();
   models.dispose();
   assert.equal(released, 1);
+  assert.equal(materialReleased, 1);
+  assert.ok([...geometries.values()].every((count) => count === 1));
   assert.equal(scene.children.length, 0);
 });

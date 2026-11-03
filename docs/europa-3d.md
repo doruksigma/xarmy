@@ -301,12 +301,50 @@ tekrar yüklenince tamamlanmış teknolojilerden aynı görünüm elde edilir.
 
 Her aile temel model dâhil dört görünüm kademesi taşır. Üst kademe daha
 belirgin teçhizat, zırh, taret, top siperi veya araç gövdesi ayrıntıları
-kullanır. 3 Kasım model yenilemesinden sonra kademelerin 15 parçalık ortak
-geometrileri sırasıyla **35.472 / 37.332 / 38.808 / 38.928 vertex** içerir;
-tek parça en fazla **8.652 vertex**
-taşır. Kademe geometrileri gerektiğinde bir kez hazırlanıp yeniden kullanılır;
-kamera dışında kalıp geri gelen ülke için yeniden üretilmez. Örnek tamponları
-ihtiyaca göre büyür, görünür minyatürlerin toplam sınırı yine 3.072'dir.
+kullanır. Artık **29 ulusal profil** miğfer, ceket/kaput, kayış, çanta, çizme,
+tank gövdesi ve kulesi, kamyon kabini ve top kalkanı biçimlerini de seçer.
+Aynı kumaş rengi kullanıldığında da ülkelerin model bileşimleri ayrılır.
+
+Son referanslarda Alman atkı/çanta/teçhizat kutusu, Britanya atkısı, Fransız
+Adrian ve mavi kaput, Sovyet uşanka/kürk yaka/bej kaput, İtalyan M33, Türk
+haki kaput/siperli şapka ve İsveç gri-yeşil üniforma kullanılır. Aşağıdaki
+araç adları, 2–3. görünüm kademelerinde açılan tasarım esinlerini belirtir;
+bunlar yeni üretim hattı veya değiştirilmiş savaş değerleri değildir.
+
+| Ülke | Tank görünüm esini | Kamyon görünüm esini |
+| --- | --- | --- |
+| Almanya | Tiger I | Opel Blitz |
+| Birleşik Krallık | Churchill | Bedford QL |
+| Fransa | Somua S35 | Laffly S20 TL |
+| Sovyetler Birliği | T-34 | ZiS-5 |
+| İtalya | M13/40 | Fiat 626 |
+| Çekoslovakya | LT vz. 38 | Praga RV |
+| İsveç | Stridsvagn m/42 | Volvo TLV |
+| Türkiye | İthal T-26 | İthal Ford AA |
+| Polonya | 7TP | Polski Fiat 621 |
+| Hollanda | CTLS; Doğu Hint Adaları bağlamı | DAF Trado |
+
+Toplarda leFH 18, QF 25-pounder, Canon de 75, ZiS-3, Cannone 75/27,
+Škoda 100 mm ve Bofors 75 mm tasarım aileleri bulunur. Diğer ülkelerin
+paylaştığı tasarım ailesi arayüzde açıkça yazılır; her ülkenin bütün tarihsel
+envanterini içerdiği iddia edilmez.
+
+Modellerin 15 hareketli parça indeksi korunur. Her ülke/kademe için bütün
+parçaları önceden üretmek yerine yalnız görünür parçalar oluşturulur;
+geometrisi gerçekten aynı parçalar ülke ve kademe arasında paylaşılır.
+Örnek tamponları ihtiyaca göre büyür. Kullanılmayan parçaların önbelleği,
+eski kullanımlar önce bırakılarak **64 parça / 180.000 vertex / 4.096 örnek
+yuvası** sınırlarının hepsinde tutulur. Aktif parçalar bu boşta önbellek
+sınırından ayrı, görünür **3.072 minyatür / 128 efekt** sınırına tabidir.
+Aktif fakat çok seyrekleşen tamponlar da küçültülür: ordu ölçeğinden birkaç
+birliğe düşüşte ilk güncellemede, daha ılımlı azalmada 30 ardışık güncelleme
+sonrasında. Böylece duraklatılmış düşük kalitede yeni kare gerekmeksizin
+aşırı kapasite geri alınır; küçük kaydırmalar tamponları sürekli yenilemez.
+Yakın kaydırmalarda önbellekte kalan model yeniden üretilmez; çok uzak
+bölgeye dönülürken atılmış parça tekrar oluşturulabilir. Ülke kimlikleri
+sabit katalogla sınırlandırılır; isyancılar ana profili, bilinmeyen kimlikler
+tek yedek modeli kullanır. Kaynaklar sahne kapanışında serbest bırakılır.
+
 Mekanizasyonun mevcut önkoşulları korunur; görünüm için yeni bir
 motor araştırması şartı uydurulmaz. Yeni topçu araştırması ya da ek savaş
 bonusu eklenmez. Araştırma panelindeki **Birliklerin görünümü** bölümü mevcut
@@ -316,12 +354,20 @@ uygular. Önkoşul eksikse, araştırma sürüyorsa veya yuvalar doluysa düğme
 durumu nedenini gösterir. Diğer araştırmalar ve doktrinler açılabilir tam
 ağaçta korunur.
 
-Ülkeler dönemden esinlenen farklı kumaş tonları taşır; bunlar siyasi harita
-renginden ve seçim işaretinden bağımsızdır. Kendi ülken, müttefikler ve süresi
-dolmamış istihbarat kapsamındaki ülkeler tamamlanmış araştırmalarını yansıtır.
-İstihbaratı bulunmayan görünen yabancı birliklerde yalnız gözlenen hafif/orta/
-ağır tank veya motorize/mekanize birlik tipi kullanılır; ülkenin gizli silah
-araştırmaları model üzerinden açıklanmaz. Görünmeyen birlikler çizilmez.
+Ülkeler dönemden esinlenen farklı biçim ve kumaş tonları taşır; bunlar siyasi
+harita renginden ve seçim işaretinden bağımsızdır. Kendi ülken, müttefikler
+ve süresi dolmamış istihbarat kapsamındaki ülkeler tamamlanmış araştırmalarını
+yansıtır. İstihbaratı bulunmayan görünen yabancı birliklerde yalnız gözlenen
+hafif/orta/ağır tank veya motorize/mekanize birlik tipi kullanılır; ülkenin
+gizli silah araştırmaları model üzerinden açıklanmaz. Ulusal kimlik, gizli
+araştırma kademesinden bağımsızdır. Görünmeyen birlikler çizilmez.
+
+M40 miğfer kabuğu, MIT lisanslı Muster arşivinin belirtilen kaynak sürümünden
+hafifletilerek uyarlanmıştır. Diğer geometriler bu projede oluşturulmuştur.
+[Kaynak ve lisans incelemesi](europa-national-assets.md) hangi bölümün gerçekten
+alındığını belgeler. MIT bildirimi çevrimdışı pakete de katılır; paket protokolü
+`v5` olur. Bu modeller HOI4 oyun dosyaları veya görsellerdeki hazır modellerin
+birebir kopyaları değildir.
 
 Duran piyadelerin başı, boyun çevresinde birbirinden farklı yavaş hareketlerle
 sağa ve sola bakar. Gövde ve tüfek yerinde kalır; yürüyüş, ateş ve ele geçirme

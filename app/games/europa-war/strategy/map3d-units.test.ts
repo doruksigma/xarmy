@@ -2,12 +2,20 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import * as THREE from "three";
 import type { Army } from "./types";
-import { INFANTRY_NECK_PIVOT } from "./map3d-land-models";
+import { INFANTRY_NECK_PIVOT, landModelGeometryKey } from "./map3d-land-models";
+import {
+  COUNTRY_MODEL_PROFILES,
+  getCountryModelProfile,
+} from "./map3d-national-profiles";
 import { getUnitVisualResearch } from "./map3d-unit-research";
 import {
   createUnitModels,
   MAX_UNIT_MINIATURES,
   MAX_UNIT_EFFECTS,
+  MAX_IDLE_UNIT_MODEL_PARTS,
+  MAX_IDLE_UNIT_MODEL_VERTICES,
+  MAX_IDLE_UNIT_MODEL_CAPACITY,
+  UNIT_MODEL_BUFFER_SHRINK_DELAY,
   UNIT_MODEL_SCALE,
   UNIT_LABEL_HEIGHT,
   unitDisplayLayout,
@@ -96,10 +104,14 @@ test("1/2/3/4/12 tümen, gerçek tipleri değiştirmeden tam istenen sayı sembo
   assert.equal(unitDisplayLayout(0).length, 0);
   assert.equal(unitDisplayLayout(NaN).length, 0);
   assert.equal(
+    models.stats.modelParts,
+    13,
+    "unused capture poles and supply crates are not built",
+  );
+  assert.equal(
     scene.children.filter((object) => object instanceof THREE.InstancedMesh)
       .length,
-    22,
-    "shared batches do not grow with army count",
+    20,
   );
   for (const m of scene.children.filter(
     (object): object is THREE.InstancedMesh =>
@@ -704,13 +716,16 @@ test("araştırma her ülkenin dört modelini ayrı bankalardan seçer ve kumaş
     ["artillery-base", 1],
     ["infantry-head", 1],
   ] as const)
-    assert.equal(mesh(scene, `${name}-tier-${tier}`).count, 1);
+    assert.equal(mesh(scene, `${name}-tier-${tier}-france`).count, 1);
   for (const [group, tier] of [
     [france, 1],
     [germany, 3],
   ] as const) {
     const expected = new THREE.Color(group.visual!.uniform);
-    const body = mesh(scene, `infantry-body-tier-${tier}`);
+    const body = mesh(
+      scene,
+      `infantry-body-tier-${tier}-${group.visual!.profile}`,
+    );
     const fabric = body.geometry.getAttribute("unitUniform");
     assert.ok(fabric instanceof THREE.InstancedBufferAttribute);
     assert.equal(fabric.itemSize, 3);
@@ -741,14 +756,14 @@ test("araştırma tamamlanınca görünüm değişir; tekrar görünür olan ül
     group = formation(4);
   group.visual = getUnitVisualResearch({ id: "turkey", tech: [] });
   models.update([group], 0, { ...settings, paused: true });
-  const original = mesh(scene, "infantry-body");
+  const original = mesh(scene, "infantry-body-turkey");
   group.visual = getUnitVisualResearch({
     id: "turkey",
     tech: ["weapons3", "armor3", "motorization", "mechanization"],
   });
   models.update([group], 100, { ...settings, paused: true });
   assert.equal(original.visible, false);
-  const researched = mesh(scene, "infantry-body-tier-3");
+  const researched = mesh(scene, "infantry-body-tier-3-turkey");
   assert.equal(researched.count, 1);
   assert.notDeepEqual(
     Array.from(original.geometry.getAttribute("position").array),
@@ -778,8 +793,8 @@ test("araştırma tamamlanınca görünüm değişir; tekrar görünür olan ül
   }
   assert.equal(
     models.stats.modelBanks,
-    2,
-    "only requested research tiers are created",
+    1,
+    "only the visible national research bank is active",
   );
   assert.ok([...releases.values()].every((count) => count === 0));
   models.dispose();
@@ -788,14 +803,14 @@ test("araştırma tamamlanınca görünüm değişir; tekrar görünür olan ül
   assert.equal(scene.children.length, 0);
 });
 
-test("dört araştırma bankası küçük başlar; karma büyük orduda toplam görünür model ve tampon yazımları sınırlıdır", () => {
+test("araştırma bankaları gerektikçe ayrılır; karma büyük orduda toplam görünür model ve tampon yazımları sınırlıdır", () => {
   const scene = new THREE.Scene(),
     models = createUnitModels(scene);
-  assert.equal(models.stats.modelBanks, 1);
+  assert.equal(models.stats.modelBanks, 0);
   assert.equal(
     models.stats.modelCapacity,
-    15 * 8,
-    "do not preallocate four maximum-sized armies at startup",
+    0,
+    "no model geometry or instance buffers are allocated before visibility",
   );
   const groups = Array.from(
     { length: MAX_UNIT_MINIATURES / 4 + 20 },
@@ -834,17 +849,17 @@ test("dört araştırma bankası küçük başlar; karma büyük orduda toplam g
     for (const value of part.instanceMatrix.array.slice(0, part.count * 16))
       assert.ok(Number.isFinite(value), part.name);
   }
-  const capacity = models.stats.modelCapacity;
-  const ids = allMeshes(scene).map((part) => part.uuid);
-  models.update([], 1000, settings);
-  assert.equal(
-    models.stats.modelCapacity,
-    capacity,
-    "offscreen frames keep stable GPU buffers",
+  const resources = allMeshes(scene).filter((part) => part.userData.unitModel);
+  let disposed = 0;
+  resources.forEach((part) =>
+    part.geometry.addEventListener("dispose", () => disposed++),
   );
-  assert.deepEqual(
-    allMeshes(scene).map((part) => part.uuid),
-    ids,
+  models.update([], 1000, settings);
+  assert.ok(models.stats.modelIdleCapacity <= MAX_IDLE_UNIT_MODEL_CAPACITY);
+  assert.ok(models.stats.modelIdleParts <= MAX_IDLE_UNIT_MODEL_PARTS);
+  assert.ok(
+    disposed > 0,
+    "oversized offscreen armies release idle GPU buffers",
   );
   assert.equal(
     models.stats.infantry + models.stats.vehicles + models.stats.idleHeads,
@@ -1006,4 +1021,344 @@ test("yürüyüş, çatışma veya şehir ele geçirme sırasında baş ileri ba
     );
   }
   models.dispose();
+});
+
+test("same-tier countries retain different actual silhouettes, shared hardware, cloth colours and neutral fallback", () => {
+  const scene = new THREE.Scene(),
+    models = createUnitModels(scene);
+  const ids = [
+    "germany",
+    "uk",
+    "france",
+    "ussr",
+    "italy",
+    "poland",
+    "sweden",
+    "turkey",
+  ];
+  const groups = ids.map((id, index) => {
+    const group = formation(4);
+    group.armies = group.armies.map((army, part) => ({
+      ...army,
+      country: id,
+      id: `${id}-${part}`,
+    }));
+    group.position.x += index * 50;
+    group.visual = getUnitVisualResearch({ id, tech: [] });
+    return group;
+  });
+  const before = JSON.stringify(groups);
+  models.update(groups, 0, { ...settings, paused: true });
+  assert.deepEqual(
+    models.stats.modelProfiles,
+    Object.fromEntries(ids.map((id) => [id, 4])),
+  );
+  assert.equal(models.stats.modelBanks, ids.length);
+  for (const [kind, indices] of [
+    ["infantry", [0, 13]],
+    ["tank", [2, 6]],
+    ["truck", [3]],
+    ["artillery", [4]],
+  ] as const) {
+    const shapes = ids.map((id) =>
+      indices
+        .map((index) => {
+          const key = landModelGeometryKey(
+            index,
+            0,
+            getCountryModelProfile(id),
+          );
+          const part = allMeshes(scene).find(
+            (mesh) => mesh.userData.unitModel?.key === key,
+          )!;
+          assert.ok(part, `${id}/${kind} has its requested shape batch`);
+          return Array.from(part.geometry.getAttribute("position").array).join(
+            ",",
+          );
+        })
+        .join("|"),
+    );
+    assert.equal(
+      new Set(shapes).size,
+      ids.length,
+      `${kind}: equal research still has national geometry`,
+    );
+  }
+  const wheels = allMeshes(scene).filter(
+    (part) => part.userData.unitModel?.part === 9,
+  );
+  assert.equal(
+    wheels.length,
+    1,
+    "identical wheels share one instanced batch across all countries",
+  );
+  assert.equal(wheels[0].count, ids.length * 18);
+  assert.equal(JSON.stringify(groups), before);
+  assert.equal(models.stats.muzzleFlashes + models.stats.glows, 0);
+  const original = mesh(scene, "infantry-body-germany");
+  const rebel = {
+    ...groups[0],
+    visual: undefined,
+    armies: groups[0].armies.map((army) => ({
+      ...army,
+      country: "germany-rebels",
+    })),
+  };
+  models.update([rebel], 100, settings);
+  assert.deepEqual(models.stats.modelProfiles, { germany: 4 });
+  assert.equal(mesh(scene, "infantry-body-germany"), original);
+  const unknown = {
+    ...rebel,
+    armies: rebel.armies.map((army) => ({
+      ...army,
+      country: "unrecognized-country",
+    })),
+  };
+  models.update([unknown], 200, settings);
+  assert.deepEqual(models.stats.modelProfiles, { default: 4 });
+  assert.equal(mesh(scene, "infantry-body").count, 1);
+  models.dispose();
+});
+
+test("national parts are lazy, nearby pan returns reuse buffers, and distant history has a bounded LRU", () => {
+  const scene = new THREE.Scene(),
+    models = createUnitModels(scene);
+  const group = formation(1);
+  group.visual = getUnitVisualResearch({ id: "germany", tech: [] });
+  models.update([group], 0, settings);
+  assert.equal(
+    models.stats.modelParts,
+    5,
+    "one rifleman does not build vehicles, crates or poles",
+  );
+  const original = allMeshes(scene)
+    .filter((part) => part.userData.unitModel)
+    .map((part) => [part.uuid, part.geometry.uuid]);
+  models.update([], 100, settings);
+  models.update([group], 200, settings);
+  assert.deepEqual(
+    allMeshes(scene)
+      .filter((part) => part.userData.unitModel)
+      .map((part) => [part.uuid, part.geometry.uuid]),
+    original,
+  );
+  const watched = new Map<THREE.BufferGeometry, number>();
+  const watch = () =>
+    allMeshes(scene).forEach((part) => {
+      if (!part.userData.unitModel || watched.has(part.geometry)) return;
+      watched.set(part.geometry, 0);
+      part.geometry.addEventListener("dispose", () =>
+        watched.set(part.geometry, watched.get(part.geometry)! + 1),
+      );
+    });
+  watch();
+  for (const [index, id] of Object.keys(COUNTRY_MODEL_PROFILES).entries()) {
+    group.visual = getUnitVisualResearch({ id, tech: [] });
+    models.update([group], 300 + index * 100, settings);
+    watch();
+    assert.equal(models.stats.infantry, 1);
+    assert.ok(models.stats.modelIdleParts <= MAX_IDLE_UNIT_MODEL_PARTS);
+    assert.ok(models.stats.modelIdleVertices <= MAX_IDLE_UNIT_MODEL_VERTICES);
+    assert.ok(models.stats.modelIdleCapacity <= MAX_IDLE_UNIT_MODEL_CAPACITY);
+    assert.ok(models.stats.modelParts <= MAX_IDLE_UNIT_MODEL_PARTS + 5);
+  }
+  assert.ok(
+    [...watched.values()].some((count) => count === 1),
+    "old offscreen countries are evicted",
+  );
+  assert.ok([...watched.values()].every((count) => count <= 1));
+  group.visual = getUnitVisualResearch({ id: "germany", tech: [] });
+  models.update([group], 5000, settings);
+  watch();
+  assert.equal(mesh(scene, "infantry-body-germany").count, 1);
+  models.dispose();
+  models.dispose();
+  assert.ok([...watched.values()].every((count) => count === 1));
+  assert.equal(scene.children.length, 0);
+});
+
+test("mixed national research respects the global cap, buffer growth and effect budgets", () => {
+  const scene = new THREE.Scene(),
+    models = createUnitModels(scene);
+  const ids = Object.keys(COUNTRY_MODEL_PROFILES);
+  const groups = Array.from(
+    { length: MAX_UNIT_MINIATURES / 4 + 16 },
+    (_, index) => {
+      const group = formation(4),
+        id = ids[index % ids.length];
+      const tier = (Math.floor(index / ids.length) % 4) as 0 | 1 | 2 | 3;
+      group.visual = {
+        profile: id,
+        infantry: tier,
+        tank: tier,
+        artillery: tier,
+        truck: tier,
+        uniform: 0x777777,
+      };
+      group.combat = {
+        key: `battle-${index}`,
+        target: new THREE.Vector3(70, 12, 80),
+      };
+      group.capture = { key: `capture-${index}`, progress: 0.3 };
+      return group;
+    },
+  );
+  models.update(groups.slice(0, 4), 0, settings);
+  const first = allMeshes(scene).filter((part) => part.userData.unitModel);
+  const released = new Map(first.map((part) => [part.geometry, 0]));
+  first.forEach((part) =>
+    part.geometry.addEventListener("dispose", () =>
+      released.set(part.geometry, released.get(part.geometry)! + 1),
+    ),
+  );
+  models.update(groups, 100, settings);
+  assert.equal(
+    models.stats.infantry + models.stats.vehicles,
+    MAX_UNIT_MINIATURES,
+  );
+  assert.equal(Object.keys(models.stats.modelProfiles).length, ids.length);
+  assert.ok(
+    models.stats.modelCapacity < MAX_UNIT_MINIATURES * 20,
+    "shared parts aggregate demand into geometric capacity buckets",
+  );
+  assert.ok(
+    [...released.values()].some((count) => count === 1),
+    "growing batches release replaced buffers",
+  );
+  for (const part of allMeshes(scene)) {
+    assert.ok(part.count <= part.instanceMatrix.count, part.name);
+    const uniform = part.geometry.getAttribute("unitUniform");
+    if (uniform) assert.ok(part.count <= uniform.count, part.name);
+  }
+  for (const count of [
+    models.stats.muzzleFlashes,
+    models.stats.captures,
+    models.stats.infantryTracers,
+    models.stats.tankShells,
+    models.stats.shells,
+    models.stats.impacts,
+  ])
+    assert.ok(count <= MAX_UNIT_EFFECTS);
+  models.dispose();
+  assert.ok([...released.values()].every((count) => count === 1));
+  assert.equal(scene.children.length, 0);
+});
+
+test("historical army buffers shrink in paused views while moderate demand changes use hysteresis", () => {
+  const scene = new THREE.Scene(),
+    models = createUnitModels(scene);
+  const groups = [
+    "germany",
+    "uk",
+    "france",
+    "ussr",
+    "italy",
+    "poland",
+    "sweden",
+    "turkey",
+  ].map((id) => {
+    const group = formation(1);
+    group.armies = group.armies.map((army) => ({
+      ...army,
+      id: `${id}-sentry`,
+      country: id,
+    }));
+    group.visual = getUnitVisualResearch({ id, tech: [] });
+    return group;
+  });
+  const before = JSON.stringify(groups);
+  const options = { ...settings, paused: true };
+  const watched = new Map<THREE.BufferGeometry, number>();
+  const meshes = new Map<THREE.InstancedMesh, number>();
+  const watch = () =>
+    allMeshes(scene).forEach((part) => {
+      if (!part.userData.unitModel || watched.has(part.geometry)) return;
+      watched.set(part.geometry, 0);
+      meshes.set(part, 0);
+      part.geometry.addEventListener("dispose", () =>
+        watched.set(part.geometry, watched.get(part.geometry)! + 1),
+      );
+      part.addEventListener("dispose", () =>
+        meshes.set(part, meshes.get(part)! + 1),
+      );
+    });
+  for (let index = 0; index < groups.length; index++) {
+    const crowded = [
+      ...Array.from(
+        { length: MAX_UNIT_MINIATURES - index },
+        () => groups[index],
+      ),
+      ...groups.slice(0, index),
+    ];
+    models.update(crowded, index * 100, options);
+    watch();
+    assert.equal(models.stats.infantry, MAX_UNIT_MINIATURES);
+    assert.ok(
+      models.stats.modelCapacity > MAX_UNIT_MINIATURES * 4,
+      "large armies require large instance buffers",
+    );
+    assert.ok(
+      models.stats.modelCapacity < MAX_UNIT_MINIATURES * 20,
+      "previous countries cannot accumulate historical peak buffers while retaining sentries",
+    );
+  }
+  models.update(groups, 1000, options);
+  watch();
+  assert.equal(models.stats.infantry, groups.length);
+  assert.equal(
+    models.stats.modelIdleCapacity,
+    0,
+    "all countries remain actively rendered",
+  );
+  assert.ok(
+    models.stats.modelCapacity <= groups.length * 6 * 8,
+    "one paused update reclaims severe active buffer excess without requiring future animation frames",
+  );
+  const poses = sceneSnapshot(scene);
+  const moderate = [
+    ...Array.from({ length: 96 }, () => groups[0]),
+    ...groups.slice(1),
+  ];
+  models.update(moderate, 1100, options);
+  watch();
+  const retained = allMeshes(scene).map((part) => part.uuid);
+  models.update(groups, 1200, options);
+  for (let tick = 0; tick < 5; tick++)
+    models.update(groups, 1300 + tick * 100, options);
+  assert.deepEqual(
+    allMeshes(scene).map((part) => part.uuid),
+    retained,
+    "brief moderate demand drops retain GPU buffers",
+  );
+  for (let tick = 0; tick < UNIT_MODEL_BUFFER_SHRINK_DELAY; tick++) {
+    models.update(groups, 2000 + tick * 100, options);
+    watch();
+  }
+  assert.ok(
+    models.stats.modelCapacity <= groups.length * 6 * 8,
+    "sustained moderate demand returns buffers to small buckets",
+  );
+  assert.deepEqual(
+    sceneSnapshot(scene).sort((a, b) => a.name.localeCompare(b.name)),
+    poses.sort((a, b) => a.name.localeCompare(b.name)),
+    "shrinking preserves paused poses and visible geometry",
+  );
+  assert.ok([...watched.values()].some((count) => count === 1));
+  assert.ok(
+    [...watched.values(), ...meshes.values()].every((count) => count <= 1),
+  );
+  assert.equal(JSON.stringify(groups), before);
+  const small = allMeshes(scene).map((part) => part.uuid);
+  models.update(groups, 6000, options);
+  assert.deepEqual(
+    allMeshes(scene).map((part) => part.uuid),
+    small,
+    "settled small demand does not churn buffers",
+  );
+  models.dispose();
+  models.dispose();
+  assert.ok(
+    [...watched.values(), ...meshes.values()].every((count) => count === 1),
+  );
+  assert.equal(scene.children.length, 0);
 });

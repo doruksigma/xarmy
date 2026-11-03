@@ -7,6 +7,7 @@ const worker = `
 const VERSION = ${JSON.stringify(EUROPA_OFFLINE_VERSION)};
 const TERRAIN = ${JSON.stringify(manifest.terrain.url)};
 const ICON = '/favicon.ico';
+const MODEL_LICENSE = '/licenses/muster-ww2-MIT.txt';
 const BOOTSTRAP = ${JSON.stringify(SIMULATION_WORKER_PATH)};
 const PAGE = '/games/europa-war';
 const PREFIX = 'xarmy-europa-pack-v2-';
@@ -101,7 +102,7 @@ async function cachePack(data) {
     if (entries.length !== 1 || !simulation.includes(entries[0]))
         throw new Error('Missing scoped worker or its immutable entry');
     const applicationScripts = new Set(main.filter(value => new URL(value).pathname.endsWith('.js') && !simulation.includes(value)));
-    const assets = [...new Set([...main, ...simulation, new URL(TERRAIN, self.location.origin).href, new URL(ICON, self.location.origin).href])].sort();
+    const assets = [...new Set([...main, ...simulation, new URL(TERRAIN, self.location.origin).href, new URL(ICON, self.location.origin).href, new URL(MODEL_LICENSE, self.location.origin).href])].sort();
     if (assets.length > 256)
         throw new Error('Too many assets');
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(assets)));
@@ -178,7 +179,7 @@ self.addEventListener('fetch', e => {
     if (e.request.mode === 'navigate' && (url.pathname === PAGE || url.pathname === PAGE + '/')) {
         e.respondWith(fetch(e.request).catch(async () => await cachedPage() || new Response('Çevrimdışı oyun paketi henüz indirilmedi. İlk açılışta internet bağlantısı gerekir.', { status: 503, headers: { 'Content-Type': 'text/plain;charset=utf-8' } })));
     }
-    else if (url.pathname.startsWith('/_next/static/') || bootstrapEntry(url.href) || (url.pathname === ICON && !url.search) || /^\\/games\\/europa-war\\/terrain-[a-f0-9]{12}\\.webp$/.test(url.pathname)) {
+    else if (url.pathname.startsWith('/_next/static/') || bootstrapEntry(url.href) || ((url.pathname === ICON || url.pathname === MODEL_LICENSE) && !url.search) || /^\\/games\\/europa-war\\/terrain-[a-f0-9]{12}\\.webp$/.test(url.pathname)) {
         // Older completed packs can still reference an earlier immutable terrain URL.
         e.respondWith((async () => await cachedAsset(e.request) || fetch(e.request))());
     }

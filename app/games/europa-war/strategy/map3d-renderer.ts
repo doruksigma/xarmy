@@ -1393,6 +1393,16 @@ void main() {
       this.canvas.dataset.unitVisualTiers = JSON.stringify(
         this.units.stats.modelVariants,
       );
+      this.canvas.dataset.unitModelProfiles = JSON.stringify(
+        this.units.stats.modelProfiles,
+      );
+      this.canvas.dataset.unitModelBanks = String(this.units.stats.modelBanks);
+      this.canvas.dataset.unitModelParts = String(this.units.stats.modelParts);
+      this.canvas.dataset.unitModelVertices = String(this.units.stats.modelVertices);
+      this.canvas.dataset.unitModelCapacity = String(this.units.stats.modelCapacity);
+      this.canvas.dataset.unitModelIdleParts = String(this.units.stats.modelIdleParts);
+      this.canvas.dataset.unitModelIdleVertices = String(this.units.stats.modelIdleVertices);
+      this.canvas.dataset.unitModelIdleCapacity = String(this.units.stats.modelIdleCapacity);
       this.canvas.dataset.idleHeads = String(this.units.stats.idleHeads);
       this.canvas.dataset.idleAnimating = String(
         this.units.stats.idleAnimating,

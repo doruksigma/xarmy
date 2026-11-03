@@ -3,9 +3,15 @@ import type { Army } from "./types";
 import type { GraphicsQuality } from "./map3d-visuals";
 import { createCombatLighting } from "./map3d-combat-lighting";
 import {
-  createLandModelGeometries,
+  createLandModelGeometry,
+  landModelGeometryKey,
+  LAND_MODEL_PART_NAMES,
   INFANTRY_NECK_PIVOT,
 } from "./map3d-land-models";
+import {
+  getCountryModelProfile,
+  type NationalModelProfile,
+} from "./map3d-national-profiles";
 import type {
   UnitVisualResearch,
   VisualResearchTier,
@@ -17,6 +23,11 @@ export const UNIT_MODEL_SCALE = 2.45;
 export const UNIT_LABEL_HEIGHT = 13;
 export const MAX_UNIT_MINIATURES = 3072;
 export const MAX_UNIT_EFFECTS = 128;
+/** Idle geometry survives nearby pans, while distant historical views are evicted. */
+export const MAX_IDLE_UNIT_MODEL_PARTS = 64;
+export const MAX_IDLE_UNIT_MODEL_VERTICES = 180000;
+export const MAX_IDLE_UNIT_MODEL_CAPACITY = 4096;
+export const UNIT_MODEL_BUFFER_SHRINK_DELAY = 30;
 export type UnitDisplayKind = "infantry" | "tank" | "artillery" | "truck";
 export const UNIT_MODEL_FOOTPRINTS = {
   infantry: { halfWidth: 2.5, front: 2.8, rear: 2 },
@@ -84,27 +95,17 @@ export interface UnitModelStats {
   modelVariants: Record<UnitDisplayKind, number[]>;
   modelBanks: number;
   modelCapacity: number;
+  modelParts: number;
+  modelVertices: number;
+  modelIdleParts: number;
+  modelIdleVertices: number;
+  modelIdleCapacity: number;
+  modelProfiles: Record<string, number>;
 }
 
 const TANK_WHEEL_Z = [-1.72, -0.86, 0, 0.86, 1.72] as const;
 const TRUCK_WHEEL_Z = [-1.65, -0.7, 1.55] as const;
-const BATCH_NAMES = [
-  "infantry-body",
-  "infantry-legs",
-  "tank-hull",
-  "truck-body",
-  "artillery-base",
-  "infantry-details",
-  "tank-turret",
-  "tank-barrel",
-  "artillery-barrel",
-  "vehicle-wheels",
-  "tank-treads",
-  "support-crates",
-  "capture-poles",
-  "infantry-head",
-  "infantry-head-details",
-] as const;
+const BATCH_NAMES = LAND_MODEL_PART_NAMES;
 
 /** Display symbols and effects consume actual event descriptors, never simulate damage. */
 export function createUnitModels(
@@ -118,25 +119,65 @@ export function createUnitModels(
     metalness: 0.08,
     side: THREE.DoubleSide,
   });
+  type PartBatch = {
+    key: string;
+    part: number;
+    tier: VisualResearchTier;
+    profile?: NationalModelProfile;
+    mesh: THREE.InstancedMesh;
+    count: number;
+    need: number;
+    lastUsed: number;
+    underusedUpdates: number;
+  };
   type Bank = {
     tier: VisualResearchTier;
-    geometries: THREE.BufferGeometry[];
-    batches: THREE.InstancedMesh[];
-    counts: Uint32Array;
+    profile?: NationalModelProfile;
+    needs: Uint32Array;
+    parts: (PartBatch | undefined)[];
   };
-  const banks = new Map<VisualResearchTier, Bank>();
-  const requested = Array.from(
-    { length: 4 },
-    () => new Uint32Array(BATCH_NAMES.length),
-  );
+  const parts = new Map<string, PartBatch>();
+  const requested = new Map<string, Bank>();
+  const profileFor = (formation: UnitFormation) => {
+    const profile = getCountryModelProfile(
+      formation.visual?.profile ?? formation.armies[0]?.country,
+    );
+    return profile.id === "default" ? undefined : profile;
+  };
+  const bankKey = (tier: VisualResearchTier, profile?: NationalModelProfile) =>
+    `${profile?.id ?? "default"}:${tier}`;
+  const requestBank = (
+    tier: VisualResearchTier,
+    profile?: NationalModelProfile,
+  ): Bank => {
+    const key = bankKey(tier, profile);
+    let bank = requested.get(key);
+    if (!bank) {
+      bank = {
+        tier,
+        profile,
+        needs: new Uint32Array(BATCH_NAMES.length),
+        parts: [],
+      };
+      requested.set(key, bank);
+    }
+    return bank;
+  };
   const makeBatch = (
     geometry: THREE.BufferGeometry,
     tier: VisualResearchTier,
     part: number,
     capacity: number,
+    profile?: NationalModelProfile,
   ) => {
     const mesh = new THREE.InstancedMesh(geometry, material, capacity);
-    mesh.name = `unit-${BATCH_NAMES[part]}${tier ? `-tier-${tier}` : ""}`;
+    mesh.name = `unit-${BATCH_NAMES[part]}${tier ? `-tier-${tier}` : ""}${profile ? `-${profile.id}` : ""}`;
+    mesh.userData.unitModel = {
+      part,
+      tier,
+      profile: profile?.id ?? "default",
+      key: landModelGeometryKey(part, tier, profile),
+    };
     mesh.count = 0;
     mesh.visible = false;
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -153,49 +194,106 @@ export function createUnitModels(
     scene.add(mesh);
     return mesh;
   };
-  const createBank = (tier: VisualResearchTier): Bank => {
-    const geometries = createLandModelGeometries(tier);
-    const bank = {
-      tier,
-      geometries,
-      batches: geometries.map((geometry, i) => makeBatch(geometry, tier, i, 8)),
-      counts: new Uint32Array(geometries.length),
-    };
-    banks.set(tier, bank);
-    return bank;
-  };
-  const removeBank = (bank: Bank) => {
-    for (const mesh of bank.batches) {
-      scene.remove(mesh);
-      mesh.dispose();
-      mesh.geometry.dispose();
-    }
-    banks.delete(bank.tier);
+  const removePart = (part: PartBatch) => {
+    scene.remove(part.mesh);
+    part.mesh.visible = false;
+    part.mesh.count = 0;
+    part.mesh.dispose();
+    part.mesh.geometry.dispose();
+    parts.delete(part.key);
   };
   const capacityFor = (need: number) =>
     2 ** Math.ceil(Math.log2(Math.max(8, need)));
-  const reserveBank = (bank: Bank, needs: Uint32Array) => {
-    bank.counts.fill(0);
-    for (let part = 0; part < bank.batches.length; part++) {
-      const old = bank.batches[part],
-        capacity = old.instanceMatrix.count,
-        need = needs[part];
-      if (need <= capacity) continue;
-      // Replace owned GPU buffers only when crossing a capacity bucket. Cloning
-      // once here lets the old geometry/instance buffers be disposed normally.
+  const reserveParts = () => {
+    for (const part of parts.values()) part.count = part.need = 0;
+    for (const bank of requested.values()) {
+      for (let index = 0; index < bank.needs.length; index++) {
+        const need = bank.needs[index];
+        if (!need) continue;
+        const key = landModelGeometryKey(index, bank.tier, bank.profile);
+        let part = parts.get(key);
+        if (!part) {
+          part = {
+            key,
+            part: index,
+            tier: bank.tier,
+            profile: bank.profile,
+            mesh: makeBatch(
+              createLandModelGeometry(index, bank.tier, bank.profile),
+              bank.tier,
+              index,
+              capacityFor(need),
+              bank.profile,
+            ),
+            count: 0,
+            need: 0,
+            lastUsed: frame,
+            underusedUpdates: 0,
+          };
+          parts.set(key, part);
+        }
+        part.need += need;
+        part.lastUsed = frame;
+        bank.parts[index] = part;
+      }
+    }
+    for (const part of parts.values()) {
+      const old = part.mesh;
+      const capacity = old.instanceMatrix.count;
+      const target = capacityFor(part.need);
+      const underused = part.need > 0 && capacity > Math.max(64, target * 4);
+      const severelyUnderused =
+        part.need > 0 && capacity > Math.max(256, target * 16);
+      part.underusedUpdates = underused ? part.underusedUpdates + 1 : 0;
+      if (
+        part.need <= capacity &&
+        !severelyUnderused &&
+        part.underusedUpdates < UNIT_MODEL_BUFFER_SHRINK_DELAY
+      )
+        continue;
+      // Reclaim severe army-to-sentry drops immediately: paused low-quality
+      // views may not draw again. Moderate drops wait for sustained low demand
+      // so small camera changes keep their buffers. Growth remains immediate.
+      part.underusedUpdates = 0;
+      // Each batch owns its instance attributes. Dispose old GPU storage only
+      // after cloning the static shape into the next capacity bucket.
       const geometry = old.geometry.clone();
       scene.remove(old);
       old.visible = false;
       old.count = 0;
       old.dispose();
       old.geometry.dispose();
-      bank.geometries[part] = geometry;
-      bank.batches[part] = makeBatch(
+      part.mesh = makeBatch(
         geometry,
-        bank.tier,
-        part,
-        capacityFor(need),
+        part.tier,
+        part.part,
+        capacityFor(part.need),
+        part.profile,
       );
+    }
+    const idle = [...parts.values()]
+      .filter((part) => !part.need)
+      .sort((a, b) => a.lastUsed - b.lastUsed);
+    let idleCount = idle.length;
+    let idleVertices = idle.reduce(
+      (sum, part) => sum + part.mesh.geometry.getAttribute("position").count,
+      0,
+    );
+    let idleCapacity = idle.reduce(
+      (sum, part) => sum + part.mesh.instanceMatrix.count,
+      0,
+    );
+    for (const part of idle) {
+      if (
+        idleCount <= MAX_IDLE_UNIT_MODEL_PARTS &&
+        idleVertices <= MAX_IDLE_UNIT_MODEL_VERTICES &&
+        idleCapacity <= MAX_IDLE_UNIT_MODEL_CAPACITY
+      )
+        break;
+      idleCount--;
+      idleVertices -= part.mesh.geometry.getAttribute("position").count;
+      idleCapacity -= part.mesh.instanceMatrix.count;
+      removePart(part);
     }
   };
   const tierFor = (
@@ -205,7 +303,7 @@ export function createUnitModels(
     const value = formation.visual?.[kind];
     return value === 1 || value === 2 || value === 3 ? value : 0;
   };
-  let currentBank: Bank = createBank(0);
+  let currentBank: Bank;
   const uniform = new THREE.Color(0x666d49);
   const accentGeometry = new THREE.BoxGeometry(0.11, 0.18, 0.24);
   const accents = new THREE.InstancedMesh(
@@ -337,8 +435,14 @@ export function createUnitModels(
       artillery: [0, 0, 0, 0],
       truck: [0, 0, 0, 0],
     },
-    modelBanks: 1,
-    modelCapacity: BATCH_NAMES.length * 8,
+    modelBanks: 0,
+    modelCapacity: 0,
+    modelParts: 0,
+    modelVertices: 0,
+    modelIdleParts: 0,
+    modelIdleVertices: 0,
+    modelIdleCapacity: 0,
+    modelProfiles: {},
   };
   const captures = new Map<string, { progress: number; frame: number }>();
   const combats = new Map<
@@ -365,14 +469,15 @@ export function createUnitModels(
     yaw = 0,
     scale = 1,
   ) => {
-    const index = currentBank.counts[batch]++;
+    const part = currentBank.parts[batch]!;
+    const index = part.count++;
     transform.position.set(x, y, z);
     transform.rotation.set(pitch, yaw, 0);
     transform.scale.setScalar(scale);
     transform.updateMatrix();
     transform.matrix.premultiply(parent.matrix);
-    currentBank.batches[batch].setMatrixAt(index, transform.matrix);
-    const fabric = currentBank.geometries[batch].getAttribute(
+    part.mesh.setMatrixAt(index, transform.matrix);
+    const fabric = part.mesh.geometry.getAttribute(
       "unitUniform",
     ) as THREE.InstancedBufferAttribute;
     fabric.setXYZ(index, uniform.r, uniform.g, uniform.b);
@@ -485,7 +590,8 @@ export function createUnitModels(
       stats.idleAnimating = false;
       stats.headYawSamples.length = 0;
       for (const counts of Object.values(stats.modelVariants)) counts.fill(0);
-      for (const need of requested) need.fill(0);
+      requested.clear();
+      stats.modelProfiles = {};
       let reserved = 0,
         poles = 0;
       for (const formation of formations) {
@@ -494,7 +600,10 @@ export function createUnitModels(
           continue;
         reserved += layout.length;
         for (const slot of layout) {
-          const need = requested[tierFor(formation, slot.kind)];
+          const need = requestBank(
+            tierFor(formation, slot.kind),
+            profileFor(formation),
+          ).needs;
           if (slot.kind === "infantry") {
             need[0]++;
             need[1] += 2;
@@ -516,7 +625,7 @@ export function createUnitModels(
           } else {
             need[3]++;
             need[9] += 6;
-            need[11]++;
+            if (formation.combat || formation.capture) need[11]++;
           }
         }
         if (
@@ -525,14 +634,9 @@ export function createUnitModels(
           formation.capture.progress < 1 &&
           poles++ < MAX_UNIT_EFFECTS
         )
-          requested[0][12]++;
+          requestBank(0).needs[12]++;
       }
-      for (const tier of [0, 1, 2, 3] as const) {
-        const needed = tier === 0 || requested[tier].some((value) => value > 0);
-        const bank = banks.get(tier);
-        if (needed) reserveBank(bank ?? createBank(tier), requested[tier]);
-        else if (bank) bank.counts.fill(0);
-      }
+      reserveParts();
       effectScale = THREE.MathUtils.clamp(
         Number.isFinite(options.distance) ? options.distance / 420 : 1,
         1,
@@ -595,7 +699,11 @@ export function createUnitModels(
           const slot = layout[i],
             kind = slot.kind;
           const tier = tierFor(formation, kind);
-          currentBank = banks.get(tier)!;
+          const profile = profileFor(formation);
+          currentBank = requested.get(bankKey(tier, profile))!;
+          const profileId = profile?.id ?? "default";
+          stats.modelProfiles[profileId] =
+            (stats.modelProfiles[profileId] ?? 0) + 1;
           uniform.setHex(
             Number.isFinite(formation.visual?.uniform)
               ? formation.visual!.uniform
@@ -694,13 +802,11 @@ export function createUnitModels(
               .premultiply(weaponMount.matrix)
               .premultiply(parent.matrix);
             for (const part of stats.detail ? [13, 14] : [13]) {
-              const index = currentBank.counts[part]++;
-              currentBank.batches[part].setMatrixAt(
-                index,
-                headTransform.matrix,
-              );
+              const headPart = currentBank.parts[part]!;
+              const index = headPart.count++;
+              headPart.mesh.setMatrixAt(index, headTransform.matrix);
               (
-                currentBank.geometries[part].getAttribute(
+                headPart.mesh.geometry.getAttribute(
                   "unitUniform",
                 ) as THREE.InstancedBufferAttribute
               ).setXYZ(index, uniform.r, uniform.g, uniform.b);
@@ -938,7 +1044,7 @@ export function createUnitModels(
           const rise = Math.min(1, captureProgress * 5),
             flutter =
               Math.sin(clock * 8) * 0.13 * Math.sin(captureProgress * Math.PI);
-          currentBank = banks.get(0)!;
+          currentBank = requested.get(bankKey(0))!;
           put(12, 0, 0, 0);
           transform.position.set(0, -(1 - rise) * 2.8, 0);
           transform.rotation.set(0, flutter, 0);
@@ -957,18 +1063,32 @@ export function createUnitModels(
         if (value.frame !== frame) combats.delete(key);
       for (const [key, idle] of idleHeads)
         if (idle.frame !== frame) idleHeads.delete(key);
-      stats.modelBanks = banks.size;
-      stats.modelCapacity = 0;
-      for (const bank of banks.values())
-        for (let i = 0; i < bank.batches.length; i++) {
-          const mesh = bank.batches[i];
-          mesh.count = bank.counts[i];
-          mesh.visible = mesh.count > 0;
+      stats.modelBanks = requested.size;
+      stats.modelParts = parts.size;
+      stats.modelCapacity =
+        stats.modelVertices =
+        stats.modelIdleParts =
+        stats.modelIdleVertices =
+        stats.modelIdleCapacity =
+          0;
+      for (const part of parts.values()) {
+        const mesh = part.mesh;
+        mesh.count = part.count;
+        mesh.visible = mesh.count > 0;
+        if (mesh.visible) {
           mesh.instanceMatrix.needsUpdate = true;
           mesh.geometry.getAttribute("unitUniform").needsUpdate = true;
-          stats.instances += bank.counts[i];
-          stats.modelCapacity += mesh.instanceMatrix.count;
         }
+        const vertices = mesh.geometry.getAttribute("position").count;
+        stats.instances += part.count;
+        stats.modelCapacity += mesh.instanceMatrix.count;
+        stats.modelVertices += vertices;
+        if (!part.need) {
+          stats.modelIdleParts++;
+          stats.modelIdleVertices += vertices;
+          stats.modelIdleCapacity += mesh.instanceMatrix.count;
+        }
+      }
       lighting.finish();
       stats.glows = lighting.stats.glows;
       stats.groundGlows = lighting.stats.groundGlows;
@@ -1007,7 +1127,15 @@ export function createUnitModels(
       stats.idleHeads = 0;
       stats.idleAnimating = false;
       stats.headYawSamples.length = 0;
-      stats.modelBanks = stats.modelCapacity = 0;
+      stats.modelBanks =
+        stats.modelCapacity =
+        stats.modelParts =
+        stats.modelVertices =
+        stats.modelIdleParts =
+        stats.modelIdleVertices =
+        stats.modelIdleCapacity =
+          0;
+      stats.modelProfiles = {};
       for (const counts of Object.values(stats.modelVariants)) counts.fill(0);
       combats.clear();
       stats.infantry =
@@ -1024,7 +1152,8 @@ export function createUnitModels(
         stats.impacts =
         stats.captures =
           0;
-      for (const bank of [...banks.values()]) removeBank(bank);
+      for (const part of [...parts.values()]) removePart(part);
+      requested.clear();
       for (const mesh of overlayBatches) {
         scene.remove(mesh);
         mesh.dispose();

@@ -1,5 +1,6 @@
 import { TECHNOLOGIES } from "./catalog";
 import type { Army, Country, World } from "./types";
+import { getCountryModelProfile } from "./map3d-national-profiles";
 
 export type VisualResearchTier = 0 | 1 | 2 | 3;
 export type UnitVisualKind = "infantry" | "tank" | "artillery" | "truck";
@@ -10,18 +11,20 @@ export interface UnitVisualResearch {
   truck: VisualResearchTier;
   /** Absolute cloth colour; independent of political map and selection tints. */
   uniform: number;
+  /** Canonical public country appearance; never a saved technology unlock. */
+  profile?: string;
 }
 export type UnitVisualCountry = Pick<Country, "id" | "tech">;
 
 /** Original subdued palettes inspired by period uniforms, not exact replicas. */
 export const COUNTRY_UNIFORM_COLORS: Readonly<Record<string, number>> =
   Object.freeze({
-    turkey: 0x8a805d,
+    turkey: 0x9b916c,
     germany: 0x727a6d,
-    france: 0x667684,
+    france: 0x637a91,
     uk: 0x827752,
     italy: 0x7a8473,
-    ussr: 0x707348,
+    ussr: 0x9a9073,
     poland: 0x8c8160,
     czechoslovakia: 0x787d58,
     yugoslavia: 0x777653,
@@ -39,7 +42,7 @@ export const COUNTRY_UNIFORM_COLORS: Readonly<Record<string, number>> =
     luxembourg: 0x737b69,
     denmark: 0x7b806e,
     norway: 0x7f8981,
-    sweden: 0x7a8172,
+    sweden: 0x798276,
     finland: 0x8a9497,
     estonia: 0x79816c,
     latvia: 0x79795a,
@@ -63,20 +66,20 @@ export const UNIT_VISUAL_STAGE_LABELS: Readonly<
   Record<UnitVisualKind, readonly [string, string, string, string]>
 > = {
   infantry: [
-    "Kasket ve ahşap dipçik",
-    "Çelik miğfer",
-    "Gelişmiş saha teçhizatı",
+    "Ulusal üniforma ve temel tüfek",
+    "Geliştirilmiş silah ve saha teçhizatı",
+    "Ulusal üniforma ve gelişmiş destek",
     "Tam destek teçhizatı",
   ],
   tank: [
-    "Perçinli erken zırhlı",
-    "Eğimli hafif zırhlı",
-    "Orta tank ve ek zırh",
-    "Ağır tank ve yan etekler",
+    "Ulusal gövde ve temel zırh",
+    "Geliştirilmiş hafif zırhlı",
+    "Orta tank ve ek teçhizat",
+    "Ağır tank ve güçlendirilmiş namlu",
   ],
   artillery: [
-    "Küçük kalkanlı sahra topu",
-    "Şekilli kalkanlı sahra topu",
+    "Ulusal kalkan biçimi ve sahra topu",
+    "Geliştirilmiş sahra topu",
     "Geniş kalkan ve mekanizma",
     "Güçlendirilmiş geri tepme sistemi",
   ],
@@ -115,6 +118,7 @@ export function getUnitVisualResearch(
   const id =
     typeof country?.id === "string" ? country.id.replace(/-rebels$/, "") : "";
   return {
+    profile: getCountryModelProfile(country?.id).id,
     infantry: highest(TECH_STAGES.infantry),
     tank: highest(TECH_STAGES.tank),
     artillery: highest(TECH_STAGES.artillery),
@@ -160,17 +164,17 @@ export function getVisibleUnitVisualResearch(
 /** Shown next to the real research actions; these are visual changes, not new bonuses. */
 export const TECH_VISUAL_UPGRADES: Readonly<Record<string, string>> = {
   weapons1:
-    "Piyadeye çelik miğfer, topçuya şekilli kalkan görünümü eklenir. Topçu görünümü ortak silah modernizasyonunu izler.",
+    "Ulusal üniforma ve başlık biçimi korunur; piyade silahı ve topçu teçhizatı gelişir. Topçu görünümü ortak silah modernizasyonunu izler.",
   weapons2:
     "Piyadeye saha telsizi ve havalandırmalı silah gövdesi; topçuya geniş kalkan ve gelişmiş mekanizma görünümü eklenir.",
   weapons3:
-    "Piyadeye kaplamalı miğfer, tamburalı şarjör ve katlanmış ayaklık; topçuya ek geri tepme silindiri görünümü eklenir.",
+    "Piyadenin ulusal başlık biçimi korunur; tamburalı şarjör ve katlanmış ayaklık, topçuya ek geri tepme silindiri görünümü eklenir.",
   armor1:
-    "Tank modeli eğimli gövdeli, geniş yuvarlak kuleli hafif zırhlı görünümüne geçer.",
+    "Tankın ülkeye özgü gövde ve kule biçimi korunarak hafif zırhlı donanımı gelişir.",
   armor2:
-    "Tank modeline köşeli kule, ek zırh plakaları ve namlu freni görünümü eklenir.",
+    "Tank, rehberdeki tarihî araçtan esinlenen ileri görünüme geçer; ek zırh, teçhizat ve namlu freni görünümü eklenir.",
   armor3:
-    "Tank modeline geniş gövde, yan etekler ve kalın namlu görünümü eklenir.",
+    "Ulusal tank modelinin gövde ve namlu donanımı güçlenir; yan zırh biçimi ülkeye göre değişir.",
   motorization:
     "Kamyon modelinin ahşap kasasına branda eklenir; tamamlanmış ileri motor teknolojileri de görünümüne uygulanır.",
   engines:

@@ -4,6 +4,10 @@ import {
   createCommander,
 } from "./commander-roster";
 import { current, isDraft } from "immer";
+import {
+  createMovementTimeContext,
+  createMovementTimeEstimator,
+} from "./land-movement-cost";
 import { atWar, event, friendly, GEOGRAPHY, requireRule } from "./world";
 import type { Action, Army, Country, General, World } from "./types";
 
@@ -90,32 +94,89 @@ function recall(w: World, c: Country, general: General) {
   delete general.front;
 }
 
-/** One friendly-land BFS per shared origin, reused across all assigned borders. */
+/** One weighted search per distinct origin/formation, shared by all borders
+ * and equivalent commanders. The country supply snapshot lives for this update. */
 function routing(w: World, country: string) {
-  const searches = new Map<string, Map<string, string | null>>();
-  return (from: string, to: string): string[] | null => {
-    if (from === to) return [];
-    let previous = searches.get(from);
-    if (!previous) {
-      previous = new Map([[from, null]]);
-      searches.set(from, previous);
-      const queue = [from];
-      for (let i = 0; i < queue.length; i++)
-        for (const edge of GEOGRAPHY[queue[i]].neighbors) {
+  const searches = new Map<
+    string,
+    { previous: Map<string, string>; costs: Map<string, number> }
+  >();
+  let context: ReturnType<typeof createMovementTimeContext>;
+  return (members: readonly Army[], to: string) => {
+    const from = members[0]?.province;
+    if (!from || !GEOGRAPHY[from] || !w.provinces[to]) return null;
+    if (from === to) return { path: [], cost: 0 };
+    context ??= createMovementTimeContext(w, country);
+    if (!context) return null;
+    const living = members.filter((army) => army.strength > 0);
+    const profiles = [...new Set(living.map(context.profileKey))].sort();
+    const key = `${from}:${living.length}:${profiles.join("|")}`;
+    let search = searches.get(key);
+    if (!search) {
+      const previous = new Map<string, string>();
+      const costs = new Map([[from, 0]]);
+      search = { previous, costs };
+      searches.set(key, search);
+      const travelTime = createMovementTimeEstimator(w, members, context);
+      type Node = { id: string; cost: number };
+      const heap: Node[] = [];
+      const before = (a: Node, b: Node) =>
+        a.cost < b.cost || (a.cost === b.cost && a.id < b.id);
+      const push = (node: Node) => {
+        let index = heap.length;
+        heap.push(node);
+        while (index > 0) {
+          const parent = (index - 1) >> 1;
+          if (!before(node, heap[parent])) break;
+          heap[index] = heap[parent];
+          index = parent;
+        }
+        heap[index] = node;
+      };
+      const pop = () => {
+        const first = heap[0],
+          last = heap.pop()!;
+        if (heap.length) {
+          let index = 0;
+          while (index * 2 + 1 < heap.length) {
+            const left = index * 2 + 1,
+              right = left + 1;
+            const child =
+              right < heap.length && before(heap[right], heap[left])
+                ? right
+                : left;
+            if (!before(heap[child], last)) break;
+            heap[index] = heap[child];
+            index = child;
+          }
+          heap[index] = last;
+        }
+        return first;
+      };
+      push({ id: from, cost: 0 });
+      while (heap.length) {
+        const node = pop();
+        if (node.cost !== costs.get(node.id)) continue;
+        for (const edge of GEOGRAPHY[node.id].neighbors) {
           if (
             edge.sea ||
-            previous.has(edge.id) ||
             !friendly(w, country, w.provinces[edge.id].controller)
           )
             continue;
-          previous.set(edge.id, queue[i]);
-          queue.push(edge.id);
+          const cost = node.cost + travelTime(node.id, edge.id, false);
+          if (cost >= (costs.get(edge.id) ?? Number.POSITIVE_INFINITY)) continue;
+          costs.set(edge.id, cost);
+          previous.set(edge.id, node.id);
+          push({ id: edge.id, cost });
         }
+      }
     }
-    if (!previous.has(to)) return null;
+    const { previous, costs } = search;
+    const cost = costs.get(to);
+    if (cost === undefined) return null;
     const path = [to];
     while (previous.get(path[0]) !== from) path.unshift(previous.get(path[0])!);
-    return path;
+    return { path, cost };
   };
 }
 type Routing = ReturnType<typeof routing>;
@@ -138,13 +199,20 @@ function assignments(
   previous: Record<string, string>,
   route: Routing,
 ): Record<string, string> {
+  const origins = new Map<string, Army[]>();
+  for (const army of armies) {
+    if (!origins.has(army.province)) origins.set(army.province, []);
+    origins.get(army.province)!.push(army);
+  }
   const candidates = armies.map((army) => ({
     army,
     options: points
-      .map((id) => ({ id, path: route(army.province, id) }))
+      .map((id) => ({ id, route: route(origins.get(army.province)!, id) }))
       .filter(
-        (option): option is { id: string; path: string[] } =>
-          option.path !== null,
+        (option): option is {
+          id: string;
+          route: { path: string[]; cost: number };
+        } => option.route !== null,
       ),
   }));
   // Allocate constrained components first. In a connected country all points
@@ -162,7 +230,7 @@ function assignments(
         Number(b.id === army.province) - Number(a.id === army.province) ||
         Number(b.id === previous[army.id]) -
           Number(a.id === previous[army.id]) ||
-        a.path.length - b.path.length ||
+        a.route.cost - b.route.cost ||
         a.id.localeCompare(b.id),
     );
     if (!options.length) continue;
@@ -192,9 +260,9 @@ function distribute(
   strict: boolean,
   route: Routing,
   strengths = defenseStrengths(w),
+  armies = commanderArmies(w, c.id, general.id),
 ) {
   const front = general.front!;
-  const armies = commanderArmies(w, c.id, general.id);
   const points = commanderBorders(w, c.id, front.target);
   if (!points.length) {
     if (strict)
@@ -211,6 +279,16 @@ function distribute(
       "Bazı tümenlerin bu sınıra güvenli kara yolu yok. Önce onları ülkenin bağlı topraklarına getir.",
     );
   front.assignments = next;
+  // Members assigned to the same destination march as a formation. A split
+  // front estimates each actual cohort instead of charging all 12 everywhere.
+  const formations = new Map<string, Army[]>();
+  for (const army of armies) {
+    const destination = next[army.id];
+    if (!destination || destination === army.province) continue;
+    const key = `${army.province}:${destination}`;
+    if (!formations.has(key)) formations.set(key, []);
+    formations.get(key)!.push(army);
+  }
   const attacking = front.stance === "attack" && atWar(w, c.id, front.target);
   if (!attacking) front.stance = "defend";
   for (const army of armies) {
@@ -238,7 +316,10 @@ function distribute(
     if (army.province !== destination) {
       setRoute(
         army,
-        route(army.province, destination) ?? [],
+        route(
+          formations.get(`${army.province}:${destination}`)!,
+          destination,
+        )?.path ?? [],
         `commander-${general.id}`,
       );
       army.stance = "hold";
@@ -311,11 +392,27 @@ export function cleanupCommanders(w: World) {
 export function commandersDay(w: World) {
   cleanupCommanders(w);
   const strengths = defenseStrengths(w);
+  const assigned = new Map<string, Army[]>();
+  for (const army of w.armies) {
+    if (!army.general) continue;
+    const key = `${army.country}:${army.general}`;
+    if (!assigned.has(key)) assigned.set(key, []);
+    assigned.get(key)!.push(army);
+  }
   for (const c of Object.values(w.countries)) {
     if (c.capitulated || !c.generals.some((g) => g.front)) continue;
     const route = routing(w, c.id);
     for (const general of c.generals)
-      if (general.front) distribute(w, c, general, false, route, strengths);
+      if (general.front)
+        distribute(
+          w,
+          c,
+          general,
+          false,
+          route,
+          strengths,
+          assigned.get(`${c.id}:${general.id}`) ?? [],
+        );
   }
 }
 
