@@ -30,9 +30,15 @@ const matrices = (scene: THREE.Scene, name: string) => {
   const m = mesh(scene, name);
   return Array.from(m.instanceMatrix.array.slice(0, m.count * 16));
 };
+const allMeshes = (scene: THREE.Scene) => {
+  const result: THREE.InstancedMesh[] = [];
+  scene.traverse((object) => {
+    if (object instanceof THREE.InstancedMesh) result.push(object);
+  });
+  return result;
+};
 const sceneSnapshot = (scene: THREE.Scene) =>
-  scene.children.map((object) => {
-    const m = object as THREE.InstancedMesh;
+  allMeshes(scene).map((m) => {
     return {
       name: m.name,
       count: m.count,
@@ -88,11 +94,15 @@ test("1/2/3/4/12 tümen, gerçek tipleri değiştirmeden tam istenen sayı sembo
   assert.equal(unitDisplayLayout(0).length, 0);
   assert.equal(unitDisplayLayout(NaN).length, 0);
   assert.equal(
-    scene.children.length,
+    scene.children.filter((object) => object instanceof THREE.InstancedMesh)
+      .length,
     20,
     "shared batches do not grow with army count",
   );
-  for (const m of scene.children as THREE.InstancedMesh[]) {
+  for (const m of scene.children.filter(
+    (object): object is THREE.InstancedMesh =>
+      object instanceof THREE.InstancedMesh,
+  )) {
     for (const name of ["position", "normal"])
       for (const value of m.geometry.getAttribute(name).array)
         assert.ok(Number.isFinite(value), m.name);
@@ -465,9 +475,7 @@ test("ülke rengi yalnız yamayı değiştirir; uzak LOD modelleri eksiltmez vey
   const scene = new THREE.Scene(),
     models = createUnitModels(scene),
     group = formation(12);
-  const ids = scene.children.map(
-      (m) => (m as THREE.InstancedMesh).geometry.uuid,
-    ),
+  const ids = allMeshes(scene).map((m) => m.geometry.uuid),
     cloth = Array.from(
       mesh(scene, "infantry-body").geometry.getAttribute("color").array,
     );
@@ -502,7 +510,7 @@ test("ülke rengi yalnız yamayı değiştirir; uzak LOD modelleri eksiltmez vey
     color,
   );
   assert.deepEqual(
-    scene.children.map((m) => (m as THREE.InstancedMesh).geometry.uuid),
+    allMeshes(scene).map((m) => m.geometry.uuid),
     ids,
   );
   models.dispose();
@@ -518,7 +526,7 @@ test("çok büyük savaşta modeller ve efektler kapasiteyi aşmaz; dispose her 
     { length: MAX_UNIT_MINIATURES / 4 + 5 },
     () => group,
   );
-  const meshes = scene.children as THREE.InstancedMesh[],
+  const meshes = allMeshes(scene),
     geometries = new Set(meshes.map((m) => m.geometry)),
     materials = new Set(meshes.map((m) => m.material as THREE.Material));
   let releasedGeometry = 0,
@@ -559,4 +567,92 @@ test("çok büyük savaşta modeller ve efektler kapasiteyi aşmaz; dispose her 
   assert.equal(releasedGeometry, geometries.size);
   assert.equal(releasedMaterial, materials.size);
   assert.equal(models.stats.instances, 0);
+});
+
+test("Gerçek çatışma ışığı namlu ve mermiyle birlikte ilerler; duraklatma sabitler, temas bitince söner", () => {
+  const scene = new THREE.Scene(),
+    models = createUnitModels(scene, () => 12),
+    group = formation(4);
+  models.update([group], 0, { quality: "high", distance: 450 });
+  assert.equal(
+    models.stats.glows +
+      models.stats.groundGlows +
+      models.stats.dynamicLights +
+      models.stats.headlights,
+    0,
+  );
+  group.combat = {
+    key: "night-battle",
+    target: new THREE.Vector3(100, 12, 80),
+  };
+  models.update([group], 100, { quality: "high", distance: 450 });
+  assert.equal(models.stats.muzzleFlashes, 3);
+  assert.equal(models.stats.headlights, 2);
+  assert.equal(models.stats.glows, 5);
+  assert.equal(models.stats.groundGlows, 5);
+  assert.equal(models.stats.dynamicLights, 2);
+  models.update([group], 300, { quality: "high", distance: 450 });
+  assert.ok(
+    models.stats.infantryTracers > 0 &&
+      models.stats.tankShells > 0 &&
+      models.stats.shells > 0,
+  );
+  assert.ok(models.stats.glows > 5);
+  const active = sceneSnapshot(scene);
+  const stats = { ...models.stats };
+  models.update([group], 1900, {
+    quality: "high",
+    distance: 450,
+    paused: true,
+  });
+  assert.deepEqual(sceneSnapshot(scene), active);
+  assert.deepEqual(models.stats, stats);
+  models.update([group], 2900, {
+    quality: "high",
+    distance: 450,
+    reduced: true,
+  });
+  assert.deepEqual(sceneSnapshot(scene), active);
+  group.combat = undefined;
+  models.update([group], 3000, { quality: "high", distance: 450 });
+  assert.equal(
+    models.stats.glows +
+      models.stats.groundGlows +
+      models.stats.dynamicLights +
+      models.stats.headlights,
+    0,
+  );
+  models.dispose();
+});
+
+test("Kamyon farları gerçek hareket/destekle açılır; durağan birlik veya yüklenen boş sahne ateş üretmez", () => {
+  const scene = new THREE.Scene(),
+    models = createUnitModels(scene, () => 12),
+    group = formation(4, true);
+  const before = JSON.stringify(group);
+  models.update([group], 0, { quality: "low", distance: 450 });
+  assert.equal(models.stats.headlights, 2);
+  assert.equal(models.stats.glows, 2);
+  assert.equal(models.stats.groundGlows, 2);
+  assert.equal(models.stats.dynamicLights, 0);
+  assert.equal(
+    models.stats.muzzleFlashes +
+      models.stats.infantryTracers +
+      models.stats.tankShells +
+      models.stats.shells,
+    0,
+  );
+  assert.equal(JSON.stringify(group), before);
+  const body = new THREE.Matrix4();
+  mesh(scene, "truck-body").getMatrixAt(0, body);
+  const lamp = new THREE.Vector3(-0.82, 1.61, 2.66).applyMatrix4(body);
+  const matrix = new THREE.Matrix4();
+  mesh(scene, "combat-glows").getMatrixAt(0, matrix);
+  assert.ok(
+    lamp.distanceTo(new THREE.Vector3().setFromMatrixPosition(matrix)) <
+      0.00001,
+  );
+  models.update([], 100, { quality: "ultra", distance: 450 });
+  assert.equal(models.stats.glows + models.stats.dynamicLights, 0);
+  models.dispose();
 });

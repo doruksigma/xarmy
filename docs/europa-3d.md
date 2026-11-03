@@ -190,6 +190,65 @@ koordinatlarıdır, kilometre veya ikmal menzili değildir. Oyuncuya ait bağlı
 demiryolu görünürlük kuralı ve gerçek sefer hesapları değişmez. Bu çizim
 bütçeleri fiziksel telefonda ölçülmüş FPS sonucu anlamına gelmez.
 
+## Askerî simgeler, ilerleme okları ve yakın çatışma ışığı
+
+Komuta, ordu, sanayi, diplomasi, araştırma, harekât, kayıt ve kamera
+kontrollerinde 50 özgün SVG askerî simgeden oluşan ortak set kullanılır. 2D birlik sayaçları
+ve 3D başkent/birlik etiketleri aynı simge ailesini paylaşır. Türkçe etiketler,
+düğmelerin erişilebilir adları ve klavye ile seçme davranışı korunur. Bu
+çizimler başka bir oyunun arayüz veya görsel dosyalarından alınmamıştır.
+
+Yürüyen görünür birliklerin rotaları, birlik seçilmese de **kendi ülkelerinin
+renginde** okla gösterilir. Ok mevcut ilerleme konumundan başlar ve son hedefi
+gösterir. Aynı ülke, başlangıç ve rota kuyruğuna sahip tümenler tek okta
+toplanır; farklı hedefler ayrı kalır. Oyuncunun seçili, henüz hareket etmeyen
+rotası kesikli çizilir. Varış veya iptal sonrası yürüyüş oku kaldırılır.
+Görünmeyen düşmanlar için ok oluşturulmaz; görünen yabancı birliklerde yalnız
+mevcut hareket gösterilir, sonraki emir kuyruğu açıklanmaz.
+
+2D ve 3D aynı rota verisini kullanır. 3D oklar çizilen arazi yüksekliğini
+izleyen tek renkli-vertex mesh içinde toplanır. En fazla **256 rota**, rota
+başına **16 konum**, toplam **60.000 vertex** çizilir; seçili rotalar ve oyuncu
+rotaları önceliklidir. Aynı veri tekrar geldiğinde geometri yeniden kurulmaz.
+Bu oklar hareket emri, süre veya şehir ele geçirme hesabı yapmaz.
+
+Yakın görünümde piyadenin eğimli omuzları, miğferi, yüzü, tüfek askısı,
+matara ve küreği; tankın eğimli zırhı, paletleri, kapakları, periskopları,
+egzozu ve namlusu; topun siperi, tekerlekleri, mekanizması ve geri tepme
+silindirleri; kamyonun kabini, aynaları, silecekleri, basamakları, çamurlukları
+ve branda bağları ayrı geometri ayrıntıları taşır. Animasyonun mevcut **13
+ortak parça grubu** korunur. Bu grupların toplamı **20.010 vertex**, en büyüğü
+**4.128 vertex** içerir; her asker için ayrı mesh veya malzeme oluşturulmaz.
+Kumaş, boyalı zırh, çıplak çelik, lastik ve cam için roughness/metalness
+vertex verileri aynı PBR malzemesi içinde farklı yüzey tepkileri verir.
+Bunlar kodla üretilmiş strateji minyatürleridir; taranmış AAA modeller, yeni
+2K/4K dokular veya iskelet animasyonu varlıkları değildir.
+
+Gerçek kara çatışmasının namlu, hareketli mermi ve isabet konumlarına sıcak
+ışık halkaları bağlanır. Namlu/isabet altında araziye oturan ışık lekesi
+bulunur. Hareket eden veya gerçek çatışmaya destek veren kamyonun iki farı
+yanar; kamyon yeni bir silah ya da hasar kaynağı kazanmaz. Mevcut çatışma,
+geri tepme ve ele geçirme zamanlaması, duraklatma ve azaltılmış hareket
+kuralları korunur.
+
+| Kalite | Aynı anda gerçek noktasal çatışma ışığı |
+| --- | ---: |
+| Düşük / Orta | 0; ışık halkası ve arazi lekesi |
+| Yüksek | En fazla 2 |
+| Ultra | En fazla 4 |
+
+Noktasal ışıklar gölge üretmez; 900 birim ve üzerindeki kamera uzaklığında
+güçleri sıfırlanır. En fazla **256 ışık halkası** ve **128 arazi lekesi** iki
+instanced grupta tutulur. Işık nesneleri tekrar kullanılır; atışlar arasında
+shader ışık sayısı değiştirilmez. Ortadan kalkan çatışma ışığı sonraki karede
+temizlenir. Bunlar sefer dünyasına veya RNG akışına yazmaz, gerçek hasarı
+artırmaz ve tam ekran bloom efekti gerektirmez.
+
+Mevcut 447 şehir ışığına ek olarak yakın görünümde evlerin pencere/kapı
+panelleri ortak sıcak emissive malzemeyle görünür. Yeni şehir veya ev başına
+noktasal ışık eklenmez; mevcut yerleşim yoğunluğu ve uzaklık elemesi korunur.
+Bu bütçeler telefon veya masaüstünde ölçülmüş 60 FPS garantisi değildir.
+
 ## Hava ve deniz görevlerinin görünümü
 
 Avcı, bombardıman, yüzey savaş gemisi, uçak gemisi ve denizaltı için özgün,

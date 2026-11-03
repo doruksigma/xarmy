@@ -353,6 +353,110 @@ Bunlar yazılımsal WebGL ortamının çizim sayılarıdır; fiziksel telefonda 
 Bu aşamada uzun 1936–1945 seferi ve diğer oyunların tam regresyonları yeniden
 çalıştırılmadı; yukarıdaki sonuçları önceki aşamaya aittir.
 
+## Devam çalışması: askerî simgeler, ülke okları ve çatışma ışığı — 3 Kasım 2026
+
+- `MilitaryIcon.tsx`, `military-symbols.ts`: komuta, ordu, ekonomi, diplomasi,
+  araştırma, harekât, kayıt ve kamera araçları için ortak 50 özgün SVG simge.
+  2D birlik sayaçları, 3D birlik/başkent etiketleri aynı çizim ailesine bağlandı;
+  Türkçe metinler ve erişilebilir kontrol adları korundu. HOI4'ün simge,
+  arayüz veya model dosyaları kullanılmadı.
+- `movement-routes.ts`, `map3d-movement-arrows.ts`, `WarMap.tsx`: yürüyen
+  görünür birlikler seçilmeden de ülke renginde, son hedefe dönük ok taşır.
+  Aynı ülke ve rotadaki tümenler sayılı tek okta birleşir. Oyuncunun seçili
+  bekleyen rotası kesiklidir; hareket iptal/varışında ok kaldırılır. Düşman
+  görünürlüğü mevcut birlik görünürlüğünü izler, yabancı ülkenin gelecekteki
+  emir kuyruğu gösterilmez. En fazla 256 rota, rota başına 16 konum ve 3D'de
+  60.000 vertex sınırı vardır. Tek mesh arazi yüzeyini izler; değişmeyen rota
+  verisi geometriyi yeniden kurmaz.
+- `map3d-land-models.ts`, `map3d-land-material.ts`: piyade giysi/teçhizatı,
+  tank zırhı/palet/taret parçaları, top siperi/mekanizması ve kamyon kabin/
+  branda ayrıntıları yeniden modellendi. Mevcut 13 hareketli parça grubu,
+  namlu konumları ve bina açıklığı sınırları korundu. Ortak geometriler toplam
+  20.010 vertex, en büyük grup 4.128 vertex içerir. Kumaş, zırh, çelik, lastik
+  ve cam aynı PBR malzemesinde farklı roughness/metalness vertex değerleri
+  kullanır; parça başına yeni malzeme çizim çağrıları eklenmez.
+- `map3d-combat-lighting.ts`, `map3d-units.ts`: gerçek kara muharebesinin
+  namlu, mermi ve isabet konumlarında ışık halkası; namlu/isabet altında
+  çizilen araziye oturan ışık lekesi. Hareketli veya çatışmaya destek veren
+  kamyonlar iki far taşır. Düşük/Orta ayarda gerçek noktasal ışık yoktur;
+  Yüksek en fazla 2, Ultra 4 ortak gölgesiz ışık kullanır. Kamera uzaklığı
+  900 ve üzerindeyken noktasal ışıkların gücü sıfırlanır. İki instanced
+  grupta en fazla 256 halka ve 128 arazi lekesi çizilir. Atış bittiğinde
+  eski ışıklar temizlenir; ışık sayısı atış döngüsüyle shader derlemesi
+  tetikleyecek şekilde değişmez.
+- `map3d-scenery.ts`: mevcut köy/şehir pencere gruplarına ortak sıcak
+  emissive malzeme eklendi; malzemenin temizliği sahne yaşam döngüsüne
+  bağlandı. Önceki aşamadaki 447 şehir ışığı, kalite/LOD bütçeleri ve
+  oyuncunun başkentine bağlı demiryolu görünürlüğü korunur.
+
+**Simülasyon ve kapsam:** Yeni oklar ve ışıklar `World` veya sefer RNG'sine
+yazmaz; ek hasar, hareket, kaynak tüketimi veya fetih üretmez. Piyade/tank/
+top/kamyon için 1/2/3/4+ tümen gösterim kuralı korunur; görsel model tipi
+gerçek birliğin ekipmanını değiştirmez. Kamyon destek aracıdır. Modeller
+kodla üretilen strateji minyatürleridir; taranmış AAA varlık, yeni 2K/4K
+doku paketi veya bütün 2.000 satırlık şartnamenin tamamlanması değildir.
+Bu aşama, aşağıdaki mekanik eksikleri kapatmış sayılmaz.
+
+**Bu aşamanın odaklı doğrulaması:** 16 test dosyası birlikte sıkı TypeScript
+derlemesinden geçti. Birleşik görsel regresyonda **136/136** test geçti;
+başarısız, atlanan veya iptal edilen test yok, süre 109,564 saniye.
+Paket geometri, yüzey, modeller, birlik/çatışma olayları, ışık, rota,
+yerleşim, demiryolu, kartografya, etiket ve hava/deniz görsellerini kapsar.
+Gizli düşman rotası/gelecek emirleri, Dünya/RNG değişmezliği,
+yön/iptal/grup sayısı, model yüzey öznitelikleri, ışık bütçesi ve GPU
+kaynak temizliği denetlendi. Gerçek shader bağlantısı ve görsel kalibrasyon
+aşağıdaki tarayıcı doğrulamasına aittir.
+
+- Derleme kaydı: `/workspace/scratch/europa-military-review-compile.log`.
+- Test kaydı: `/workspace/scratch/europa-military-review-tests.log`.
+- Bağımsız kaynak incelemesi: `/workspace/scratch/europa-military-review-inspection.log`.
+
+Gerçek oyun görüntüsünde ok başının koyu dış çizgisinin renkli gövdeyi kestiği
+görüldü. Dış çizgi önce, renkli gövde ve baş sonra çizilecek şekilde düzeltildi.
+Bu son değişiklikten sonra odaklı ok paketi **7/7** geçti; yeni test seçili ve
+seçili olmayan okun birleşimindeki son çizilen üçgen rengini denetler. Testin
+eski çizim sırasında başarısız olduğu da doğrulandı. Bu 7 test, yukarıdaki
+136 sonuca eklenerek toplam gösterilmez; altı test aynı kapsamdadır.
+Kayıtlar: `/workspace/scratch/europa-military-arrows-neck-fix-tests.log` ve
+`/workspace/scratch/europa-military-arrows-neck-old-order-regression.log`.
+
+**Bu aşamanın üretim derlemesi:** Son kaynaklarla üretim derlemesi,
+TypeScript, lint ve statik sayfa üretimi başarılı (çıkış kodu 0); üretim
+sunucusu HTTP 200 döndürüyor.
+
+**Bu aşamanın tarayıcı doğrulaması:** Üretim sunucusunda gerçek Chromium/WebGL
+ile 1440×1000 masaüstü ve 390×844 dokunmatik mobil emülasyonunda **19 farklı
+kontrol grubu** geçti; JavaScript/konsol hatası yok. İlk koşudaki dört masaüstü
+model kontrolü korundu; aynı adlı iki düğme nedeniyle belirsiz kalan test
+seçicisi düzeltildikten sonra diğer kontroller yeniden çalıştırıldı. Birleşik
+rapor `/workspace/scratch/europa-military-browser/combined-report.json`.
+
+- 1/2/3/4 tümen için doğru model bileşimi; SVG menü/zaman simgeleri.
+- Ülke renginde gruplu oklar, gizli düşman bilgisinin saklanması, 2D/3D uyumu.
+- Seçimi temizleyince hareketin sürmesi, gerçek dur emriyle dört tümenin
+  durması; bir saatlik gerçek simülasyonda dört tümenin birlikte varması.
+- Gerçek karşılıklı kayıplarla piyade, tank ve top mermilerinin aynı anda
+  parlaması; arazi ışığı ve iki kamyon farı. Yakalanan karede 8 ışık halkası,
+  4 arazi lekesi; Yüksek ayarda 2 gerçek noktasal ışık.
+- Duraklatma/azaltılmış hareket, kalite değişimi ve görünümün kayıtlı dünyayı
+  değiştirmemesi; barış durumu içeren kayıt yüklenince bütün eski atış ve
+  ışıkların temizlenmesi.
+
+Test ortamı SwiftShader yazılımsal çizim kullanır; fiziksel telefon FPS ölçümü
+yapılmadı. Önceki aşamanın 32 tarayıcı kontrolü ve 521 testlik tam regresyonu
+bu çalışma için yeniden çalıştırılmış gibi sayılmaz.
+
+**Son görsel kontrol:** Ok birleşimi düzeltmesiyle üretim derlemesi yeniden
+başarıyla alındı (`europa-military-build-final.log`). Yeniden başlatılan üretim
+sunucusunda 3 odaklı tarayıcı kontrolü daha geçti, hata yok. Yüksek ayarda
+gerçek kamera sürükleme hareketiyle asker/tank/top/kamyon önden ve yandan
+incelendi; kamera ve kalite değişimi sonrasında bütün kayıt eşit kaldı.
+Düzeltilmiş okların renkli gövde/baş birleşimi ekran görüntüsünde kesintisiz.
+Bu tekrar kontrolleri 19 farklı kontrol grubuna eklenip yeni kapsam sayılmaz.
+Rapor: `/workspace/scratch/europa-military-final/report.json`.
+Görüntüler: `desktop-four-models-oblique-high.png` ve
+`desktop-country-movement-arrow.png`, aynı rapor klasöründe.
+
 ## 1–100 kapsamı: mevcut temel ve kalan işler
 
 Dosya adları aksi belirtilmedikçe `app/games/europa-war/strategy/` altındadır.

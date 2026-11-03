@@ -313,6 +313,15 @@ export function createScenery(
     roughness: 0.51,
     metalness: 0.08,
   });
+  // Warm windows are one shared emissive material per existing instanced batch,
+  // not a light per house. They stay readable even in the moonlit close view.
+  const windowMaterial = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    roughness: 0.4,
+    metalness: 0.03,
+    emissive: 0xffbd6d,
+    emissiveIntensity: 0.24,
+  });
   // body, house roof, village windows, city windows, factory roof/details,
   // chimney, tanks, conifers, broadleaf, trunks, rocks, hangar arches.
   const geometries = [
@@ -339,9 +348,11 @@ export function createScenery(
       geometry,
       [1, 4, 12].includes(i)
         ? roofMaterial
-        : [2, 3, 5].includes(i)
-          ? detailMaterial
-          : material,
+        : [2, 3].includes(i)
+          ? windowMaterial
+          : i === 5
+            ? detailMaterial
+            : material,
       capacities[i],
     );
     mesh.name = `scenery-${["masonry", "roofs", "village-windows", "urban-windows", "factory-roofs", "factory-windows", "chimneys", "tanks", "pines", "leafy-trees", "trunks", "rocks", "hangars"][i]}`;
@@ -1139,6 +1150,7 @@ export function createScenery(
       material.dispose();
       roofMaterial.dispose();
       detailMaterial.dispose();
+      windowMaterial.dispose();
       houses.length = 0;
       stats.houses = 0;
       stats.housesByProvince = {};

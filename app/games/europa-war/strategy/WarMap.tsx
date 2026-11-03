@@ -1,7 +1,7 @@
 "use client";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
-import { TERRAINS, UNITS } from "./catalog";
+import { TERRAINS } from "./catalog";
 import { AIRCRAFT, AIR_MISSIONS, SEA_ZONES } from "./advanced-catalog";
 import { seaControl } from "./military-assets";
 import { GEOGRAPHY, localSupply, MAP, supplyNetwork } from "./world";
@@ -10,7 +10,9 @@ import styles from "../europa.module.css";
 import atlas from "./map.module.css";
 import mapAssets from "./map-assets.json";
 import MinimapBackdrop from "./MinimapBackdrop";
+import MilitaryIcon, { unitIcon } from "./MilitaryIcon";
 import { countryMapLabels } from "./map3d-country-labels";
+import { movementRoutes, movementArrowHead } from "./movement-routes";
 import {
   CARTOGRAPHIC_TERRAINS,
   politicalCountryColor,
@@ -741,16 +743,7 @@ function WarMap({
     if (!next) finish();
   }
   const routes = useMemo(
-    () => [
-      ...new Set(
-        world.armies
-          .filter((a) => selectedArmies.has(a.id))
-          .map((a) =>
-            pointList([a.province, ...(a.move ? [a.move.to] : []), ...a.route]),
-          )
-          .filter((points) => points.includes(" ")),
-      ),
-    ],
+    () => movementRoutes(world, [...selectedArmies]),
     [world, selectedArmies],
   );
   const hovered = hover && world.provinces[hover] ? GEOGRAPHY[hover] : null;
@@ -1153,18 +1146,57 @@ function WarMap({
             </g>
           );
         })}
-        {routes.map((points) => (
-          <polyline
-            key={points}
-            points={points}
-            fill="none"
-            stroke="#f2c779"
-            strokeWidth="2.5"
-            strokeDasharray="6 3"
-            markerEnd="url(#order-arrow)"
-            pointerEvents="none"
-          />
-        ))}
+        {routes.map((route) => {
+          const points = route.points
+            .map((point) => `${point.x},${point.y}`)
+            .join(" ");
+          const head = movementArrowHead(
+            route.points,
+            (route.selected ? 8 : 6.5) * strokeScale,
+          )
+            .map((point) => `${point.x},${point.y}`)
+            .join(" ");
+          return (
+            <g
+              key={route.id}
+              pointerEvents="none"
+              data-movement-route={route.id}
+              data-country={route.country}
+              data-color={route.color}
+              data-count={route.count}
+              data-kind={route.kind}
+              data-selected={route.selected}
+            >
+              <title>
+                {world.countries[route.country].name} · {route.count} tümen ·{" "}
+                {route.kind === "march" ? "İlerliyor" : "Planlanan rota"}
+              </title>
+              <polyline
+                points={points}
+                fill="none"
+                stroke={route.selected ? "#d8dfdf" : "#080e19"}
+                strokeWidth={(route.selected ? 4.5 : 3.5) * strokeScale}
+                strokeLinejoin="round"
+                strokeDasharray={route.kind === "march" ? undefined : "6 3"}
+              />
+              <polyline
+                points={points}
+                fill="none"
+                stroke={route.color}
+                strokeWidth={(route.selected ? 2.8 : 2) * strokeScale}
+                strokeLinejoin="round"
+                strokeDasharray={route.kind === "march" ? undefined : "6 3"}
+              />
+              <polygon
+                points={head}
+                fill={route.color}
+                stroke={route.selected ? "#d8dfdf" : "#080e19"}
+                strokeWidth={0.65 * strokeScale}
+                strokeLinejoin="round"
+              />
+            </g>
+          );
+        })}
         {mode === "air" && (
           <g>
             {selectedWing && (
@@ -1558,24 +1590,13 @@ function WarMap({
                 height="20"
                 fill={world.countries[a.country].color}
               />
-              <rect
-                x="6"
-                y="4"
-                width="12"
-                height="9"
-                fill="none"
-                stroke={own ? "#364a38" : "#f1e8d1"}
-                strokeWidth=".8"
+              <MilitaryIcon
+                name={unitIcon(a.type)}
+                size={16}
+                x={4}
+                y={1}
+                color={own ? "#263b2e" : "#f4ecd7"}
               />
-              <text
-                x="12"
-                y="12"
-                textAnchor="middle"
-                fontSize="10"
-                fill={own ? "#263b2e" : "#f4ecd7"}
-              >
-                {UNITS[a.type].symbol}
-              </text>
               <text
                 x="23"
                 y="13"
@@ -1713,6 +1734,7 @@ function WarMap({
       draft,
       friendlyPlans,
       routes,
+      strokeScale,
       selectedWing,
       wingId,
       seaZone,
@@ -1949,7 +1971,7 @@ function WarMap({
           onClick={() => toggleMapDetail("terrain")}
           title="Dağ, orman ve zemin kabartmasını göster veya sade siyasi haritaya geç"
         >
-          <span aria-hidden="true">▧</span> Kabartma
+          <MilitaryIcon name="mountain" size={14} /> Kabartma
         </button>
         <button
           type="button"
@@ -1957,25 +1979,25 @@ function WarMap({
           onClick={() => toggleMapDetail("readiness")}
           title="Birliklerin mevcut gücünü ve hareket/çatışma durumunu göster"
         >
-          <span aria-hidden="true">▥</span> Birlik durumu
+          <MilitaryIcon name="infantry" size={14} /> Birlik durumu
         </button>
       </div>
       <div className={`${styles.mapControls} ${atlas.navigation}`}>
         <button onClick={() => zoom(0.75)} aria-label="Haritayı yakınlaştır">
-          ＋
+          <MilitaryIcon name="plus" size={19} />
         </button>
         <button onClick={() => zoom(1.33)} aria-label="Haritayı uzaklaştır">
-          −
+          <MilitaryIcon name="minus" size={19} />
         </button>
         <button
           onClick={focusPlayer}
           title="Başkentime git"
           aria-label="Başkentime git"
         >
-          ⌖
+          <MilitaryIcon name="focus" size={19} />
         </button>
         <button onClick={resetView} aria-label="Tüm haritayı göster">
-          ↔
+          <MilitaryIcon name="fit" size={19} />
         </button>
         <button
           onClick={focusSelectedArmies}
@@ -1983,7 +2005,7 @@ function WarMap({
           aria-label="Seçili tümenlere git"
           title="Seçili tümenlere git"
         >
-          ▣
+          <MilitaryIcon name="select" size={19} />
         </button>
       </div>
       {hovered && infoProvince && !ordering && (

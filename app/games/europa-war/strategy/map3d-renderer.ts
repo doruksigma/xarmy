@@ -12,6 +12,8 @@ import {
 } from "./map3d-geometry";
 import { createScenery } from "./map3d-scenery";
 import { createCityLights } from "./map3d-city-lights";
+import { createMovementArrows } from "./map3d-movement-arrows";
+import { createMilitaryMapIcon } from "./military-symbols";
 import { politicalCountryColor } from "./map3d-cartography-palette";
 import {
   createUnitModels,
@@ -134,14 +136,7 @@ export class Map3DRenderer {
   private sea: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>;
   private sun = new THREE.DirectionalLight(0xc8d7ef, 1.7);
   private selection: THREE.LineSegments | null = null;
-  private routes = new THREE.LineSegments(
-    new THREE.BufferGeometry(),
-    new THREE.LineBasicMaterial({
-      color: 0xf4d287,
-      transparent: true,
-      opacity: 0.9,
-    }),
-  );
+  private movementArrows: ReturnType<typeof createMovementArrows>;
   private markers = new THREE.Group();
   private battleRings: THREE.Mesh<
     THREE.RingGeometry,
@@ -320,7 +315,11 @@ void main() {
       );
       this.railways = createRailways(this.scene, this.surfaceHeightAt);
       this.airNaval = createAirNavalVisuals(this.scene, this.surfaceHeightAt);
-      this.scene.add(this.routes, this.markers);
+      this.movementArrows = createMovementArrows(
+        this.scene,
+        this.surfaceHeightAt,
+      );
+      this.scene.add(this.markers);
       this.controls = new OrbitControls(this.camera, this.canvas);
       this.controls.enableDamping = true;
       this.controls.dampingFactor = 0.13;
@@ -748,11 +747,13 @@ void main() {
       const p = GEOGRAPHY[id];
       if (!p) continue;
       const overlay = this.overlay(
-        `${capitals.has(id) ? "★ " : ""}${p.name}`,
+        p.name,
         this.point(p.x, p.y, 4),
         capitals.has(id) ? "capital" : "city",
         () => this.props.onSelect(id, false),
       );
+      if (capitals.has(id))
+        overlay.element.prepend(createMilitaryMapIcon("capital", 12));
       overlay.element.dataset.provinceLabel = id;
       overlay.element.setAttribute(
         "aria-label",
@@ -769,7 +770,7 @@ void main() {
       if (army.move) target.x += ((index % 3) - 1) * 1.8;
       const position = previous.get(key) ?? target.clone();
       const overlay = this.overlay(
-        `${armies.some((a) => a.type.includes("Tank")) ? "▰" : "×"} ${armies.length}`,
+        String(armies.length),
         position.clone().add(new THREE.Vector3(0, 8, 0)),
         "army",
         (event) => {
@@ -783,6 +784,17 @@ void main() {
           else this.props.onSelect(army.province, false);
         },
       );
+      const symbol = armies.some((unit) => unit.type.includes("Tank"))
+        ? "tank"
+        : armies.some((unit) => unit.type === "artillery")
+          ? "artillery"
+          : armies.some(
+                (unit) =>
+                  unit.type === "motorized" || unit.type === "mechanized",
+              )
+            ? "truck"
+            : "infantry";
+      overlay.element.prepend(createMilitaryMapIcon(symbol, 19));
       overlay.element.dataset.formation = `${army.country}:${army.province}:${army.move?.to ?? "idle"}`;
       overlay.element.dataset.country = army.country;
       overlay.element.setAttribute(
@@ -924,32 +936,16 @@ void main() {
       this.selection.renderOrder = 4;
       this.scene.add(this.selection);
     }
-    const positions: number[] = [];
-    const ids = new Set(this.props.armyIds);
-    const paths = this.props.world.armies
-      .filter((a) => ids.has(a.id))
-      .map((a) => [a.province, ...(a.move ? [a.move.to] : []), ...a.route]);
-    if (this.props.draft?.length) paths.push(this.props.draft);
-    for (const path of paths)
-      for (let i = 1; i < path.length; i++) {
-        const a = GEOGRAPHY[path[i - 1]],
-          b = GEOGRAPHY[path[i]];
-        if (!a || !b) continue;
-        for (let j = 0; j < 8; j++) {
-          const t = j / 8,
-            u = (j + 1) / 8;
-          const p = this.point(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, 3);
-          const q = this.point(a.x + (b.x - a.x) * u, a.y + (b.y - a.y) * u, 3);
-          positions.push(p.x, p.y, p.z, q.x, q.y, q.z);
-        }
-      }
-    this.routes.geometry.dispose();
-    this.routes.geometry = new THREE.BufferGeometry();
-    this.routes.geometry.setAttribute(
-      "position",
-      new THREE.Float32BufferAttribute(positions, 3),
+    this.movementArrows.update(
+      this.props.world,
+      this.props.armyIds,
+      this.props.draft,
+    );
+    this.canvas.dataset.movementArrows = JSON.stringify(
+      this.movementArrows.stats,
     );
   }
+
   private updateUnitMatrices(now: number) {
     const active = !this.props.paused && !this.reduced && !document.hidden;
     const elapsed =
@@ -1381,6 +1377,14 @@ void main() {
       );
       this.canvas.dataset.shells = String(this.units.stats.shells);
       this.canvas.dataset.impacts = String(this.units.stats.impacts);
+      this.canvas.dataset.unitGlows = String(this.units.stats.glows);
+      this.canvas.dataset.unitGroundGlows = String(
+        this.units.stats.groundGlows,
+      );
+      this.canvas.dataset.unitDynamicLights = String(
+        this.units.stats.dynamicLights,
+      );
+      this.canvas.dataset.unitHeadlights = String(this.units.stats.headlights);
       this.canvas.dataset.captures = String(this.units.stats.captures);
       this.canvas.dataset.modelDetail = String(this.units.stats.detail);
       this.canvas.dataset.cameraDistance = this.camera.position
@@ -1445,8 +1449,7 @@ void main() {
     this.noise?.dispose();
     this.sea?.geometry.dispose();
     this.sea?.material.dispose();
-    this.routes.geometry.dispose();
-    (this.routes.material as THREE.Material).dispose();
+    this.movementArrows?.dispose();
     if (this.selection) {
       this.selection.geometry.dispose();
       (this.selection.material as THREE.Material).dispose();

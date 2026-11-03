@@ -1,4 +1,5 @@
 "use client";
+import MilitaryIcon from "./MilitaryIcon";
 import { memo, useEffect, useRef, useState } from "react";
 import {
   Map3DRenderer,
@@ -278,14 +279,14 @@ function WarMap3D(
           aria-label="Haritayı yakınlaştır"
           onClick={() => renderer.current?.zoom(0.75)}
         >
-          ＋
+          <MilitaryIcon name="plus" size={20} style={{ marginInlineEnd: 0 }} />
         </button>
         <button
           type="button"
           aria-label="Haritayı uzaklaştır"
           onClick={() => renderer.current?.zoom(1.33)}
         >
-          −
+          <MilitaryIcon name="minus" size={20} style={{ marginInlineEnd: 0 }} />
         </button>
         <button
           type="button"
@@ -297,14 +298,14 @@ function WarMap3D(
             )
           }
         >
-          ⌖
+          <MilitaryIcon name="focus" size={20} style={{ marginInlineEnd: 0 }} />
         </button>
         <button
           type="button"
           aria-label="Tüm haritayı göster"
           onClick={() => renderer.current?.reset()}
         >
-          ↔
+          <MilitaryIcon name="fit" size={20} style={{ marginInlineEnd: 0 }} />
         </button>
         <button
           type="button"
@@ -312,7 +313,11 @@ function WarMap3D(
           disabled={!props.armyIds.length}
           onClick={() => renderer.current?.focusArmies()}
         >
-          ▣
+          <MilitaryIcon
+            name="select"
+            size={20}
+            style={{ marginInlineEnd: 0 }}
+          />
         </button>
       </div>
       {selected && (

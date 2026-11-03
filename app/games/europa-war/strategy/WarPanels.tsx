@@ -1,5 +1,13 @@
 "use client";
 import CommandCenter from "./CommandCenter";
+import MilitaryIcon, {
+  unitIcon,
+  equipmentIcon,
+  buildingIcon,
+  resourceIcon,
+  type MilitaryIconName,
+} from "./MilitaryIcon";
+import type { ReactNode } from "react";
 import ActionPreview from "./ActionPreview";
 import {
   AirNavalPanel,
@@ -50,15 +58,15 @@ import type {
 import styles from "../europa.module.css";
 
 export const TABS = [
-  ["command", "◈", "Komuta"],
-  ["province", "⌖", "Bölge"],
-  ["army", "⚑", "Ordu"],
-  ["economy", "▥", "Sanayi"],
-  ["diplomacy", "⚐", "Diplomasi"],
-  ["research", "⌬", "Araştırma"],
-  ["politics", "✦", "Siyaset"],
-  ["operations", "◉", "Harekât"],
-  ["saves", "▣", "Kayıtlar"],
+  ["command", "command", "Komuta"],
+  ["province", "province", "Bölge"],
+  ["army", "infantry", "Ordu"],
+  ["economy", "factory", "Sanayi"],
+  ["diplomacy", "diplomacy", "Diplomasi"],
+  ["research", "research", "Araştırma"],
+  ["politics", "politics", "Siyaset"],
+  ["operations", "operations", "Harekât"],
+  ["saves", "save", "Kayıtlar"],
 ] as const;
 export type Tab = (typeof TABS)[number][0];
 export const number = (n: number) => Math.floor(n).toLocaleString("tr-TR");
@@ -88,10 +96,21 @@ export function Meter({
     </div>
   );
 }
-function Stat({ label, value }: { label: string; value: string | number }) {
+function Stat({
+  label,
+  value,
+  icon,
+}: {
+  label: string;
+  value: ReactNode;
+  icon?: MilitaryIconName;
+}) {
   return (
     <div className={styles.stat}>
-      <span>{label}</span>
+      <span>
+        {icon && <MilitaryIcon name={icon} size={13} />}
+        {label}
+      </span>
       <strong>{value}</strong>
     </div>
   );
@@ -250,17 +269,33 @@ export default function WarPanels({
     return (
       <>
         <div className={styles.eyebrow}>EYÂLET İSTİHBARATI</div>
-        <h2>{geo.name}</h2>
+        <h2>
+          <MilitaryIcon name="province" size={26} />
+          {geo.name}
+        </h2>
         <p className={styles.subtitle}>
           {owner.flag} {owner.name} · {TERRAINS[geo.terrain].name}
-          {geo.port ? " · ⚓ Liman" : ""}
+          {geo.port && (
+            <>
+              {" "}
+              · <MilitaryIcon name="navy" size={14} />
+              Liman
+            </>
+          )}
           {geo.river ? " · Nehir / boğaz geçişi" : ""}
         </p>
         <div className={styles.statsGrid}>
-          <Stat label="Nüfus" value={number(geo.population)} />
+          <Stat label="Nüfus" value={number(geo.population)} icon="manpower" />
           <Stat
             label="Zafer puanı"
-            value={`${geo.vp}${owner.capital === p.id ? " ★" : ""}`}
+            value={
+              <>
+                {geo.vp}
+                {owner.capital === p.id && (
+                  <MilitaryIcon name="capital" size={15} />
+                )}
+              </>
+            }
           />
           <Stat
             label="Sivil / askerî"
@@ -379,7 +414,8 @@ export default function WarPanels({
               onClick={() => onArmy(a.id)}
             >
               <span>
-                {UNITS[a.type].symbol} {a.name}
+                <MilitaryIcon name={unitIcon(a.type)} />
+                {a.name}
               </span>
               <span>%{Math.round(a.organization)} ORG →</span>
             </button>
@@ -392,13 +428,16 @@ export default function WarPanels({
           {geo.neighbors.map((n) => (
             <button key={n.id} onClick={() => onProvince(n.id)}>
               {GEOGRAPHY[n.id].name}
-              {n.sea ? " ⚓" : ""}
+              {n.sea && <MilitaryIcon name="navy" size={14} />}
             </button>
           ))}
         </div>
         {p.controller === c.id && (
           <>
-            <h3>Hızlı inşaat</h3>
+            <h3>
+              <MilitaryIcon name="factory" />
+              Hızlı inşaat
+            </h3>
             <label className={styles.field}>
               Yapı
               <select
@@ -433,7 +472,10 @@ export default function WarPanels({
     return (
       <>
         <div className={styles.eyebrow}>GENELKURMAY</div>
-        <h2>Kara kuvvetleri</h2>
+        <h2>
+          <MilitaryIcon name="infantry" size={26} />
+          Kara kuvvetleri
+        </h2>
         <p className={styles.subtitle}>
           {own.length} tümen · {number(c.manpower)} yedek insan gücü
         </p>
@@ -441,7 +483,10 @@ export default function WarPanels({
           .filter((b) => b.attacker === c.id || b.defender === c.id)
           .map((b) => (
             <div className={styles.card} key={b.id} data-testid="battle-report">
-              <h3>⚔ {GEOGRAPHY[b.province].name} muharebesi</h3>
+              <h3>
+                <MilitaryIcon name="attack" />
+                {GEOGRAPHY[b.province].name} muharebesi
+              </h3>
               <p>
                 {w.countries[b.attacker].name} saldırıyor ·{" "}
                 {w.countries[b.defender].name} savunuyor
@@ -534,7 +579,8 @@ export default function WarPanels({
               </small>
             )}
             <h3>
-              {UNITS[a.type].symbol} {a.name}
+              <MilitaryIcon name={unitIcon(a.type)} />
+              {a.name}
             </h3>
             <p>
               {GEOGRAPHY[a.province].name} ·{" "}
@@ -675,7 +721,8 @@ export default function WarPanels({
                 onClick={() => onArmy(a.id)}
               >
                 <span>
-                  {UNITS[a.type].symbol} {a.name}
+                  <MilitaryIcon name={unitIcon(a.type)} />
+                  {a.name}
                   <small>{GEOGRAPHY[a.province].name}</small>
                 </span>
                 <span>
@@ -711,7 +758,10 @@ export default function WarPanels({
           armyId={armyId}
           onOffensive={onOffensive}
         />
-        <h3>Savunma hatları</h3>
+        <h3>
+          <MilitaryIcon name="defend" />
+          Savunma hatları
+        </h3>
         <p>
           Haritada komşu eyaletlere sırayla tıklayarak savunma hattını çiz. Tüm
           tümenler bu hat boyunca dağılır; tek birliğe yeni emir vermen o
@@ -733,7 +783,10 @@ export default function WarPanels({
               </button>
             </div>
           ))}
-        <h3>Yeni tümen eğit</h3>
+        <h3>
+          <MilitaryIcon name="infantry" />
+          Yeni tümen eğit
+        </h3>
         <label className={styles.field}>
           Birlik tipi
           <select
@@ -751,6 +804,7 @@ export default function WarPanels({
           </select>
         </label>
         <p>
+          <MilitaryIcon name={unitIcon(unit)} />
           {number(UNITS[unit].men)} asker · {UNITS[unit].days} gün
           <br />
           {Object.entries(UNITS[unit].equipment)
@@ -777,6 +831,7 @@ export default function WarPanels({
             })
           }
         >
+          <MilitaryIcon name="infantry" />
           Eğitime başla ·{" "}
           {p.controller === c.id && p.owner === c.id
             ? geo.name
@@ -785,6 +840,7 @@ export default function WarPanels({
         {c.recruitment.map((q) => (
           <div className={styles.card} key={q.id}>
             <h4>
+              <MilitaryIcon name={unitIcon(q.type)} />
               {UNITS[q.type].name} · {GEOGRAPHY[q.province].name}
             </h4>
             <Progress value={q.progress} total={q.total} />
@@ -796,7 +852,10 @@ export default function WarPanels({
     return (
       <>
         <div className={styles.eyebrow}>SANAYİ VE TEDARİK</div>
-        <h2>Ekonomi</h2>
+        <h2>
+          <MilitaryIcon name="factory" size={26} />
+          Ekonomi
+        </h2>
         <div className={styles.statsGrid}>
           <Stat
             label="Sivil kapasite"
@@ -843,6 +902,7 @@ export default function WarPanels({
             <Stat
               key={id}
               label={name}
+              icon={resourceIcon(id as Resource)}
               value={number(c.stock[id as Resource])}
             />
           ))}
@@ -865,7 +925,10 @@ export default function WarPanels({
               data-testid={`production-${id}`}
             >
               <div>
-                <strong>{d.name}</strong>
+                <strong>
+                  <MilitaryIcon name={equipmentIcon(id as Equipment)} />
+                  {d.name}
+                </strong>
                 <small>
                   Depo: {number(c.equipment[id as Equipment])} ·{" "}
                   {locked
@@ -912,7 +975,11 @@ export default function WarPanels({
                     })
                   }
                 >
-                  −
+                  <MilitaryIcon
+                    name="minus"
+                    size={13}
+                    style={{ marginInlineEnd: 0 }}
+                  />
                 </button>
                 <b>{line?.factories ?? 0}</b>
                 <button
@@ -926,7 +993,11 @@ export default function WarPanels({
                     })
                   }
                 >
-                  ＋
+                  <MilitaryIcon
+                    name="plus"
+                    size={13}
+                    style={{ marginInlineEnd: 0 }}
+                  />
                 </button>
               </div>
             </div>
@@ -943,7 +1014,8 @@ export default function WarPanels({
         {c.construction.map((q, i) => (
           <div key={q.id} className={styles.card}>
             <h4>
-              {i + 1}. {BUILDINGS[q.building].name}
+              {i + 1}. <MilitaryIcon name={buildingIcon(q.building)} />
+              {BUILDINGS[q.building].name}
             </h4>
             <p>
               {GEOGRAPHY[q.province].name}
@@ -966,7 +1038,10 @@ export default function WarPanels({
     return (
       <>
         <div className={styles.eyebrow}>DIŞİŞLERİ</div>
-        <h2>Diplomasi</h2>
+        <h2>
+          <MilitaryIcon name="diplomacy" size={26} />
+          Diplomasi
+        </h2>
         <PeacePanel w={w} command={command} target={target} />
         {targetSelect}
         <div className={styles.countryHead}>
@@ -1156,7 +1231,10 @@ export default function WarPanels({
     return (
       <>
         <div className={styles.eyebrow}>BİLİM VE DOKTRİNLER</div>
-        <h2>Araştırma</h2>
+        <h2>
+          <MilitaryIcon name="research" size={26} />
+          Araştırma
+        </h2>
         <p className={styles.subtitle}>
           {c.research.length} / {researchSlots(c)} yuva · Hız bonusu %
           {Math.round((c.science + (c.advisor === "science" ? 0.15 : 0)) * 100)}
@@ -1205,7 +1283,11 @@ export default function WarPanels({
                   {t.branch} · {t.year}
                 </small>
                 <h3>
-                  {done ? "✓ " : ""}
+                  {done ? (
+                    <MilitaryIcon name="check" size={16} />
+                  ) : (
+                    <MilitaryIcon name="research" size={16} />
+                  )}
                   {t.name}
                 </h3>
                 <p>{t.description}</p>
@@ -1307,7 +1389,10 @@ export default function WarPanels({
             </div>
           ))}
         </details>
-        <h3>Ulusal odak ağacı</h3>
+        <h3>
+          <MilitaryIcon name="medal" />
+          Ulusal odak ağacı
+        </h3>
         {c.focus && (
           <div className={styles.card}>
             <h4>{focusTree(c.id).find((f) => f.id === c.focus?.id)?.name}</h4>
@@ -1328,7 +1413,11 @@ export default function WarPanels({
               >
                 <small>{f.branch}</small>
                 <h3>
-                  {done ? "✓ " : ""}
+                  {done ? (
+                    <MilitaryIcon name="check" size={16} />
+                  ) : (
+                    <MilitaryIcon name="medal" size={16} />
+                  )}
                   {f.name}
                 </h3>
                 <p>{f.description}</p>
@@ -1364,13 +1453,19 @@ export default function WarPanels({
     return (
       <>
         <div className={styles.eyebrow}>HAVA · DENİZ · İSTİHBARAT</div>
-        <h2>Harekât merkezi</h2>
+        <h2>
+          <MilitaryIcon name="operations" size={26} />
+          Harekât merkezi
+        </h2>
         {targetSelect}
         <AirNavalPanel w={w} command={command} target={target} />
         <details className={styles.fold}>
           <summary>Hızlı hava ve deniz emirleri</summary>
           <div className={styles.card}>
-            <h3>Hava komutanlığı</h3>
+            <h3>
+              <MilitaryIcon name="plane" />
+              Hava komutanlığı
+            </h3>
             <p>
               {number(
                 c.air.wings
@@ -1435,7 +1530,10 @@ export default function WarPanels({
             </button>
           </div>
           <div className={styles.card}>
-            <h3>Deniz komutanlığı</h3>
+            <h3>
+              <MilitaryIcon name="navy" />
+              Deniz komutanlığı
+            </h3>
             <p>
               {
                 c.navy.ships.filter(
@@ -1484,7 +1582,10 @@ export default function WarPanels({
           </div>
         </details>
         <div className={styles.card}>
-          <h3>İstihbarat teşkilatı</h3>
+          <h3>
+            <MilitaryIcon name="espionage" />
+            İstihbarat teşkilatı
+          </h3>
           {!c.agency ? (
             <>
               <p>

@@ -1,4 +1,5 @@
 "use client";
+import MilitaryIcon from "./MilitaryIcon";
 
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -144,7 +145,11 @@ export default function CommanderBar({
               aria-label="Komutan panelini kapat"
               onClick={closePanel}
             >
-              ×
+              <MilitaryIcon
+                name="close"
+                size={14}
+                style={{ marginInlineEnd: 0 }}
+              />
             </button>
           </div>
           <div className={styles.actions}>
@@ -253,7 +258,8 @@ export default function CommanderBar({
                     })
                   }
                 >
-                  ◇ Savun
+                  <MilitaryIcon name="defend" size={16} />
+                  Savun
                 </button>
                 <button
                   type="button"
@@ -268,7 +274,8 @@ export default function CommanderBar({
                     })
                   }
                 >
-                  ↗ Saldır
+                  <MilitaryIcon name="attack" size={16} />
+                  Saldır
                 </button>
               </div>
               <p data-testid="commander-order-description">
@@ -317,10 +324,12 @@ export default function CommanderBar({
         <button
           type="button"
           data-testid="commander-create"
+          aria-label="+ Komutan"
           disabled={locked}
           onClick={() => command({ type: "commanderCreate" })}
         >
-          + Komutan
+          <MilitaryIcon name="plus" size={13} />
+          Komutan
         </button>
       </div>
       <div className={styles.roster}>

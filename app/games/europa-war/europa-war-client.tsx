@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import WarMap, { type MapMode } from "./strategy/WarMap";
 import WarPanels, { Meter, number, TABS, type Tab } from "./strategy/WarPanels";
 import CommanderBar from "./strategy/CommanderBar";
+import MilitaryIcon from "./strategy/MilitaryIcon";
 import CommandCenter from "./strategy/CommandCenter";
 import { EasyPlayMode } from "./strategy/EasyCommandGuide";
 import {
@@ -87,7 +88,10 @@ function Saves({
   return (
     <>
       <div className={styles.eyebrow}>YEREL ARŞİV</div>
-      <h2>Kayıtlar</h2>
+      <h2>
+        <MilitaryIcon name="save" size={26} />
+        Kayıtlar
+      </h2>
       <p>
         Seferler bu tarayıcıda saklanır. Başka cihaza taşımak için JSON
         dosyasını indir. Her 14 oyun gününde iki dönüşümlü otomatik yuva
@@ -103,18 +107,24 @@ function Saves({
           <div className={styles.buttonRow}>
             {!slot.startsWith("auto") && (
               <button disabled={loading} onClick={() => save(slot)}>
+                <MilitaryIcon name="save" size={15} />
                 Bu yuvaya kaydet
               </button>
             )}
             <button disabled={!valid || loading} onClick={() => load(slot)}>
+              <MilitaryIcon name="load" size={15} />
               Yükle
             </button>
           </div>
         </div>
       ))}
       <div className={styles.buttonRow}>
-        <button onClick={download}>JSON dosyası indir</button>
+        <button onClick={download}>
+          <MilitaryIcon name="download" size={15} />
+          JSON dosyası indir
+        </button>
         <button disabled={loading} onClick={() => input.current?.click()}>
+          <MilitaryIcon name="load" size={15} />
           Dosyadan yükle
         </button>
       </div>
@@ -593,19 +603,31 @@ export default function EuropaWarClient() {
         </div>
         <div className={styles.topStats}>
           <div title="Hazine">
-            <span>HAZİNE</span>
+            <span>
+              <MilitaryIcon name="treasury" size={12} />
+              HAZİNE
+            </span>
             <b>{number(c.treasury)}</b>
           </div>
           <div title="Yedek insan gücü">
-            <span>İNSAN GÜCÜ</span>
+            <span>
+              <MilitaryIcon name="manpower" size={12} />
+              İNSAN GÜCÜ
+            </span>
             <b>{number(c.manpower)}</b>
           </div>
           <div title="Siyasi güç">
-            <span>SİYASİ GÜÇ</span>
+            <span>
+              <MilitaryIcon name="politics" size={12} />
+              SİYASİ GÜÇ
+            </span>
             <b>{number(c.political)}</b>
           </div>
           <div title="Dünya gerilimi">
-            <span>DÜNYA GERİLİMİ</span>
+            <span>
+              <MilitaryIcon name="tension" size={12} />
+              DÜNYA GERİLİMİ
+            </span>
             <b className={shown.tension > 50 ? styles.red : ""}>
               %{Math.round(shown.tension)}
             </b>
@@ -629,7 +651,7 @@ export default function EuropaWarClient() {
               aria-label={paused ? "Zamanı başlat" : "Zamanı duraklat"}
               title="Boşluk: duraklat / devam et"
             >
-              {paused ? "▶" : "Ⅱ"}
+              <MilitaryIcon name={paused ? "play" : "pause"} size={12} />
             </button>
             {[1, 2, 3, 4, 5].map((s) => (
               <button
@@ -659,12 +681,16 @@ export default function EuropaWarClient() {
               title={label}
               disabled={setup}
             >
-              <span>{icon}</span>
+              <span className={styles.militaryEmblem}>
+                <MilitaryIcon name={icon} size={24} />
+              </span>
               <small>{label}</small>
             </button>
           ))}
           <button onClick={newCampaign} title="Yeni sefer">
-            <span>↻</span>
+            <span className={styles.militaryEmblem}>
+              <MilitaryIcon name="reset" size={23} />
+            </span>
             <small>Yeni sefer</small>
           </button>
         </nav>
@@ -823,7 +849,8 @@ export default function EuropaWarClient() {
                       setMessage("");
                     }}
                   >
-                    ▶ Zamanı ilerlet
+                    <MilitaryIcon name="play" size={14} />
+                    Zamanı ilerlet
                   </button>
                 )}
                 <button onClick={() => setPanel(true)}>
@@ -833,7 +860,7 @@ export default function EuropaWarClient() {
                   aria-label="Bildirimi kapat"
                   onClick={() => setMessage("")}
                 >
-                  ×
+                  <MilitaryIcon name="close" size={14} />
                 </button>
               </div>
             </div>
@@ -890,7 +917,7 @@ export default function EuropaWarClient() {
                   setMessage("");
                 }}
               >
-                ×
+                <MilitaryIcon name="close" size={14} />
               </button>
             </div>
             <div ref={panelBodyRef} className={styles.panelBody}>
@@ -910,7 +937,7 @@ export default function EuropaWarClient() {
                     aria-label="Bildirimi kapat"
                     onClick={() => setMessage("")}
                   >
-                    ×
+                    <MilitaryIcon name="close" size={14} />
                   </button>
                 </div>
               )}

@@ -1,4 +1,5 @@
 "use client";
+import MilitaryIcon from "./MilitaryIcon";
 
 import { useMemo, useState } from "react";
 import { COMMANDER_CAPACITY } from "./commander-roster";
@@ -77,7 +78,13 @@ export default function EasyCommandGuide({
       aria-label="Adım adım komuta"
     >
       <header>
-        <span aria-hidden="true">⚑</span>
+        <span aria-hidden="true">
+          <MilitaryIcon
+            name="command"
+            size={24}
+            style={{ marginInlineEnd: 0 }}
+          />
+        </span>
         <div>
           <h3>Bir komutan, bir cephe.</h3>
           <small>
@@ -246,7 +253,8 @@ export default function EasyCommandGuide({
                 })
               }
             >
-              ◇ Savun
+              <MilitaryIcon name="defend" size={16} />
+              Savun
             </button>
             <button
               type="button"
@@ -261,7 +269,8 @@ export default function EasyCommandGuide({
                 })
               }
             >
-              ↗ Saldır
+              <MilitaryIcon name="attack" size={16} />
+              Saldır
             </button>
           </div>
           <p>
@@ -303,7 +312,8 @@ export default function EasyCommandGuide({
             disabled={locked}
             onClick={onResume}
           >
-            ▶ Emirleri yürüt
+            <MilitaryIcon name="play" size={14} />
+            Emirleri yürüt
           </button>
         )}
         {onShowMap && (

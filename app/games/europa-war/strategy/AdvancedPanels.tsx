@@ -1,5 +1,6 @@
 "use client";
 import { useMemo, useState } from "react";
+import MilitaryIcon, { equipmentIcon, unitIcon } from "./MilitaryIcon";
 import {
   AIRCRAFT,
   AIR_MISSIONS,
@@ -74,7 +75,10 @@ export function ArmyTools({
           ).map(([id, d]) => (
             <div className={styles.mission} key={id}>
               <h4>
-                {d.name} {a.support.includes(id) && "✓"}
+                {d.name}{" "}
+                {a.support.includes(id) && (
+                  <MilitaryIcon name="check" size={14} />
+                )}
               </h4>
               <p>{d.description}</p>
               <button
@@ -105,7 +109,10 @@ export function ArmyTools({
         </details>
       )}
       <details className={styles.fold} open>
-        <summary>Birlikte taarruz planla</summary>
+        <summary>
+          <MilitaryIcon name="attack" />
+          Birlikte taarruz planla
+        </summary>
         <p>
           Tümenleri seç, hedeflerini haritada işaretle. Plan ikmal ve düşman
           gücünü değerlendirerek ilerler.
@@ -145,6 +152,7 @@ export function ArmyTools({
                   )
                 }
               />
+              <MilitaryIcon name={unitIcon(a.type)} />
               {a.name}
               <small>{GEOGRAPHY[a.province].name}</small>
             </label>
@@ -262,14 +270,20 @@ export function AirNavalPanel({
   return (
     <>
       <details className={styles.fold} open>
-        <summary>Hava kanatları · {c.air.wings.length}</summary>
+        <summary>
+          <MilitaryIcon name="plane" />
+          Hava kanatları · {c.air.wings.length}
+        </summary>
         <p>
           Her kanadın üssü, menzili ve görevi ayrıdır. Sağlam ve yeterli
           büyüklükte üsler uçuşları verimli kılar.
         </p>
         {c.air.wings.map((wing) => (
           <div key={wing.id} className={styles.card}>
-            <h4>{wing.name}</h4>
+            <h4>
+              <MilitaryIcon name={equipmentIcon(wing.model)} />
+              {wing.name}
+            </h4>
             <p>
               {Math.floor(wing.count)}/{wing.size} uçak · Hazırlık %
               {Math.round(wing.readiness)} · Görev etkinliği %
@@ -423,6 +437,7 @@ export function AirNavalPanel({
       </details>
       <details className={styles.fold}>
         <summary>
+          <MilitaryIcon name="navy" />
           Donanma ve deniz bölgeleri · {c.navy.ships.length} gemi
         </summary>
         <div className={styles.seaStatus}>
@@ -439,7 +454,10 @@ export function AirNavalPanel({
         </p>
         {c.navy.ships.map((ship) => (
           <div className={styles.card} key={ship.id}>
-            <h4>{ship.name}</h4>
+            <h4>
+              <MilitaryIcon name={equipmentIcon(ship.model)} />
+              {ship.name}
+            </h4>
             <p>
               Gövde %{Math.floor(ship.health)} · {SEA_ZONES[ship.zone].name}
               {ship.transit > 0 ? ` · ${ship.transit} gün intikal` : ""}

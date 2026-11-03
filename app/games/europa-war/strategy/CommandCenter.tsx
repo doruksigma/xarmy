@@ -1,4 +1,5 @@
 "use client";
+import MilitaryIcon from "./MilitaryIcon";
 import { useState } from "react";
 import ActionPreview from "./ActionPreview";
 import EasyCommandGuide from "./EasyCommandGuide";
@@ -47,7 +48,10 @@ export default function CommandCenter({
       <div className={styles.eyebrow}>
         GENEL DURUM · {c.wars.length ? "SAVAŞ DÖNEMİ" : "HAZIRLIK DÖNEMİ"}
       </div>
-      <h2>Komuta merkezi</h2>
+      <h2>
+        <MilitaryIcon name="command" size={26} />
+        Komuta merkezi
+      </h2>
       <p className={styles.subtitle}>
         Ülkenin yönünü sen belirle. Ayrıntıları istediğin zaman aç.
       </p>
@@ -92,14 +96,20 @@ export default function CommandCenter({
         <summary>Ülke durumu ve öneriler</summary>
         <div className={styles.commandStats}>
           {[
-            ["Bölge", controlled(w, c.id).length],
-            ["Tümen", armies.length],
-            ["Uçak", Math.floor(wings)],
-            ["Gemi", c.navy.ships.length],
-          ].map(([label, n]) => (
+            ["Bölge", controlled(w, c.id).length, "province"],
+            ["Tümen", armies.length, "infantry"],
+            ["Uçak", Math.floor(wings), "plane"],
+            ["Gemi", c.navy.ships.length, "ship"],
+          ].map(([label, n, icon]) => (
             <div key={label}>
               <strong>{n}</strong>
-              <span>{label}</span>
+              <span>
+                <MilitaryIcon
+                  name={icon as "province" | "infantry" | "plane" | "ship"}
+                  size={15}
+                />
+                {label}
+              </span>
             </div>
           ))}
         </div>
@@ -214,24 +224,30 @@ export default function CommandCenter({
         </summary>
         {c.focus && (
           <p>
-            ✦ {focusTree(c.id).find((f) => f.id === c.focus!.id)?.name} ·{" "}
+            <MilitaryIcon name="medal" size={15} />
+            {focusTree(c.id).find((f) => f.id === c.focus!.id)?.name} ·{" "}
             {Math.ceil(c.focus.total - c.focus.progress)} gün
           </p>
         )}
         {c.research.map((q) => (
           <p key={q.id}>
-            ⌬ {TECHNOLOGIES.find((t) => t.id === q.id)?.name} · %
+            <MilitaryIcon name="research" size={15} />
+            {TECHNOLOGIES.find((t) => t.id === q.id)?.name} · %
             {Math.floor((q.progress / q.total) * 100)}
           </p>
         ))}
         {c.construction.map((q) => (
           <p key={q.id}>
-            ▥ {BUILDINGS[q.building].name} · {GEOGRAPHY[q.province].name} · %
+            <MilitaryIcon name="factory" size={15} />
+            {BUILDINGS[q.building].name} · {GEOGRAPHY[q.province].name} · %
             {Math.floor((q.progress / q.total) * 100)}
           </p>
         ))}
         {c.recruitment.length > 0 && (
-          <p>⚑ {c.recruitment.length} tümen eğitimde.</p>
+          <p>
+            <MilitaryIcon name="infantry" size={15} />
+            {c.recruitment.length} tümen eğitimde.
+          </p>
         )}
         {!c.focus &&
           !c.research.length &&

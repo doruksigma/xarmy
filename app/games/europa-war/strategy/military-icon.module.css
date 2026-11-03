@@ -1,0 +1,9 @@
+.icon {
+  display: inline-block;
+  flex: none;
+  vertical-align: -0.19em;
+  margin-inline-end: 0.3em;
+  overflow: visible;
+  pointer-events: none;
+  color: inherit;
+}

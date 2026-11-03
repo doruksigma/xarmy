@@ -55,6 +55,11 @@
   border-radius: 3px;
   text-shadow: 0 1px 2px #000;
 }
+.labels :global(.map3d-label svg) {
+  display: inline-block;
+  vertical-align: middle;
+  margin-right: 4px;
+}
 .labels :global(.map3d-label[data-kind="capital"]) {
   font-size: 11px;
   color: #fff1cb;
