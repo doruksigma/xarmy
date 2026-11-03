@@ -14,6 +14,7 @@ import { createScenery } from "./map3d-scenery";
 import { createCityLights } from "./map3d-city-lights";
 import { createMovementArrows } from "./map3d-movement-arrows";
 import { createMilitaryMapIcon } from "./military-symbols";
+import { getVisibleUnitVisualResearch } from "./map3d-unit-research";
 import { politicalCountryColor } from "./map3d-cartography-palette";
 import {
   createUnitModels,
@@ -343,6 +344,9 @@ void main() {
       this.listen(canvas, "keydown", this.keyDown);
       this.listen(canvas, "webglcontextlost", this.contextLost);
       this.listen(document, "visibilitychange", () => {
+        this.unitAnimationActive = false;
+        this.lastUnitFrame = 0;
+        this.units.suspend();
         if (!document.hidden) {
           this.dirty = true;
           this.lastFrame = 0;
@@ -849,6 +853,7 @@ void main() {
             ? Math.atan2(to.x - origin.x, to.y - origin.y)
             : Math.PI,
         tint: new THREE.Color(world.countries[army.country].color).getHex(),
+        visual: getVisibleUnitVisualResearch(world, armies),
         overlay,
         combat,
         resolvedCombat,
@@ -1385,6 +1390,16 @@ void main() {
         this.units.stats.dynamicLights,
       );
       this.canvas.dataset.unitHeadlights = String(this.units.stats.headlights);
+      this.canvas.dataset.unitVisualTiers = JSON.stringify(
+        this.units.stats.modelVariants,
+      );
+      this.canvas.dataset.idleHeads = String(this.units.stats.idleHeads);
+      this.canvas.dataset.idleAnimating = String(
+        this.units.stats.idleAnimating,
+      );
+      this.canvas.dataset.headYawSample = JSON.stringify(
+        this.units.stats.headYawSamples,
+      );
       this.canvas.dataset.captures = String(this.units.stats.captures);
       this.canvas.dataset.modelDetail = String(this.units.stats.detail);
       this.canvas.dataset.cameraDistance = this.camera.position

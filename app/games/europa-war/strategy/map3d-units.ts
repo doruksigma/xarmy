@@ -2,7 +2,14 @@ import * as THREE from "three";
 import type { Army } from "./types";
 import type { GraphicsQuality } from "./map3d-visuals";
 import { createCombatLighting } from "./map3d-combat-lighting";
-import { createLandModelGeometries } from "./map3d-land-models";
+import {
+  createLandModelGeometries,
+  INFANTRY_NECK_PIVOT,
+} from "./map3d-land-models";
+import type {
+  UnitVisualResearch,
+  VisualResearchTier,
+} from "./map3d-unit-research";
 import { createLandMaterial } from "./map3d-land-material";
 
 /** Original procedural miniatures. Presentation scale is independent of troop strength. */
@@ -42,6 +49,7 @@ export interface UnitFormation {
   angle: number;
   moving: boolean;
   tint: number;
+  visual?: UnitVisualResearch;
   combat?: { key: string; target: THREE.Vector3 };
   capture?: { key: string; progress: number };
 }
@@ -70,6 +78,12 @@ export interface UnitModelStats {
   groundGlows: number;
   dynamicLights: number;
   headlights: number;
+  idleHeads: number;
+  idleAnimating: boolean;
+  headYawSamples: { id: string; tier: VisualResearchTier; yaw: number }[];
+  modelVariants: Record<UnitDisplayKind, number[]>;
+  modelBanks: number;
+  modelCapacity: number;
 }
 
 const TANK_WHEEL_Z = [-1.72, -0.86, 0, 0.86, 1.72] as const;
@@ -88,6 +102,8 @@ const BATCH_NAMES = [
   "tank-treads",
   "support-crates",
   "capture-poles",
+  "infantry-head",
+  "infantry-head-details",
 ] as const;
 
 /** Display symbols and effects consume actual event descriptors, never simulate damage. */
@@ -102,20 +118,95 @@ export function createUnitModels(
     metalness: 0.08,
     side: THREE.DoubleSide,
   });
-  const geometries = createLandModelGeometries();
-  const batches = geometries.map((geometry, i) => {
-    const capacity =
-      MAX_UNIT_MINIATURES * (i === 9 ? 10 : i === 1 || i === 10 ? 2 : 1);
+  type Bank = {
+    tier: VisualResearchTier;
+    geometries: THREE.BufferGeometry[];
+    batches: THREE.InstancedMesh[];
+    counts: Uint32Array;
+  };
+  const banks = new Map<VisualResearchTier, Bank>();
+  const requested = Array.from(
+    { length: 4 },
+    () => new Uint32Array(BATCH_NAMES.length),
+  );
+  const makeBatch = (
+    geometry: THREE.BufferGeometry,
+    tier: VisualResearchTier,
+    part: number,
+    capacity: number,
+  ) => {
     const mesh = new THREE.InstancedMesh(geometry, material, capacity);
-    mesh.name = `unit-${BATCH_NAMES[i]}`;
+    mesh.name = `unit-${BATCH_NAMES[part]}${tier ? `-tier-${tier}` : ""}`;
     mesh.count = 0;
+    mesh.visible = false;
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    geometry.setAttribute(
+      "unitUniform",
+      new THREE.InstancedBufferAttribute(
+        new Float32Array(capacity * 3),
+        3,
+      ).setUsage(THREE.DynamicDrawUsage),
+    );
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     mesh.frustumCulled = false;
     scene.add(mesh);
     return mesh;
-  });
+  };
+  const createBank = (tier: VisualResearchTier): Bank => {
+    const geometries = createLandModelGeometries(tier);
+    const bank = {
+      tier,
+      geometries,
+      batches: geometries.map((geometry, i) => makeBatch(geometry, tier, i, 8)),
+      counts: new Uint32Array(geometries.length),
+    };
+    banks.set(tier, bank);
+    return bank;
+  };
+  const removeBank = (bank: Bank) => {
+    for (const mesh of bank.batches) {
+      scene.remove(mesh);
+      mesh.dispose();
+      mesh.geometry.dispose();
+    }
+    banks.delete(bank.tier);
+  };
+  const capacityFor = (need: number) =>
+    2 ** Math.ceil(Math.log2(Math.max(8, need)));
+  const reserveBank = (bank: Bank, needs: Uint32Array) => {
+    bank.counts.fill(0);
+    for (let part = 0; part < bank.batches.length; part++) {
+      const old = bank.batches[part],
+        capacity = old.instanceMatrix.count,
+        need = needs[part];
+      if (need <= capacity) continue;
+      // Replace owned GPU buffers only when crossing a capacity bucket. Cloning
+      // once here lets the old geometry/instance buffers be disposed normally.
+      const geometry = old.geometry.clone();
+      scene.remove(old);
+      old.visible = false;
+      old.count = 0;
+      old.dispose();
+      old.geometry.dispose();
+      bank.geometries[part] = geometry;
+      bank.batches[part] = makeBatch(
+        geometry,
+        bank.tier,
+        part,
+        capacityFor(need),
+      );
+    }
+  };
+  const tierFor = (
+    formation: UnitFormation,
+    kind: UnitDisplayKind,
+  ): VisualResearchTier => {
+    const value = formation.visual?.[kind];
+    return value === 1 || value === 2 || value === 3 ? value : 0;
+  };
+  let currentBank: Bank = createBank(0);
+  const uniform = new THREE.Color(0x666d49);
   const accentGeometry = new THREE.BoxGeometry(0.11, 0.18, 0.24);
   const accents = new THREE.InstancedMesh(
     accentGeometry,
@@ -218,7 +309,6 @@ export function createUnitModels(
     destination = new THREE.Vector3(),
     direction = new THREE.Vector3(),
     up = new THREE.Vector3(0, 1, 0);
-  const counts = new Uint32Array(batches.length);
   const stats: UnitModelStats = {
     infantry: 0,
     vehicles: 0,
@@ -238,12 +328,29 @@ export function createUnitModels(
     groundGlows: 0,
     dynamicLights: 0,
     headlights: 0,
+    idleHeads: 0,
+    idleAnimating: false,
+    headYawSamples: [],
+    modelVariants: {
+      infantry: [0, 0, 0, 0],
+      tank: [0, 0, 0, 0],
+      artillery: [0, 0, 0, 0],
+      truck: [0, 0, 0, 0],
+    },
+    modelBanks: 1,
+    modelCapacity: BATCH_NAMES.length * 8,
   };
   const captures = new Map<string, { progress: number; frame: number }>();
   const combats = new Map<
     string,
     { startedAt: number; repeatOffset: number; frame: number }
   >();
+  const idleHeads = new Map<
+    string,
+    { yaw: number; phase: number; frame: number }
+  >();
+  const headTransform = new THREE.Object3D();
+  let wasActive = false;
   let disposed = false,
     clock = 0,
     lastNow = -1,
@@ -258,13 +365,17 @@ export function createUnitModels(
     yaw = 0,
     scale = 1,
   ) => {
-    const index = counts[batch]++;
+    const index = currentBank.counts[batch]++;
     transform.position.set(x, y, z);
     transform.rotation.set(pitch, yaw, 0);
     transform.scale.setScalar(scale);
     transform.updateMatrix();
     transform.matrix.premultiply(parent.matrix);
-    batches[batch].setMatrixAt(index, transform.matrix);
+    currentBank.batches[batch].setMatrixAt(index, transform.matrix);
+    const fabric = currentBank.geometries[batch].getAttribute(
+      "unitUniform",
+    ) as THREE.InstancedBufferAttribute;
+    fabric.setXYZ(index, uniform.r, uniform.g, uniform.b);
   };
   const point = (x: number, y: number, z: number, yaw = 0) =>
     origin
@@ -344,12 +455,16 @@ export function createUnitModels(
       options: UnitModelOptions,
     ) {
       if (disposed) return;
-      if (lastNow >= 0 && !options.paused && !options.reduced)
-        clock += Math.min(0.25, Math.max(0, now - lastNow) / 1000);
+      const active = !options.paused && !options.reduced;
+      const elapsed =
+        lastNow >= 0 && wasActive && active
+          ? Math.min(0.25, Math.max(0, now - lastNow) / 1000)
+          : 0;
+      clock += elapsed;
       lastNow = now;
+      wasActive = active;
       frame++;
       lighting.begin(options.quality, options.distance);
-      counts.fill(0);
       accents.count = 0;
       stats.infantry =
         stats.vehicles =
@@ -366,6 +481,58 @@ export function createUnitModels(
         stats.captures =
           0;
       stats.detail = options.distance < (options.quality === "low" ? 340 : 720);
+      stats.idleHeads = 0;
+      stats.idleAnimating = false;
+      stats.headYawSamples.length = 0;
+      for (const counts of Object.values(stats.modelVariants)) counts.fill(0);
+      for (const need of requested) need.fill(0);
+      let reserved = 0,
+        poles = 0;
+      for (const formation of formations) {
+        const layout = unitDisplayLayout(formation.armies.length);
+        if (!layout.length || reserved + layout.length > MAX_UNIT_MINIATURES)
+          continue;
+        reserved += layout.length;
+        for (const slot of layout) {
+          const need = requested[tierFor(formation, slot.kind)];
+          if (slot.kind === "infantry") {
+            need[0]++;
+            need[1] += 2;
+            need[13]++;
+            if (stats.detail) {
+              need[5]++;
+              need[14]++;
+            }
+          } else if (slot.kind === "tank") {
+            need[2]++;
+            need[6]++;
+            need[7]++;
+            need[9] += 10;
+            need[10] += 2;
+          } else if (slot.kind === "artillery") {
+            need[4]++;
+            need[8]++;
+            need[9] += 2;
+          } else {
+            need[3]++;
+            need[9] += 6;
+            need[11]++;
+          }
+        }
+        if (
+          formation.capture &&
+          formation.capture.progress >= 0 &&
+          formation.capture.progress < 1 &&
+          poles++ < MAX_UNIT_EFFECTS
+        )
+          requested[0][12]++;
+      }
+      for (const tier of [0, 1, 2, 3] as const) {
+        const needed = tier === 0 || requested[tier].some((value) => value > 0);
+        const bank = banks.get(tier);
+        if (needed) reserveBank(bank ?? createBank(tier), requested[tier]);
+        else if (bank) bank.counts.fill(0);
+      }
       effectScale = THREE.MathUtils.clamp(
         Number.isFinite(options.distance) ? options.distance / 420 : 1,
         1,
@@ -427,6 +594,14 @@ export function createUnitModels(
         for (let i = 0; i < layout.length; i++, models++) {
           const slot = layout[i],
             kind = slot.kind;
+          const tier = tierFor(formation, kind);
+          currentBank = banks.get(tier)!;
+          uniform.setHex(
+            Number.isFinite(formation.visual?.uniform)
+              ? formation.visual!.uniform
+              : 0x666d49,
+          );
+          stats.modelVariants[kind][tier]++;
           parent.position.set(
             formation.position.x + slot.x * cos + slot.z * sin,
             formation.position.y,
@@ -479,6 +654,59 @@ export function createUnitModels(
               -walk * 0.37 - rally * 0.08 + (combat ? 0.13 : 0),
             );
             if (stats.detail) put(5, 0, bob + stance, -kick, pitch);
+            const identity = formation.armies[0]?.id ?? `formation-${f}`;
+            let idle = idleHeads.get(identity);
+            if (!idle) {
+              let hash = 2166136261;
+              for (let c = 0; c < identity.length; c++)
+                hash = Math.imul(hash ^ identity.charCodeAt(c), 16777619);
+              idle = {
+                yaw: 0,
+                phase: ((hash >>> 0) / 0xffffffff) * Math.PI * 2,
+                frame,
+              };
+              idleHeads.set(identity, idle);
+            }
+            idle.frame = frame;
+            const watching =
+              !formation.moving && !combat && captureProgress < 0;
+            if (!watching) idle.yaw = 0;
+            else {
+              stats.idleHeads++;
+              if (active && options.distance < 950) {
+                const targetYaw = Math.sin(clock * 0.68 + idle.phase) * 0.45;
+                idle.yaw +=
+                  (targetYaw - idle.yaw) * (1 - Math.exp(-elapsed * 3.5));
+                stats.idleAnimating = true;
+              }
+            }
+            // Head yaw is local to the neck, then inherits the same stance and
+            // recoil transform as the torso. Rifle/muzzle transforms stay intact.
+            weaponMount.position.set(0, bob + stance, -kick);
+            weaponMount.rotation.set(pitch, 0, 0);
+            weaponMount.scale.setScalar(1);
+            weaponMount.updateMatrix();
+            headTransform.position.fromArray(INFANTRY_NECK_PIVOT);
+            headTransform.rotation.set(0, idle.yaw, 0);
+            headTransform.scale.setScalar(1);
+            headTransform.updateMatrix();
+            headTransform.matrix
+              .premultiply(weaponMount.matrix)
+              .premultiply(parent.matrix);
+            for (const part of stats.detail ? [13, 14] : [13]) {
+              const index = currentBank.counts[part]++;
+              currentBank.batches[part].setMatrixAt(
+                index,
+                headTransform.matrix,
+              );
+              (
+                currentBank.geometries[part].getAttribute(
+                  "unitUniform",
+                ) as THREE.InstancedBufferAttribute
+              ).setXYZ(index, uniform.r, uniform.g, uniform.b);
+            }
+            if (stats.headYawSamples.length < 8)
+              stats.headYawSamples.push({ id: identity, tier, yaw: idle.yaw });
             if (combat) {
               // Match the actual rifle muzzle after the body's brace/recoil transform.
               weaponMount.position.set(0, bob + stance, -kick);
@@ -710,6 +938,7 @@ export function createUnitModels(
           const rise = Math.min(1, captureProgress * 5),
             flutter =
               Math.sin(clock * 8) * 0.13 * Math.sin(captureProgress * Math.PI);
+          currentBank = banks.get(0)!;
           put(12, 0, 0, 0);
           transform.position.set(0, -(1 - rise) * 2.8, 0);
           transform.rotation.set(0, flutter, 0);
@@ -726,12 +955,20 @@ export function createUnitModels(
       // as their actual battle is absent, including hidden or removed armies.
       for (const [key, value] of combats)
         if (value.frame !== frame) combats.delete(key);
-      for (let i = 0; i < batches.length; i++) {
-        batches[i].count = counts[i];
-        batches[i].visible = counts[i] > 0;
-        batches[i].instanceMatrix.needsUpdate = true;
-        stats.instances += counts[i];
-      }
+      for (const [key, idle] of idleHeads)
+        if (idle.frame !== frame) idleHeads.delete(key);
+      stats.modelBanks = banks.size;
+      stats.modelCapacity = 0;
+      for (const bank of banks.values())
+        for (let i = 0; i < bank.batches.length; i++) {
+          const mesh = bank.batches[i];
+          mesh.count = bank.counts[i];
+          mesh.visible = mesh.count > 0;
+          mesh.instanceMatrix.needsUpdate = true;
+          mesh.geometry.getAttribute("unitUniform").needsUpdate = true;
+          stats.instances += bank.counts[i];
+          stats.modelCapacity += mesh.instanceMatrix.count;
+        }
       lighting.finish();
       stats.glows = lighting.stats.glows;
       stats.groundGlows = lighting.stats.groundGlows;
@@ -751,6 +988,11 @@ export function createUnitModels(
         stats.instances += mesh.count;
       }
     },
+    /** Reset frame timing after a hidden tab without advancing any visual clock. */
+    suspend() {
+      lastNow = -1;
+      wasActive = false;
+    },
     dispose() {
       if (disposed) return;
       disposed = true;
@@ -761,6 +1003,12 @@ export function createUnitModels(
         stats.headlights =
           0;
       captures.clear();
+      idleHeads.clear();
+      stats.idleHeads = 0;
+      stats.idleAnimating = false;
+      stats.headYawSamples.length = 0;
+      stats.modelBanks = stats.modelCapacity = 0;
+      for (const counts of Object.values(stats.modelVariants)) counts.fill(0);
       combats.clear();
       stats.infantry =
         stats.vehicles =
@@ -776,16 +1024,12 @@ export function createUnitModels(
         stats.impacts =
         stats.captures =
           0;
-      for (const mesh of batches) {
-        scene.remove(mesh);
-        mesh.dispose();
-      }
+      for (const bank of [...banks.values()]) removeBank(bank);
       for (const mesh of overlayBatches) {
         scene.remove(mesh);
         mesh.dispose();
       }
       for (const geometry of [
-        ...geometries,
         accentGeometry,
         flagGeometry,
         flashGeometry,

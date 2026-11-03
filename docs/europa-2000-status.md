@@ -457,6 +457,116 @@ Rapor: `/workspace/scratch/europa-military-final/report.json`.
 Görüntüler: `desktop-four-models-oblique-high.png` ve
 `desktop-country-movement-arrow.png`, aynı rapor klasöründe.
 
+## Devam çalışması: araştırma modelleri, bağımsız baş hareketi ve manuel kolay yönetim — 3 Kasım 2026
+
+- `map3d-unit-research.ts`: görünüm ülkenin tamamlanmış teknolojilerinden
+  türetilir. Piyade/topçu `weapons1/2/3`, tank `armor1/2/3`, kamyon önce
+  `motorization` ardından `engines` veya `mechanization` ile değişir.
+  Kuyrukta araştırma, araştırma ilerlemesi veya tarih tek başına kademe
+  açmaz; kayıt/yeniden yükleme için ayrı bir görünüm ilerlemesi saklanmaz.
+  Kendi/müttefik/aktif istihbaratlı ülkelerde tamamlanmış araştırma profili,
+  diğer görünen yabancılarda yalnız gözlenen birlik tipi kullanılır.
+  Böylece gizli araştırma modeli üzerinden açıklanmaz. Bütün 29 başlangıç
+  ülkesine kumaş paleti, isyancı ülkelere ana ülke tonu ve bilinmeyen ülkeye
+  güvenli varsayılan ton tanımlanır.
+- `map3d-land-models.ts`: her aileye temel dâhil dört özgün geometri kademesi;
+  kıyafet/başlık/tüfek/çanta, tank zırhı/tareti, top siperi ve kamyon gövdesi
+  birbirinden ayrılır. İlk 13 parça indeksine boyun merkezine yerleştirilen
+  baş ve baş ayrıntısı eklenir. Her kademede 15 parça, sırasıyla
+  **21.156 / 22.344 / 23.388 / 24.408 vertex** vardır; en büyük tek parça
+  **4.332 vertex**. Mevcut ayak, namlu, şehir açıklığı ve etiket yüksekliği
+  sınırları korunur. `unitCloth` maskesi, ten/metal/camı üniforma renginden
+  ayırır; PBR malzemesine hafif prosedürel kumaş/yüzey ayrıntısı eklenir.
+- `map3d-units.ts`: kademeler gerektiğinde oluşturulan, en fazla dört ortak
+  geometri grubunda tutulur. Kamera dışına çıkıp dönen ülke için yeniden
+  geometri/GPU tahsisi yapılmaz; örnek tamponları ihtiyaçla sınırlı boyut
+  basamaklarında büyür. Görünür minyatür sınırı 3.072 kalır. Duran piyade
+  başları kimliğe bağlı farklı evrelerde boyun çevresinde bakınır; gövde ve
+  tüfek döndürülmez. Yürüyüş, çatışma ve ele geçirme başı mevcut harekete
+  döndürür. Duraklatma/azaltılmış hareket/gizli sekme geçişinde kare
+  zamanlaması sıfırlanır; bekleme süresi devam edildiğinde animasyona eklenmez.
+- `map3d-renderer.ts`: görünür oluşumlara araştırma profili bağlanır; duraklatılmış
+  Düşük ayarda görünür tren yoksa mevcut ihtiyaç üzerine çizim korunur.
+  Baş hareketi için yeni bir sürekli döngü açılmaz. Şehir halkası, çatışma
+  halkası/arazi lekesi ve ortak sıcak pencere malzemesi ölçülü güçlendirilir;
+  şehir, halo ve 0/0/2/4 gerçek çatışma ışığı bütçeleri artmaz.
+- `SimpleManagement.tsx`, `CommandCenter.tsx`, istemci ve kolay rehber:
+  Tümen eğit/Yapı inşa et/Teknoloji seç/Diplomasi yap kısayolları gerçek
+  paneli açar; kendiliğinden kaynak harcamaz veya emir vermez. İnşaat
+  kısayolu kontrol edilen uygun bölgeyi seçer. Yardımcı ayarları başlangıçta
+  kapalı bölümde, açık yardımcı sayısı ise görünür kalır; kolay görünüm
+  kayıtlı otomasyon tercihlerini değiştirmez. Siyaset/hava/deniz tam görünümde,
+  gelişmiş ordu araçları ve tam araştırma ağacı açılabilir ayrıntılarda korunur.
+- `UnitResearchGuide.tsx`, `WarPanels.tsx`: kademe ve sonraki gerçek
+  araştırma/önkoşul açıklaması yanında manuel araştırma düğmesi bulunur.
+  Düğme mevcut doğrulanan araştırma komutunu uygular; eksik önkoşul,
+  süren araştırma ve dolu yuva durumlarında devre dışıdır. Topçu görünümü
+  ortak silah modernizasyonunu izler; yeni topçu teknolojisi eklenmez.
+- Gerçek ekran incelemesinde bulunan 2D harita simgesi boyutlandırması
+  düzeltildi: haritayı kaplayan SVG kuralı artık yalnız ana harita tuvaline
+  uygulanır. Katman düğmeleri ve birlik sayaçlarının simgeleri kendi küçük
+  boyutlarını korur.
+
+**Simülasyon ve kapsam:** Görsel profil, üniforma ve baş hareketi Dünya/RNG
+verisini, donanım stoku veya savaş gücünü değiştirmez. Bir grubun 1/2/3/4+
+tümen için sembolik piyade/tank/top/kamyon bileşimi korunur. Araştırmanın
+oyun etkileri mevcut teknoloji kurallarından gelir; görünüm fazladan bonus
+üretmez. Modeller prosedürel strateji minyatürleridir; AAA varlık paketi veya
+2.000 satırlık bütün mekaniklerin tamamlanması olarak raporlanmaz.
+
+**Bu aşamanın odaklı doğrulaması:** Son kaynaklarla 18 test dosyası sıkı
+TypeScript derlemesinden, **159/159** test birleşik koşudan geçti. Başarısız,
+atlanan veya iptal edilen test yok; süre 37,909 saniye. Değişen/yeni 17
+Europa TypeScript/TSX dosyası, testler dâhil, kapsamlı yerel lint denetiminden
+geçti. Paket; yeni araştırma/görünürlük, dört kademe, baş hareketi ve kaynak
+yaşam döngüsünü mevcut görsel/kolay rehber testleriyle birlikte doğrular.
+
+Gerçek dokuz araştırma emri ve gün sınırında tamamlanması, bitmemiş kuyruğun
+görünümü değiştirmemesi, kayıt/eski kayıt/geri dönüş, istihbarat süresinin
+bitmesi, değişmeyen namlu/yerleşim sınırları, bağımsız baş dönüşü,
+duraklatma/azaltılmış hareket/gizli sekme dönüşünde atlama olmaması,
+kamera dışına on kez çıkıp dönmede aynı model geometrilerinin yeniden
+kullanılması ve GPU kaynaklarının tek kez bırakılması kapsanır. Manuel
+panel eylemleri ayrıca aşağıdaki gerçek tarayıcı koşusuna tabidir.
+
+- Derleme: `/workspace/scratch/europa-research-review-compile.log`.
+- Testler: `/workspace/scratch/europa-research-review-tests.log`.
+- Lint: `/workspace/scratch/europa-research-review-lint.log`.
+- Bağımsız inceleme: `/workspace/scratch/europa-research-review-design.log`.
+
+Önceki aşamaların 136 test/19 tarayıcı kontrolü kendi tarihsel kaydıdır;
+bu sayıların üzerine eklenerek toplam gösterilmez.
+
+**Bu aşamanın üretim derlemesi:** `npm run build` son kaynaklarla başarılı;
+Next.js bütün sayfaları derledi, tip ve lint denetimleri geçti. Kayıt:
+`/workspace/scratch/europa-research-build-final.log`.
+
+**Tarayıcı doğrulaması:** Chromium/SwiftShader ile 1440×1000 masaüstü ve
+390×844 dokunmatik mobil emülasyonunda **10 benzersiz kontrol grubu geçti**;
+katkı veren koşularda uygulama/tarayıcı konsol hatası yok. Bunlar tek kesintisiz
+koşu değil, tamamlanmış grupların ayrı koşulardan birleştirilmesidir.
+Masaüstü araştırma düğmesi, yalnız simge CSS'i değiştirilmeden önce geçti;
+aynı akış mobilde son üretim derlemesinde tekrar geçti. Son masaüstü
+arayüz kontrolü düzeltilen simge boyutlarını da doğruladı.
+
+Kapsam: gerçek saatle araştırma tamamlanması, bekleyen araştırmanın modeli
+erken değiştirmemesi, dört ileri model, bağımsız baş hareketi ve donması,
+manuel seçimlerde tam kayıt eşitliği, kayıtlı yardımcı tercihlerinin korunması,
+gerçek karşılıklı hasarla ateş/ışık gösterimi ve yeni kayıtla efekt temizliği.
+High malzeme/gölge ve gerçek çatışma ışıkları da çizildi. Sürekli High çizimde
+yazılımsal ekran yakalama geciktiği için son çatışma görüntüsü gerçek Low
+muharebesi duraklatılıp azaltılmış hareket ve High seçilerek alındı; görünüm
+değişikliğinin kayıt durumunu değiştirmediği doğrulandı.
+
+- Betik: `scripts/test-europa-research-models-browser.cjs`.
+- Birleşik kanıt: `/workspace/scratch/europa-research-models-browser/combined-report.json`.
+- Model görüntüsü: `/workspace/scratch/europa-research-models-browser/desktop-upgraded-models-high.png`.
+- Çatışma görüntüsü: `/workspace/scratch/europa-research-models-browser/desktop-upgraded-combat-high-paused.png`.
+- Mobil görüntüsü: `/workspace/scratch/europa-research-models-browser/mobile-upgraded-combat-lights.png`.
+
+Fiziksel telefon/Windows FPS ölçümü ve uzun 1936–1945 sefer regresyonu bu
+odaklı görsel çalışmayla yapılmış sayılmaz. Canlı dağıtım bağımsız doğrulanmadı.
+
 ## 1–100 kapsamı: mevcut temel ve kalan işler
 
 Dosya adları aksi belirtilmedikçe `app/games/europa-war/strategy/` altındadır.

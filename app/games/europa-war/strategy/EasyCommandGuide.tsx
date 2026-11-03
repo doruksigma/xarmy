@@ -86,16 +86,12 @@ export default function EasyCommandGuide({
           />
         </span>
         <div>
-          <h3>Bir komutan, bir cephe.</h3>
+          <h3>Orduna emir ver</h3>
           <small>
             {country.flag} {country.name} · {guide.total} tümen
           </small>
         </div>
       </header>
-      <p>
-        Komutanını seç, bir komşu sınırına yerleştir, savunma veya saldırı emri
-        ver.
-      </p>
       {locked && (
         <p className={styles.status}>
           Ülken teslim oldu. Diplomasi ve barış koşullarını inceleyebilirsin.
@@ -129,9 +125,9 @@ export default function EasyCommandGuide({
         {guide.unassigned > 0 && (
           <>
             <p>
-              {guide.unassigned} tümen komutan bekliyor. Otomatik atama, mevcut
-              ve yeni tümenleri en fazla 12 tümenlik komutan gruplarına ayırır;
-              gerekirse yeni komutan açar.
+              {guide.unassigned} tümen boşta. İstersen mevcut ve yeni tümenleri
+              en fazla 12 tümenlik gruplara otomatik bağla; dolunca yeni komutan
+              açılır.
             </p>
             <button
               type="button"
@@ -183,8 +179,8 @@ export default function EasyCommandGuide({
           {(!deployedTarget || changingBorder) && (
             <>
               <p>
-                Yalnızca kara sınırın olan ülkeler gösterilir. Tümenler
-                erişilebilir sınır bölgelerine dengeli dağılır.
+                Komşunu seç. Tümenlerin ulaşılabilen sınır bölgelerine eşit
+                dağılsın.
               </p>
               <div
                 className={styles.neighbors}
@@ -283,8 +279,8 @@ export default function EasyCommandGuide({
           )}
           {!guide.canAttack && !locked && !deployedTarget.capitulated && (
             <p>
-              Saldırmak için bu ülkeyle savaş halinde olmalısın. Sınır görevi
-              kendiliğinden savaş başlatmaz.
+              Saldırmak için önce diplomasiden savaş ilan et. Sınıra
+              yerleştirmek savaş başlatmaz.
             </p>
           )}
           <button
@@ -300,8 +296,8 @@ export default function EasyCommandGuide({
       <div className={styles.step}>
         <p>
           {paused
-            ? "Zaman duraklatıldı. Verdiğin emirler zamanı başlattığında ilerler."
-            : "Zaman ilerliyor. Üstteki duraklatma düğmesiyle istediğin an düşünme molası ver."}
+            ? "Hazır olunca zamanı başlat; emirlerin ilerlesin."
+            : "Zaman ilerliyor. Düşünmek için üstteki duraklat düğmesini kullan."}
         </p>
         {paused && onResume && (
           <button

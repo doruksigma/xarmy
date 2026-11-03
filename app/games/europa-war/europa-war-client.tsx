@@ -553,7 +553,7 @@ export default function EuropaWarClient() {
     (p) => p.controller === c.id,
   ).length;
   return (
-    <div className={styles.app}>
+    <div className={`${styles.app}${simple ? ` ${styles.simpleView}` : ""}`}>
       <header className={styles.topbar}>
         <Link
           className={styles.brand}
@@ -670,7 +670,9 @@ export default function EuropaWarClient() {
       </header>
       <div className={styles.workspace}>
         <nav className={styles.rail} aria-label="Yönetim panelleri">
-          {TABS.map(([id, icon, label]) => (
+          {TABS.filter(
+            ([id]) => !simple || (id !== "politics" && id !== "operations"),
+          ).map(([id, icon, label]) => (
             <button
               key={id}
               className={tab === id && panel ? styles.active : ""}
@@ -951,6 +953,17 @@ export default function EuropaWarClient() {
                   paused={paused}
                   onResume={() => setPaused(false)}
                   onShowMap={() => setPanel(false)}
+                  onBuild={() => {
+                    const owned = Object.values(shown.provinces).filter(
+                      (province) => province.controller === shown.player,
+                    );
+                    const province =
+                      owned.find((item) => item.id === selected) ??
+                      owned.find((item) => item.id === c.capital) ??
+                      owned[0];
+                    if (province) setSelected(province.id);
+                    setTab("province");
+                  }}
                   selectedGeneralId={guideGeneralId}
                   onSelectedGeneralChange={setGuideGeneralId}
                   onDiplomacy={(country) => {
@@ -969,6 +982,7 @@ export default function EuropaWarClient() {
                 <WarPanels
                   key={`${campaignRevision}:${shown.player}`}
                   world={shown}
+                  simple={simple}
                   tab={tab}
                   selected={selected}
                   armyId={armyId}
@@ -997,11 +1011,14 @@ export default function EuropaWarClient() {
                     value={surrender(shown, c.id)}
                     color="#c78369"
                   />
-                  <p>{offline}</p>
-                  <small>
-                    Avrupa 1936 · Yaklaşık tarihsel sınırlar, şehir merkezli
-                    stratejik bölgeler. Veriler oyun ölçeğine uyarlanmıştır.
-                  </small>
+                  <details open={!simple}>
+                    <summary>Sefer bilgileri ve çevrimdışı durum</summary>
+                    <p>{offline}</p>
+                    <small>
+                      Avrupa 1936 · Yaklaşık tarihsel sınırlar, şehir merkezli
+                      stratejik bölgeler. Veriler oyun ölçeğine uyarlanmıştır.
+                    </small>
+                  </details>
                 </div>
               )}
             </div>
@@ -1047,10 +1064,11 @@ export default function EuropaWarClient() {
             <EasyPlayMode simple={simple} onChange={changePresentation} />
             <p className={styles.hint}>
               {simple
-                ? "Kolay yönetim, komutan ve sınır emirlerinde adım adım yol gösterir. İstersen ayrıntıları her an açabilirsin."
+                ? "Tümen eğit, yapı kur, teknoloji seç; komutanını sınırına yerleştir. Her önemli seçimi sen yaparsın."
                 : "Ülke istatistikleri ve ayrıntılı öneriler doğrudan gösterilir. İstediğin zaman kolay yönetime dönebilirsin."}{" "}
-              Bu seçim zorluğu veya oyun kurallarını değiştirmez; yardımcılara
-              kendin izin verirsin.
+              Siyaset, hava ve deniz harekâtları Tüm ayrıntılar görünümünde.
+              Görünüm seçimi oyun kurallarını veya yönetim yardımcısı ayarlarını
+              değiştirmez.
             </p>
             <div className={styles.scenarioTag}>
               II. DÜNYA SAVAŞI DÖNEMİ <span>01 OCAK 1936</span>

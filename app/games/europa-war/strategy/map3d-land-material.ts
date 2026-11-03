@@ -14,23 +14,42 @@ export function createLandMaterial() {
         "#include <common>",
         `#include <common>
 attribute vec2 unitSurface;
-varying vec2 fieldSurface;`,
+attribute float unitCloth;
+attribute vec3 unitUniform;
+varying vec2 fieldSurface;
+varying float fieldCloth;
+varying vec3 fieldUniform;
+varying vec3 fieldPosition;`,
       )
       .replace(
         "#include <begin_vertex>",
         `#include <begin_vertex>
-fieldSurface = unitSurface;`,
+fieldSurface = unitSurface;
+fieldCloth = unitCloth;
+fieldUniform = unitUniform;
+fieldPosition = position;`,
       );
     shader.fragmentShader = shader.fragmentShader
       .replace(
         "#include <common>",
         `#include <common>
-varying vec2 fieldSurface;`,
+varying vec2 fieldSurface;
+varying float fieldCloth;
+varying vec3 fieldUniform;
+varying vec3 fieldPosition;`,
+      )
+      .replace(
+        "#include <color_fragment>",
+        `#include <color_fragment>
+float clothShade = clamp(dot(vColor.rgb, vec3(0.2126, 0.7152, 0.0722)) / 0.145, 0.45, 1.6);
+float weave = sin(fieldPosition.x * 92.0) * sin(fieldPosition.y * 110.0) * 0.024;
+diffuseColor.rgb = mix(diffuseColor.rgb, fieldUniform * clothShade * (1.0 + weave), fieldCloth);`,
       )
       .replace(
         "#include <roughnessmap_fragment>",
         `#include <roughnessmap_fragment>
-roughnessFactor = clamp(fieldSurface.x, 0.08, 1.0);`,
+float surfaceGrain = sin(dot(fieldPosition, vec3(93.1, 57.7, 81.3))) * 0.018;
+roughnessFactor = clamp(fieldSurface.x + surfaceGrain, 0.08, 1.0);`,
       )
       .replace(
         "#include <metalnessmap_fragment>",
@@ -38,6 +57,6 @@ roughnessFactor = clamp(fieldSurface.x, 0.08, 1.0);`,
 metalnessFactor = clamp(fieldSurface.y, 0.0, 1.0);`,
       );
   };
-  material.customProgramCacheKey = () => "xarmy-field-unit-surfaces-v1";
+  material.customProgramCacheKey = () => "xarmy-field-unit-surfaces-v2";
   return material;
 }

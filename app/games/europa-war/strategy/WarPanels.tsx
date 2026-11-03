@@ -1,5 +1,6 @@
 "use client";
 import CommandCenter from "./CommandCenter";
+import UnitResearchGuide from "./UnitResearchGuide";
 import MilitaryIcon, {
   unitIcon,
   equipmentIcon,
@@ -159,6 +160,7 @@ function Chart({ values, label }: { values: number[]; label: string }) {
   );
 }
 interface Props {
+  simple?: boolean;
   world: World;
   tab: Tab;
   selected: string;
@@ -177,6 +179,7 @@ interface Props {
   onOffensive: (armies: string[], stance: OffensivePlan["stance"]) => void;
 }
 export default function WarPanels({
+  simple = false,
   world: w,
   tab,
   selected,
@@ -752,37 +755,46 @@ export default function WarPanels({
             </button>
           </div>
         )}
-        <ArmyTools
-          w={w}
-          command={command}
-          armyId={armyId}
-          onOffensive={onOffensive}
-        />
-        <h3>
-          <MilitaryIcon name="defend" />
-          Savunma hatları
-        </h3>
-        <p>
-          Haritada komşu eyaletlere sırayla tıklayarak savunma hattını çiz. Tüm
-          tümenler bu hat boyunca dağılır; tek birliğe yeni emir vermen o
-          birliği hattan ayırır.
-        </p>
-        <button disabled={!own.length} onClick={onFront}>
-          Tüm tümenler için savunma hattı çiz
-        </button>
-        {w.fronts
-          .filter((f) => f.country === c.id)
-          .map((f) => (
-            <div className={styles.card} key={f.id}>
-              <h4>{f.provinces.map((id) => GEOGRAPHY[id].name).join(" → ")}</h4>
-              <p>{f.armies.length} tümen atanmış</p>
-              <button
-                onClick={() => command({ type: "deleteFront", id: f.id })}
-              >
-                Hattı kaldır
-              </button>
-            </div>
-          ))}
+        <details
+          className={styles.fold}
+          open={!simple}
+          key={simple ? "army-simple" : "army-full"}
+        >
+          <summary>Gelişmiş ordu ve cephe düzeni</summary>
+          <ArmyTools
+            w={w}
+            command={command}
+            armyId={armyId}
+            onOffensive={onOffensive}
+          />
+          <h3>
+            <MilitaryIcon name="defend" />
+            Savunma hatları
+          </h3>
+          <p>
+            Haritada komşu eyaletlere sırayla tıklayarak savunma hattını çiz.
+            Tüm tümenler bu hat boyunca dağılır; tek birliğe yeni emir vermen o
+            birliği hattan ayırır.
+          </p>
+          <button disabled={!own.length} onClick={onFront}>
+            Tüm tümenler için savunma hattı çiz
+          </button>
+          {w.fronts
+            .filter((f) => f.country === c.id)
+            .map((f) => (
+              <div className={styles.card} key={f.id}>
+                <h4>
+                  {f.provinces.map((id) => GEOGRAPHY[id].name).join(" → ")}
+                </h4>
+                <p>{f.armies.length} tümen atanmış</p>
+                <button
+                  onClick={() => command({ type: "deleteFront", id: f.id })}
+                >
+                  Hattı kaldır
+                </button>
+              </div>
+            ))}
+        </details>
         <h3>
           <MilitaryIcon name="infantry" />
           Yeni tümen eğit
@@ -1239,6 +1251,10 @@ export default function WarPanels({
           {c.research.length} / {researchSlots(c)} yuva · Hız bonusu %
           {Math.round((c.science + (c.advisor === "science" ? 0.15 : 0)) * 100)}
         </p>
+        <UnitResearchGuide
+          country={c}
+          onResearch={(id) => command({ type: "research", id })}
+        />
         {c.research.map((q) => (
           <div key={q.id} className={styles.card}>
             <h3>{TECHNOLOGIES.find((t) => t.id === q.id)?.name}</h3>
@@ -1253,73 +1269,82 @@ export default function WarPanels({
             </p>
           </div>
         ))}
-        <label className={styles.field}>
-          Araştırma dalı
-          <select value={branch} onChange={(e) => setBranch(e.target.value)}>
-            {["Tümü", ...new Set(TECHNOLOGIES.map((t) => t.branch))].map(
-              (b) => (
-                <option key={b}>{b}</option>
-              ),
-            )}
-          </select>
-        </label>
-        <p>
-          Zamanından önce araştırma daha uzun sürer. Çizgiler, önce tamamlanması
-          gereken teknolojileri gösterir.
-        </p>
-        <div className={styles.tree}>
-          {TECHNOLOGIES.filter(
-            (t) => branch === "Tümü" || t.branch === branch,
-          ).map((t) => {
-            const done = c.tech.includes(t.id),
-              working = c.research.some((r) => r.id === t.id),
-              locked = t.requires.some((id) => !c.tech.includes(id));
-            return (
-              <div
-                className={`${styles.treeNode} ${done ? styles.completed : ""}`}
-                key={t.id}
-              >
-                <small>
-                  {t.branch} · {t.year}
-                </small>
-                <h3>
-                  {done ? (
-                    <MilitaryIcon name="check" size={16} />
-                  ) : (
-                    <MilitaryIcon name="research" size={16} />
-                  )}
-                  {t.name}
-                </h3>
-                <p>{t.description}</p>
-                {t.requires.length > 0 && (
-                  <small className={styles.prereq}>
-                    ↳{" "}
-                    {t.requires
-                      .map((id) => TECHNOLOGIES.find((t) => t.id === id)?.name)
-                      .join(" + ")}
-                  </small>
-                )}
-                <button
-                  disabled={
-                    done ||
-                    working ||
-                    locked ||
-                    c.research.length >= researchSlots(c)
-                  }
-                  onClick={() => command({ type: "research", id: t.id })}
+        <details
+          className={styles.fold}
+          open={!simple}
+          key={simple ? "research-simple" : "research-full"}
+        >
+          <summary>Tüm araştırmalar ve doktrinler</summary>
+          <label className={styles.field}>
+            Araştırma dalı
+            <select value={branch} onChange={(e) => setBranch(e.target.value)}>
+              {["Tümü", ...new Set(TECHNOLOGIES.map((t) => t.branch))].map(
+                (b) => (
+                  <option key={b}>{b}</option>
+                ),
+              )}
+            </select>
+          </label>
+          <p>
+            Zamanından önce araştırma daha uzun sürer. Çizgiler, önce
+            tamamlanması gereken teknolojileri gösterir.
+          </p>
+          <div className={styles.tree}>
+            {TECHNOLOGIES.filter(
+              (t) => branch === "Tümü" || t.branch === branch,
+            ).map((t) => {
+              const done = c.tech.includes(t.id),
+                working = c.research.some((r) => r.id === t.id),
+                locked = t.requires.some((id) => !c.tech.includes(id));
+              return (
+                <div
+                  className={`${styles.treeNode} ${done ? styles.completed : ""}`}
+                  key={t.id}
                 >
-                  {done
-                    ? "Tamamlandı"
-                    : working
-                      ? "Araştırılıyor"
-                      : locked
-                        ? "Önkoşul bekleniyor"
-                        : `Araştır · ${researchDays(w, c, t.id)} temel gün`}
-                </button>
-              </div>
-            );
-          })}
-        </div>
+                  <small>
+                    {t.branch} · {t.year}
+                  </small>
+                  <h3>
+                    {done ? (
+                      <MilitaryIcon name="check" size={16} />
+                    ) : (
+                      <MilitaryIcon name="research" size={16} />
+                    )}
+                    {t.name}
+                  </h3>
+                  <p>{t.description}</p>
+                  {t.requires.length > 0 && (
+                    <small className={styles.prereq}>
+                      ↳{" "}
+                      {t.requires
+                        .map(
+                          (id) => TECHNOLOGIES.find((t) => t.id === id)?.name,
+                        )
+                        .join(" + ")}
+                    </small>
+                  )}
+                  <button
+                    disabled={
+                      done ||
+                      working ||
+                      locked ||
+                      c.research.length >= researchSlots(c)
+                    }
+                    onClick={() => command({ type: "research", id: t.id })}
+                  >
+                    {done
+                      ? "Tamamlandı"
+                      : working
+                        ? "Araştırılıyor"
+                        : locked
+                          ? "Önkoşul bekleniyor"
+                          : `Araştır · ${researchDays(w, c, t.id)} temel gün`}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </details>
       </>
     );
   if (tab === "politics")

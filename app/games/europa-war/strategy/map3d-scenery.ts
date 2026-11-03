@@ -320,7 +320,7 @@ export function createScenery(
     roughness: 0.4,
     metalness: 0.03,
     emissive: 0xffbd6d,
-    emissiveIntensity: 0.24,
+    emissiveIntensity: 0.4,
   });
   // body, house roof, village windows, city windows, factory roof/details,
   // chimney, tanks, conifers, broadleaf, trunks, rocks, hangar arches.

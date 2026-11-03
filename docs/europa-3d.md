@@ -52,8 +52,9 @@ atlas değildir. [Geometri belgesi](europa-3d-geometry.md) kaynağı açıklar.
 
 Evler, ormanlar, piyade ve araçlar kodla üretilmiş strateji minyatürleridir.
 Piyadeler daha büyük ölçekte miğfer, tüfek, kemer, çanta ve bot ayrıntıları
-taşır; tank, kamyon ve top ayrı modeller kullanır. Ülke rengi üniformanın
-tamamını değiştirmek yerine küçük işaretlerde gösterilir. Şehirlerde eğimli
+taşır; tank, kamyon ve top ayrı modeller kullanır. Siyasi ülke rengi küçük
+birlik işaretlerinde, dönemden esinlenen ulusal ton ise kumaşta gösterilir.
+Şehirlerde eğimli
 çatılar, pencereler, kapılar, bacalar ve sokak blokları bulunur.
 Sanayi yapıları mevcut bina sayılarına, hasarlı görünüm bölge hasarına ve
 vinçler gerçek inşaat kuyruğuna bağlıdır. Birlik konumu simülasyonun ilerleme
@@ -216,11 +217,13 @@ Yakın görünümde piyadenin eğimli omuzları, miğferi, yüzü, tüfek askıs
 matara ve küreği; tankın eğimli zırhı, paletleri, kapakları, periskopları,
 egzozu ve namlusu; topun siperi, tekerlekleri, mekanizması ve geri tepme
 silindirleri; kamyonun kabini, aynaları, silecekleri, basamakları, çamurlukları
-ve branda bağları ayrı geometri ayrıntıları taşır. Animasyonun mevcut **13
-ortak parça grubu** korunur. Bu grupların toplamı **20.010 vertex**, en büyüğü
-**4.128 vertex** içerir; her asker için ayrı mesh veya malzeme oluşturulmaz.
-Kumaş, boyalı zırh, çıplak çelik, lastik ve cam için roughness/metalness
-vertex verileri aynı PBR malzemesi içinde farklı yüzey tepkileri verir.
+ve branda bağları ayrı geometri ayrıntıları taşır. Animasyonun ilk 13 parça
+indeksine bağımsız baş ve baş ayrıntısı eklenir; toplam **15 ortak parça
+grubu** kullanılır. Araştırma kademelerine göre model geometrileri değişir;
+her asker için ayrı mesh veya malzeme oluşturulmaz. Kumaş, boyalı zırh,
+çıplak çelik, lastik ve cam için roughness/metalness vertex verileri aynı
+PBR malzemesi içinde farklı yüzey tepkileri verir. Ülke üniforması yalnız
+kumaş maskesine uygulanır; ten, silah, metal ve deri ayrıntıları korunur.
 Bunlar kodla üretilmiş strateji minyatürleridir; taranmış AAA modeller, yeni
 2K/4K dokular veya iskelet animasyonu varlıkları değildir.
 
@@ -248,6 +251,69 @@ Mevcut 447 şehir ışığına ek olarak yakın görünümde evlerin pencere/kap
 panelleri ortak sıcak emissive malzemeyle görünür. Yeni şehir veya ev başına
 noktasal ışık eklenmez; mevcut yerleşim yoğunluğu ve uzaklık elemesi korunur.
 Bu bütçeler telefon veya masaüstünde ölçülmüş 60 FPS garantisi değildir.
+
+## Araştırmaya bağlı modeller ve manuel kolay yönetim
+
+Birliklerin görünümü, ülkenin **tamamlanmış araştırmalarından** türetilir.
+Araştırmayı sıraya koymak veya takvimde ileri bir yıla gelmek modeli
+kendiliğinden yükseltmez. Kayda yeni bir görünüm ilerlemesi yazılmaz; kayıt
+tekrar yüklenince tamamlanmış teknolojilerden aynı görünüm elde edilir.
+
+| Model ailesi | Görünüm kademesini ilerleten mevcut araştırmalar |
+| --- | --- |
+| Piyade | `weapons1` → `weapons2` → `weapons3` |
+| Topçu | Piyadeyle ortak silah modernizasyonu; aynı üç teknoloji |
+| Tank | `armor1` → `armor2` → `armor3` |
+| İkmal kamyonu | Önce `motorization`; ardından `engines` veya daha ileri `mechanization` |
+
+Her aile temel model dâhil dört görünüm kademesi taşır. Üst kademe daha
+belirgin teçhizat, zırh, taret, top siperi veya araç gövdesi ayrıntıları
+kullanır. Kademelerin 15 parçalık ortak geometrileri sırasıyla **21.156 /
+22.344 / 23.388 / 24.408 vertex** içerir; tek parça en fazla **4.332 vertex**
+taşır. Kademe geometrileri gerektiğinde bir kez hazırlanıp yeniden kullanılır;
+kamera dışında kalıp geri gelen ülke için yeniden üretilmez. Örnek tamponları
+ihtiyaca göre büyür, görünür minyatürlerin toplam sınırı yine 3.072'dir.
+Mekanizasyonun mevcut önkoşulları korunur; görünüm için yeni bir
+motor araştırması şartı uydurulmaz. Yeni topçu araştırması ya da ek savaş
+bonusu eklenmez. Araştırma panelindeki **Birliklerin görünümü** bölümü mevcut
+kademeyi, sonraki gerçek teknoloji adını ve önkoşullarını açıklar. Kartın
+**Araştırmayı başlat** düğmesi tam teknoloji ağacıyla aynı doğrulanan emri
+uygular. Önkoşul eksikse, araştırma sürüyorsa veya yuvalar doluysa düğme
+durumu nedenini gösterir. Diğer araştırmalar ve doktrinler açılabilir tam
+ağaçta korunur.
+
+Ülkeler dönemden esinlenen farklı kumaş tonları taşır; bunlar siyasi harita
+renginden ve seçim işaretinden bağımsızdır. Kendi ülken, müttefikler ve süresi
+dolmamış istihbarat kapsamındaki ülkeler tamamlanmış araştırmalarını yansıtır.
+İstihbaratı bulunmayan görünen yabancı birliklerde yalnız gözlenen hafif/orta/
+ağır tank veya motorize/mekanize birlik tipi kullanılır; ülkenin gizli silah
+araştırmaları model üzerinden açıklanmaz. Görünmeyen birlikler çizilmez.
+
+Duran piyadelerin başı, boyun çevresinde birbirinden farklı yavaş hareketlerle
+sağa ve sola bakar. Gövde ve tüfek yerinde kalır; yürüyüş, ateş ve ele geçirme
+sırasında baş mevcut hareketi izler. Duraklatma ve azaltılmış hareket baş
+hareketini dondurur. Devam ettirince beklenen süre animasyona eklenmez.
+Uzak görünümde küçük baş hareketi hesaplanmaz. Bu görsel hareket askerlerin
+konumunu, görüşünü, hedefini veya savaş sonucunu değiştirmez.
+
+Şehir ışık halkaları, ev pencereleri ve çatışma ışığı daha okunur olacak
+şekilde güçlendirilmiştir. Işık sayısı, boyutu, 0/0/2/4 noktasal çatışma
+ışığı bütçesi ve şehirlerin tek çizim grubu korunur; her eve ayrı ışık
+oluşturulmaz.
+
+**Kolay yönetim** komuta ekranında dört açık başlangıç sunar: **Tümen eğit**,
+**Yapı inşa et**, **Teknoloji seç**, **Diplomasi yap**. Bunlar ilgili paneli
+açar; kaynak harcamaz, birliği otomatik eğitmez veya araştırmayı seçmez.
+İnşaat kısayolu oyuncunun kontrol ettiği seçili bölgeyi, başkentini veya
+uygun ilk bölgesini açar. Ardından yapı ve emir oyuncu tarafından seçilir.
+
+Komutan/sınır/savun/saldır adımları korunur. Siyaset, hava ve deniz harekâtı
+**Tüm ayrıntılar** görünümünde erişilebilir. Kolay görünüm fazla öneri ve
+geçmiş panellerini kapatır; oyun mekaniğini veya zorluğunu değiştirmez.
+Yönetim yardımcısı ayarları başlangıçta kapalı bir bölümde tutulur; önceden
+açılmış yardımcılar dürüstçe gösterilir. Kolay görünüme geçmek yardımcıları
+açmaz veya kapatmaz. Yeni oyundaki manuel tercihler ve kayıtlı otomasyon
+ayarları korunur.
 
 ## Hava ve deniz görevlerinin görünümü
 

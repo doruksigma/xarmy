@@ -62,7 +62,7 @@ varying float strength;
 void main(){
   float radius = dot(glowUV, glowUV);
   if(radius > 1.0) discard;
-  float halo = exp(-radius * ${ground ? "3.5" : "5.0"}) * ${ground ? "0.18" : "0.34"};
+  float halo = exp(-radius * ${ground ? "3.5" : "5.0"}) * ${ground ? "0.22" : "0.38"};
   float core = exp(-radius * 55.0) * ${ground ? "0.0" : "0.75"};
   float alpha = (halo + core) * strength * (1.0 - smoothstep(0.7, 1.0, radius));
   gl_FragColor = vec4(tint, alpha);

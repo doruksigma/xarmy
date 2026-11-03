@@ -134,7 +134,7 @@ varying float glowStrength;
 void main() {
   float radius = dot(glowUV, glowUV);
   if (radius > 1.0) discard;
-  float halo = exp(-radius * 5.5) * 0.14;
+  float halo = exp(-radius * 5.5) * 0.18;
   float core = exp(-radius * 75.0) * 0.78;
   float alpha = (halo + core) * glowStrength * (1.0 - smoothstep(0.65, 1.0, radius));
   vec3 amber = vec3(1.0, 0.52, 0.16);

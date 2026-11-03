@@ -3,6 +3,7 @@ import MilitaryIcon from "./MilitaryIcon";
 import { useState } from "react";
 import ActionPreview from "./ActionPreview";
 import EasyCommandGuide from "./EasyCommandGuide";
+import SimpleManagement from "./SimpleManagement";
 import { advice, AUTOMATION } from "./management";
 import { BUILDINGS, focusTree, TECHNOLOGIES } from "./catalog";
 import { controlled, dateLabel, GEOGRAPHY } from "./world";
@@ -23,6 +24,7 @@ export default function CommandCenter({
   onShowMap,
   selectedGeneralId,
   onSelectedGeneralChange,
+  onBuild,
 }: {
   world: World;
   command: (a: Action) => boolean | void;
@@ -34,13 +36,15 @@ export default function CommandCenter({
   onShowMap?: () => void;
   selectedGeneralId?: string;
   onSelectedGeneralChange?: (id: string) => void;
+  onBuild?: () => void;
 }) {
   const [previewArea, setPreviewArea] =
     useState<keyof Country["automation"]>("research");
-  const [automationOpen, setAutomationOpen] = useState(true);
+  const [automationOpen, setAutomationOpen] = useState(false);
   const [costPreviewOpen, setCostPreviewOpen] = useState(false);
   const c = w.countries[w.player],
-    priorities = advice(w);
+    priorities = simple ? [] : advice(w),
+    activeAssistants = Object.values(c.automation).filter(Boolean).length;
   const armies = w.armies.filter((a) => a.country === c.id),
     wings = c.air.wings.reduce((n, a) => n + a.count, 0);
   return (
@@ -53,8 +57,16 @@ export default function CommandCenter({
         Komuta merkezi
       </h2>
       <p className={styles.subtitle}>
-        Ülkenin yönünü sen belirle. Ayrıntıları istediğin zaman aç.
+        {simple
+          ? "Ülkeni yönet, komutanına emir ver, zamanı ilerlet."
+          : "Ülkenin yönünü sen belirle. Ayrıntıları istediğin zaman aç."}
       </p>
+      {simple && (
+        <SimpleManagement
+          onTab={onTab}
+          onBuild={onBuild ?? (() => onTab("province"))}
+        />
+      )}
       {simple && (
         <EasyCommandGuide
           world={w}
@@ -68,85 +80,100 @@ export default function CommandCenter({
           onSelectedGeneralChange={onSelectedGeneralChange}
         />
       )}
-      <label className={styles.field}>
-        Zorluk
-        <select
-          aria-label="Oyun zorluğu"
-          value={w.difficulty}
-          onChange={(e) =>
-            command({
-              type: "difficulty",
-              value: e.target.value as World["difficulty"],
-            })
-          }
-        >
-          <option value="easy">Kolay</option>
-          <option value="normal">Normal</option>
-          <option value="hard">Zor</option>
-        </select>
-        <small>
-          {w.difficulty === "easy"
-            ? "Birliklerine %50 muharebe gücü desteği; rakipler sana karşı daha temkinli."
-            : w.difficulty === "normal"
-              ? "Bütün ülkeler aynı muharebe koşullarında."
-              : "Birliklerin %15 daha az muharebe gücüyle savaşır."}
-        </small>
-      </label>
       <details className={styles.fold} open={!simple}>
-        <summary>Ülke durumu ve öneriler</summary>
-        <div className={styles.commandStats}>
-          {[
-            ["Bölge", controlled(w, c.id).length, "province"],
-            ["Tümen", armies.length, "infantry"],
-            ["Uçak", Math.floor(wings), "plane"],
-            ["Gemi", c.navy.ships.length, "ship"],
-          ].map(([label, n, icon]) => (
-            <div key={label}>
-              <strong>{n}</strong>
-              <span>
-                <MilitaryIcon
-                  name={icon as "province" | "infantry" | "plane" | "ship"}
-                  size={15}
-                />
-                {label}
-              </span>
-            </div>
-          ))}
-        </div>
-        <h3>Önce bunlara bak</h3>
-        <div className={styles.priorities}>
-          {priorities.map((p, i) => (
-            <article key={p.id} className={styles.priority}>
-              <span className={styles.priorityNumber}>
-                {String(i + 1).padStart(2, "0")}
-              </span>
-              <div>
-                <h4>{p.title}</h4>
-                <p>{p.reason}</p>
-                <div className={styles.buttonRow}>
-                  {p.action && (
-                    <button
-                      className={styles.primary}
-                      onClick={() => command(p.action!)}
-                    >
-                      {p.id === "stability"
-                        ? "Destek programını uygula"
-                        : "Önerilen planı uygula"}
-                    </button>
-                  )}
-                  <button onClick={() => onTab(p.tab)}>İncele →</button>
-                </div>
-              </div>
-            </article>
-          ))}
-        </div>
+        <summary>Oyun zorluğu</summary>
+        <label className={styles.field}>
+          Zorluk
+          <select
+            aria-label="Oyun zorluğu"
+            value={w.difficulty}
+            onChange={(e) =>
+              command({
+                type: "difficulty",
+                value: e.target.value as World["difficulty"],
+              })
+            }
+          >
+            <option value="easy">Kolay</option>
+            <option value="normal">Normal</option>
+            <option value="hard">Zor</option>
+          </select>
+          <small>
+            {w.difficulty === "easy"
+              ? "Birliklerine %50 muharebe gücü desteği; rakipler sana karşı daha temkinli."
+              : w.difficulty === "normal"
+                ? "Bütün ülkeler aynı muharebe koşullarında."
+                : "Birliklerin %15 daha az muharebe gücüyle savaşır."}
+          </small>
+        </label>
       </details>
+      {!simple && (
+        <details className={styles.fold} open>
+          <summary>Ülke durumu ve öneriler</summary>
+          <div className={styles.commandStats}>
+            {[
+              ["Bölge", controlled(w, c.id).length, "province"],
+              ["Tümen", armies.length, "infantry"],
+              ["Uçak", Math.floor(wings), "plane"],
+              ["Gemi", c.navy.ships.length, "ship"],
+            ].map(([label, n, icon]) => (
+              <div key={label}>
+                <strong>{n}</strong>
+                <span>
+                  <MilitaryIcon
+                    name={icon as "province" | "infantry" | "plane" | "ship"}
+                    size={15}
+                  />
+                  {label}
+                </span>
+              </div>
+            ))}
+          </div>
+          <h3>Önce bunlara bak</h3>
+          <div className={styles.priorities}>
+            {priorities.map((p, i) => (
+              <article key={p.id} className={styles.priority}>
+                <span className={styles.priorityNumber}>
+                  {String(i + 1).padStart(2, "0")}
+                </span>
+                <div>
+                  <h4>{p.title}</h4>
+                  <p>{p.reason}</p>
+                  <div className={styles.buttonRow}>
+                    {p.action && (
+                      <button
+                        className={styles.primary}
+                        onClick={() => command(p.action!)}
+                      >
+                        {p.id === "stability"
+                          ? "Destek programını uygula"
+                          : "Önerilen planı uygula"}
+                      </button>
+                    )}
+                    <button onClick={() => onTab(p.tab)}>İncele →</button>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        </details>
+      )}
+      {simple && (
+        <p className={styles.hint} data-testid="manual-control-status">
+          {activeAssistants
+            ? `${activeAssistants} yönetim yardımcısı açık. Aşağıdan ayarlarını değiştirebilirsin; görünüm değiştirmek bu tercihleri değiştirmez.`
+            : "Sanayi, araştırma ve eğitim senin kontrolünde. Yönetim yardımcısı kapalı."}
+        </p>
+      )}
       <details
         className={styles.fold}
-        open
+        open={automationOpen}
         onToggle={(event) => setAutomationOpen(event.currentTarget.open)}
       >
-        <summary>Yönetim yardımcısı</summary>
+        <summary>
+          Yönetim yardımcısı ·{" "}
+          {activeAssistants ? `${activeAssistants} alan açık` : "kapalı"}
+        </summary>
         <p>
           Açtığın alan hemen, ardından haftada bir ihtiyaçlara göre yönetilir.
           Araştırma, inşa ve eğitim için kendi kaynaklarını harcar. İstediğin
@@ -254,57 +281,66 @@ export default function CommandCenter({
           !c.construction.length &&
           !c.recruitment.length && <p>Henüz bir iş başlatılmadı.</p>}
       </details>
-      <details className={styles.fold}>
-        <summary>Ülkenin emirleri</summary>
-        <p className={styles.hint}>
-          Senin ve yönetim yardımcının son uygulanan emirleri kayıt dosyasıyla
-          birlikte saklanır. Bu liste yalnızca kendi ülkeni gösterir.
-        </p>
-        {!w.commandState?.receipts.some((r) => r.issuerCountryId === c.id) ? (
-          <p>Henüz kayıtlı bir emrin yok.</p>
-        ) : (
-          <ol className={styles.helpSteps} aria-label="Uygulanan emirler">
-            {w
-              .commandState!.receipts.filter((r) => r.issuerCountryId === c.id)
-              .slice(-12)
-              .reverse()
-              .map((r) => (
-                <li key={r.commandId}>
-                  <strong>{r.summary}</strong>
-                  <br />
-                  <small>
-                    {dateLabel(
-                      Math.floor(r.appliedTick / COMMAND_TICKS_PER_DAY),
-                    )}
-                    {" · "}
-                    {hourLabel(r.appliedTick)}
-                  </small>
-                </li>
-              ))}
+      {!simple && (
+        <details className={styles.fold}>
+          <summary>Ülkenin emirleri</summary>
+          <p className={styles.hint}>
+            Senin ve yönetim yardımcının son uygulanan emirleri kayıt dosyasıyla
+            birlikte saklanır. Bu liste yalnızca kendi ülkeni gösterir.
+          </p>
+          {!w.commandState?.receipts.some((r) => r.issuerCountryId === c.id) ? (
+            <p>Henüz kayıtlı bir emrin yok.</p>
+          ) : (
+            <ol className={styles.helpSteps} aria-label="Uygulanan emirler">
+              {w
+                .commandState!.receipts.filter(
+                  (r) => r.issuerCountryId === c.id,
+                )
+                .slice(-12)
+                .reverse()
+                .map((r) => (
+                  <li key={r.commandId}>
+                    <strong>{r.summary}</strong>
+                    <br />
+                    <small>
+                      {dateLabel(
+                        Math.floor(r.appliedTick / COMMAND_TICKS_PER_DAY),
+                      )}
+                      {" · "}
+                      {hourLabel(r.appliedTick)}
+                    </small>
+                  </li>
+                ))}
+            </ol>
+          )}
+        </details>
+      )}
+      {!simple && (
+        <details className={styles.fold}>
+          <summary>Nasıl oynanır?</summary>
+          <ol className={styles.helpSteps}>
+            <li>
+              Araştırma, ulusal odak ve üretim seç. Yardımcıya da
+              bırakabilirsin.
+            </li>
+            <li>Üstteki ▶ ile zamanı ilerlet. Boşluk tuşuyla duraklat.</li>
+            <li>
+              Diplomaside ilişkiler kur. Savaşa gireceksen gerekçe hazırla.
+            </li>
+            <li>
+              Ordu panelinde tümenleri seç, haritadan hedefleri işaretle.
+              Hazırlık tamamlanınca taarruzu başlat.
+            </li>
+            <li>
+              İkmal ve yakıtı izle. Uçakları ve gemileri uygun bölgelere gönder.
+            </li>
+            <li>
+              Zaferden sonra barış görüşmelerinde yeni sınırları belirle.
+              Kayıtlar cihazında saklanır.
+            </li>
           </ol>
-        )}
-      </details>
-      <details className={styles.fold}>
-        <summary>Nasıl oynanır?</summary>
-        <ol className={styles.helpSteps}>
-          <li>
-            Araştırma, ulusal odak ve üretim seç. Yardımcıya da bırakabilirsin.
-          </li>
-          <li>Üstteki ▶ ile zamanı ilerlet. Boşluk tuşuyla duraklat.</li>
-          <li>Diplomaside ilişkiler kur. Savaşa gireceksen gerekçe hazırla.</li>
-          <li>
-            Ordu panelinde tümenleri seç, haritadan hedefleri işaretle. Hazırlık
-            tamamlanınca taarruzu başlat.
-          </li>
-          <li>
-            İkmal ve yakıtı izle. Uçakları ve gemileri uygun bölgelere gönder.
-          </li>
-          <li>
-            Zaferden sonra barış görüşmelerinde yeni sınırları belirle. Kayıtlar
-            cihazında saklanır.
-          </li>
-        </ol>
-      </details>
+        </details>
+      )}
     </>
   );
 }
