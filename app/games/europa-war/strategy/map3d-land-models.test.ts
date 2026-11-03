@@ -48,7 +48,7 @@ test("All four model banks retain fifteen animation slots with bounded finite ge
       const count = geometry.getAttribute("position").count;
       vertices += count;
       assert.ok(
-        count > 0 && count < 7000,
+        count > 0 && count < 16000,
         `${tier}/${geometry.name}: mesh budget`,
       );
       assert.equal(count % 3, 0, "Merged triangle lists must be complete");
@@ -61,6 +61,19 @@ test("All four model banks retain fifteen animation slots with bounded finite ge
         );
         assert.equal(attribute.itemSize, size);
         assert.ok([...attribute.array].every(Number.isFinite));
+      }
+      const normals = geometry.getAttribute("normal");
+      for (let index = 0; index < normals.count; index++) {
+        assert.ok(
+          Math.abs(
+            Math.hypot(
+              normals.getX(index),
+              normals.getY(index),
+              normals.getZ(index),
+            ) - 1,
+          ) < 1e-4,
+          `${tier}/${geometry.name}: normalized shading normals`,
+        );
       }
       assert.ok(
         [...geometry.getAttribute("unitSurface").array].every(
@@ -78,7 +91,7 @@ test("All four model banks retain fifteen animation slots with bounded finite ge
       );
     }
     assert.ok(
-      vertices < 30000,
+      vertices <= 45000,
       `Tier ${tier}: ${vertices} must stay below the shared bank budget`,
     );
     dispose(parts);
@@ -197,6 +210,66 @@ test("Head and face rotate independently around the neck without changing rifle 
       ) < 1.0,
       "Idle yaw cannot carry the head into the rifle muzzle",
     );
+    dispose(parts);
+  }
+});
+
+test("Infantry has human head proportions and continuously curved cloth and leather silhouettes", () => {
+  for (const tier of TIERS) {
+    const parts = createLandModelGeometries(tier);
+    const head = parts[13].boundingBox!;
+    assert.ok(head.max.y + INFANTRY_NECK_PIVOT[1] < 4.2);
+    assert.ok(head.max.x - head.min.x < 0.78, "Helmet fits a human-sized head");
+    const skin = new THREE.Color(0xbe9872);
+    const positions = parts[13].getAttribute("position");
+    const colors = parts[13].getAttribute("color");
+    const skull = new THREE.Box3();
+    for (let index = 0; index < positions.count; index++) {
+      if (
+        positions.getY(index) >= 0.089 &&
+        Math.abs(colors.getX(index) - skin.r) < 1e-6 &&
+        Math.abs(colors.getY(index) - skin.g) < 1e-6 &&
+        Math.abs(colors.getZ(index) - skin.b) < 1e-6
+      )
+        skull.expandByPoint(
+          new THREE.Vector3().fromBufferAttribute(positions, index),
+        );
+    }
+    const headHeight = skull.max.y - skull.min.y;
+    const figureHeads = (head.max.y + INFANTRY_NECK_PIVOT[1]) / headHeight;
+    assert.ok(
+      figureHeads >= 6.7 && figureHeads <= 7.6,
+      "Standing silhouette stays near seven heads tall",
+    );
+    for (const [part, hex] of [
+      [0, 0x666d49],
+      [1, 0x39352c],
+    ]) {
+      const geometry = parts[part],
+        color = new THREE.Color(hex);
+      const paint = geometry.getAttribute("color"),
+        normals = geometry.getAttribute("normal");
+      let selected = 0,
+        curved = 0;
+      for (let index = 0; index < paint.count; index++) {
+        if (
+          Math.abs(paint.getX(index) - color.r) > 1e-6 ||
+          Math.abs(paint.getY(index) - color.g) > 1e-6 ||
+          Math.abs(paint.getZ(index) - color.b) > 1e-6
+        )
+          continue;
+        selected++;
+        if (
+          Math.abs(normals.getX(index)) > 0.1 &&
+          Math.abs(normals.getZ(index)) > 0.1
+        )
+          curved++;
+      }
+      assert.ok(
+        curved / selected > 0.45,
+        `${PARTS[part]} uses rounded surfaces, not flat rectangular anatomy`,
+      );
+    }
     dispose(parts);
   }
 });

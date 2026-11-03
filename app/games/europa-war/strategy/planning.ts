@@ -1,7 +1,7 @@
 import { EQUIPMENT, UNITS } from "./catalog";
 import { current, isDraft } from "immer";
 import { SUPPORT } from "./advanced-catalog";
-import { combatPower, routeTo } from "./land";
+import { combatPower, nextLandStep, routeTo } from "./land";
 import {
   atWar,
   clamp,
@@ -136,24 +136,6 @@ export function planningAction(w: World, c: Country, a: Action): boolean {
   }
   return false;
 }
-function nextStep(w: World, a: Army, to: string) {
-  const queue = [[a.province]],
-    seen = new Set([a.province]);
-  for (const path of queue) {
-    const last = path.at(-1)!;
-    if (last === to) return path[1];
-    for (const e of GEOGRAPHY[last].neighbors) {
-      if (e.sea || seen.has(e.id)) continue;
-      if (
-        !friendly(w, a.country, w.provinces[e.id].controller) &&
-        !atWar(w, a.country, w.provinces[e.id].controller)
-      )
-        continue;
-      seen.add(e.id);
-      queue.push([...path, e.id]);
-    }
-  }
-}
 export function planningDay(w: World) {
   planningStep(w, 1);
 }
@@ -203,6 +185,20 @@ export function planningStep(w: World, elapsedDays: number) {
     const defenses = new Map<string, number>(),
       attackPowers = new Map<string, number>(),
       attacks = new Map<string, number>();
+    const formations = new Map<string, Army[]>();
+    for (const army of armies) {
+      if (
+        army.move ||
+        army.route.length ||
+        army.organization < 25 ||
+        army.supply < 0.25 ||
+        army.strength < 30
+      )
+        continue;
+      const members = formations.get(army.province) ?? [];
+      members.push(army);
+      formations.set(army.province, members);
+    }
     const adjacentTo = (army: Army, province: string) =>
       GEOGRAPHY[army.province].neighbors.some(
         (edge) => !edge.sea && edge.id === province,
@@ -228,9 +224,12 @@ export function planningStep(w: World, elapsedDays: number) {
           a.route = [rear.id];
         continue;
       }
-      const pathKey = `${a.country}:${a.province}:${targets[0]}`;
+      const pathKey = `${p.id}:${a.country}:${a.province}:${targets[0]}`;
       if (!nextSteps.has(pathKey))
-        nextSteps.set(pathKey, nextStep(w, a, targets[0]));
+        nextSteps.set(
+          pathKey,
+          nextLandStep(w, a, targets[0], formations.get(a.province)),
+        );
       const step = nextSteps.get(pathKey);
       if (!step) continue;
       if (atWar(w, a.country, w.provinces[step].controller)) {
@@ -264,8 +263,12 @@ export function planningStep(w: World, elapsedDays: number) {
         )
           continue;
       }
-      const routeKey = `${a.country}:${a.province}:${step}`;
-      if (!routes.has(routeKey)) routes.set(routeKey, routeTo(w, a, step));
+      const routeKey = `${p.id}:${a.country}:${a.province}:${step}`;
+      if (!routes.has(routeKey))
+        routes.set(
+          routeKey,
+          routeTo(w, a, step, a.province, formations.get(a.province)),
+        );
       a.route = [...(routes.get(routeKey) ?? [])];
       a.stance = "advance";
       // This previously idle unit can no longer support a different front.

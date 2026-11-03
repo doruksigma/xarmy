@@ -112,7 +112,9 @@ test("1/2/3/4/12 tümen, gerçek tipleri değiştirmeden tam istenen sayı sembo
   }
   const bounds = mesh(scene, "infantry-head").geometry.boundingBox!;
   const fullHeight = (bounds.max.y + INFANTRY_NECK_PIVOT[1]) * UNIT_MODEL_SCALE;
-  assert.ok(fullHeight > 10 && fullHeight < UNIT_LABEL_HEIGHT);
+  // A human-sized head replaces the old oversized cap. Keep the complete
+  // miniature readable at ~10 world units without inflating its anatomy.
+  assert.ok(fullHeight > 9.5 && fullHeight < UNIT_LABEL_HEIGHT);
   models.dispose();
 });
 

@@ -116,6 +116,24 @@ test("Başka hedefe gönderilen tümen ortak saldırı hesabından çıkarılır
     target = "poland-2";
   world.plans[0].armies = [first.id, diverted.id, waiting.id];
   world.plans[0].objectives = ["poland-city-4"];
+  // Keep this attack-support regression on two explicit corridors. Weighted
+  // routing may otherwise prefer a different friendly approach to the front.
+  const corridor = new Set([
+    "germany-8",
+    "germany-7",
+    "poland-1",
+    target,
+    "poland-city-4",
+  ]);
+  for (const province of Object.values(world.provinces))
+    if (!corridor.has(province.id)) province.controller = "france";
+  world.countries.germany.capital = first.province;
+  const damagedRear = world.provinces[diverted.province];
+  damagedRear.buildings.infra =
+    damagedRear.buildings.rail =
+    damagedRear.buildings.hub =
+      0;
+  damagedRear.damage = 100;
   const defenders = Array.from({ length: 8 }, () =>
     addArmy(world, "poland", target),
   );

@@ -14,7 +14,7 @@ import { politicsAction } from "./politics";
 import { friendly, GEOGRAPHY, requireRule, uid } from "./world";
 import { Immer, current, isDraft } from "immer";
 import { isValidAction } from "./command-types";
-import type { Action, World } from "./types";
+import type { Action, Army, World } from "./types";
 
 const transactions = new Immer({ autoFreeze: false });
 
@@ -112,18 +112,34 @@ export function dispatchCountryAction(
     const armyIndices = new Map(
       plainArmies.map((army, index) => [army.id, index]),
     );
+    const selected = ids.map((id) => {
+      const index = armyIndices.get(id);
+      const army =
+        index !== undefined && plainArmies[index].country === c.id
+          ? w.armies[index]
+          : undefined;
+      requireRule(army, "Kendi ordularından birini seç.");
+      return army;
+    });
+    // Detachment can remove a commander's logistics bonus. Do it for every
+    // member before estimating the route the resulting formation will march.
+    if (action.type !== "general")
+      for (const army of selected) detachArmy(w, army.id);
+    const formations = new Map<string, Army[]>();
+    if (action.type === "move" || action.type === "moveGroup")
+      for (const army of selected) {
+        const start = action.append
+          ? (army.route.at(-1) ?? army.move?.to ?? army.province)
+          : army.province;
+        const members = formations.get(start) ?? [];
+        members.push(army);
+        formations.set(start, members);
+      }
     const marchGroup =
       action.type === "moveGroup" && ids.length > 1
         ? uid(w, "march")
         : undefined;
-    for (const id of ids) {
-      const index = armyIndices.get(id);
-      const a =
-        index !== undefined && plainArmies[index].country === c.id
-          ? w.armies[index]
-          : undefined;
-      requireRule(a, "Kendi ordularından birini seç.");
-      if (action.type !== "general") detachArmy(w, a.id);
+    for (const a of selected) {
       if (action.type === "halt" || action.type === "haltGroup") {
         a.move = null;
         a.route = [];
@@ -142,7 +158,10 @@ export function dispatchCountryAction(
           a.move?.kind === "paradrop" &&
           a.move.to === action.to;
         if (!continuingDrop && !routes.has(start))
-          routes.set(start, routeTo(w, a, action.to, start));
+          routes.set(
+            start,
+            routeTo(w, a, action.to, start, formations.get(start)),
+          );
         const route = continuingDrop ? [] : routes.get(start);
         requireRule(
           route,

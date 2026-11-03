@@ -21,6 +21,9 @@ ikmal, hava ve deniz renklerini seçer.
   yerleşimi aynı sefer komutlarını kullanır.
 - **Animasyonlar:** Otomatik cihazın hareket tercihine uyar; Açık hareketi
   etkinleştirir; Azaltılmış sabit görünüm kullanır. Tercih cihazda saklanır.
+- Telefonda bakış, grafik ve animasyon seçenekleri **Görünüm ayarları**
+  düğmesinin içindedir. Açıp kapatmak haritayı veya seferi sıfırlamaz;
+  masaüstünde bu üç seçenek doğrudan görünür.
 - Normal **1×** hızda her oyun saati için hesaplama bitiminden sonra **500 ms**
   beklenir; bir gün 24 saatlik gerçek adımdan oluşur ve en az **12 saniye** sürer. 2–5×
   aynı taban hızın çarpanlarıdır. Hesaplama süresi buna eklenebilir; yavaş
@@ -43,6 +46,36 @@ başlatılamaz veya bağlam kaybolursa aynı sefer 2D görünümde korunur.
 Seçili grafik ayarı ve kamera sefer kaydına katılmaz. Çevrimdışı paket
 hazırlanırken gecikmeli 3D modülü de yüklenir; hazır bildirimi gelmeden
 çevrimdışı kullanımın tamamlandığı varsayılmamalıdır.
+
+## Referanslara göre yenilenen kara modelleri — 3 Kasım 2026
+
+Piyadenin tunik, omuz, dirsek, pantolon ve bot yüzeyleri artık oval kesitlerden
+oluşan sürekli geometriler kullanır. Yüzde çene, burun, kulak, kaş ve göz
+kapakları; başlıkta siperlik veya çelik miğfer kenarı; teçhizatta omuz üzerinden
+geçen kayışlar, cepler, matara, çanta ve tüfeği tutan eller bulunur.
+Baş mevcut boyun ekseninde bağımsız döner; silahın ateş çıkışı ve ayakların
+zemin teması değişmez. Tamamlanan araştırmalar dört model aşamasını seçer.
+
+Tanklarda eğimli zırh gövdesi, yuvarlatılmış taret, açık palet halkası ve
+namlu içi; kamyonlarda kıvrımlı kabin/kaput, çamurluk ve kumaş tente;
+toplarda katmanlı kalkan, beşik, geri tepme düzeneği ve ayrık destek ayakları
+kullanılır. İleri araştırmalar araç gövdelerini ve teçhizatı değiştirir;
+mekanize ulaşım aşaması arka paletli taşıyıcı gösterir.
+
+Kumaş, boyalı zırh, çıplak metal, deri ve cam aynı PBR malzemesinde farklı
+pürüzlülük/metallik değerleri taşır. Özgün 128×128 RGBA yüzey maskesi,
+üç eksende örneklenen ince doku, kumaş örgüsü ve yüzey değişimi ekler.
+Mip seviyeleri uzak yüzeylerde titreşimi azaltır. Bu dosya fotoğraf dokusu
+veya 2K/4K varlık değildir; temel belleği 64 KiB'dir, her render görünümü
+tek kopya paylaşır ve kapanırken bırakır. Model yüzeylerine eklenen hafif
+dolaylı ışık, karanlık haritada yüz ve donanım ayrıntılarının okunmasını sağlar.
+
+Kaynaklar `map3d-model-builder.ts`, `map3d-infantry-model.ts`,
+`map3d-vehicle-models.ts`, `map3d-land-material.ts` ve
+`map3d-material-texture.ts` içindedir. Bunlar referans resimlerden esinlenerek
+kodla oluşturulmuş özgün minyatürlerdir; resimlerdeki hazır 3D dosyaların
+veya oyunun modellerinin birebir aktarımı değildir. Ayrıntı sınırı, kaynak
+temizliği ve gerçek oyun görüntüsü ayrı ayrı doğrulanır.
 
 ## Görsel veri neyi temsil ediyor?
 
@@ -268,8 +301,9 @@ tekrar yüklenince tamamlanmış teknolojilerden aynı görünüm elde edilir.
 
 Her aile temel model dâhil dört görünüm kademesi taşır. Üst kademe daha
 belirgin teçhizat, zırh, taret, top siperi veya araç gövdesi ayrıntıları
-kullanır. Kademelerin 15 parçalık ortak geometrileri sırasıyla **21.156 /
-22.344 / 23.388 / 24.408 vertex** içerir; tek parça en fazla **4.332 vertex**
+kullanır. 3 Kasım model yenilemesinden sonra kademelerin 15 parçalık ortak
+geometrileri sırasıyla **35.472 / 37.332 / 38.808 / 38.928 vertex** içerir;
+tek parça en fazla **8.652 vertex**
 taşır. Kademe geometrileri gerektiğinde bir kez hazırlanıp yeniden kullanılır;
 kamera dışında kalıp geri gelen ülke için yeniden üretilmez. Örnek tamponları
 ihtiyaca göre büyür, görünür minyatürlerin toplam sınırı yine 3.072'dir.

@@ -187,9 +187,18 @@
   color: #bdccb5;
   font-size: 8px;
   letter-spacing: 1px;
+  z-index: 3;
+}
+.quality > summary {
+  display: none;
+}
+.qualityFields {
   display: flex;
   align-items: flex-start;
   gap: 6px;
+}
+.quality:not([open]) > .qualityFields {
+  display: none;
 }
 .quality select {
   display: block;
@@ -313,11 +322,48 @@
   .quality {
     right: 14px;
     top: 155px;
+    width: min(174px, calc(100% - 28px));
+    border: 1px solid #607068;
+    border-radius: 4px;
+    background: #0d182bf2;
+  }
+  .quality > summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-height: 44px;
+    padding: 9px 10px;
+    color: #e6e5d2;
+    font-size: 11px;
+    letter-spacing: normal;
+    cursor: pointer;
+    list-style: none;
+  }
+  .quality > summary::-webkit-details-marker {
+    display: none;
+  }
+  .quality > summary:focus-visible {
+    outline: 2px solid #d9bc80;
+    outline-offset: 2px;
+  }
+  .qualityFields {
     flex-direction: column;
-    gap: 7px;
+    gap: 10px;
+    padding: 0 10px 10px;
+    max-height: min(255px, 45vh);
+    overflow-y: auto;
+  }
+  .qualityFields > label {
+    width: 100%;
   }
   .quality select {
     min-width: 86px;
+    width: 100%;
+    min-height: 34px;
+  }
+  .quality .motionNote {
+    max-width: none;
   }
   .controls {
     left: 14px;
@@ -355,7 +401,6 @@
   }
   .quality {
     top: 165px;
-    flex-direction: row;
   }
   .motionNote {
     display: none;

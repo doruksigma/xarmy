@@ -5,6 +5,12 @@ import { equipmentNeeds } from "./planning";
 import { seaEdgeOpen } from "./military-assets";
 import { TERRAINS, UNITS } from "./catalog";
 import {
+  createMovementTimeEstimator,
+  movementLegDays,
+  movementProgressRate,
+  movementSupply,
+} from "./land-movement-cost";
+import {
   atWar,
   clamp,
   event,
@@ -21,16 +27,94 @@ export function routeTo(
   army: Army,
   to: string,
   from = army.province,
+  formation: readonly Army[] = [army],
 ): string[] | null {
+  return findMovementRoute(w, army, to, from, formation, false);
+}
+
+/** A strategic plan may look across future enemy provinces, but only issues
+ * the first land step. routeTo still validates the actual movement order. */
+export function nextLandStep(
+  w: World,
+  army: Army,
+  to: string,
+  formation: readonly Army[] = [army],
+): string | undefined {
+  return findMovementRoute(w, army, to, army.province, formation, true)?.[0];
+}
+
+function findMovementRoute(
+  w: World,
+  army: Army,
+  to: string,
+  from: string,
+  formation: readonly Army[],
+  strategic: boolean,
+): string[] | null {
+  if (
+    !Object.hasOwn(GEOGRAPHY, from) ||
+    !Object.hasOwn(GEOGRAPHY, to) ||
+    !w.provinces[to]
+  )
+    return null;
   if (from === to) return [];
+  const destination = w.provinces[to].controller;
+  if (
+    !friendly(w, army.country, destination) &&
+    !atWar(w, army.country, destination)
+  )
+    return null;
+  const travelTime = createMovementTimeEstimator(w, formation);
   const previous: Record<string, string> = {};
-  const seen = new Set([from]),
-    queue = [from];
-  for (let i = 0; i < queue.length; i++)
-    for (const edge of GEOGRAPHY[queue[i]].neighbors) {
+  const distance = new Map([[from, 0]]);
+  // Dijkstra's heap stays bounded by relaxed edges. Equal costs use stable
+  // province IDs, never army order, map iteration luck or the campaign RNG.
+  type Node = { id: string; cost: number };
+  const heap: Node[] = [];
+  const before = (a: Node, b: Node) =>
+    a.cost < b.cost || (a.cost === b.cost && a.id < b.id);
+  const push = (node: Node) => {
+    let index = heap.length;
+    heap.push(node);
+    while (index > 0) {
+      const parent = (index - 1) >> 1;
+      if (!before(node, heap[parent])) break;
+      heap[index] = heap[parent];
+      index = parent;
+    }
+    heap[index] = node;
+  };
+  const pop = () => {
+    const first = heap[0],
+      last = heap.pop()!;
+    if (heap.length) {
+      let index = 0;
+      while (index * 2 + 1 < heap.length) {
+        const left = index * 2 + 1,
+          right = left + 1;
+        const child =
+          right < heap.length && before(heap[right], heap[left]) ? right : left;
+        if (!before(heap[child], last)) break;
+        heap[index] = heap[child];
+        index = child;
+      }
+      heap[index] = last;
+    }
+    return first;
+  };
+  push({ id: from, cost: 0 });
+  while (heap.length) {
+    const node = pop();
+    if (node.cost !== distance.get(node.id)) continue;
+    if (node.id === to) {
+      const path = [to];
+      while (previous[path[0]] !== from) path.unshift(previous[path[0]]);
+      return path;
+    }
+    for (const edge of GEOGRAPHY[node.id].neighbors) {
       if (
-        seen.has(edge.id) ||
-        (edge.sea && !seaEdgeOpen(w, army.country, queue[i], edge.id))
+        edge.sea &&
+        (strategic || !seaEdgeOpen(w, army.country, node.id, edge.id))
       )
         continue;
       const controller = w.provinces[edge.id].controller;
@@ -40,16 +124,17 @@ export function routeTo(
       )
         continue;
       // A route may end in hostile territory, but cannot plan through uncaptured enemy land.
-      if (atWar(w, army.country, controller) && edge.id !== to) continue;
-      seen.add(edge.id);
-      previous[edge.id] = queue[i];
-      if (edge.id === to) {
-        const path = [to];
-        while (previous[path[0]] !== from) path.unshift(previous[path[0]]);
-        return path;
+      if (!strategic && atWar(w, army.country, controller) && edge.id !== to)
+        continue;
+      const cost = node.cost + travelTime(node.id, edge.id, edge.sea);
+      const known = distance.get(edge.id) ?? Number.POSITIVE_INFINITY;
+      if (cost < known) {
+        distance.set(edge.id, cost);
+        previous[edge.id] = node.id;
+        push({ id: edge.id, cost });
       }
-      queue.push(edge.id);
     }
+  }
   return null;
 }
 export function combatPower(
@@ -296,15 +381,7 @@ export function resolveLandStep(w: World, elapsedDays = 1) {
       );
     const c = w.countries[a.country],
       d = UNITS[a.type];
-    const general = c.generals.find((g) => g.id === a.general);
-    a.supply = clamp(
-      supplyAt(a.country, a.province) *
-        (general?.trait === "logistics" ? 1.15 : 1) *
-        (a.support.includes("logistics") ? 1.2 : 1) *
-        (c.cabinet.military === "quartermaster" ? 1.1 : 1),
-      0,
-      1,
-    );
+    a.supply = movementSupply(w, a, supplyAt(a.country, a.province));
     if (a.supply < 0.25) {
       casualty(w, a, 0.25 * elapsedDays, 2 * elapsedDays, false);
     } else if (!engaged) {
@@ -348,20 +425,10 @@ export function resolveLandStep(w: World, elapsedDays = 1) {
         a.route = [];
       else {
         a.route.shift();
-        const distance = Math.hypot(
-          GEOGRAPHY[next].x - GEOGRAPHY[a.province].x,
-          GEOGRAPHY[next].y - GEOGRAPHY[a.province].y,
-        );
         a.move = {
           to: next,
           progress: 0,
-          days:
-            Math.max(2, distance / 18) /
-            (d.speed *
-              (a.support.includes("recon") ? 1.1 : 1) *
-              TERRAINS[GEOGRAPHY[next].terrain].speed *
-              (edge.sea ? 0.5 : 1) *
-              (d.fuel && c.tech.includes("engines") ? 1.2 : 1)),
+          days: movementLegDays(w, a, a.province, next, edge.sea),
         };
         a.entrenchment = 0;
       }
@@ -407,13 +474,12 @@ export function resolveLandStep(w: World, elapsedDays = 1) {
     );
   for (const army of pendingMarches) {
     // Apply shortage to this step's distance, never subtract accrued progress.
-    const speed =
-      army.supply < 0.25 ? Math.max(0.05, army.supply - 0.1) : army.supply;
     const fuelFactor =
       UNITS[army.type].fuel && w.countries[army.country].stock.fuel <= 0
         ? 0.3
         : 1;
-    army.move!.progress += speed * fuelFactor * elapsedDays;
+    army.move!.progress +=
+      movementProgressRate(army.supply, fuelFactor) * elapsedDays;
   }
   // A group command is one formation, not a tank departing ahead of its infantry.
   // Independent orders and formations on different legs retain their own speed.

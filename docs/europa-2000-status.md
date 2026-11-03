@@ -1,6 +1,6 @@
 # Europa War — 2.000 satırlık şartnamenin kapsam ve aşama kaydı
 
-İnceleme tarihi: 2 Kasım 2026. Başlangıç sürümü: `4d9b8af`.
+Son inceleme: 3 Kasım 2026. İlk aşamanın başlangıç sürümü: `4d9b8af`.
 Bu belge yeni şartnamenin **100 bölümünü** aşağıdaki kesintisiz bölüm aralıklarıyla
 izler. Mevcut çalışan temeller ile istenen ayrıntıların tamamlanması farklı
 durumlardır; 100 bölümün tamamlandığı veya bütün kabul testlerinin geçtiği
@@ -567,6 +567,67 @@ değişikliğinin kayıt durumunu değiştirmediği doğrulandı.
 Fiziksel telefon/Windows FPS ölçümü ve uzun 1936–1945 sefer regresyonu bu
 odaklı görsel çalışmayla yapılmış sayılmaz. Canlı dağıtım bağımsız doğrulanmadı.
 
+## Referans model ve maliyetli rota aşaması — 3 Kasım 2026
+
+Bu aşamanın başlangıcı `d4c427c` sürümüdür. Bölüm 15'teki kara modeli
+ayrıntıları ve bölüm 47'deki rota maliyeti üzerinde çalışıldı; bütün
+2.000 satırın tamamlandığı anlamına gelmez.
+
+- Kara minyatürleri sürekli kıvrımlı kumaş, anatomik yüz/eller, dönem başlıkları
+  ve donanımla yeniden şekillendirildi. PBR yüzeylere özgün, mip seviyeli
+  küçük bir maske eklendi. Dört araştırma aşaması, bağımsız baş hareketi,
+  namlu/ayak eksenleri ve instanced çizim korunur. Resimlerdeki hazır
+  modellerin birebir kopyası veya 2K/4K doku seti değildir.
+- Telefonda bakış/grafik/animasyon kontrolleri açılır **Görünüm ayarları**
+  alanına taşındı. Oyuncunun yönetim tercihlerini ve sefer durumunu değiştirmez.
+- `land-movement-cost.ts` gerçek saatlik hareketin mevcut süre, arazi,
+  birlik hızı, keşif desteği, motor, ikmal ve yakıt formüllerini ortaklaştırır.
+  `land.ts` artık en az kenarlı rota yerine tahmini en kısa hareket süreli
+  Dijkstra rotasını seçer. Altyapı/hasar/yığılma, mevcut yerel ikmal hesabı
+  üzerinden maliyete yansır. Tahmin, gelecekteki yakıt ve işgali garanti etmez.
+- Aynı başlangıçtaki grup için en yavaş üye dikkate alınır; bütün birlikler
+  ortak yolu alır. Erişim, savaş ve deniz geçişi kuralları korunur. Oyuncu ve
+  AI emirleri aynı doğrulayıcıyı kullanır. Savaş planları aynı maliyet hesabıyla
+  ileriyi değerlendirebilir, fakat gerçek emir yalnız yasal ilk adımı verir.
+- `commanders.ts` sınır yerleştirme dağıtıcısının ayrı BFS araması korunmuştur.
+  Bu nedenle bütün AI/sınır planlaması maliyetli rotaya geçti denemez.
+  Hava durumu maliyeti, stratejik demiryolu taşımacılığı, gerçek sevkiyat ve
+  kapasiteli ikmal bu aşamada eklenmedi.
+
+**Kod doğrulaması:** Son kaynaklarla 19 dosyadaki 164 görsel/animasyon/araştırma
+testi geçti. Rota değişikliği için ayrıca 10 yeni test ve 90 mevcut hareket,
+komut, AI ve savaş planı regresyonu geçti. Bu grupların kapsamları ayrıdır;
+önceki aşamaların sayılarıyla toplanmaz. Yeni geometrinin okunabilirlik
+kontrolünde, eski büyük başa göre konmuş 10 birimlik alt sınır doğal baş
+oranıyla uyumlu 9,5 birime indirildi; etiket üst sınırı ve ayrı anatomi,
+namlu, ayak, yüzey normali ve geometri bütçesi kontrolleri korunur.
+
+- Görsel testler: `/workspace/scratch/europa-wwii-visual-tests-final.log`.
+- Rota testleri: `/workspace/scratch/europa-weighted-routing-tests.log` ve
+  `/workspace/scratch/europa-weighted-routing-regression.log`.
+- `npm run build`: başarılı; tam tip/lint ve üretim sayfaları kontrol edildi.
+  Kayıt: `/workspace/scratch/europa-wwii-build.log`.
+
+**Gerçek tarayıcı doğrulaması:** Son üretim derlemesinde Chromium/SwiftShader
+ile 1440×1000 masaüstü ve 390×844 dokunmatik mobil emülasyonunda dört kontrol
+grubu geçti; uygulama/konsol hatası yok. Temel ve ileri araştırma modelleri
+aynı kamerada karşılaştırıldı, masaüstünde yakın Low/High görüntüleri incelendi.
+Mobil aç/kapat kontrolleri ve bütün sunum değişikliklerinde tam sefer kaydı
+eşit kaldı. Masaüstünde dört saldıran tümenin gerçek karşılıklı hasarı,
+tüfek/tank/top ışıkları, kamyon farları ve yeni kayıtla efekt temizliği doğrulandı.
+High çatışma görüntüsü, gerçek Low muharebesi duraklatılıp azaltılmış hareket
+seçilerek alındı; sürekli High çizimde performans ölçümü değildir.
+
+- Betik: `scripts/test-europa-wwii-reference-browser.cjs`.
+- Sonuç: `/workspace/scratch/europa-wwii-reference-browser/report.json`.
+- Yakın model: `/workspace/scratch/europa-wwii-reference-browser/desktop-tier3-closeup-high.png`.
+- Çatışma: `/workspace/scratch/europa-wwii-reference-browser/desktop-upgraded-combat-high-paused.png`.
+- Mobil: `/workspace/scratch/europa-wwii-reference-browser/mobile-tier3-same-camera-low.png`.
+
+Bu koşu fiziksel telefon/Windows FPS testi, tam 1936–1945 sefer testi veya
+canlı site dağıtım doğrulaması değildir. Önceki aşamaların tarayıcı sayıları
+bu aşamanın sayısına eklenmez.
+
 ## 1–100 kapsamı: mevcut temel ve kalan işler
 
 Dosya adları aksi belirtilmedikçe `app/games/europa-war/strategy/` altındadır.
@@ -593,7 +654,7 @@ yerine kullanılamaz.
 | 37–40 Tasarımcılar ve ekipman | Sabit tank/uçak/gemi katalogları ve üretim maliyetleri (`catalog.ts`, `advanced-catalog.ts`, `production.ts`). | Modüler tasarımcılar, uyumluluk kuralları, sürümler/refit; gerçek tren, zırhlı tren, demiryolu topu ve konvoy stokları. |
 | 41–43 Şablon, destek, eğitim | Sabit birlik türleri, gerçek ekipman tüketen destekler, eğitim kuyruğu ve ikmale bağlı takviye (`planning.ts`, `economy.ts`). | Tabur/alay şablonları, sürümler, bileşik istatistikler, erken konuşlanma ve gerçek sevkiyatlı eğitim/takviye. |
 | 44–46 Komuta, karargâh, kaptan | General beceri/tecrübesi, 12 birlik sınırı, otomatik yeni komutan ve hedef sınır ataması (`commanders.ts`, `commander-roster.ts`). | Ordu grubu/tiyatro, sahra karargâhı, emir gücü, tümen komutanları, gemi kaptanları ve madalyalar. |
-| 47–51 Hareket, cephe, savaş, kuşatma | Saatlik rota/grup hareketi, hazırlık, hedef devlete özel saldır/savun, eşzamanlı kara hasarı ve geri çekilme (`land.ts`, `planning.ts`, `commanders.ts`). | Arazi maliyetli rota, stratejik demiryolu nakli, genişlik/rezerv/taktik/zırh/delme ve süreli geri çekilme. |
+| 47–51 Hareket, cephe, savaş, kuşatma | Saatlik grup hareketi; arazi, mesafe ve mevcut ikmale göre maliyetli manuel/AI emir rotası ve saldırı planı; hedef devlete özel saldır/savun, eşzamanlı hasar ve geri çekilme (`land.ts`, `land-movement-cost.ts`, `planning.ts`, `commanders.ts`). | Komutan sınır dağıtıcısının maliyetli rotaya geçirilmesi, hava etkisi, stratejik demiryolu nakli, genişlik/rezerv/taktik/zırh/delme ve süreli geri çekilme. |
 | 52–54 İkmal ve taşıma | Başkent bağlantısı, liman/deniz erişimi, yerel altyapı/hasar/yığılma etkileri; oyuncuya ait bağlı ağda görsel trenler (`world.ts`, `map3d-rail-network.ts`). | Ortak tüketilen kenar/düğüm kapasitesi, gerçek tren/kamyon/konvoy tahsisi, sevkiyatlar, son kilometre ve yerel rezervler. Görsel trenler bu hesapların yerine geçmez. |
 | 55–58 Hava kuvvetleri | Stoktan kanat, üs yükü/menzil/hazırlık/yakıt, görevler, kayıp, bombardıman ve paraşüt koşulları (`airnaval.ts`, `operations.ts`). | Pilot/tasarım sürümleri, tespit/temas/sorti evreleri, ayrıntılı görev bölgesi, bina bazlı hasar ve yükle paylaşılan nakliye kapasitesi. |
 | 59–64 Donanma ve çıkarma | Tekil gemi, görev, intikal, yakıt, hasar/onarım, eskort/baskın ve taşıyıcı uçağı stoku (`airnaval.ts`, `military-assets.ts`). | Görev kuvveti hiyerarşisi, fazlı deniz muharebesi, mayınlar/antlaşmalar, gerçek taşıyıcı kanatları ve hazırlık/konvoy/yük tabanlı çıkarma. |
