@@ -248,11 +248,12 @@ test("Countries outside their weekly turn issue no commands", () => {
   assert.equal(world.commandState?.cursors.germany, undefined);
 });
 
-test("A large AI stack receives one bounded group move with independent unit routes", () => {
+test("A large AI stack receives bounded formation orders per front with independent unit routes", () => {
   const world = createWorld("turkey");
   countryTurn(world, "germany");
   declareWar(world, "germany", "poland");
   world.armies = [];
+  const guard = addArmy(world, "germany", world.countries.germany.capital);
   const ids: string[] = [];
   for (let index = 0; index < 128; index++)
     ids.push(addArmy(world, "germany", "germany-0").id);
@@ -262,15 +263,24 @@ test("A large AI stack receives one bounded group move with independent unit rou
       receipt.issuerCountryId === "germany" &&
       ["move", "moveGroup"].includes(receipt.action.type),
   );
-  assert.equal(moves.length, 1);
-  assert.equal(moves[0].action.type, "moveGroup");
-  if (moves[0].action.type !== "moveGroup") return;
-  assert.deepEqual(moves[0].action.armies, ids);
-  const armies = world.armies.filter((army) => army.country === "germany");
+  assert.ok(moves.length > 1 && moves.length < 16);
+  assert.ok(moves.every((move) => move.action.type === "moveGroup"));
+  const ordered = moves.flatMap((move) =>
+    move.action.type === "moveGroup" ? move.action.armies : [],
+  );
+  assert.deepEqual([...ordered].sort(), [...ids].sort());
+  assert.equal(new Set(ordered).size, ids.length);
+  assert.deepEqual(world.armies.find((a) => a.id === guard.id)!.route, []);
+  const armies = world.armies.filter((army) => ids.includes(army.id));
   assert.ok(armies.every((army) => army.route.length > 0));
-  assert.equal(new Set(armies.map((army) => army.marchGroup)).size, 1);
-  assert.notEqual(armies[0].route, armies[1].route);
-  assert.deepEqual(armies[0].route, armies[1].route);
+  assert.equal(
+    new Set(armies.map((army) => army.marchGroup)).size,
+    moves.length,
+  );
+  const cohort = armies.filter((a) => a.marchGroup === armies[0].marchGroup);
+  assert.ok(cohort.length > 1);
+  assert.notEqual(cohort[0].route, cohort[1].route);
+  assert.deepEqual(cohort[0].route, cohort[1].route);
   assert.ok(validateWorld(world));
 });
 
@@ -279,6 +289,7 @@ test("An AI declaration of war refreshes threat before deploying the same turn's
   countryTurn(world, "germany");
   world.day += 98;
   world.armies = [];
+  const guard = addArmy(world, "germany", world.countries.germany.capital);
   for (let index = 0; index < 8; index++)
     addArmy(world, "germany", "germany-0", "heavyTank");
   world.countries.germany.claims.push("poland");
@@ -294,9 +305,10 @@ test("An AI declaration of war refreshes threat before deploying the same turn's
   );
   assert.ok(
     world.armies
-      .filter((army) => army.country === "germany")
+      .filter((army) => army.country === "germany" && army.id !== guard.id)
       .every((army) => army.route.length > 0),
   );
+  assert.deepEqual(world.armies.find((a) => a.id === guard.id)!.route, []);
   assert.ok(
     world.commandState!.receipts.some(
       (receipt) => receipt.action.type === "moveGroup",

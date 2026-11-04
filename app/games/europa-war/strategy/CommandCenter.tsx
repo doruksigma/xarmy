@@ -101,14 +101,14 @@ export default function CommandCenter({
           >
             <option value="easy">Kolay</option>
             <option value="normal">Normal</option>
-            <option value="hard">Zor</option>
+            <option value="hard">Çok zor</option>
           </select>
           <small>
             {w.difficulty === "easy"
               ? "Birliklerine %50 muharebe gücü desteği; rakipler sana karşı daha temkinli."
               : w.difficulty === "normal"
                 ? "Bütün ülkeler aynı muharebe koşullarında."
-                : "Birliklerin %15 daha az muharebe gücüyle savaşır."}
+                : "Botlar cepheyi 6 oyun saatinde bir değerlendirir ve birlikte saldırır. Birliklerin %15 daha az muharebe gücüyle savaşır."}
           </small>
         </label>
       </details>

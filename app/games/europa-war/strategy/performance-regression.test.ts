@@ -75,12 +75,16 @@ test("AI divisions reusing a route retain independent orders", () => {
   const w = createWorld("turkey");
   declareWar(w, "germany", "poland");
   w.armies = [];
-  let first = addArmy(w, "germany", "germany-0"),
-    second = addArmy(w, "germany", "germany-0");
+  const guard = addArmy(w, "germany", "germany-0");
+  for (let i = 0; i < 12; i++) addArmy(w, "germany", "germany-0");
   w.day = (7 - (Object.keys(w.countries).indexOf("germany") % 7)) % 7;
   aiDay(w);
-  first = w.armies.find((army) => army.id === first.id)!;
-  second = w.armies.find((army) => army.id === second.id)!;
+  const first = w.armies.find(
+    (army) => army.country === "germany" && army.id !== guard.id,
+  )!;
+  const second = w.armies.find(
+    (army) => army.id !== first.id && army.marchGroup === first.marchGroup,
+  )!;
   assert.ok(first.route.length > 0);
   assert.deepEqual(first.route, second.route);
   assert.notEqual(first.route, second.route);

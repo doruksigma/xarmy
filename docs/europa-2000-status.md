@@ -23,6 +23,70 @@ iddia edilmez. Kod incelemesi, çalışma zamanı doğrulamasının yerini tutma
   sürümünün tarihsel kaydıdır ve burada değiştirilmez. Sonradan eklenen 3D
   sistemler yeni değerlendirmeye dahildir.
 
+## Sefer temposu, başkent savunması ve daha etkin AI — 4 Kasım 2026
+
+Son kullanıcı önceliği doğrultusunda zaman ve kara muharebesi hızlandırıldı:
+
+- 1× saat adımının beklemesi 300 ms'den **150 ms**'ye indi. 1×–5× aynı
+  saatlik hesapları kullanır; worker bitmeden ikinci iş gönderilmez ve
+  duraklamadan sonra birikmiş saatler topluca çalıştırılmaz. Gerçek ilerleme
+  hızı hesaplama ve çizim yüküne de bağlıdır.
+- Kara temasındaki karşılıklı güç ve organizasyon kaybı **3 kat** hızlandı.
+  Yürüyüş, yakıt, ikmal, takviye ve dinlenme ayrı oranlarını korur. Kontrollü
+  eşit piyade, üçe bir piyade, karma birlik ve tahkimatlı tank deneylerinde
+  savaş kararı sırasıyla **242→83, 153→51, 152→51 ve 177→59 oyun saati**
+  sürdü. Karma birlik savunmayı 51. saatte yendi, topçunun yürüyüşünü tamamlayıp
+  57. saatte birlikte girdi; savaş bitişi anında şehir ışınlanarak alınmaz.
+- Savaşan botlar cepheyi kolayda 24, normalde 12, çok zorda **6 oyun saati**
+  aralıkla değerlendirir. Ülkelerin karar saatleri dağıtılır; haftalık ekonomi,
+  araştırma ve diplomasi bütçesi her saat yeniden hesaplanmaz. Saldırılar
+  komşu tümenlerin toplam gücüne göre seçilir; gelen takviyeler sayılarak
+  savunmasız cepheler arasında dağıtılır. Oyuncunun emirleri bu AI tarafından
+  değiştirilmez.
+- Bot, elindeki tek tümen bile olsa, kontrol ettiği başkent için bir gerçek
+  muhafız ayırır. Boş başkente ulaşabilen birlik geri çağrılır; yoksa stok ve
+  insan gücü yeterliyken gerçek eğitim kuyruğu açılır. Muhafız gerçek savaşta
+  kayıp verebilir veya çekilebilir; işgal edilmiş başkente ücretsiz asker
+  doğmaz.
+- Yeni seferde 92 yönetimin tamamı kendi başkentinde askerle başlar. Tam tümen
+  kuramayan 20 küçük ülke mevcut seferber insan gücü ve orantılı tüfek bedeliyle
+  düşük mevcutlu muhafız alır. Eski kayıtlara kendiliğinden asker eklenmez.
+- Yeni sefer ekranının varsayılanı **Çok zor** oldu. Mevcut kaydın zorluğu
+  korunur; Komuta → Oyun zorluğu bölümünden değiştirilebilir. Çok zordaki
+  mevcut %15 oyuncu muharebe gücü azaltımı arayüzde açıkça gösterilir.
+
+Sık taktik kararları eklerken denizaşırı cephelerde aynı başarısız ağırlıklı
+rota aramasının tekrarlandığı bulundu. `ai-access.ts` karar turuna özel
+erişim ağı ve deniz geçiş önbelleği kullanır; gerçek emirler yine ağırlıklı
+rota ve ortak komut doğrulamasından geçer. Sonraki karar turunda işgal,
+diplomasi ve donanma durumu yeniden okunur. Optimizasyon öncesi/sonrası
+72 saatlik dünya özetleri aynı kaldı; ilk konuşlanmalar bölünerek geciktirilmez.
+
+`node scripts/benchmark-europa-ai.cjs` iki kez tekrarlanan 72 saatlik çok zor
+küresel savaşları ve 512 adaylı kopuk başkent durumunu ölçer. Node 24/Linux
+ölçümünde bütün saatlik hesap için medyan / p95 süreleri 337 tümenle
+**15,57 / 128,50 ms**, 589 tümenle **18,85 / 130,32 ms** oldu. Kopuk başkent
+kararında **1,75 / 3,47 ms** ölçüldü. İlk gerçek hareket emirleri ve günlük
+hesaplaşma hâlâ daha uzun sürebilir. Bunlar fiziksel cihaz FPS ölçümü veya
+her donanımda aynı takvim hızı garantisi değildir.
+
+**Doğrulama:** 719 motor/kayıt/harita/AI testi ve üretim derlemesi geçti.
+Altı farklı ülkeyle 90 günlük savaş/kayıt devamlılığı buna dahildir; bir yıllık
+ve 1936–1945 uzun sefer testleri bu çalıştırmanın dışında tutuldu. Yeni
+`scripts/test-europa-tempo-browser.cjs` kabul betiğinde altı kontrol geçti,
+sayfa hatası yok: yeni çok zor sefer, küçük ülkenin gerçek başkent muhafızı,
+eski kolay/normal kaydın zorluğu, gerçek karşılıklı savaş kayıpları, 1×–5× ve
+duraklatma, oyuncu emirlerinin korunması ve 390 piksel mobil hız kontrolleri.
+Tarayıcıdan kaydedilen gerçek worker durumu aynı saat sayısındaki motorla
+birebir eşleşti. 2D masaüstü/mobil ekran görüntüleri incelendi. Yerel raporlar
+`/workspace/scratch/europa-tempo-regression.log`, `europa-tempo-build.log`
+ve `europa-tempo-browser/report.json` altında; canlı site dağıtımı ayrıca
+doğrulanmış sayılmaz.
+
+Bu aşama şartnamenin özellikle 04–07, 41–43, 47–51 ve 91–94 bölümlerindeki
+mevcut temel üzerinde ilerler. Tam 2.000 satırlık kapsamın tamamlandığı
+anlamına gelmez; aşağıdaki kalan işler geçerlidir.
+
 ## Dünya 1936, doğrudan kuvvet yönetimi ve birlik görselleri — 4 Kasım 2026
 
 Kullanıcının seçimiyle harita 1936 ülkeleri ve bağlı yönetimlere genişletildi:
@@ -864,7 +928,7 @@ yerine kullanılamaz.
 | Bölümler / sistem | Mevcut çalışan temel ve kod karşılığı | Kalan ana bağımlılık veya kapsam |
 | --- | --- | --- |
 | 01–03 Hedef, kapsam, mimari | Tek oyunculu yerel kampanya; TypeScript alan modülleri, React arayüzü ve worker (`engine.ts`, `types.ts`). | Doğrulanmış HOI4 kaynak eşlemesi ve bütün katmanları kapsayan kabul ölçütleri tamamlanmadı. |
-| 04–07 Dünya, komut, saat, worker | Kimlikli dünya, saatlik kara adımı ve eşzamanlı hasar, günlük ekonomi, atomik komutlar; kayıtlı ayrı RNG akışları, dönemsel dünya özeti, protokol 2 fark aktarımı ve tek bekleyen worker (`engine.ts`, `rng.ts`, `world-digest.ts`, `simulation-state.ts`, `simulation.ts`). | Genel varlık hareket defteri, tüm alt sistemlerde eşzamanlı çözüm ve komutların tamamen worker içinde yürütülmesi yok. Günlük AI emirleri ortak doğrulama yolundadır. |
+| 04–07 Dünya, komut, saat, worker | Kimlikli dünya, saatlik kara adımı ve eşzamanlı hasar, günlük ekonomi, atomik komutlar; kayıtlı ayrı RNG akışları, dönemsel dünya özeti, protokol 2 fark aktarımı ve tek bekleyen worker (`engine.ts`, `rng.ts`, `world-digest.ts`, `simulation-state.ts`, `simulation.ts`). | Genel varlık hareket defteri, tüm alt sistemlerde eşzamanlı çözüm ve komutların tamamen worker içinde yürütülmesi yok. Günlük stratejik ve saatlere dağıtılmış taktik AI emirleri ortak doğrulama yolundadır. |
 | 08–10 Senaryo, tarih, coğrafya | 1936 başlangıcı, ülke/zorluk/tarihsel yönelim, 92 yönetim ve 909 hareket bölgesi; kara/deniz komşulukları (`map-data.json`, `world.ts`). | Ayrı 1939 senaryosu; kaynaklarıyla doğrulanmış küresel tarihsel sınırlar/karakterler; daha ayrıntılı eyalet–hareket bölgesi ve geçiş veri katmanları. |
 | 11–12 3D arazi, şehir, tesis | Gerçek 3D arazi, su, şehir/tesis dekoru ve tekrarlı nesneler (`map3d-geometry.ts`, `map3d-scenery.ts`, `map3d-renderer.ts`). | Bütün coğrafyayı kapsayan ayrıntılı varlık seti, bölgesel varlık yükleme ve istenen tüm yüksek ayrıntı düzeyleri yok; mevcut modeller prosedüreldir. |
 | 13–14 Kamera, seçim, harita modları | Kaydırma/yakınlaştırma, dokunma, şehir/birlik seçimi, küçük harita ve siyasi/askerî veri görünümleri (`WarMap3D.tsx`, `WarMap.tsx`, `useMapCamera.ts`). | Tam kutu seçimi ve şartnamedeki bütün tematik veri katmanları; yeni gözlem/ikmal modelleri tamamlandıkça bunlara bağlı kaplamalar. |
@@ -892,7 +956,7 @@ yerine kullanılamaz.
 | 78–82 Avrupa büyük güçleri ve Asya paketleri | Avrupa ülkeleri için genel ağaç; Almanya, Sovyetler, Britanya, Fransa ve İtalya ek odakları (`catalog.ts`). | Bölümlerde sayılan bütün ülkeler, parlamento/kurum rekabeti/özerklik/sürgün/birleşme içerikleri ve kaynaklı ülke paketleri tamamlanmadı. |
 | 83–84 Türkiye ve Balkanlar | Türkiye sanayileşme, modernizasyon, Montrö, Balkan güvenliği ve tarafsızlık odakları (`catalog.ts`, `national.ts`). | Ayrıntılı iç gruplar, diplomatik boğaz rejimi, lisans/pazar bağlantıları ve ödüllerin inşaat/üretim/teslim süreçlerine dönüşmesi. Mevcut Montrö odağı tahkimat/ilişki etkisidir. |
 | 85–90 Nordikler, diğer bölgeler, genel içerik | Haritada bulunan küçük ülkeler ortak ekonomi/araştırma/diplomasi/ordu döngüsünü kullanır (`map-data.json`, `catalog.ts`). | Eksik küçük tarihsel yönetimler, özgün bölgesel yollar, oluşturulabilir devletler, koşullu birleşme/bağımsızlık içerikleri ve kaynaklı envanter raporu. |
-| 91–92 Stratejik/operasyonel AI | Haftaya dağıtılmış tehdit/ekonomi/araştırma, yerel güç ve ikmale göre saldırı/geri çekilme; oyuncuyla ortak atomik komutlar (`ai.ts`, `management.ts`, `commands.ts`). | Kalıcı hedef/histerezis, ayrıştırılmış karar puanı, ortak gözlem modeli, başarısızlıktan yeniden planlama ve birleşik çıkarma. Mevcut AI kesin düşman durumunu okuyabilir. |
+| 91–92 Stratejik/operasyonel AI | Haftaya dağıtılmış ekonomi/araştırma, 6/12/24 saatlik taktik kararlar, başkent muhafızı, toplam güce göre saldırı ve dağıtılmış takviye; geçici erişim ağı, ortak atomik komutlar (`ai.ts`, `ai-tactics.ts`, `ai-access.ts`, `commands.ts`). | Kalıcı hedef/histerezis, ayrıştırılmış karar puanı, ortak gözlem modeli, başarısızlıktan yeniden planlama ve birleşik çıkarma. Mevcut AI kesin düşman durumunu okuyabilir. |
 | 93 Kayıt ve tekrar oynatma | V3 saatli kayıt, v1/v2 geçişi, boyut/şema/referans denetimi, yerel yuvalar ve IndexedDB otomatik kayıt (`storage.ts`, `storage-browser.ts`). | Tam komut günlüğü+snapshot replay, oyun/senaryo/içerik hash başlığı, içerik paketi doğrulaması. Sınırlı, doğrulanan komut makbuzları bu iterasyonda eklendi. |
 | 94 Performans ve paketleme | Dört kalite seviyesi, instancing/görünürlük sınırları, FPS/geometri/doku ölçümü; saatlik worker fark aktarımı ve ayrı hesaplama/paket süreleri; çevrimdışı paket, WebGL kaybında 2D dönüş (`simulation-state.ts`, `SimulationMetrics.tsx`, `map3d-renderer.ts`, `offline-assets.ts`). | Otomatik WebGL geri yükleme, bölgesel varlık yükleme ve 10 yıllık bellek/perf değerlendirmesi. Üç yükte aktarım deneyi fiziksel cihaz testi veya 60 FPS garantisi değildir. |
 | 95 Erişilebilirlik ve öğretici | Türkçe paneller, dokunma/klavye erişimi, sistem veya kullanıcı tercihli azaltılmış hareket (`WarMap3D.tsx`, `WarPanels.tsx`). | İngilizce/anahtarlı yerelleştirme, değiştirilebilir tuşlar, ayrıntılı UI ölçeği, ansiklopedi ve gerçek eylemlerle ilerleyen öğreticiler. |

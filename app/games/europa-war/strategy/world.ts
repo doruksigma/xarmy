@@ -422,7 +422,11 @@ export function createWorld(
     for (const other of Object.values(w.countries))
       if (c !== other)
         c.relations[other.id] = c.ideology === other.ideology ? 20 : -5;
-    const lands = controlled(w, c.id);
+    const controlledLands = controlled(w, c.id);
+    const capital = controlledLands.find((p) => p.id === c.capital);
+    const lands = capital
+      ? [capital, ...controlledLands.filter((p) => p.id !== capital.id)]
+      : controlledLands;
     const count = Math.min(
       lands.length * 2,
       Math.max(1, Math.floor(c.population / 5500000)),
@@ -434,6 +438,27 @@ export function createWorld(
       if (c.manpower < UNITS[type].men) break;
       addArmy(w, c.id, lands[i % lands.length].id, type);
       c.manpower -= UNITS[type].men;
+    }
+    // A small country's capital still has a real local guard, not a free
+    // 9,000-person division. Its existing manpower and rifles fund exactly the
+    // represented strength; it reinforces through the ordinary supply rules.
+    if (capital && !w.armies.some((army) => army.country === c.id)) {
+      const fraction = Math.min(
+        1,
+        c.manpower / UNITS.infantry.men,
+        c.equipment.rifle / UNITS.infantry.equipment.rifle!,
+      );
+      if (fraction > 0) {
+        const guard = addArmy(w, c.id, capital.id);
+        const soldiers = UNITS.infantry.men * fraction;
+        guard.strength = fraction * 100;
+        guard.name = `${Math.floor(soldiers)} kişilik başkent muhafızı`;
+        c.manpower = Math.max(0, c.manpower - soldiers);
+        c.equipment.rifle = Math.max(
+          0,
+          c.equipment.rifle - UNITS.infantry.equipment.rifle! * fraction,
+        );
+      }
     }
   }
   for (const d of data.countries) {

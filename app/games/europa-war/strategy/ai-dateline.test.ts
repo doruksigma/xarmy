@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { aiDay } from "./ai";
-import { createWorld, GEOGRAPHY, MAP } from "./world";
+import { addArmy, createWorld, GEOGRAPHY, MAP } from "./world";
 
 test("AI sends a reserve to the nearby border across the date line instead of the distant inland border", () => {
   const world = createWorld("turkey");
@@ -72,7 +72,10 @@ test("AI sends a reserve to the nearby border across the date line instead of th
     army.move = null;
     army.route = [];
     army.supply = 1;
+    army.strength = 90;
     world.armies = [army];
+    // This test measures the reserve's date-line route, not capital evacuation.
+    addArmy(world, country.id, country.capital).strength = 100;
     const index = Object.keys(world.countries).indexOf(country.id);
     world.day = (7 - (index % 7)) % 7;
     aiDay(world);

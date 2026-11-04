@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { once } from "node:events";
 import { test } from "node:test";
 import { Worker } from "node:worker_threads";
+import { isDeepStrictEqual } from "node:util";
 import { advanceHour, createWorld } from "./engine";
 import {
   SimulationController,
@@ -324,8 +325,8 @@ test("Simulation creates its worker lazily and never advances a paused campaign"
   f.controller.dispose();
 });
 
-test("Normal pace waits 300 ms per hour and 1–5× retain their relative intervals", () => {
-  assert.equal(SIMULATION_HOUR_MS, 300);
+test("Normal pace waits 150 ms per hour and 1–5× retain their relative intervals", () => {
+  assert.equal(SIMULATION_HOUR_MS, 150);
   for (const speed of [1, 2, 3, 4, 5]) {
     const interval = SIMULATION_HOUR_MS / speed;
     const f = fixture();
@@ -917,8 +918,21 @@ test(
       assert.deepEqual(current, advanceHour(previous));
       if (next.type === "result") {
         assert.equal(!!next.summary, current.hour === 0);
-        if (current.hour !== 0)
-          assert.equal(current.countries, previous.countries);
+        if (current.hour !== 0) {
+          // Understrength guards can spend replacement manpower hourly, and
+          // tactical AI can issue paid orders between daily settlements.
+          // Unchanged country branches must still retain their identities.
+          let unchanged = 0;
+          for (const id of Object.keys(current.countries)) {
+            if (
+              isDeepStrictEqual(current.countries[id], previous.countries[id])
+            ) {
+              assert.equal(current.countries[id], previous.countries[id]);
+              unchanged++;
+            }
+          }
+          assert.ok(unchanged > 0);
+        }
       }
     }
     const obsolete = await advance(request(44, 9, current));

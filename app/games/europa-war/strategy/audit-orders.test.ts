@@ -303,9 +303,11 @@ test("Yapay zekâ cephe gerisinde ikmalsiz kalan tümeni komşu sağlıklı ikma
   const w = createWorld("turkey", "historical", 1936, "normal");
   declareWar(w, "germany", "poland");
   w.armies = [];
+  addArmy(w, "germany", w.countries.germany.capital);
   const origin = Object.values(GEOGRAPHY).find(
     (p) =>
       p.country === "germany" &&
+      p.id !== w.countries.germany.capital &&
       p.neighbors.every((e) => GEOGRAPHY[e.id].country !== "poland") &&
       p.neighbors.some((e) => !e.sea && GEOGRAPHY[e.id].country === "germany"),
   )!;
@@ -339,6 +341,7 @@ test("Yapay zekâ güçlü cepheye sonuçsuz saldırmaz; açılan zayıf komşu 
   const w = createWorld("turkey", "historical", 1936, "normal");
   declareWar(w, "germany", "poland");
   w.armies = [];
+  addArmy(w, "germany", w.countries.germany.capital);
   const origin = Object.values(GEOGRAPHY).find(
     (p) =>
       p.country === "germany" &&

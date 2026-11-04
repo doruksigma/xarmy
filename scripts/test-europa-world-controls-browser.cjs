@@ -189,7 +189,7 @@ fs.mkdirSync(output, { recursive: true });
     });
     const fighter = airNavalUnits(mixed).find((unit) => unit.airborne);
     assert.ok(fighter?.active && fighter.scale === 0.55);
-    assert.equal(SIMULATION_HOUR_MS, 300);
+    assert.equal(SIMULATION_HOUR_MS, 150);
     samples.push({
       world: {
         scenario: MAP.scenario,

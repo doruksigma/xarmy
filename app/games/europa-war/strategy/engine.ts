@@ -2,7 +2,7 @@ import { conferencesDay } from "./conference";
 import { cleanupCommanders, commandersDay } from "./commanders";
 import { managementDay } from "./management";
 import { planningStep } from "./planning";
-import { aiDay } from "./ai";
+import { aiDay, aiTacticsHour } from "./ai";
 import { economyDay } from "./economy";
 import { resolveLandStep, routeTo } from "./land";
 import { operationsDay } from "./operations";
@@ -42,6 +42,7 @@ function stepHour(w: World): void {
     conferencesDay(w);
     w.tension = clamp(w.tension - 0.002);
   }
+  aiTacticsHour(w);
   planningStep(w, 1 / HOURS_PER_DAY);
   const armyById = new Map(w.armies.map((a) => [a.id, a]));
   for (const front of w.fronts) {

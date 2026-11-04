@@ -2,7 +2,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { UNITS } from "./catalog";
 import { declareWar } from "./diplomacy";
-import { combatPower, resolveLandDay, resolveLandStep } from "./land";
+import {
+  combatPower,
+  LAND_COMBAT_TEMPO,
+  resolveLandDay,
+  resolveLandStep,
+} from "./land";
 import {
   addArmy,
   createWorld,
@@ -134,10 +139,10 @@ test("Birden fazla cephede savunan birlik bütün hasarı tek başlangıçtan al
   const expectedLoss = world.battles.reduce(
     (sum, battle) =>
       sum +
-      Math.min(
+      (Math.min(
         7,
         Math.max(0.15, (battle.attack / Math.max(1, battle.defense)) * 1.5),
-      ) /
+      ) * LAND_COMBAT_TEMPO) /
         24,
     0,
   );

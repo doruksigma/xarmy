@@ -1,22 +1,12 @@
 import { manage } from "./management";
-import { COMMANDER_CAPACITY } from "./commander-roster";
 import { createCommand, executeCommandInPlace } from "./commands";
-import { seaEdgeOpen } from "./military-assets";
 import { focusTree, TECHNOLOGIES } from "./catalog";
 import { diplomaticAcceptance } from "./diplomacy";
-import { combatPower } from "./land";
-import { mapDistance } from "./geography-distance";
 import { researchSlots } from "./politics";
-import {
-  atWar,
-  controlled,
-  friendly,
-  GEOGRAPHY,
-  localSupply,
-  militaryPower,
-  supplyNetwork,
-} from "./world";
-import type { Action, Army, World } from "./types";
+import { atWar, controlled, GEOGRAPHY, militaryPower } from "./world";
+import { runCountryTactics } from "./ai-tactics";
+import { worldHour } from "./time";
+import type { Action, World } from "./types";
 
 /** AI decisions use stocks, local force ratios, supply, diplomatic threats and
  * research prerequisites. No hidden resources or random auto-capture. */
@@ -37,7 +27,7 @@ export function aiDay(w: World) {
       c = w.countries[countryId];
       return result.status === "applied" || result.status === "duplicate";
     };
-    let lands = controlled(w, countryId);
+    const lands = controlled(w, countryId);
     if (!lands.length) continue;
     const armies = () => w.armies.filter((army) => army.country === countryId);
     const threat = () => c.wars.length > 0;
@@ -212,174 +202,22 @@ export function aiDay(w: World) {
       }
     }
     manage(w, c, "operations", submit);
-    // Peace, alliances and asset orders can change access and controlled land.
-    lands = controlled(w, countryId);
-    // Diplomacy and asset orders are settled before reusing this network.
-    let network: Set<string> | undefined;
-    const supplies = new Map<string, number>();
-    const supplyAt = (province: string) => {
-      network ??= supplyNetwork(w, c.id);
-      if (!supplies.has(province))
-        supplies.set(province, localSupply(w, c.id, province, network));
-      return supplies.get(province)!;
-    };
-    // This pass only changes orders and generals; locations and enemy combat
-    // strength remain fixed until the next country takes its turn.
-    const byProvince = new Map<string, Army[]>(),
-      ownCounts = new Map<string, number>(),
-      armyIndices = new Map<string, number>(),
-      commanderCounts = new Map<string, number>(),
-      defenses = new Map<string, number>();
-    for (const [armyIndex, a] of w.armies.entries()) {
-      const at = byProvince.get(a.province);
-      if (at) at.push(a);
-      else byProvince.set(a.province, [a]);
-      if (a.country === c.id) {
-        ownCounts.set(a.province, (ownCounts.get(a.province) ?? 0) + 1);
-        armyIndices.set(a.id, armyIndex);
-        if (a.general)
-          commanderCounts.set(
-            a.general,
-            (commanderCounts.get(a.general) ?? 0) + 1,
-          );
-      }
-    }
-    const borders = threat()
-      ? lands.filter((p) =>
-          GEOGRAPHY[p.id].neighbors.some((e) =>
-            atWar(w, c.id, w.provinces[e.id].controller),
-          ),
-        )
-      : [];
-    // Shared origins and goals use one atomic group order. This avoids opening
-    // a separate copy-on-write transaction for every stacked division.
-    const movements = new Map<
-      string,
-      { armies: string[]; to: string; stance: "hold" | "advance" }
-    >();
-    const queueMove = (
-      army: Army,
-      to: string,
-      stance: "hold" | "advance" = "advance",
-    ) => {
-      const key = `${army.province}:${to}:${stance}`;
-      const group = movements.get(key);
-      if (group) group.armies.push(army.id);
-      else movements.set(key, { armies: [army.id], to, stance });
-    };
-    // General and movement orders do not add, remove or reorder armies. Read
-    // the live array at its stable index after every copy-on-write command.
-    for (const [armyId, armyIndex] of armyIndices) {
-      let a = w.armies[armyIndex];
-      if (a.move || a.route.length) continue;
-      if (!a.general) {
-        const preferred = c.generals[a.type === "infantry" ? 0 : 1];
-        let available =
-          preferred &&
-          (commanderCounts.get(preferred.id) ?? 0) < COMMANDER_CAPACITY
-            ? preferred.id
-            : c.generals.find(
-                (general) =>
-                  (commanderCounts.get(general.id) ?? 0) < COMMANDER_CAPACITY,
-              )?.id;
-        if (!available && submit({ type: "commanderCreate" }))
-          available = c.generals.at(-1)?.id;
-        if (
-          available &&
-          submit({ type: "general", army: armyId, general: available })
-        ) {
-          const assigned = w.armies[armyIndex].general;
-          if (assigned)
-            commanderCounts.set(
-              assigned,
-              (commanderCounts.get(assigned) ?? 0) + 1,
-            );
-        }
-        a = w.armies[armyIndex];
-        if (a.move || a.route.length) continue;
-      }
-      const adjacent = GEOGRAPHY[a.province].neighbors.filter(
-          (e) =>
-            !e.sea ||
-            (a.organization >= 70 && seaEdgeOpen(w, c.id, a.province, e.id)),
-        ),
-        enemies = adjacent.filter((e) =>
-          atWar(w, c.id, w.provinces[e.id].controller),
-        );
-      if (a.organization < 30 || a.supply < 0.35 || a.strength < 35) {
-        const rear = adjacent
-          .filter((e) => friendly(w, c.id, w.provinces[e.id].controller))
-          .sort((l, r) => supplyAt(r.id) - supplyAt(l.id));
-        if (
-          rear[0] &&
-          (enemies.length ||
-            (a.supply < 0.35 && supplyAt(rear[0].id) > a.supply))
-        ) {
-          queueMove(a, rear[0].id, "hold");
-        }
-        continue;
-      }
-      if (enemies.length) {
-        const ranked = enemies
-          .map((e) => {
-            if (!defenses.has(e.id))
-              defenses.set(
-                e.id,
-                (byProvince.get(e.id) ?? [])
-                  .filter((t) => atWar(w, c.id, t.country))
-                  .reduce((n, t) => n + combatPower(w, t, false, e.id), 0),
-              );
-            const def = defenses.get(e.id)!;
-            const atk = combatPower(w, a, true, e.id);
-            return {
-              id: e.id,
-              ratio: atk / Math.max(1, def),
-              value: GEOGRAPHY[e.id].vp,
-            };
-          })
-          .filter(
-            (e) =>
-              e.ratio >
-              (w.provinces[e.id].controller === w.player &&
-              w.difficulty === "easy"
-                ? 1.4
-                : 1.05),
-          )
-          .sort((l, r) => r.ratio * r.value - l.ratio * l.value);
-        if (ranked[0]) {
-          queueMove(a, ranked[0].id);
-        }
-        continue;
-      }
-      if (threat()) {
-        let border: (typeof borders)[number] | undefined,
-          bestScore = Infinity;
-        for (const p of borders) {
-          const score =
-            (ownCounts.get(p.id) ?? 0) * 100 +
-            mapDistance(GEOGRAPHY[a.province], GEOGRAPHY[p.id]);
-          if (score < bestScore) {
-            border = p;
-            bestScore = score;
-          }
-        }
-        if (border && border.id !== a.province) queueMove(a, border.id);
-      }
-    }
-    // Even maximum-length persisted IDs stay below the command payload limit.
-    for (const group of movements.values())
-      for (let offset = 0; offset < group.armies.length; offset += 512) {
-        const ids = group.armies.slice(offset, offset + 512);
-        submit(
-          ids.length === 1
-            ? { type: "move", army: ids[0], to: group.to, stance: group.stance }
-            : {
-                type: "moveGroup",
-                armies: ids,
-                to: group.to,
-                stance: group.stance,
-              },
-        );
-      }
+    runCountryTactics(w, countryId, true);
+  }
+}
+
+/** Cheap, staggered tactical responses are independent of weekly budgeting.
+ * Saved campaign time determines the schedule; no timers, RNG or extra save fields. */
+export function aiTacticsHour(w: World) {
+  const hour = worldHour(w);
+  for (const [index, id] of Object.keys(w.countries).entries()) {
+    const country = w.countries[id];
+    if (id === w.player || country.capitulated) continue;
+    // aiDay has already handled this country's orders at this midnight.
+    if ((w.hour ?? 0) === 0 && (w.day + index) % 7 === 0) continue;
+    const cadence = country.wars.length
+      ? { easy: 24, normal: 12, hard: 6 }[w.difficulty]
+      : 24;
+    if ((hour + index) % cadence === 0) runCountryTactics(w, id);
   }
 }

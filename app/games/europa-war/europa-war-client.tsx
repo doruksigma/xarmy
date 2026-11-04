@@ -199,7 +199,7 @@ export default function EuropaWarClient() {
   const [setup, setSetup] = useState(true),
     [choice, setChoice] = useState("turkey"),
     [scenario, setScenario] = useState<World["mode"]>("historical"),
-    [difficulty, setDifficulty] = useState<World["difficulty"]>("easy");
+    [difficulty, setDifficulty] = useState<World["difficulty"]>("hard");
   const [tab, setTab] = useState<Tab>("command"),
     [selected, setSelected] = useState("turkey-0"),
     [armyIds, setArmyIds] = useState<string[]>([]),
@@ -1158,11 +1158,12 @@ export default function EuropaWarClient() {
               >
                 <option value="easy">Kolay · ilk sefer için önerilir</option>
                 <option value="normal">Normal · eşit koşullar</option>
-                <option value="hard">Zor · deneyimli komutan</option>
+                <option value="hard">Çok zor · etkin cephe komutası</option>
               </select>
               <small>
-                Kolayda birliklerin daha güçlü, rakiplerin daha temkinli. Sefer
-                sırasında da değiştirebilirsin.
+                Çok zorda botlar cepheyi 6 oyun saatinde bir değerlendirir,
+                başkentlerini korur ve birlikte saldırır. Zorluğu sefer
+                sırasında değiştirebilirsin.
               </small>
             </label>
             <button className={styles.launch} onClick={start}>

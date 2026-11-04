@@ -22,6 +22,11 @@ import {
 } from "./world";
 import type { Army, World } from "./types";
 
+// Contact damage is expressed per campaign day. Keep its tempo separate from
+// marching, fuel, reinforcement and recovery so faster battles still respect
+// logistics and simultaneous return fire, including the final exchange.
+export const LAND_COMBAT_TEMPO = 3;
+
 export function routeTo(
   w: World,
   army: Army,
@@ -596,9 +601,13 @@ export function resolveLandStep(w: World, elapsedDays = 1) {
       );
       const defender = w.provinces[group.to].controller;
       const attackLoss =
-        clamp((defense / Math.max(1, attack)) * 1.3, 0.15, 6) * elapsedDays;
+        clamp((defense / Math.max(1, attack)) * 1.3, 0.15, 6) *
+        elapsedDays *
+        LAND_COMBAT_TEMPO;
       const defenseLoss =
-        clamp((attack / Math.max(1, defense)) * 1.5, 0.15, 7) * elapsedDays;
+        clamp((attack / Math.max(1, defense)) * 1.5, 0.15, 7) *
+        elapsedDays *
+        LAND_COMBAT_TEMPO;
       if (defenders.length) {
         w.battles.push({
           id,
