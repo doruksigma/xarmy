@@ -20,6 +20,7 @@ import { GEOGRAPHY, MAP, event, uid } from "./world";
 import { COMMANDER_CAPACITY, MAX_COMMANDERS } from "./commander-roster";
 import { isValidCommandState } from "./command-types";
 import { HOURS_PER_DAY, hourLabel, worldHour } from "./time";
+import { isUint32, isValidRandomStreams } from "./rng";
 import type { Building, Country, World } from "./types";
 
 type Validator = (value: unknown) => boolean;
@@ -221,7 +222,7 @@ const worldFields: Record<string, Validator> = {
   difficulty: one(["easy", "normal", "hard"]),
   day: (v) => num(36500)(v) && Number.isInteger(v),
   hour: (v) => num(HOURS_PER_DAY - 1)(v) && Number.isInteger(v),
-  seed: num(4294967295),
+  seed: isUint32,
   serial: num(),
   tension: num(100),
   countries: record(
@@ -358,11 +359,17 @@ const worldFields: Record<string, Validator> = {
   ),
   firedEvents: arr(str, 200),
 };
-const schema = shapeWithOptionalField(
+const legacySchema = shapeWithOptionalField(
   worldFields,
   "commandState",
   isValidCommandState,
 );
+const streamSchema = shapeWithOptionalField(
+  { ...worldFields, rng: isValidRandomStreams },
+  "commandState",
+  isValidCommandState,
+);
+const schema: Validator = (value) => legacySchema(value) || streamSchema(value);
 function validateWithRegions(
   value: unknown,
   regionIds: readonly string[],
@@ -372,6 +379,7 @@ function validateWithRegions(
   const w = value as World,
     ids = Object.keys(w.countries),
     has = (id: string) => ids.includes(id);
+  if (w.rng && w.rng.intelligence !== w.seed) return false;
   // Receipts may refer to completed or destroyed assets, but their issuer and
   // execution time must belong to this campaign. Never repair a corrupt ledger:
   // doing so could allow an already-paid command to execute again after loading.

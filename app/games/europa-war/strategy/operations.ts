@@ -9,6 +9,7 @@ import {
 } from "./airnaval";
 import { detachArmy } from "./planning";
 import { MISSIONS } from "./catalog";
+import { nextRandom } from "./rng";
 import {
   atWar,
   changeRelation,
@@ -17,7 +18,6 @@ import {
   event,
   GEOGRAPHY,
   navalPower,
-  random,
   requireRule,
 } from "./world";
 import type { Action, Country, World } from "./types";
@@ -210,20 +210,26 @@ export function operationsAction(w: World, c: Country, a: Action): boolean {
 }
 export function operationsDay(w: World) {
   airNavalDay(w);
-  for (const c of Object.values(w.countries)) {
+  // Saved object insertion order must not decide which country receives a draw.
+  // Snapshot the IDs: a coup-created country starts processing next day.
+  for (const countryId of Object.keys(w.countries).sort()) {
+    const c = w.countries[countryId];
     if (c.capitulated) continue;
     if (c.agentTraining > 0 && !--c.agentTraining) {
       c.agents++;
       if (c.id === w.player) event(w, "Ajan eğitimi tamamlandı.");
     }
-    for (const mission of c.missions) {
+    const orderedMissions = [...c.missions].sort((a, b) =>
+      a.id < b.id ? -1 : a.id > b.id ? 1 : 0,
+    );
+    for (const mission of orderedMissions) {
       if (++mission.progress < mission.total) continue;
       const t = w.countries[mission.target];
       if (t.capitulated) {
         c.agents++;
         continue;
       }
-      const success = random(w) < intelChance(c, t);
+      const success = nextRandom(w, "intelligence") < intelChance(c, t);
       if (success) {
         if (mission.type === "coup") startCivilWar(w, t.id, false, c.ideology);
         if (mission.type === "intel" || mission.type === "plans")
@@ -255,7 +261,7 @@ export function operationsDay(w: World) {
           event(w, `${t.name}: ${MISSIONS[mission.type].name} başarılı.`);
       } else {
         changeRelation(w, c.id, t.id, -12);
-        if (random(w) > 0.45) c.agents++;
+        if (nextRandom(w, "intelligence") > 0.45) c.agents++;
         if (c.id === w.player)
           event(
             w,

@@ -27,6 +27,7 @@ import {
 import { loadBrowserSave, saveAutomatic } from "./strategy/storage-browser";
 import { useOfflinePack } from "./strategy/useOfflinePack";
 import { useSimulation } from "./strategy/useSimulation";
+import SimulationMetrics from "./strategy/SimulationMetrics";
 import { useSaveSlots } from "./strategy/useSaveSlots";
 import type { Action, OffensivePlan, World } from "./strategy/types";
 import styles from "./europa.module.css";
@@ -224,6 +225,7 @@ export default function EuropaWarClient() {
     setPaused: setSimulationPaused,
     speed,
     setSpeed,
+    diagnostics,
   } = useSimulation(say);
   const setPaused = useCallback(
     (next: boolean | ((paused: boolean) => boolean)) => {
@@ -1003,6 +1005,9 @@ export default function EuropaWarClient() {
                     beginOrder("offensive");
                   }}
                 />
+              )}
+              {!setup && tab === "command" && (
+                <SimulationMetrics metrics={diagnostics} />
               )}
               {!setup && (
                 <div className={styles.campaignNote}>

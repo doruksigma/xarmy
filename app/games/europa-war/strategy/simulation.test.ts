@@ -9,10 +9,18 @@ import {
   type SimulationRequest,
   type SimulationResponse,
   type SimulationWorker,
+  type SimulationDiagnostics,
 } from "./simulation";
 import type {} from "./simulation.worker";
 import { createSimulationWorker } from "./simulation-worker";
 import type { World } from "./types";
+import {
+  acceptStateTransfer,
+  createStateTransfer,
+  SIMULATION_PROTOCOL,
+  statePayloadBytes,
+} from "./simulation-state";
+import { worldHour } from "./time";
 import { createCommand, executeCommand } from "./commands";
 
 test("1× ve 5× aynı oyun saatlerindeki emirlerle aynı gerçek simülasyonu üretir", () => {
@@ -166,22 +174,40 @@ class FakeWorker implements SimulationWorker {
   finish(request: SimulationRequest, result?: World) {
     const source = request.world ?? this.snapshot;
     assert.ok(source, "A worker needs a full initial snapshot");
-    result ??= world(source.day + 1, source.player);
+    result ??= world(worldHour(source) + 1, source.player);
     this.snapshot = result;
     this.onmessage?.({
-      data: {
-        type: "result",
-        id: request.id,
-        revision: request.revision,
-        world: result,
-      },
+      data: resultResponse(request, result),
     });
   }
 }
 
 // The scheduler transports worlds without inspecting engine state.
-function world(day = 0, player = "turkey") {
-  return { day, player } as World;
+function world(tick = 0, player = "turkey") {
+  return { day: Math.floor(tick / 24), hour: tick % 24, player } as World;
+}
+function resultResponse(
+  request: SimulationRequest,
+  result: World,
+): Extract<SimulationResponse, { type: "result" }> {
+  const state = { kind: "snapshot" as const, world: result };
+  const bytes = statePayloadBytes(state);
+  return {
+    type: "result",
+    protocol: SIMULATION_PROTOCOL,
+    id: request.id,
+    revision: request.revision,
+    baseTick: request.baseTick,
+    nextTick: request.baseTick + 1,
+    state,
+    metrics: {
+      transport: "snapshot",
+      payloadBytes: bytes,
+      snapshotBytes: bytes,
+      computeMs: 1,
+      encodeMs: 1,
+    },
+  };
 }
 
 function fixture(
@@ -196,6 +222,7 @@ function fixture(
   const published: World[] = [];
   const errors: string[] = [];
   const assets: string[][] = [];
+  const diagnostics: SimulationDiagnostics[] = [];
   const initial = world();
   const controller = new SimulationController({
     createWorker: () => {
@@ -207,6 +234,7 @@ function fixture(
     onWorld: (result) => published.push(result),
     onError: (error) => errors.push(error),
     onAssets: (urls) => assets.push(urls),
+    onDiagnostics: (entry) => diagnostics.push(entry),
     canRun: options.canRun,
     setTimer: clock.setTimer,
     clearTimer: clock.clearTimer,
@@ -226,6 +254,7 @@ function fixture(
     published,
     errors,
     assets,
+    diagnostics,
     initial,
     controller,
     start,
@@ -234,7 +263,7 @@ function fixture(
 
 test("Tarih sınırında worker başlatmadan anlaşılır bildirimle durur ve kayıt korunur", () => {
   const f = fixture();
-  const last = { ...world(36500), hour: 23 };
+  const last = { ...world(), day: 36500, hour: 23 };
   f.controller.setWorld(last);
   f.controller.setRunning(true);
   f.clock.advance(SIMULATION_HOUR_MS);
@@ -256,11 +285,27 @@ test("Initialization can expose offline worker assets without advancing a paused
   assert.equal(f.workers.length, 1);
   const worker = f.workers[0];
   const assets = ["/_next/static/chunks/simulation.worker.js"];
-  worker.onmessage?.({ data: { type: "ready", assets } });
+  worker.onmessage?.({
+    data: { type: "ready", protocol: SIMULATION_PROTOCOL, assets },
+  });
   assert.deepEqual(f.assets, [assets]);
   f.clock.advance(60_000);
   assert.deepEqual(worker.requests, []);
   assert.equal(f.published.length, 0);
+  f.controller.dispose();
+});
+
+test("An obsolete cached worker protocol stops immediately before accepting any state", () => {
+  const f = fixture();
+  f.controller.initialize();
+  const worker = f.workers[0];
+  worker.onmessage?.({ data: { type: "ready", protocol: 1 as 2, assets: [] } });
+  assert.equal(worker.terminated, true);
+  assert.equal(f.errors.length, 1);
+  assert.match(f.errors[0], /sürümü oyunla uyuşmadı/);
+  assert.equal(f.assets.length, 0);
+  assert.equal(f.published.length, 0);
+  assert.equal(f.diagnostics.length, 0);
   f.controller.dispose();
 });
 
@@ -300,10 +345,7 @@ test("Normal pace waits 500 ms per hour and 1–5× retain their relative interv
     assert.equal(worker.requests.length, 1);
     f.clock.advance(1);
     assert.equal(worker.requests.length, 2);
-    assert.deepEqual(
-      f.published.map((w) => w.day),
-      [1],
-    );
+    assert.deepEqual(f.published.map(worldHour), [1]);
     f.controller.dispose();
   }
 });
@@ -330,10 +372,7 @@ test("Changing a scheduled speed replaces its delay; pause and resume never catc
   assert.equal(worker.requests.length, 1, "Resume waits a full 2× interval");
   f.clock.advance(1);
   assert.equal(worker.requests.length, 2);
-  assert.deepEqual(
-    f.published.map((w) => w.day),
-    [1],
-  );
+  assert.deepEqual(f.published.map(worldHour), [1]);
   f.controller.dispose();
 });
 
@@ -368,13 +407,16 @@ test("Continuous accepted days send only advance metadata, including after a spe
     f.controller.setSpeed(day);
     f.clock.advance(SIMULATION_HOUR_MS / day);
     const request = worker.requests.at(-1)!;
-    assert.deepEqual(Object.keys(request).sort(), ["id", "revision", "type"]);
+    assert.deepEqual(Object.keys(request).sort(), [
+      "baseTick",
+      "id",
+      "protocol",
+      "revision",
+      "type",
+    ]);
     assert.equal(request.revision, revision);
   }
-  assert.deepEqual(
-    f.published.map((w) => w.day),
-    [1, 2, 3, 4, 5],
-  );
+  assert.deepEqual(f.published.map(worldHour), [1, 2, 3, 4, 5]);
   f.controller.dispose();
 });
 
@@ -393,7 +435,7 @@ test("A cached worker resynchronizes after a command, stale paused step and new 
   const synchronized = worker.requests.at(-1)!;
   assert.equal(synchronized.world, commanded);
   assert.notEqual(synchronized.revision, obsolete.revision);
-  const accepted = { ...commanded, day: 2 };
+  const accepted = { ...commanded, hour: 2 };
   worker.finish(synchronized, accepted);
   f.clock.advance(SIMULATION_HOUR_MS);
   const paused = worker.requests.at(-1)!;
@@ -415,7 +457,7 @@ test("A cached worker resynchronizes after a command, stale paused step and new 
     accepted,
     "Resume must discard the worker's unaccepted day",
   );
-  worker.finish(resumed, { ...accepted, day: 3 });
+  worker.finish(resumed, { ...accepted, hour: 3 });
   f.clock.advance(SIMULATION_HOUR_MS);
   const oldCampaign = worker.requests.at(-1)!;
   const replacement = world(125, "france");
@@ -426,7 +468,7 @@ test("A cached worker resynchronizes after a command, stale paused step and new 
   assert.equal(restored.world, replacement);
   worker.finish(restored);
   assert.equal(f.published.at(-1)?.player, "france");
-  assert.equal(f.published.at(-1)?.day, 126);
+  assert.equal(worldHour(f.published.at(-1)!), 126);
   f.clock.advance(SIMULATION_HOUR_MS);
   assert.equal("world" in worker.requests.at(-1)!, false);
   f.controller.dispose();
@@ -448,10 +490,7 @@ test("Retry after a cached worker fails sends the last accepted world to the new
   const replacement = f.workers[1];
   assert.equal(replacement.requests[0].world, accepted);
   replacement.finish(replacement.requests[0]);
-  assert.deepEqual(
-    f.published.map((w) => w.day),
-    [1, 2],
-  );
+  assert.deepEqual(f.published.map(worldHour), [1, 2]);
   f.clock.advance(SIMULATION_HOUR_MS);
   assert.equal("world" in replacement.requests.at(-1)!, false);
   f.controller.dispose();
@@ -476,7 +515,7 @@ test("A command replaces the authoritative world immediately and stale work cann
   const next = worker.requests[1];
   assert.equal(next.world, commanded);
   assert.notEqual(next.revision, obsolete.revision);
-  const result = { ...commanded, day: 1 };
+  const result = { ...commanded, hour: 1 };
   worker.finish(next, result);
   assert.deepEqual(f.published, [result]);
   f.controller.dispose();
@@ -515,7 +554,7 @@ test("Loading a campaign while a step runs never publishes the previous campaign
   assert.equal(worker.requests[1].world, restored);
   worker.finish(worker.requests[1], world(126, "france"));
   assert.equal(f.published[0].player, "france");
-  assert.equal(f.published[0].day, 126);
+  assert.equal(worldHour(f.published[0]), 126);
   f.controller.dispose();
 });
 
@@ -582,10 +621,7 @@ test("A duplicated reply cannot publish twice or complete a newer request", () =
   worker.finish(first, world(999));
   assert.equal(f.published.length, 1);
   worker.finish(worker.requests[1], world(2));
-  assert.deepEqual(
-    f.published.map((w) => w.day),
-    [1, 2],
-  );
+  assert.deepEqual(f.published.map(worldHour), [1, 2]);
   f.controller.dispose();
 });
 
@@ -601,12 +637,7 @@ test("A worker timeout reports once, preserves the latest world and stops schedu
   assert.equal(worker.terminated, true);
   assert.equal(f.published.length, 0);
   lateReply({
-    data: {
-      type: "result",
-      id: request.id,
-      revision: request.revision,
-      world: world(1),
-    },
+    data: resultResponse(request, world(1)),
   });
   f.clock.advance(60_000);
   assert.equal(f.published.length, 0);
@@ -653,6 +684,7 @@ test("Worker computation and transport errors stop the loop and preserve the cur
       worker.onmessage?.({
         data: {
           type: "error",
+          protocol: SIMULATION_PROTOCOL,
           id: request.id,
           revision: request.revision,
           error: "Daily simulation failed",
@@ -683,12 +715,7 @@ test("Disposal clears all timers and ignores queued callbacks after unmount", ()
   assert.equal(worker.terminated, true);
   assert.equal(f.clock.timers.size, 0);
   lateReply({
-    data: {
-      type: "result",
-      id: request.id,
-      revision: request.revision,
-      world: world(1),
-    },
+    data: resultResponse(request, world(1)),
   });
   lateError({ message: "Queued error after unmount" });
   f.clock.advance(60_000);
@@ -728,9 +755,88 @@ test("A hidden document cannot start a scheduled step before its visibility even
   f.controller.dispose();
 });
 
+test("Accepted deltas preserve unchanged references and publish measured diagnostics once", () => {
+  const f = fixture();
+  const before = createWorld("turkey");
+  f.controller.setWorld(before);
+  const worker = f.start();
+  const request = worker.requests[0];
+  const after = advanceHour(before);
+  const transfer = createStateTransfer(before, after);
+  const response: SimulationResponse = {
+    ...resultResponse(request, after),
+    ...transfer,
+    metrics: { ...transfer.metrics, computeMs: 12, encodeMs: 3 },
+    summary: { format: 1, tick: 1, digest: "ew1:0123456789abcdef" },
+  };
+  worker.onmessage?.({ data: response });
+  assert.deepEqual(f.published[0], after);
+  assert.equal(f.published[0].countries, before.countries);
+  assert.equal(f.diagnostics.length, 1);
+  assert.equal(f.diagnostics[0].tick, 1);
+  assert.equal(f.diagnostics[0].transport, "delta");
+  assert.equal(f.diagnostics[0].computeMs, 12);
+  worker.onmessage?.({ data: response });
+  assert.equal(f.diagnostics.length, 1);
+  f.controller.dispose();
+});
+
+test("Malformed result protocol, tick or patch pauses atomically and retry sends full authoritative state", () => {
+  for (const failure of [
+    "protocol",
+    "base",
+    "next",
+    "patch",
+    "metrics",
+    "summary",
+  ] as const) {
+    const f = fixture();
+    const before = createWorld("turkey");
+    const immutable = structuredClone(before);
+    f.controller.setWorld(before);
+    const worker = f.start();
+    const request = worker.requests[0];
+    const after = advanceHour(before);
+    const transfer = createStateTransfer(before, after);
+    const response = {
+      ...resultResponse(request, after),
+      ...transfer,
+      metrics: { ...transfer.metrics, computeMs: 1, encodeMs: 1 },
+    };
+    if (failure === "protocol") response.protocol = 1 as 2;
+    if (failure === "base") response.baseTick++;
+    if (failure === "next") response.nextTick++;
+    if (failure === "patch")
+      response.state = {
+        kind: "delta",
+        patch: {
+          kind: "object",
+          changes: {},
+          removed: ["player", "no-such-field"],
+        },
+      };
+    if (failure === "metrics") response.metrics.payloadBytes = NaN;
+    if (failure === "summary")
+      response.summary = { format: 1, tick: 999, digest: "bad" };
+    worker.onmessage?.({ data: response });
+    assert.equal(f.errors.length, 1, failure);
+    assert.match(f.errors[0], /seferle uyuşmadı/);
+    assert.equal(f.published.length, 0);
+    assert.equal(f.diagnostics.length, 0);
+    assert.equal(worker.terminated, true);
+    assert.deepEqual(before, immutable);
+    f.clock.advance(30_000);
+    assert.equal(worker.requests.length, 1);
+    f.controller.setRunning(true);
+    f.clock.advance(SIMULATION_HOUR_MS);
+    assert.equal(f.workers[1].requests[0].world, before);
+    f.controller.dispose();
+  }
+});
+
 test(
-  "The real worker keeps deterministic consecutive snapshots and explicitly resynchronizes changed campaigns",
-  { timeout: 10_000 },
+  "The real worker transfers deterministic deltas, rejects stale ticks and resynchronizes changed campaigns",
+  { timeout: 20_000 },
   async (t) => {
     const worker = new Worker(
       `const { parentPort, workerData } = require("node:worker_threads");
@@ -747,85 +853,104 @@ test(
     t.after(() => worker.terminate());
     const [ready] = (await once(worker, "message")) as [SimulationResponse];
     assert.equal(ready.type, "ready");
-    if (ready.type !== "ready")
-      assert.fail("Worker must report ready before a day starts");
+    if (ready.type !== "ready") assert.fail("Worker must report ready");
     assert.equal(ready.assets.length, 1);
     assert.match(ready.assets[0], /simulation\.worker\.js$/);
-
-    const input = createWorld("turkey", "historical", 1936, "easy");
-    const snapshot = structuredClone(input);
-    const reply = once(worker, "message");
-    const request: SimulationRequest = {
-      type: "advance",
-      id: 17,
-      revision: 8,
-      world: input,
-    };
-    worker.postMessage(request);
-    const [response] = (await reply) as [SimulationResponse];
-    assert.equal(response.type, "result");
-    if (response.type !== "result")
-      assert.fail("Worker must return a computed world");
-    assert.equal(response.id, request.id);
-    assert.equal(response.revision, request.revision);
-    assert.deepEqual(response.world, advanceHour(input));
-    assert.deepEqual(
-      input,
-      snapshot,
-      "Sending and advancing a world must preserve its source",
-    );
-
     async function advance(request: SimulationRequest) {
       const reply = once(worker, "message");
       worker.postMessage(request);
       return (await reply)[0] as SimulationResponse;
     }
-    let expected = response.world;
-    for (let id = 18; id <= 21; id++) {
-      expected = advanceHour(expected);
-      const next = await advance({ type: "advance", id, revision: 8 });
-      assert.equal(next.type, "result");
-      if (next.type !== "result")
-        assert.fail("Matching cached revision must advance");
-      assert.deepEqual(next.world, expected);
+    function request(
+      id: number,
+      revision: number,
+      base: World,
+      full = false,
+    ): SimulationRequest {
+      return {
+        type: "advance",
+        protocol: SIMULATION_PROTOCOL,
+        id,
+        revision,
+        baseTick: worldHour(base),
+        ...(full ? { world: base } : {}),
+      };
     }
-
-    const obsolete = await advance({ type: "advance", id: 22, revision: 9 });
+    function accept(before: World, response: SimulationResponse): World {
+      if (response.type !== "result")
+        assert.fail("Worker must return a result");
+      assert.equal(response.protocol, SIMULATION_PROTOCOL);
+      assert.equal(response.metrics.transport, response.state.kind);
+      assert.ok(
+        response.metrics.payloadBytes <= response.metrics.snapshotBytes,
+      );
+      assert.ok(
+        response.metrics.computeMs >= 0 && response.metrics.encodeMs >= 0,
+      );
+      return acceptStateTransfer(
+        before,
+        response.state,
+        response.baseTick,
+        response.nextTick,
+      );
+    }
+    const input = createWorld("turkey", "historical", 1936, "easy");
+    const snapshot = structuredClone(input);
+    const firstRequest = request(17, 8, input, true);
+    const response = await advance(firstRequest);
+    assert.equal(response.type, "result");
+    if (response.type !== "result") assert.fail("Worker must return a result");
+    assert.equal(response.id, firstRequest.id);
+    assert.equal(response.revision, firstRequest.revision);
+    assert.equal(response.state.kind, "delta");
+    assert.ok(
+      response.metrics.payloadBytes < response.metrics.snapshotBytes * 0.25,
+    );
+    assert.equal(response.summary?.tick, 1);
+    let current = accept(input, response);
+    assert.deepEqual(current, advanceHour(input));
+    assert.deepEqual(input, snapshot, "Source must remain immutable");
+    for (let id = 18; id <= 43; id++) {
+      const next = await advance(request(id, 8, current));
+      const previous = current;
+      current = accept(current, next);
+      assert.deepEqual(current, advanceHour(previous));
+      if (next.type === "result") {
+        assert.equal(!!next.summary, current.hour === 0);
+        if (current.hour !== 0)
+          assert.equal(current.countries, previous.countries);
+      }
+    }
+    const obsolete = await advance(request(44, 9, current));
     assert.equal(
       obsolete.type,
       "error",
-      "An uncached revision must never use an old world",
+      "Uncached revision cannot use old world",
     );
-    const commanded = { ...expected, tension: 73 };
-    const resynced = await advance({
-      type: "advance",
-      id: 23,
-      revision: 9,
-      world: commanded,
+    const commanded = { ...current, tension: 73 };
+    const resynced = await advance(request(45, 9, commanded, true));
+    current = accept(commanded, resynced);
+    assert.deepEqual(current, advanceHour(commanded));
+    const staleTick = await advance({
+      ...request(46, 9, current),
+      baseTick: worldHour(current) - 1,
     });
-    assert.equal(resynced.type, "result");
-    if (resynced.type !== "result")
-      assert.fail("Full authoritative world must recover a cache miss");
-    assert.deepEqual(resynced.world, advanceHour(commanded));
-
+    assert.equal(
+      staleTick.type,
+      "error",
+      "A duplicate base tick cannot advance twice",
+    );
     const replacement = createWorld("france", "historical", 1936, "easy");
     replacement.day = 125;
-    const restored = await advance({
-      type: "advance",
-      id: 24,
-      revision: 10,
-      world: replacement,
+    const restored = await advance(request(47, 10, replacement, true));
+    current = accept(replacement, restored);
+    assert.deepEqual(current, advanceHour(replacement));
+    const continued = await advance(request(48, 10, current));
+    assert.deepEqual(accept(current, continued), advanceHour(current));
+    const unsupported = await advance({
+      ...request(49, 10, current),
+      protocol: 1 as 2,
     });
-    assert.equal(restored.type, "result");
-    if (restored.type !== "result")
-      assert.fail("A new campaign must replace the snapshot");
-    assert.deepEqual(restored.world, advanceHour(replacement));
-    const continued = await advance({ type: "advance", id: 25, revision: 10 });
-    assert.equal(continued.type, "result");
-    if (continued.type !== "result")
-      assert.fail(
-        "The replacement campaign must continue without resending it",
-      );
-    assert.deepEqual(continued.world, advanceHour(restored.world));
+    assert.equal(unsupported.type, "error");
   },
 );

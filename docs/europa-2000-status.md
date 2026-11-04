@@ -1,6 +1,6 @@
 # Europa War — 2.000 satırlık şartnamenin kapsam ve aşama kaydı
 
-Son inceleme: 3 Kasım 2026. İlk aşamanın başlangıç sürümü: `4d9b8af`.
+Son inceleme: 4 Kasım 2026. İlk aşamanın başlangıç sürümü: `4d9b8af`.
 Bu belge yeni şartnamenin **100 bölümünü** aşağıdaki kesintisiz bölüm aralıklarıyla
 izler. Mevcut çalışan temeller ile istenen ayrıntıların tamamlanması farklı
 durumlardır; 100 bölümün tamamlandığı veya bütün kabul testlerinin geçtiği
@@ -714,6 +714,84 @@ Hava maliyeti, stratejik demiryolu nakli, kapasiteli gerçek sevkiyat, bütün
 karakter/animasyon setleri bu aşamada tamamlanmadı. Fiziksel telefon veya
 Windows donanımında 60 FPS garantisi verilmez.
 
+## Saatlik fark aktarımı ve deterministik kayıt temeli — 4 Kasım 2026
+
+Şartnamenin 06–07. bölümleri için simülasyonun sunuma aktarımı tamamlandı.
+Bu aşama mevcut ülke modellerini, araştırmaları, komutanları ve manuel yönetim
+seçeneklerini değiştirmez; kayıt ve saat ilerletme temelini geliştirir.
+
+- `simulation-state.ts`: saat başı bütün dünyayı gönderme yerine değişen alanları
+  taşıyan sürümlü fark protokolü. Kimlikli listelerde ekleme, silme ve sıralama
+  korunur; değişmeyen ülke, bölge ve birliklerin ana iş parçacığındaki nesneleri
+  yeniden oluşturulmaz. Farkın JSON eşdeğeri tam durumdan büyükse tam durum
+  gönderilir. Fark üretimi ve paket boyutu ölçümü worker içinde yapılır.
+- `simulation.ts` / `simulation.worker.ts`: protokol 2, istek/revizyon kimliği,
+  kaynak ve sonuç saati birlikte kontrol edilir. Aynı anda yalnız bir saat
+  hesaplanır; duraklatma, komut veya kayıt değiştirme önceki yanıtı geçersiz
+  kılar. Bozuk fark, desteklenmeyen protokol veya uyuşmayan saat kampanyaya
+  uygulanmaz; zaman durur ve tekrar başlatma geçerli durumdan yeniden eşitler.
+  Farklar atomik ve salt veri olarak uygulanır; tehlikeli nesne anahtarları,
+  yinelenen kimlikler, eksik dizi elemanları ve aşırı derinlik reddedilir.
+- `rng.ts`: savaş, olay, AI ve istihbarat için dört bağımsız kayıtlı üreteç.
+  Şu anda gerçek zar kullanan casusluk istihbarat akışını tüketir. Savaş ve AI
+  kurallarına yalnız akışları kullanmış olmak için yeni rastgelelik eklenmedi.
+  Grafik rastgeleliği bunlardan bağımsız kalır. Ülke ve casusluk görevleri
+  kimliğe göre sıralanır; nesne eklenme sırası zarı başka ülkeye vermez.
+- `storage.ts`: yeni seferlerde akışlar açıkça kaydedilir. Akışsız eski V1/V2/V3
+  kayıtları değişmeden okunur; ilk zar sırasında eski sayısal dizinin devamından
+  oluşturulur. Bozuk/kesirli/sınır dışı değerler ve eski tohumla tutarsız
+  istihbarat durumu reddedilir. Eski eşzamanlı görevler için yeni kimlik sırası
+  hangi görevin hangi zarı alacağını değiştirebilir; eski sayısal dizi korunur.
+- `world-digest.ts`: nesne alanlarının eklenme sırasından bağımsız, dizi sırasına
+  duyarlı `ew1` dünya parmak izi. Yeniden eşitlemede ve gün sınırında worker
+  tarafından hesaplanır; her saatte ana iş parçacığını tam dünya taramasına
+  zorlamaz. İki 32 bit denetim toplamıdır; kriptografik imza, kayıt özgünlüğü
+  garantisi veya tam tekrar oynatma sistemi değildir.
+- Komuta panelindeki kapalı **Simülasyon ölçümleri** bölümünde son kabul edilen
+  saatin hesaplama/paket hazırlama süreleri, gönderilen ve tam durumun UTF-8 JSON
+  eşdeğeri boyutları, son dünya özeti görülebilir. Boyutlar `postMessage` ikili
+  aktarımının ölçülmüş bayt sayısı değildir. FPS ayrı bir çizim ölçümüdür.
+
+**Otomatik doğrulama:** 14 dosyada 178 test geçti. Bunlara 100 saatlik fark
+yeniden kurma, savaş ortasında kaydet/yükle sonrası aynı dünya özeti, 1×/5×
+eşitliği, gerçek worker iletişimi, gecikmiş yanıtlar, V1/V2/V3 kayıt geçişleri,
+casusluk sonuçları, komutlar, eşzamanlı kara hasarı ve çevrimdışı paket testleri
+dahildir. Ayrıca bağımsız kontrolde 5.000 üretilmiş veri çifti yeniden kuruldu.
+
+`npm run build` geçti. `scripts/test-europa-worker-browser.cjs` üretim
+sunucusunda **14 tarayıcı kontrolünü** geçti: gerçek hareket/gün sınırı ve motor
+eşitliği, ölçüm paneli, duraklatma/komut/yeni sefer/kayıt yarışları, bozuk saat
+ve farkın atomik reddi, yeniden eşitleme, 390×844 dokunmatik kaydırma, gerçek
+3D sahnede saat ilerletme ve önbellekten çevrimdışı worker başlatma. Sonuçta
+sayfa hatası yoktu; ekran görüntüleri de incelendi. Mevcut kolay yönetimdeki
+kapalı bölümleri testin gerçek kullanıcı yoluyla açması için eski test akışı
+güncellendi. Uygulamanın yönetim tercihleri test için değiştirilmedi.
+
+`node scripts/benchmark-europa-transfer.cjs` ile her biri 48 saatlik üç yükte
+toplam **144 durum** ve dünya özeti motorla birebir eşleşti. Node 24/Linux
+ölçümünde alıcı tarafındaki kopyalama+fark uygulama karşılaştırması:
+
+| Senaryo | JSON eşdeğeri aktarım azalması | Fark alıcısı medyan | Tam dünya kopyası medyan |
+| --- | ---: | ---: | ---: |
+| Barış, 86 tümen | %91,31 | 0,43 ms | 2,15 ms |
+| Grup hareketi, 86 tümen | %91,27 | 0,46 ms | 2,26 ms |
+| Yük deneyi, 406 tümen ve 4 çatışma | %61,58 | 3,17 ms | 3,30 ms |
+
+Yoğun savaşta alıcı p95 süresi 5,70 ms, tam kopyada 5,06 ms idi; her koşulda
+daha hızlı işlem iddiası yoktur. Bunlar yerel Node ölçümleridir, gerçek telefon
+FPS testi değildir. Tarayıcı dokunma denemesinde 44 kare ve 116,7 ms en uzun
+kare aralığı gözlendi; takılmasızlık veya 60 FPS garantisi verilmez.
+Tam raporlar çalışma ortamında `europa-foundation-tests.log`,
+`europa-foundation-build.log`, `europa-foundation-browser/results.json` ve
+`europa-transfer-benchmark.json` adlarıyla `/workspace/scratch/` altında.
+
+**Kapsam sınırı:** Worker hâlâ her saat kendi dünyasını klonlayarak hesaplar;
+otoritatif komut yürütme bütünüyle worker'a taşınmadı. Fark kabulü protokol/yapı
+denetimidir; güvenilir aynı kaynak worker çıktısına her saatte dış kayıt şeması
+yeniden uygulanmaz. Hava ve deniz çözümü hâlâ günlük mevcut kuralları kullanır;
+bütün alanlarda eşzamanlı savaş, genel varlık muhasebesi, gerçek sevkiyat ve
+paylaşılan ikmal kapasitesi bu aşamada tamamlanmış sayılmaz.
+
 ## 1–100 kapsamı: mevcut temel ve kalan işler
 
 Dosya adları aksi belirtilmedikçe `app/games/europa-war/strategy/` altındadır.
@@ -724,7 +802,7 @@ yerine kullanılamaz.
 | Bölümler / sistem | Mevcut çalışan temel ve kod karşılığı | Kalan ana bağımlılık veya kapsam |
 | --- | --- | --- |
 | 01–03 Hedef, kapsam, mimari | Tek oyunculu yerel kampanya; TypeScript alan modülleri, React arayüzü ve worker (`engine.ts`, `types.ts`). | Doğrulanmış HOI4 kaynak eşlemesi ve bütün katmanları kapsayan kabul ölçütleri tamamlanmadı. |
-| 04–07 Dünya, komut, saat, worker | Kimlikli dünya, gerçek saatlik kara adımı ve eşzamanlı hasar, günlük ekonomik hesap, atomik komutlar, tek bekleyen worker (`world.ts`, `time.ts`, `engine.ts`, `simulation.ts`). | Ayrı RNG akışları, genel varlık hareket defteri, tüm alt sistemlerde eşzamanlı çözüm ve durum farkı aktarımı yok. Günlük AI emirleri ortak doğrulama yolundadır. |
+| 04–07 Dünya, komut, saat, worker | Kimlikli dünya, saatlik kara adımı ve eşzamanlı hasar, günlük ekonomi, atomik komutlar; kayıtlı ayrı RNG akışları, dönemsel dünya özeti, protokol 2 fark aktarımı ve tek bekleyen worker (`engine.ts`, `rng.ts`, `world-digest.ts`, `simulation-state.ts`, `simulation.ts`). | Genel varlık hareket defteri, tüm alt sistemlerde eşzamanlı çözüm ve komutların tamamen worker içinde yürütülmesi yok. Günlük AI emirleri ortak doğrulama yolundadır. |
 | 08–10 Senaryo, tarih, coğrafya | 1936 başlangıcı, ülke/zorluk/tarihsel yönelim, 29 ülke ve 447 hareket bölgesi; kara/deniz komşulukları (`map-data.json`, `world.ts`). | Ayrı 1939 senaryosu; kaynaklarıyla doğrulanmış küresel tarihsel sınırlar/karakterler; daha ayrıntılı eyalet–hareket bölgesi ve geçiş veri katmanları. |
 | 11–12 3D arazi, şehir, tesis | Gerçek 3D arazi, su, şehir/tesis dekoru ve tekrarlı nesneler (`map3d-geometry.ts`, `map3d-scenery.ts`, `map3d-renderer.ts`). | Bütün coğrafyayı kapsayan ayrıntılı varlık seti, bölgesel varlık yükleme ve istenen tüm yüksek ayrıntı düzeyleri yok; mevcut modeller prosedüreldir. |
 | 13–14 Kamera, seçim, harita modları | Kaydırma/yakınlaştırma, dokunma, şehir/birlik seçimi, küçük harita ve siyasi/askerî veri görünümleri (`WarMap3D.tsx`, `WarMap.tsx`, `useMapCamera.ts`). | Tam kutu seçimi ve şartnamedeki bütün tematik veri katmanları; yeni gözlem/ikmal modelleri tamamlandıkça bunlara bağlı kaplamalar. |
@@ -754,7 +832,7 @@ yerine kullanılamaz.
 | 85–90 Nordikler, diğer bölgeler, genel içerik | Haritada bulunan küçük ülkeler ortak ekonomi/araştırma/diplomasi/ordu döngüsünü kullanır (`map-data.json`, `catalog.ts`). | Bütün dünya ülkeleri, özgün bölgesel yollar, oluşturulabilir devletler, koşullu birleşme/bağımsızlık içerikleri ve kaynaklı envanter raporu. |
 | 91–92 Stratejik/operasyonel AI | Haftaya dağıtılmış tehdit/ekonomi/araştırma, yerel güç ve ikmale göre saldırı/geri çekilme; oyuncuyla ortak atomik komutlar (`ai.ts`, `management.ts`, `commands.ts`). | Kalıcı hedef/histerezis, ayrıştırılmış karar puanı, ortak gözlem modeli, başarısızlıktan yeniden planlama ve birleşik çıkarma. Mevcut AI kesin düşman durumunu okuyabilir. |
 | 93 Kayıt ve tekrar oynatma | V3 saatli kayıt, v1/v2 geçişi, boyut/şema/referans denetimi, yerel yuvalar ve IndexedDB otomatik kayıt (`storage.ts`, `storage-browser.ts`). | Tam komut günlüğü+snapshot replay, oyun/senaryo/içerik hash başlığı, içerik paketi doğrulaması. Sınırlı, doğrulanan komut makbuzları bu iterasyonda eklendi. |
-| 94 Performans ve paketleme | Dört gerçek kalite seviyesi, instancing/görünürlük sınırları, FPS/geometri/doku ölçümü, worker ve çevrimdışı paket; WebGL kaybında 2D dönüş (`map3d-renderer.ts`, `offline-assets.ts`). | Otomatik WebGL geri yükleme, bölgesel varlık yükleme, saatlik sim maliyeti ve 10 yıllık bellek/perf değerlendirmesi. Ayardaki 60 FPS hedefi donanım garantisi değildir. |
+| 94 Performans ve paketleme | Dört kalite seviyesi, instancing/görünürlük sınırları, FPS/geometri/doku ölçümü; saatlik worker fark aktarımı ve ayrı hesaplama/paket süreleri; çevrimdışı paket, WebGL kaybında 2D dönüş (`simulation-state.ts`, `SimulationMetrics.tsx`, `map3d-renderer.ts`, `offline-assets.ts`). | Otomatik WebGL geri yükleme, bölgesel varlık yükleme ve 10 yıllık bellek/perf değerlendirmesi. Üç yükte aktarım deneyi fiziksel cihaz testi veya 60 FPS garantisi değildir. |
 | 95 Erişilebilirlik ve öğretici | Türkçe paneller, dokunma/klavye erişimi, sistem veya kullanıcı tercihli azaltılmış hareket (`WarMap3D.tsx`, `WarPanels.tsx`). | İngilizce/anahtarlı yerelleştirme, değiştirilebilir tuşlar, ayrıntılı UI ölçeği, ansiklopedi ve gerçek eylemlerle ilerleyen öğreticiler. |
 | 96 Raporlar ve kampanya sonu | Ekonomik geçmiş grafikleri ve olay günlüğü (`WarPanels.tsx`, `types.ts`). | Aylık muhasebe raporu, birim/gemi tarihçesi, ölçülen kampanya hedefleri/başarımlar, zaman çizelgesi ve rapor dışa aktarımı. |
 | 97–98 Değişmezler ve uçtan uca test | Motor, stok, savaş, AI, kayıt, worker ve harita regresyonları; çok ülkeyle 90 günlük ve 1936–1945 tarihsel kampanya testleri (`advanced.test.ts`, `campaign-scenarios.test.ts`, `engine.test.ts`, `simulation.test.ts`). | Saatlik kara ve kayıt regresyonları eklendi. Sevkiyat/kapasiteli ikmal/HQ/proje sistemleri henüz yok; bunların bütünleşik kabul testleri geçti denemez. Genel property testleri ve fiziksel cihazlarda uzun sefer bellek/FPS profili ayrı iştir. |
@@ -762,9 +840,10 @@ yerine kullanılamaz.
 
 ## Sonraki bağımlılık sırası
 
-1. Saatlik temeli ayrı kayıtlı RNG akışları, doğrulanabilir dünya özeti ve
-   worker durum farkı aktarımıyla tamamla; hava/deniz çözümünü de başlangıç
-   görüntüsünden eşzamanlı işlemeye taşı.
+1. Hava/deniz çözümünü başlangıç görüntüsünden eşzamanlı işlemeye taşı.
+   Ayrı kayıtlı RNG akışları, dönemsel dünya özeti ve worker fark aktarımı
+   4 Kasım aşamasında uygulandı; bütün alanların sıralamadan bağımsız çözümü
+   ve tam tekrar oynatma hâlâ ayrı iştir.
 2. Personel/ekipman sürümü, rezervasyon, sevkiyat ve paylaşılan ikmal kapasitesini
    ortak muhasebeye bağla. Tasarımcılar, HQ, hava/deniz harekâtı ve ülke paketleri
    bu temeli atlayarak bağımsız ödül veya dekor olarak eklenmemeli.

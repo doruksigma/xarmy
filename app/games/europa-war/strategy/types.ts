@@ -1,4 +1,5 @@
 import type { CommandState } from "./command-types";
+import type { RandomStreams } from "./rng";
 
 export type Terrain =
   | "plains"
@@ -259,7 +260,10 @@ export interface World {
   difficulty: "easy" | "normal" | "hard";
   day: number;
   hour: number;
+  /** Legacy intelligence state; mirrors rng.intelligence when streams exist. */
   seed: number;
+  /** Absent only on pre-stream saves; initialized lazily on the first draw. */
+  rng?: RandomStreams;
   serial: number;
   tension: number;
   countries: Record<string, Country>;

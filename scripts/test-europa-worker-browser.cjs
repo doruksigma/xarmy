@@ -5,6 +5,7 @@
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
+const { execFileSync } = require("node:child_process");
 const { chromium } = require("playwright");
 
 const base = process.env.EUROPA_BASE_URL || "http://localhost:3000";
@@ -16,23 +17,78 @@ const readyText = "Çevrimdışı kullanıma hazır · bu cihaz";
 fs.mkdirSync(output, { recursive: true });
 
 (async () => {
-  const browser = await chromium.launch({
-    executablePath: process.env.EUROPA_CHROMIUM || "/usr/bin/chromium",
-    headless: true,
-    args: ["--no-sandbox", "--disable-dev-shm-usage"],
-  });
-  let page;
+  const root = path.resolve(__dirname, "..");
+  const compiled = fs.mkdtempSync(
+    path.join(root, "node_modules", ".europa-worker-browser-"),
+  );
+  let browser, page;
   const errors = [];
   const checks = [];
   const networkFailures = [];
+  const transfers = [];
+  let mobilePan, threeDSmoke;
   try {
+    // Compare the browser's actual accepted world with the production rules,
+    // including movement, midnight settlement, RNG and checkpoint fingerprints.
+    execFileSync(
+      process.execPath,
+      [
+        require.resolve("typescript/bin/tsc"),
+        "--outDir",
+        compiled,
+        "--rootDir",
+        root,
+        "--module",
+        "commonjs",
+        "--target",
+        "ES2022",
+        "--moduleResolution",
+        "node",
+        "--resolveJsonModule",
+        "--esModuleInterop",
+        "--skipLibCheck",
+        "--strict",
+        "app/games/europa-war/strategy/engine.ts",
+        "app/games/europa-war/strategy/storage.ts",
+        "app/games/europa-war/strategy/world-digest.ts",
+      ],
+      { cwd: root, stdio: "pipe" },
+    );
+    const strategy = path.join(compiled, "app/games/europa-war/strategy");
+    const engine = require(path.join(strategy, "engine.js"));
+    const storage = require(path.join(strategy, "storage.js"));
+    const { GEOGRAPHY } = require(path.join(strategy, "world.js"));
+    const { fingerprintWorld } = require(
+      path.join(strategy, "world-digest.js"),
+    );
+    const simulateTo = (world, targetTick) => {
+      let next = world;
+      assert.ok(targetTick >= tick(world) && targetTick - tick(world) < 240);
+      while (tick(next) < targetTick)
+        next = engine.advanceHours(next, Math.min(24, targetTick - tick(next)));
+      return next;
+    };
+    browser = await chromium.launch({
+      executablePath: process.env.EUROPA_CHROMIUM || "/usr/bin/chromium",
+      headless: true,
+      args: [
+        "--no-sandbox",
+        "--disable-dev-shm-usage",
+        "--use-angle=swiftshader",
+        "--enable-unsafe-swiftshader",
+        "--disable-gpu-rasterization",
+      ],
+    });
     const context = await browser.newContext({
       viewport: { width: 1440, height: 1000 },
     });
-    // This suite exercises the retained SVG map; 3D has a separate integration suite.
-    await context.addInitScript(() =>
-      localStorage.setItem("xarmy-europa-map-view-v1", "2d"),
-    );
+    // Most races use the SVG map; one bounded 3D check covers accepted deltas
+    // reaching the real renderer. Detailed models have a separate visual suite.
+    await context.addInitScript(() => {
+      localStorage.setItem("xarmy-europa-map-view-v1", "2d");
+      localStorage.setItem("xarmy-europa-3d-quality-v1", "low");
+      localStorage.setItem("xarmy-europa-3d-motion-v1", "reduced");
+    });
     context.on("requestfailed", (request) =>
       networkFailures.push({
         url: request.url(),
@@ -101,28 +157,53 @@ fs.mkdirSync(output, { recursive: true });
         .getByRole("button", { name: "Zamanı başlat", exact: true })
         .waitFor();
     };
-    const holdResults = async (worker) => {
+    const observeResults = async (worker) => {
       await worker.evaluate(() => {
         if (!self.__europaTestGate) {
           const send = self.postMessage.bind(self);
-          const gate = { enabled: false, held: [], requests: 0, send };
+          const gate = {
+            enabled: false,
+            held: [],
+            requests: 0,
+            observed: [],
+            send,
+          };
           self.__europaTestGate = gate;
           self.addEventListener("message", ({ data }) => {
             if (data?.type === "advance") gate.requests++;
           });
           self.postMessage = (message, ...rest) => {
+            if (message?.type === "result") {
+              gate.observed.push({
+                protocol: message.protocol,
+                baseTick: message.baseTick,
+                nextTick: message.nextTick,
+                kind: message.state?.kind,
+                metrics: message.metrics,
+                jsonEquivalentBytes: new TextEncoder().encode(
+                  JSON.stringify(message.state),
+                ).byteLength,
+                summary: message.summary,
+              });
+              if (gate.observed.length > 512) gate.observed.shift();
+            }
             if (gate.enabled && message?.type === "result")
               gate.held.push(message);
             else send(message, ...rest);
           };
         }
+      });
+    };
+    const holdResults = async (worker) => {
+      await observeResults(worker);
+      await worker.evaluate(() => {
         self.__europaTestGate.enabled = true;
       });
     };
     const waitForHeldResult = async (worker) => {
       await waitUntil(
         () => worker.evaluate(() => self.__europaTestGate.held.length === 1),
-        "the actual worker must compute and hold one day",
+        "the actual worker must compute and hold one hour",
       );
     };
     const releaseResults = (worker) =>
@@ -149,12 +230,127 @@ fs.mkdirSync(output, { recursive: true });
       "The worker entry must remain inside the game's service-worker scope",
     );
     const initial = await save();
+    await observeResults(worker);
     const initialDate = await date();
     await start();
     await waitForDateChange(initialDate);
     await pause();
-    assert.ok(tick((await save()).world) > tick(initial.world));
+    const firstAdvanced = await save();
+    assert.ok(tick(firstAdvanced.world) > tick(initial.world));
+    assert.deepEqual(
+      firstAdvanced.world,
+      simulateTo(initial.world, tick(firstAdvanced.world)),
+    );
     passed("real dedicated worker launches and advances the campaign");
+
+    const movement = structuredClone(initial);
+    movement.world.hour = 22;
+    const moving = movement.world.armies.find(
+      (army) =>
+        army.country === movement.world.player &&
+        GEOGRAPHY[army.province].neighbors.some(
+          (edge) =>
+            !edge.sea &&
+            movement.world.provinces[edge.id].controller === army.country,
+        ),
+    );
+    assert.ok(moving, "The scenario needs a friendly land movement fixture");
+    const destination = GEOGRAPHY[moving.province].neighbors.find(
+      (edge) =>
+        !edge.sea &&
+        movement.world.provinces[edge.id].controller === moving.country,
+    ).id;
+    const ordered = engine.applyAction(movement.world, {
+      type: "move",
+      army: moving.id,
+      to: destination,
+      stance: "hold",
+    });
+    assert.equal(ordered.error, null);
+    movement.world = storage.decodeSave(storage.encodeSave(ordered.world));
+    await restore(movement);
+    await worker.evaluate(() => {
+      self.__europaTestGate.observed = [];
+    });
+    await start();
+    await waitUntil(
+      async () =>
+        Number(
+          await page
+            .locator('[data-testid="game-date"]')
+            .getAttribute("data-game-hour"),
+        ) >= 25,
+      "movement must cross midnight through real worker transfers",
+    );
+    await pause();
+    const movementAfter = await save();
+    assert.deepEqual(
+      movementAfter.world,
+      simulateTo(movement.world, tick(movementAfter.world)),
+    );
+    const moved = movementAfter.world.armies.find(
+      (army) => army.id === moving.id,
+    );
+    assert.ok(
+      moved && (moved.move || moved.province !== moving.province),
+      "The real army must move",
+    );
+    const observed = await worker.evaluate(
+      () => self.__europaTestGate.observed,
+    );
+    assert.ok(
+      observed.some((result) => result.nextTick === 24 && result.summary),
+      "Midnight emits a deterministic checkpoint",
+    );
+    assert.ok(
+      observed.some(
+        (result) =>
+          result.kind === "delta" &&
+          result.metrics.payloadBytes < result.metrics.snapshotBytes * 0.5,
+      ),
+      "Ordinary hours must have a substantially smaller JSON-equivalent state payload",
+    );
+    for (const result of observed) {
+      assert.equal(result.protocol, 2);
+      assert.equal(result.nextTick, result.baseTick + 1);
+      assert.equal(result.metrics.transport, result.kind);
+      assert.equal(result.metrics.payloadBytes, result.jsonEquivalentBytes);
+      assert.ok(result.metrics.payloadBytes <= result.metrics.snapshotBytes);
+      if (result.summary)
+        assert.equal(
+          result.summary.digest,
+          fingerprintWorld(simulateTo(movement.world, result.nextTick)),
+        );
+    }
+    transfers.push(...observed);
+    passed(
+      "movement and midnight deltas exactly match the headless engine and world fingerprints",
+    );
+    await page.locator('button[title="Komuta"]').click();
+    await page.getByText("Simülasyon ölçümleri", { exact: true }).click();
+    const metrics = page.locator('[data-testid="simulation-metrics"]');
+    await metrics.waitFor({ state: "visible" });
+    assert.equal(
+      Number(await metrics.getAttribute("data-tick")),
+      tick(movementAfter.world),
+    );
+    assert.ok(
+      Number(await metrics.getAttribute("data-payload-bytes")) <=
+        Number(await metrics.getAttribute("data-snapshot-bytes")),
+    );
+    const checkpoint = page.locator('[data-testid="simulation-checkpoint"]');
+    const checkpointTick = Number(await checkpoint.getAttribute("data-tick"));
+    assert.ok(checkpointTick <= tick(movementAfter.world));
+    assert.equal(
+      await checkpoint.locator("code").textContent(),
+      fingerprintWorld(simulateTo(movement.world, checkpointTick)),
+    );
+    await page.screenshot({
+      path: path.join(output, "simulation-metrics.png"),
+    });
+    passed(
+      "public simulation measurements display accepted transfer size and checkpoint without advancing time",
+    );
 
     await holdResults(worker);
     await start();
@@ -172,13 +368,18 @@ fs.mkdirSync(output, { recursive: true });
     await releaseResults(worker);
     await page.waitForTimeout(450);
     assert.deepEqual((await save()).world, paused.world);
-    passed("only one day is in flight and pause rejects its late result");
+    passed("only one hour is in flight and pause rejects its late result");
 
     await restore(initial);
     await holdResults(worker);
     await start();
     await waitForHeldResult(worker);
     await page.locator('button[title="Komuta"]').click();
+    if (!(await page.getByLabel("Oyun zorluğu", { exact: true }).isVisible()))
+      await page
+        .locator("summary")
+        .filter({ hasText: /^Oyun zorluğu$/ })
+        .click();
     await page
       .getByLabel("Oyun zorluğu", { exact: true })
       .selectOption("normal");
@@ -188,7 +389,9 @@ fs.mkdirSync(output, { recursive: true });
     await waitForDateChange(commandDate);
     await pause();
     assert.equal((await save()).world.difficulty, "normal");
-    passed("an action during an in-flight day survives the stale worker reply");
+    passed(
+      "an action during an in-flight hour survives the stale worker reply",
+    );
 
     await holdResults(worker);
     await start();
@@ -204,7 +407,9 @@ fs.mkdirSync(output, { recursive: true });
     await releaseResults(worker);
     await page.waitForTimeout(450);
     assert.deepEqual((await save()).world, restored.world);
-    passed("loading another campaign rejects the previous campaign's late day");
+    passed(
+      "loading another campaign rejects the previous campaign's late hour",
+    );
 
     await holdResults(worker);
     await start();
@@ -216,7 +421,57 @@ fs.mkdirSync(output, { recursive: true });
     await releaseResults(worker);
     await page.waitForTimeout(450);
     assert.deepEqual((await save()).world, reset.world);
-    passed("starting a new campaign rejects the previous campaign's late day");
+    passed("starting a new campaign rejects the previous campaign's late hour");
+
+    for (const corruption of ["tick", "patch"]) {
+      const beforeCorruption = await save();
+      await holdResults(worker);
+      await start();
+      await waitForHeldResult(worker);
+      await worker.evaluate((kind) => {
+        const gate = self.__europaTestGate;
+        const result = gate.held.shift();
+        gate.enabled = false;
+        if (kind === "tick") result.nextTick++;
+        else {
+          result.state = {
+            kind: "delta",
+            patch: {
+              kind: "object",
+              removed: [],
+              changes: JSON.parse(
+                '{"__proto__":{"kind":"value","value":{"bad":true}}}',
+              ),
+            },
+          };
+          result.metrics.transport = "delta";
+        }
+        gate.send(result);
+      }, corruption);
+      await page
+        .getByRole("button", { name: "Zamanı başlat", exact: true })
+        .waitFor();
+      await page.getByText(/Simülasyon sonucu seferle uyuşmadı/).waitFor();
+      assert.deepEqual((await save()).world, beforeCorruption.world);
+      const count = workers.length;
+      const beforeRetry = await date();
+      await start();
+      await waitUntil(
+        () => workers.length > count,
+        "a corrupt result must require a fresh worker",
+      );
+      worker = workers.at(-1);
+      await waitForDateChange(beforeRetry);
+      await pause();
+      const retry = await save();
+      assert.deepEqual(
+        retry.world,
+        simulateTo(beforeCorruption.world, tick(retry.world)),
+      );
+      passed(
+        `corrupt ${corruption} result pauses atomically; retry resynchronizes the exact campaign`,
+      );
+    }
 
     await holdResults(worker);
     await start();
@@ -246,12 +501,194 @@ fs.mkdirSync(output, { recursive: true });
     worker = workers.at(-1);
     await waitForDateChange(failureDate);
     await pause();
-    const saved = await save();
+    let saved = await save();
     assert.ok(tick(saved.world) > tick(beforeFailure.world));
     passed(
       "worker failure pauses without changing the saved world and retry recovers",
     );
 
+    const beforeMobile = saved;
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page
+      .getByRole("button", { name: "Yönetim panelini kapat", exact: true })
+      .click();
+    await page
+      .getByRole("button", { name: "Haritayı yakınlaştır", exact: true })
+      .click();
+    await page
+      .getByRole("button", { name: "Haritayı yakınlaştır", exact: true })
+      .click();
+    const mobileMap = page.locator('[data-testid="war-map"]');
+    const beforePan = await mobileMap.getAttribute("viewBox");
+    const bounds = await mobileMap.boundingBox();
+    assert.ok(bounds && bounds.width > 100 && bounds.height > 100);
+    const touch = await context.newCDPSession(page);
+    await touch.send("Emulation.setTouchEmulationEnabled", {
+      enabled: true,
+      maxTouchPoints: 2,
+    });
+    await page.evaluate(() => {
+      const probe = {
+        active: true,
+        frames: 0,
+        maxGapMs: 0,
+        last: performance.now(),
+      };
+      self.__europaPanProbe = probe;
+      function frame(now) {
+        if (!probe.active) return;
+        probe.frames++;
+        probe.maxGapMs = Math.max(probe.maxGapMs, now - probe.last);
+        probe.last = now;
+        requestAnimationFrame(frame);
+      }
+      requestAnimationFrame(frame);
+    });
+    const panDate = await date();
+    await start();
+    const x = Math.round(Math.min(340, bounds.x + bounds.width * 0.65));
+    const y = Math.round(Math.min(680, bounds.y + bounds.height * 0.5));
+    await touch.send("Input.dispatchTouchEvent", {
+      type: "touchStart",
+      touchPoints: [{ x, y }],
+    });
+    for (let step = 1; step <= 12; step++) {
+      await touch.send("Input.dispatchTouchEvent", {
+        type: "touchMove",
+        touchPoints: [{ x: x - step * 5, y: y - step * 4 }],
+      });
+      await page.waitForTimeout(20);
+    }
+    await touch.send("Input.dispatchTouchEvent", {
+      type: "touchEnd",
+      touchPoints: [],
+    });
+    await waitForDateChange(panDate);
+    await pause();
+    await waitUntil(
+      async () => (await mobileMap.getAttribute("viewBox")) !== beforePan,
+      "touch drag must change the mobile map camera",
+    );
+    mobilePan = await page.evaluate(() => {
+      const probe = self.__europaPanProbe;
+      probe.active = false;
+      return {
+        frames: probe.frames,
+        maxGapMs: probe.maxGapMs,
+        viewport: { width: innerWidth, height: innerHeight },
+        documentWidth: document.documentElement.scrollWidth,
+      };
+    });
+    assert.ok(mobilePan.frames > 0);
+    assert.ok(
+      mobilePan.documentWidth <= mobilePan.viewport.width + 1,
+      "Mobile layout must not overflow horizontally",
+    );
+    await page.screenshot({
+      path: path.join(output, "mobile-touch-worker.png"),
+    });
+    await touch.send("Emulation.setTouchEmulationEnabled", { enabled: false });
+    await page
+      .getByRole("button", { name: "Yönetim panelini aç →", exact: true })
+      .click();
+    saved = await save();
+    assert.deepEqual(
+      saved.world,
+      simulateTo(beforeMobile.world, tick(saved.world)),
+      "Camera input must not change simulation results",
+    );
+    passed(
+      "mobile touch camera remains functional while worker hours advance; frame samples recorded without an FPS guarantee",
+    );
+    await page.setViewportSize({ width: 1440, height: 1000 });
+
+    const before3D = saved;
+    await observeResults(worker);
+    await page
+      .getByRole("button", { name: "Yönetim panelini kapat", exact: true })
+      .click();
+    await page.getByRole("button", { name: "3D arazi", exact: true }).click();
+    await page.waitForFunction(
+      () =>
+        document.querySelector('[data-testid="war-map-3d"]')?.dataset.ready ===
+        "true",
+      null,
+      { timeout: 120000 },
+    );
+    const canvas = page.getByTestId("war-map-3d");
+    assert.equal(
+      await page.getByLabel("Grafik kalitesi", { exact: true }).inputValue(),
+      "low",
+    );
+    const firstFrame = Number(
+      await canvas.getAttribute("data-rendered-frames"),
+    );
+    await start();
+    await waitUntil(
+      async () =>
+        Number(
+          await page
+            .locator('[data-testid="game-date"]')
+            .getAttribute("data-game-hour"),
+        ) >=
+        tick(before3D.world) + 3,
+      "the 3D scene must consume several accepted worker hours",
+      60000,
+    );
+    await pause();
+    await page.waitForFunction(
+      (frame) =>
+        Number(
+          document.querySelector('[data-testid="war-map-3d"]')?.dataset
+            .renderedFrames,
+        ) > frame,
+      firstFrame,
+      { timeout: 60000 },
+    );
+    threeDSmoke = await canvas.evaluate((element) => ({
+      ready: element.dataset.ready,
+      quality: element.dataset.quality,
+      frames: Number(element.dataset.renderedFrames),
+      triangles: Number(element.dataset.triangles),
+      unitInstances: Number(element.dataset.unitInstances),
+    }));
+    assert.equal(threeDSmoke.ready, "true");
+    assert.equal(threeDSmoke.quality, "low");
+    assert.ok(threeDSmoke.triangles > 0 && threeDSmoke.unitInstances > 0);
+    assert.equal(
+      await page.getByTestId("war-map").count(),
+      0,
+      "3D must not fall back to SVG",
+    );
+    assert.ok(
+      (await worker.evaluate(() => self.__europaTestGate.observed)).some(
+        (result) => result.kind === "delta",
+      ),
+    );
+    await page.screenshot({ path: path.join(output, "worker-delta-3d.png") });
+    await page
+      .getByRole("button", { name: "Yönetim panelini aç →", exact: true })
+      .click();
+    saved = await save();
+    assert.deepEqual(
+      saved.world,
+      simulateTo(before3D.world, tick(saved.world)),
+    );
+    await page
+      .getByRole("button", { name: "2D siyasi harita", exact: true })
+      .click();
+    await page.getByTestId("war-map").waitFor();
+    assert.equal(await canvas.count(), 0);
+    passed(
+      "3D renderer accepts hourly deltas with real geometry and unchanged simulation results",
+    );
+
+    const offlineDetails = page.getByText(
+      "Sefer bilgileri ve çevrimdışı durum",
+      { exact: true },
+    );
+    if ((await offlineDetails.locator("..").getAttribute("open")) === null)
+      await offlineDetails.click();
     await page
       .getByText(readyText, { exact: true })
       .waitFor({ timeout: 60000 });
@@ -334,6 +771,9 @@ fs.mkdirSync(output, { recursive: true });
     const result = {
       result: "passed",
       checks,
+      transfers,
+      mobilePan,
+      threeDSmoke,
       workerAssets,
       terrainUrl,
       terrainSize: bitmap,
@@ -366,7 +806,8 @@ fs.mkdirSync(output, { recursive: true });
     }
     throw error;
   } finally {
-    await browser.close();
+    if (browser) await browser.close();
+    fs.rmSync(compiled, { recursive: true, force: true });
   }
 })().catch((error) => {
   console.error(error);

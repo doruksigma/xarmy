@@ -3,6 +3,7 @@ import { initializeAssets, seaEdgeOpen, shipPower } from "./military-assets";
 import { UNITS } from "./catalog";
 import { assignAvailableCommander } from "./commander-roster";
 import { current, isDraft } from "immer";
+import { createRandomStreams, nextRandom } from "./rng";
 import type { Army, Country, GameEvent, Terrain, World } from "./types";
 
 export const MAP = data;
@@ -18,8 +19,8 @@ export function uid(w: World, prefix: string) {
   return `${prefix}-${++w.serial}`;
 }
 export function random(w: World) {
-  w.seed = (Math.imul(w.seed, 1664525) + 1013904223) >>> 0;
-  return w.seed / 4294967296;
+  // Compatibility for old callers; new rules must name their own domain.
+  return nextRandom(w, "intelligence");
 }
 export function dateOf(day: number) {
   return new Date(Date.UTC(1936, 0, 1 + day));
@@ -222,6 +223,7 @@ export function createWorld(
     day: 0,
     hour: 0,
     seed: seed >>> 0,
+    rng: createRandomStreams(seed >>> 0),
     serial: 0,
     tension: 12,
     countries: {},

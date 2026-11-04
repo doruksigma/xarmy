@@ -1,6 +1,10 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { SimulationController, type SimulationWorker } from "./simulation";
+import {
+  SimulationController,
+  type SimulationWorker,
+  type SimulationDiagnostics,
+} from "./simulation";
 import { createSimulationWorker } from "./simulation-worker";
 import {
   reportSimulationWorkerAssets,
@@ -15,6 +19,9 @@ export function useSimulation(onError: (message: string) => void) {
   const [world, setWorldState] = useState<World | null>(null);
   const [paused, setPausedState] = useState(true);
   const [speed, setSpeedState] = useState(1);
+  const [diagnostics, setDiagnostics] = useState<SimulationDiagnostics | null>(
+    null,
+  );
   const current = useRef<World | null>(null);
   const pausedRef = useRef(true);
   const speedRef = useRef(1);
@@ -43,6 +50,11 @@ export function useSimulation(onError: (message: string) => void) {
         reportSimulationWorkerError();
       },
       onAssets: reportSimulationWorkerAssets,
+      onDiagnostics: (next) =>
+        setDiagnostics((previous) => ({
+          ...next,
+          summary: next.summary ?? previous?.summary,
+        })),
     });
     controller.current = simulation;
     simulation.setWorld(current.current);
@@ -59,11 +71,14 @@ export function useSimulation(onError: (message: string) => void) {
     current.current = next;
     controller.current?.setWorld(next);
     setWorldState(next);
+    // A manual command or loaded campaign invalidates the previous checkpoint.
+    setDiagnostics(null);
   }, []);
 
   const setPaused = useCallback(
     (value: boolean | ((paused: boolean) => boolean)) => {
-      const next = typeof value === "function" ? value(pausedRef.current) : value;
+      const next =
+        typeof value === "function" ? value(pausedRef.current) : value;
       pausedRef.current = next;
       controller.current?.setRunning(!next);
       setPausedState(next);
@@ -77,5 +92,14 @@ export function useSimulation(onError: (message: string) => void) {
     setSpeedState(next);
   }, []);
 
-  return { world, setWorld, current, paused, setPaused, speed, setSpeed };
+  return {
+    world,
+    setWorld,
+    current,
+    paused,
+    setPaused,
+    speed,
+    setSpeed,
+    diagnostics,
+  };
 }

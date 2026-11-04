@@ -1,21 +1,55 @@
 import type { World } from "./types";
 import { MAX_CAMPAIGN_HOUR, worldHour } from "./time";
+import {
+  acceptStateTransfer,
+  SIMULATION_PROTOCOL,
+  type StateTransfer,
+  type TransferMetrics,
+} from "./simulation-state";
 
 /** At 1× one game hour per 500 ms, always waiting for worker completion. */
 export const SIMULATION_HOUR_MS = 500;
 
 export type SimulationRequest = {
   type: "advance";
+  protocol: typeof SIMULATION_PROTOCOL;
   id: number;
   revision: number;
+  baseTick: number;
   // Omitted only when the worker already holds this revision's accepted state.
   world?: World;
 };
 
+export type SimulationMetrics = TransferMetrics & {
+  computeMs: number;
+  encodeMs: number;
+};
+export type SimulationSummary = { format: 1; tick: number; digest: string };
+export type SimulationDiagnostics = SimulationMetrics & {
+  tick: number;
+  summary?: SimulationSummary;
+};
+
 export type SimulationResponse =
-  | { type: "ready"; assets: string[] }
-  | { type: "result"; id: number; revision: number; world: World }
-  | { type: "error"; id: number; revision: number; error: string };
+  | { type: "ready"; protocol: typeof SIMULATION_PROTOCOL; assets: string[] }
+  | {
+      type: "result";
+      protocol: typeof SIMULATION_PROTOCOL;
+      id: number;
+      revision: number;
+      baseTick: number;
+      nextTick: number;
+      state: StateTransfer;
+      metrics: SimulationMetrics;
+      summary?: SimulationSummary;
+    }
+  | {
+      type: "error";
+      protocol: typeof SIMULATION_PROTOCOL;
+      id: number;
+      revision: number;
+      error: string;
+    };
 
 export interface SimulationWorker {
   onmessage: ((event: { data: SimulationResponse }) => void) | null;
@@ -33,6 +67,7 @@ type Options = {
   onWorld: (world: World) => void;
   onError: (message: string) => void;
   onAssets?: (assets: string[]) => void;
+  onDiagnostics?: (diagnostics: SimulationDiagnostics) => void;
   canRun?: () => boolean;
   setTimer?: (callback: () => void, delay: number) => Timer;
   clearTimer?: (timer: Timer) => void;
@@ -50,8 +85,12 @@ export class SimulationController {
   private workerRevision: number | null = null;
   private nextId = 0;
   private scheduled: Timer | null = null;
-  private pending: { id: number; revision: number; timeout: Timer } | null =
-    null;
+  private pending: {
+    id: number;
+    revision: number;
+    source: World;
+    timeout: Timer;
+  } | null = null;
   private readonly setTimer: NonNullable<Options["setTimer"]>;
   private readonly clearTimer: NonNullable<Options["clearTimer"]>;
 
@@ -70,6 +109,12 @@ export class SimulationController {
       worker.onmessage = ({ data }) => {
         if (this.disposed || this.worker !== worker) return;
         if (data.type === "ready") {
+          if (data.protocol !== SIMULATION_PROTOCOL) {
+            this.fail(
+              "Simülasyon sürümü oyunla uyuşmadı. Sefer korundu; sayfayı yenileyerek tekrar deneyebilirsin.",
+            );
+            return;
+          }
           this.options.onAssets?.(data.assets);
           return;
         }
@@ -97,9 +142,50 @@ export class SimulationController {
           );
           return;
         }
-        this.world = data.world;
+        let next: World;
+        try {
+          if (
+            data.protocol !== SIMULATION_PROTOCOL ||
+            this.world !== pending.source
+          )
+            throw new Error("Simulation protocol or source mismatch");
+          next = acceptStateTransfer(
+            pending.source,
+            data.state,
+            data.baseTick,
+            data.nextTick,
+          );
+          if (
+            !data.metrics ||
+            data.metrics.transport !== data.state.kind ||
+            [
+              data.metrics.computeMs,
+              data.metrics.encodeMs,
+              data.metrics.payloadBytes,
+              data.metrics.snapshotBytes,
+            ].some((n) => !Number.isFinite(n) || n < 0) ||
+            data.metrics.payloadBytes > data.metrics.snapshotBytes ||
+            (data.summary &&
+              (data.summary.format !== 1 ||
+                data.summary.tick !== data.nextTick ||
+                typeof data.summary.digest !== "string" ||
+                !/^ew1:[0-9a-f]{16}$/.test(data.summary.digest)))
+          )
+            throw new Error("Invalid simulation diagnostics");
+        } catch {
+          this.fail(
+            "Simülasyon sonucu seferle uyuşmadı. Zaman duraklatıldı; mevcut sefer korunuyor. Tekrar ▶ ile yeniden eşitleyebilirsin.",
+          );
+          return;
+        }
+        this.world = next;
         this.workerRevision = pending.revision;
-        this.options.onWorld(data.world);
+        this.options.onWorld(next);
+        this.options.onDiagnostics?.({
+          ...data.metrics,
+          tick: data.nextTick,
+          ...(data.summary ? { summary: data.summary } : {}),
+        });
         // Waiting after completion avoids queued hours on slower devices.
         this.schedule();
       };
@@ -217,6 +303,7 @@ export class SimulationController {
     this.pending = {
       id,
       revision,
+      source: this.world,
       timeout: this.setTimer(() => {
         this.fail(
           "Saat hesaplaması zaman aşımına uğradı. Zaman duraklatıldı; mevcut sefer korunuyor. Tekrar ▶ ile deneyebilirsin.",
@@ -226,8 +313,10 @@ export class SimulationController {
     try {
       this.worker.postMessage({
         type: "advance",
+        protocol: SIMULATION_PROTOCOL,
         id,
         revision,
+        baseTick: worldHour(this.world),
         // Commands, loading, pause/resume and a fresh worker require a full
         // resync. Continuous days reuse the last accepted worker snapshot,
         // avoiding a synchronous main-thread clone of the whole campaign.
