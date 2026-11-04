@@ -23,6 +23,67 @@ iddia edilmez. Kod incelemesi, çalışma zamanı doğrulamasının yerini tutma
   sürümünün tarihsel kaydıdır ve burada değiştirilmez. Sonradan eklenen 3D
   sistemler yeni değerlendirmeye dahildir.
 
+## Referans ekrana göre stratejik harita ve komuta düzeni — 4 Kasım 2026
+
+Kullanıcının son ekran referansına göre harita ve yönetim arayüzü yeniden
+düzenlendi. Bu görsel aşama önceki günlük hava/deniz hesabı üzerinde çalışır;
+2.000 satırlık kapsamın tamamlandığı anlamına gelmez.
+
+- Masaüstünde harita genişliğini daraltan sol menü kaldırıldı; kaynaklar,
+  tarih/hız ve gerçek yönetim düğmeleri iki dar üst şeritte toplandı.
+  İstikrar, savaş desteği ve yakıt gerçek kampanya değerleriyle görünür.
+  Yönetim penceresi haritanın üstünde açılır; Ordu penceresi iki sütuna
+  yer verecek kadar geniştir. Mobilde yatay kaydırılabilen menü, tek sütunlu
+  pencereler ve dokunmatik kontroller kullanılır.
+- Yeni görünüm tercihi olmayan kullanıcı 2D siyasi haritayla başlar; kayıtlı
+  3D tercihi korunur ve iki görünüm arasında geçiş yapılabilir. İlk harita ve
+  oyuncu ülkesi değişikliği başkent çevresine odaklanır. Dünya görünümü,
+  yakınlaştırma, sürükleme ve şehir araması kullanılmaya devam eder.
+- 2D haritada gri-mavi deniz, soluk siyasi renkler, daha belirgin kabartma,
+  büyük ülke adları ve ince şehir sınırları kullanılır. Kalın ülke ve savaş
+  sınırları gerçek bölge kontrolünden türetilir; işgalden sonra değişir.
+  Atanmış komutanların hedef sınırları renkli cephe şeritleriyle gösterilir.
+  Atanmamış komutanlar için cephe üretilmez. 1.966 ortak bölge sınırı
+  `scripts/europa-war/build-strategic-boundaries.cjs` ile harita verisinden
+  önceden üretilir; tarayıcıda çokgen kesişimi hesaplanmaz. Kaynak haritanın
+  SHA-256 özeti ve `--check` komutu verinin güncelliğini denetler. Sınır katmanı
+  kontrol, savaş ve komutan emri değiştiğinde yenilenir. 448 KB kaynak JSON'un
+  yüklenme maliyeti vardır; sıfır takılma veya fiziksel telefon FPS garantisi
+  verilmez.
+- Birlik kartları küçük askerî sayaçlara dönüştürüldü; tür, adet, organizasyon
+  ve mevcut güç gerçek birliklerden gelir. Hareket ve taarruz okları gerçek
+  rotaları kullanır. Şehir isimleri başkent/seçim kuralını korur.
+- Komutanlar altta portreli bir sırada, gerçek tümen sayıları ve emir durumuyla
+  görünür. Sınır seçimi, saldır/savun, otomatik atama ve 12 tümen sınırı aynı
+  komutları kullanır. Portreler yerel SVG çizimleridir.
+- Ordu penceresinde mevcut birlik türünün ekipmanları ve gerçek eğitim
+  maliyeti, kâğıt görünümündeki temel savaş istatistikleriyle yan yana sunulur.
+  Araştırma kilitleri, kaynak tüketimi, çıkış şehri ve eğitim kuyruğu işler.
+  Bu hazır birlik türlerinin inceleme/eğitim ekranıdır; modüler tabur/alay
+  tasarımcısının tamamlandığı iddia edilmez.
+
+**Doğrulama:** Eğitim yeri/maliyeti, komutan ataması/emri/kaydı, hareket rotası,
+kamera sınırı ve 3D kontrol yerleşimi için 53 mevcut kontrol; yeni sınır
+katmanı için 6 kontrol geçti (**59/59**). Sınır üreticisinin `--check` denetimi
+ve `npm run build` başarılı. `scripts/test-europa-reference-browser.cjs`
+üretim sunucusunda **17/17** kabul kontrolünü tamamladı; JavaScript/konsol
+hatası kaydedilmedi. Test sıradan doğrulanmış kampanyayı arayüzden içe aktarır,
+gerçek kaynak tüketimini ve emirleri arayüzden kaydedilen dünyada denetler.
+
+- 1440×900 ve 390×844 görünümlerinde başkent odağı, ülke/savaş/cephe sınırları,
+  yakınlaştırma, harita kaydırma, eğitim, komutan saldırı emri ve ülke renkli
+  hareket oku çalıştı. Oyuncu ülkesi değişince kamera yeni başkente odaklandı.
+- 2D/3D geçişleri kampanyayı değiştirmedi; sayfa yenilemesinde kayıtlı 3D
+  görünüm tercihi geri geldi. 320×640 ve 667×375 boyutlarında yatay taşma yok;
+  Ordu penceresi kaydırılabilir ve kapatma düğmesi erişilebilir.
+- İlk tarayıcı denemesinde masaüstü Ordu penceresi haritadan hedef seçimini
+  engelliyordu. Harita emri başlatıldığında pencerenin kapanması düzeltildi
+  ve tekrar testinde gerçek hedef rotasının kayda yazıldığı doğrulandı.
+
+Ekran görüntüleri masaüstü, mobil ve kısa yatay görünüm için incelendi.
+Kontroller Chromium/SwiftShader ve dokunmatik ekran emülasyonunda yapıldı;
+fiziksel telefon performansı veya bütün oyunların kapsamlı testi değildir.
+
 ## Eşzamanlı hava/deniz hesabı ve günlük harekât raporu — 4 Kasım 2026
 
 Şartnamenin 04–07, 55–64 ve 96–98 bölümlerindeki günlük savaş temeli ilerletildi.

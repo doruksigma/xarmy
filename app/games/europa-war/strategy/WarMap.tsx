@@ -13,6 +13,7 @@ import MinimapBackdrop from "./MinimapBackdrop";
 import MilitaryIcon, { unitIcon } from "./MilitaryIcon";
 import { countryLabelsOverlap, countryMapLabels } from "./map3d-country-labels";
 import { movementRoutes, movementArrowHead } from "./movement-routes";
+import { strategicMapOverlay } from "./strategic-map-boundaries";
 import {
   CARTOGRAPHIC_TERRAINS,
   politicalCountryColor,
@@ -111,6 +112,30 @@ const pointList = (ids: string[]) =>
     .join(" ");
 const curvedPath = (ax: number, ay: number, bx: number, by: number) =>
   `M${ax} ${ay} Q${(ax + bx) / 2 + (by - ay) * 0.12} ${(ay + by) / 2 - (bx - ax) * 0.12} ${bx} ${by}`;
+// Presentation-only strategic theatre inks; world/saves retain national colours.
+const STRATEGIC_COLORS: Readonly<Record<string, string>> = {
+  germany: "#454c54",
+  france: "#7c89af",
+  poland: "#ad849e",
+  italy: "#788b76",
+  uk: "#9c737c",
+  ussr: "#8f718b",
+  turkey: "#a77c7b",
+  romania: "#b8b08b",
+  hungary: "#ad8684",
+  czechoslovakia: "#718f9e",
+  yugoslavia: "#67768e",
+  spain: "#a89c83",
+  austria: "#a3a1aa",
+  switzerland: "#aa7e8c",
+  belgium: "#aaa165",
+  netherlands: "#b1957f",
+  denmark: "#99909e",
+  lithuania: "#a4aa7a",
+};
+function strategicColor(id: string, fallback: string) {
+  return STRATEGIC_COLORS[id] ?? politicalCountryColor(id, fallback);
+}
 const EMPTY_NETWORK = new Set<string>();
 const MAP_DETAILS_KEY = "xarmy-europa-map-details-v1";
 type MapDetails = { terrain: boolean; readiness: boolean };
@@ -118,9 +143,9 @@ const MAP_BACKGROUND = (
   <>
     <defs>
       <radialGradient id="sea-glow">
-        <stop stopColor="#132541" />
-        <stop offset=".65" stopColor="#0b1930" />
-        <stop offset="1" stopColor="#050b19" />
+        <stop stopColor="#687995" />
+        <stop offset=".65" stopColor="#4c617e" />
+        <stop offset="1" stopColor="#263a56" />
       </radialGradient>
       <radialGradient id="night-city-glow">
         <stop stopColor="#ffe7b9" stopOpacity=".7" />
@@ -282,8 +307,8 @@ const ProvinceRegion = memo(function ProvinceRegion({
         d={province.path}
         fill={fill}
         fillRule="evenodd"
-        stroke={close ? "#202632" : "#272d38"}
-        strokeWidth={(close ? 1 : detailed ? 0.7 : 0.45) * strokeScale}
+        stroke={close ? "#30333c8f" : "#30343d78"}
+        strokeWidth={(close ? 0.65 : detailed ? 0.5 : 0.35) * strokeScale}
         className={styles.province}
         role="button"
         aria-label={`${province.name}, ${countryName}`}
@@ -383,8 +408,21 @@ function WarMap({
     [],
   );
   const player = world.countries[world.player];
+  const strategicBorders = strategicMapOverlay(world);
   const capitalRef = useRef(player.capital);
   capitalRef.current = player.capital;
+  const focusedPlayer = useRef(world.player);
+  useEffect(() => {
+    if (focusedPlayer.current === world.player) return;
+    focusedPlayer.current = world.player;
+    setView((v) => {
+      const ratio = v.w / v.h,
+        p = GEOGRAPHY[capitalRef.current];
+      const w = ratio < 0.75 ? 520 * ratio : Math.min(980, 620 * ratio);
+      const h = w / ratio;
+      return constrainCamera({ x: p.x - w / 2, y: p.y - h / 2, w, h });
+    });
+  }, [world.player, setView]);
   // Match screen-pixel strokes at each committed zoom without asking the
   // browser to transform thousands of coastline vertices for non-scaling SVG
   // strokes during every gesture. The compositor scales them between commits.
@@ -501,12 +539,12 @@ function WarMap({
           7 * scale,
           Math.min(
             (close
-              ? 8.5
+              ? 28
               : label.provinces > 8
-                ? 16
+                ? 34
                 : label.provinces > 3
-                  ? 12
-                  : 9) * scale,
+                  ? 24
+                  : 15) * scale,
             (label.span * 0.92 - name.length * letterSpacing) /
               (name.length * 0.66),
           ),
@@ -662,15 +700,13 @@ function WarMap({
         initial = !initialized;
       initialized = true;
       setView((v) => {
-        if (initial || Math.abs(v.w - fitCamera(v.w / v.h).w) < 1) {
-          if (ratio < 0.75) {
-            const p = GEOGRAPHY[capitalRef.current],
-              w = 520 * ratio,
-              h = 520;
-            return constrainCamera({ x: p.x - w / 2, y: p.y - h / 2, w, h });
-          }
-          return fitCamera(ratio);
+        if (initial) {
+          const p = GEOGRAPHY[capitalRef.current];
+          const w = ratio < 0.75 ? 520 * ratio : Math.min(980, 620 * ratio);
+          const h = w / ratio;
+          return constrainCamera({ x: p.x - w / 2, y: p.y - h / 2, w, h });
         }
+        if (Math.abs(v.w - fitCamera(v.w / v.h).w) < 1) return fitCamera(ratio);
         const w = zoomWidth(v.h * ratio, ratio),
           h = w / ratio;
         return constrainCamera({
@@ -810,29 +846,36 @@ function WarMap({
   const countryBorders = useMemo(
     () => (
       <g pointerEvents="none" className={atlas.borders}>
-        {MAP.countries.map((c) => (
-          <path
-            key={c.id}
-            d={c.path}
-            fill="none"
-            stroke="#080c12"
-            strokeWidth={(close ? 1.8 : 1.6) * strokeScale}
-            opacity=".85"
-          />
-        ))}
-        {MAP.countries.map((c) => (
-          <path
-            key={c.id}
-            d={c.path}
-            fill="none"
-            stroke="#47505f"
-            strokeWidth={0.45 * strokeScale}
-            opacity=".65"
-          />
-        ))}
+        <path
+          d={strategicBorders.country}
+          fill="none"
+          stroke="#282833"
+          strokeWidth={2.2 * strokeScale}
+          data-testid="strategic-country-borders"
+        />
+        <path
+          d={strategicBorders.country}
+          fill="none"
+          stroke="#c4b6c4"
+          strokeWidth={0.55 * strokeScale}
+          opacity=".45"
+        />
+        <path
+          d={strategicBorders.hostile}
+          fill="none"
+          stroke="#3c2730"
+          strokeWidth={3.8 * strokeScale}
+        />
+        <path
+          d={strategicBorders.hostile}
+          fill="none"
+          stroke="#d78787"
+          strokeWidth={1.3 * strokeScale}
+          data-testid="strategic-hostile-borders"
+        />
       </g>
     ),
-    [close, strokeScale],
+    [strategicBorders, strokeScale],
   );
   const geometry = useMemo(
     () => (
@@ -844,7 +887,7 @@ function WarMap({
           .map((g) => {
             const p = world.provinces[g.id],
               country = world.countries[p.controller];
-            let fill = politicalCountryColor(country.id, country.color);
+            let fill = strategicColor(country.id, country.color);
             if (mode === "terrain")
               fill = `#${CARTOGRAPHIC_TERRAINS[GEOGRAPHY[g.id].terrain].color.toString(16).padStart(6, "0")}`;
             if (mode === "supply")
@@ -894,7 +937,7 @@ function WarMap({
             pointerEvents="none"
             data-testid="terrain-overlay"
             className={atlas.terrainRelief}
-            opacity={mode === "military" || mode === "supply" ? 0.45 : 0.85}
+            opacity={mode === "military" || mode === "supply" ? 0.3 : 0.52}
           />
         )}
         <g pointerEvents="none">
@@ -1106,6 +1149,44 @@ function WarMap({
             );
           })}
         </g>
+        {strategicBorders.fronts.map((front) => (
+          <g
+            key={front.id}
+            pointerEvents="none"
+            data-strategic-front={front.id}
+            data-target-country={front.target}
+            data-front-stance={front.stance}
+          >
+            <title>
+              {front.name} · {world.countries[front.target].name} sınırı ·{" "}
+              {front.stance === "attack" ? "Saldırı" : "Savunma"}
+            </title>
+            <path
+              d={front.path}
+              fill="none"
+              stroke="#171c23"
+              strokeWidth={7 * strokeScale}
+              strokeLinejoin="round"
+              opacity=".6"
+            />
+            <path
+              d={front.path}
+              fill="none"
+              stroke={front.color}
+              strokeWidth={4 * strokeScale}
+              strokeLinejoin="round"
+              opacity=".9"
+            />
+            <path
+              d={front.path}
+              fill="none"
+              stroke="#e4e4c9"
+              strokeWidth={6 * strokeScale}
+              strokeDasharray={`${0.8 * strokeScale} ${4 * strokeScale}`}
+              opacity=".8"
+            />
+          </g>
+        ))}
         {[
           ...world.fronts
             .filter((f) => f.country === world.player)
@@ -1119,7 +1200,7 @@ function WarMap({
                 points={pointList(f.points)}
                 fill="none"
                 stroke="#183528"
-                strokeWidth="8"
+                strokeWidth={6 * strokeScale}
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 opacity=".55"
@@ -1128,7 +1209,7 @@ function WarMap({
                 points={pointList(f.points)}
                 fill="none"
                 stroke={f.id === "draft" ? "#ffe2a2" : "#b7d5a0"}
-                strokeWidth="4"
+                strokeWidth={3 * strokeScale}
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 opacity=".9"
@@ -1148,25 +1229,37 @@ function WarMap({
         {friendlyPlans.map((p) => {
           const army = world.armies.find((a) => p.armies.includes(a.id));
           if (!army || !p.objectives.length) return null;
+          const routePoints = [army.province, ...p.objectives]
+            .filter((id) => GEOGRAPHY[id])
+            .map((id) => GEOGRAPHY[id]);
           const points = pointList([army.province, ...p.objectives]);
+          const color = world.countries[p.country].color;
+          const head = movementArrowHead(routePoints, 12 * strokeScale)
+            .map((point) => `${point.x},${point.y}`)
+            .join(" ");
           return (
             <g key={p.id} pointerEvents="none" opacity={p.active ? 0.95 : 0.6}>
               <polyline
                 points={points}
-                stroke="#573e29"
-                strokeWidth="9"
+                stroke="#252b37"
+                strokeWidth={10 * strokeScale}
                 fill="none"
                 strokeLinejoin="round"
                 opacity=".5"
               />
               <polyline
                 points={points}
-                stroke="#eac484"
-                strokeWidth="4.5"
+                stroke={color}
+                strokeWidth={6 * strokeScale}
                 fill="none"
                 strokeLinejoin="round"
                 strokeDasharray={p.active ? undefined : "8 5"}
-                markerEnd="url(#offensive-arrow)"
+              />
+              <polygon
+                points={head}
+                fill={color}
+                stroke="#e5dfd4"
+                strokeWidth={0.7 * strokeScale}
               />
               <text
                 x={GEOGRAPHY[p.objectives[0]].x}
@@ -1597,8 +1690,8 @@ function WarMap({
                   width="29"
                   height="20"
                   rx="1.5"
-                  fill="#9ca58c"
-                  stroke="#263b31"
+                  fill="#56654b"
+                  stroke="#18231d"
                   strokeWidth="1"
                 />
               )}
@@ -1608,12 +1701,12 @@ function WarMap({
                 rx="1.5"
                 fill={
                   own
-                    ? "#e3dfc5"
+                    ? "#243d2d"
                     : player.allies.includes(a.country)
-                      ? "#b9ced0"
-                      : "#9c7765"
+                      ? "#304957"
+                      : "#624842"
                 }
-                stroke={chosen ? "#ffdf97" : "#25362d"}
+                stroke={chosen ? "#fff0b8" : "#99967b"}
                 strokeWidth={chosen ? 2.1 : 1.3}
                 data-counter-face="true"
               />
@@ -1629,7 +1722,7 @@ function WarMap({
                 size={16}
                 x={4}
                 y={1}
-                color={own ? "#263b2e" : "#f4ecd7"}
+                color={own ? "#d4e1b5" : "#f4ecd7"}
               />
               <text
                 x="23"
@@ -1637,7 +1730,7 @@ function WarMap({
                 textAnchor="middle"
                 fontSize="8"
                 fontWeight="700"
-                fill={own ? "#263b2e" : "#f4ecd7"}
+                fill={own ? "#e6edc6" : "#f4ecd7"}
               >
                 {group.length}
               </text>
@@ -1759,6 +1852,7 @@ function WarMap({
       selectedArmies,
       visible,
       countryLabels,
+      strategicBorders,
       cityLabels,
       capitals,
       counterScale,

@@ -86,182 +86,222 @@ export default function ArmyRecruitment({
           <small>Birlik türünü ve çıkacağı şehri buradan seç.</small>
         </div>
       </header>
-      <label className={styles.location}>
-        Birliklerin çıkacağı şehir
-        <select
-          aria-label="Birliklerin çıkacağı şehir"
-          value={province ?? ""}
-          disabled={!locations.length}
-          onChange={(event) => onProvinceChange(event.target.value)}
-        >
-          {!locations.length && <option value="">Uygun bölge yok</option>}
-          {locations.map((location) => (
-            <option key={location.id} value={location.id}>
-              {location.name}
-              {location.capital ? " · Başkent" : ""}
-            </option>
-          ))}
-        </select>
-      </label>
-      {preferredProvince && preferredProvince !== province && (
-        <p className={styles.warning}>
-          Önceki eğitim yeri artık uygun değil. Yeni emirler aşağıda seçili
-          şehirde başlayacak.
-        </p>
-      )}
-      {province !== country.capital &&
-        locations.some((location) => location.capital) && (
-          <button
-            type="button"
-            onClick={() => onProvinceChange(country.capital)}
-          >
-            Başkentte eğitim yap
-          </button>
-        )}
-      <button
-        ref={typeButton}
-        type="button"
-        className={styles.chooser}
-        aria-label="Birlik türünü değiştir"
-        aria-expanded={typeChooserOpen}
-        aria-controls="recruitment-unit-types"
-        onClick={() => setTypeChooserOpen((open) => !open)}
-      >
-        <MilitaryIcon name={unitIcon(unit)} size={24} />
-        <span>
-          <small>Seçili birlik türü</small>
-          <strong>{definition.name}</strong>
-        </span>
-        <b>{typeChooserOpen ? "Kapat" : "Değiştir"}</b>
-      </button>
-      {typeChooserOpen && (
-        <div
-          id="recruitment-unit-types"
-          className={styles.units}
-          role="group"
-          aria-label="Eğitilecek birlik türü"
-        >
-          {(Object.keys(UNITS) as UnitType[]).map((type) => {
-            const item = UNITS[type];
-            const locked = !!item.tech && !country.tech.includes(item.tech);
-            return (
+      <div className={styles.workbench}>
+        <div className={styles.trainingControls}>
+          <div className={styles.loadout} aria-label="Seçili tümenin donatımı">
+            <div className={styles.unitInsignia}>
+              <MilitaryIcon name={unitIcon(unit)} size={42} />
+              <div>
+                <small>{country.name} · Kara kuvvetleri</small>
+                <strong>{definition.name}</strong>
+                <span>{unlocked ? "Eğitime açık" : "Araştırma gerekli"}</span>
+              </div>
+            </div>
+            <div className={styles.equipmentSlots}>
+              {cost.map(([id, amount]) => (
+                <div
+                  key={id}
+                  title={`${EQUIPMENT[id].name}: ${format(amount)}`}
+                >
+                  <MilitaryIcon name={equipmentIcon(id)} size={28} />
+                  <span>{EQUIPMENT[id].name}</span>
+                  <b>{format(amount)}</b>
+                </div>
+              ))}
+            </div>
+          </div>
+          <label className={styles.location}>
+            Birliklerin çıkacağı şehir
+            <select
+              aria-label="Birliklerin çıkacağı şehir"
+              value={province ?? ""}
+              disabled={!locations.length}
+              onChange={(event) => onProvinceChange(event.target.value)}
+            >
+              {!locations.length && <option value="">Uygun bölge yok</option>}
+              {locations.map((location) => (
+                <option key={location.id} value={location.id}>
+                  {location.name}
+                  {location.capital ? " · Başkent" : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+          {preferredProvince && preferredProvince !== province && (
+            <p className={styles.warning}>
+              Önceki eğitim yeri artık uygun değil. Yeni emirler aşağıda seçili
+              şehirde başlayacak.
+            </p>
+          )}
+          {province !== country.capital &&
+            locations.some((location) => location.capital) && (
               <button
                 type="button"
-                key={type}
-                aria-pressed={unit === type}
-                aria-label={`${item.name} seç`}
-                className={`${styles.unit} ${unit === type ? styles.selected : ""}`}
-                onClick={() => {
-                  setUnit(type);
-                  setTypeChooserOpen(false);
-                  typeButton.current?.focus();
-                }}
+                onClick={() => onProvinceChange(country.capital)}
               >
-                <MilitaryIcon name={unitIcon(type)} size={24} />
-                <strong>{item.name}</strong>
-                <span>
-                  {item.days} gün · {format(item.men)} asker
-                </span>
-                <small>
-                  {locked
-                    ? "Araştırma gerekli"
-                    : `Saldırı ${item.attack} · Savunma ${item.defense}`}
-                </small>
+                Başkentte eğitim yap
               </button>
-            );
-          })}
-        </div>
-      )}
-      <div
-        className={styles.quickCost}
-        aria-label="Seçili tümenin eğitim özeti"
-        data-testid="recruitment-training-summary"
-      >
-        <strong>
-          {definition.days} gün · {format(definition.men)} asker
-        </strong>
-        <span>
-          {cost
-            .map(([id, amount]) => `${format(amount)} ${EQUIPMENT[id].name}`)
-            .join(" · ")}
-        </span>
-      </div>
-      {unavailable && (
-        <p className={styles.warning} data-testid="recruitment-unavailable">
-          {unavailable}
-        </p>
-      )}
-      <button
-        type="button"
-        className={styles.train}
-        disabled={!!unavailable}
-        onClick={() => province && command({ type: "recruit", unit, province })}
-      >
-        <MilitaryIcon name={unitIcon(unit)} />
-        Eğitime başla ·{" "}
-        {province ? GEOGRAPHY[province].name : "Uygun bölge yok"}
-      </button>
-      <p className={styles.hint}>
-        İlk seçim başkentindir. Haritada başka bir şehre dokunmak eğitim yerini
-        değiştirmez. Mevcut eğitimlerin çıkış yeri korunur.
-      </p>
-      <div
-        className={styles.specification}
-        data-testid="recruitment-unit-stats"
-      >
-        <h4>
-          <MilitaryIcon name={unitIcon(unit)} />
-          {definition.name}
-        </h4>
-        <p>{roles[unit]}</p>
-        <dl>
-          <div>
-            <dt>Saldırı</dt>
-            <dd>{definition.attack}</dd>
-          </div>
-          <div>
-            <dt>Savunma</dt>
-            <dd>{definition.defense}</dd>
-          </div>
-          <div>
-            <dt>Hız</dt>
-            <dd>{definition.speed.toLocaleString("tr-TR")}×</dd>
-          </div>
-          <div>
-            <dt>Temel yakıt</dt>
-            <dd>{definition.fuel.toLocaleString("tr-TR")}</dd>
-          </div>
-        </dl>
-        <p className={styles.hint}>
-          Temel değerlerdir; arazi, araştırma, komutan ve ikmal muharebedeki
-          sonucu değiştirir.
-        </p>
-        <ul className={styles.costs} aria-label="Tümen eğitim maliyeti">
-          <li
-            className={country.manpower < definition.men ? styles.warning : ""}
+            )}
+          <button
+            ref={typeButton}
+            type="button"
+            className={styles.chooser}
+            aria-label="Birlik türünü değiştir"
+            aria-expanded={typeChooserOpen}
+            aria-controls="recruitment-unit-types"
+            onClick={() => setTypeChooserOpen((open) => !open)}
           >
-            <MilitaryIcon name="manpower" />
-            <span>İnsan gücü</span>
-            <b>
-              {format(definition.men)} / {format(country.manpower)}
-            </b>
-          </li>
-          {cost.map(([id, amount]) => (
-            <li
-              key={id}
-              className={country.equipment[id] < amount ? styles.warning : ""}
+            <MilitaryIcon name={unitIcon(unit)} size={24} />
+            <span>
+              <small>Seçili birlik türü</small>
+              <strong>{definition.name}</strong>
+            </span>
+            <b>{typeChooserOpen ? "Kapat" : "Değiştir"}</b>
+          </button>
+          {typeChooserOpen && (
+            <div
+              id="recruitment-unit-types"
+              className={styles.units}
+              role="group"
+              aria-label="Eğitilecek birlik türü"
             >
-              <MilitaryIcon name={equipmentIcon(id)} />
-              <span>{EQUIPMENT[id].name}</span>
+              {(Object.keys(UNITS) as UnitType[]).map((type) => {
+                const item = UNITS[type];
+                const locked = !!item.tech && !country.tech.includes(item.tech);
+                return (
+                  <button
+                    type="button"
+                    key={type}
+                    aria-pressed={unit === type}
+                    aria-label={`${item.name} seç`}
+                    className={`${styles.unit} ${unit === type ? styles.selected : ""}`}
+                    onClick={() => {
+                      setUnit(type);
+                      setTypeChooserOpen(false);
+                      typeButton.current?.focus();
+                    }}
+                  >
+                    <MilitaryIcon name={unitIcon(type)} size={24} />
+                    <strong>{item.name}</strong>
+                    <span>
+                      {item.days} gün · {format(item.men)} asker
+                    </span>
+                    <small>
+                      {locked
+                        ? "Araştırma gerekli"
+                        : `Saldırı ${item.attack} · Savunma ${item.defense}`}
+                    </small>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          <div
+            className={styles.quickCost}
+            aria-label="Seçili tümenin eğitim özeti"
+            data-testid="recruitment-training-summary"
+          >
+            <strong>
+              {definition.days} gün · {format(definition.men)} asker
+            </strong>
+            <span>
+              {cost
+                .map(
+                  ([id, amount]) => `${format(amount)} ${EQUIPMENT[id].name}`,
+                )
+                .join(" · ")}
+            </span>
+          </div>
+          {unavailable && (
+            <p className={styles.warning} data-testid="recruitment-unavailable">
+              {unavailable}
+            </p>
+          )}
+          <button
+            type="button"
+            className={styles.train}
+            disabled={!!unavailable}
+            onClick={() =>
+              province && command({ type: "recruit", unit, province })
+            }
+          >
+            <MilitaryIcon name={unitIcon(unit)} />
+            Eğitime başla ·{" "}
+            {province ? GEOGRAPHY[province].name : "Uygun bölge yok"}
+          </button>
+          <p className={styles.hint}>
+            İlk seçim başkentindir. Haritada başka bir şehre dokunmak eğitim
+            yerini değiştirmez. Mevcut eğitimlerin çıkış yeri korunur.
+          </p>
+        </div>
+        <div
+          className={styles.specification}
+          data-testid="recruitment-unit-stats"
+        >
+          <h4>
+            <MilitaryIcon name={unitIcon(unit)} />
+            {definition.name}
+          </h4>
+          <p>{roles[unit]}</p>
+          <dl>
+            <div>
+              <dt>Personel</dt>
+              <dd>{format(definition.men)}</dd>
+            </div>
+            <div>
+              <dt>Eğitim süresi</dt>
+              <dd>{definition.days} gün</dd>
+            </div>
+            <div>
+              <dt>Saldırı</dt>
+              <dd>{definition.attack}</dd>
+            </div>
+            <div>
+              <dt>Savunma</dt>
+              <dd>{definition.defense}</dd>
+            </div>
+            <div>
+              <dt>Hız</dt>
+              <dd>{definition.speed.toLocaleString("tr-TR")}×</dd>
+            </div>
+            <div>
+              <dt>Temel yakıt</dt>
+              <dd>{definition.fuel.toLocaleString("tr-TR")}</dd>
+            </div>
+          </dl>
+          <p className={styles.hint}>
+            Temel değerlerdir; arazi, araştırma, komutan ve ikmal muharebedeki
+            sonucu değiştirir.
+          </p>
+          <ul className={styles.costs} aria-label="Tümen eğitim maliyeti">
+            <li
+              className={
+                country.manpower < definition.men ? styles.warning : ""
+              }
+            >
+              <MilitaryIcon name="manpower" />
+              <span>İnsan gücü</span>
               <b>
-                {format(amount)} / {format(country.equipment[id])}
+                {format(definition.men)} / {format(country.manpower)}
               </b>
             </li>
-          ))}
-        </ul>
-        <small className={styles.hint}>
-          Gereken / eldeki stok. Eğitim başladığında kaynaklar ayrılır.
-        </small>
+            {cost.map(([id, amount]) => (
+              <li
+                key={id}
+                className={country.equipment[id] < amount ? styles.warning : ""}
+              >
+                <MilitaryIcon name={equipmentIcon(id)} />
+                <span>{EQUIPMENT[id].name}</span>
+                <b>
+                  {format(amount)} / {format(country.equipment[id])}
+                </b>
+              </li>
+            ))}
+          </ul>
+          <small className={styles.hint}>
+            Gereken / eldeki stok. Eğitim başladığında kaynaklar ayrılır.
+          </small>
+        </div>
       </div>
       {province && (
         <ActionPreview

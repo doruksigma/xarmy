@@ -1,5 +1,5 @@
 .atlas {
-  background: #071020;
+  background: #3b506b;
   isolation: isolate;
   overflow: hidden;
 }
@@ -21,17 +21,17 @@
   pointer-events: none;
   paint-order: stroke;
   stroke: #0b1930;
-  stroke-width: 2px;
+  stroke-width: 1.6px;
 }
 .nationName {
   font-family: Arial, Helvetica, sans-serif;
   font-weight: 700;
-  fill: #f2f3f7;
+  fill: #e5e0d4;
   paint-order: stroke;
-  stroke: #111b2bd9;
+  stroke: #202433eb;
   stroke-width: 2px;
   stroke-linejoin: round;
-  text-shadow: 0 1px 1px #030815;
+  text-shadow: 0 1px 1px #18202e;
 }
 .cityName {
   font-family: Arial, sans-serif;
@@ -44,7 +44,8 @@
 }
 .terrainRelief {
   /* Tone one cached bitmap; avoid an SVG filter for every relief feature. */
-  filter: grayscale(0.65) saturate(0.45) brightness(0.9) hue-rotate(155deg);
+  filter: grayscale(1) contrast(0.75) brightness(1.2);
+  mix-blend-mode: multiply;
 }
 .overviewTerrain {
   filter: saturate(0.6) brightness(0.8);
@@ -73,7 +74,7 @@
   stroke-width: 2;
 }
 .selectedArmy > [data-counter-face] {
-  fill: #f3e9bd;
+  fill: #405b3a;
 }
 .airCounter,
 .seaCounter {
@@ -92,7 +93,7 @@
 .compass {
   position: absolute;
   right: 28px;
-  top: 126px;
+  top: 102px;
   width: 44px;
   color: #b8c5d7;
   opacity: 0.55;
@@ -112,11 +113,11 @@
 .overview {
   position: absolute;
   right: 22px;
-  bottom: 76px;
+  bottom: 137px;
   width: 150px;
   padding: 5px;
-  border: 1px solid #8b9db366;
-  background: #101c30ed;
+  border: 1px solid #777568;
+  background: linear-gradient(#333c43f5, #191f26f5);
   border-radius: 3px;
   box-shadow: 0 4px 14px #02061266;
 }
@@ -148,13 +149,13 @@
 .regionInfo {
   position: absolute;
   left: 68px;
-  bottom: 91px;
+  bottom: 142px;
   display: grid;
   gap: 6px;
   min-width: 180px;
   max-width: 270px;
   padding: 14px 18px;
-  background: #101b2ef0;
+  background: #262b2ff5;
   border: 1px solid #8294ad66;
   border-left: 2px solid #d9bd84;
   box-shadow: 0 5px 16px #02091866;
@@ -190,7 +191,7 @@
 .layerInfo {
   position: absolute;
   right: 22px;
-  bottom: 206px;
+  bottom: 267px;
   display: grid;
   gap: 6px;
   width: 215px;
@@ -240,7 +241,7 @@
     letter-spacing: 1px;
   }
   .layerInfo {
-    bottom: 187px;
+    bottom: 249px;
     right: 15px;
   }
   .regionInfo {
@@ -252,7 +253,7 @@
 @media (max-width: 700px) {
   .overview {
     right: 12px;
-    bottom: 85px;
+    bottom: 180px;
     width: 104px;
   }
   .atlas .overview svg {
@@ -264,7 +265,7 @@
     letter-spacing: 0.5px;
   }
   .compass {
-    top: 140px;
+    top: 108px;
     right: 16px;
     transform: scale(0.8);
     transform-origin: top right;
@@ -274,7 +275,7 @@
   }
   .layerInfo {
     width: 200px;
-    bottom: 195px;
+    bottom: 250px;
     right: 12px;
   }
 }
@@ -286,14 +287,14 @@
 
 .search {
   position: absolute;
-  top: 100px;
-  left: 28px;
+  top: 12px;
+  left: 16px;
   width: 190px;
   z-index: 5;
 }
 .search input {
   width: 100%;
-  background: #101d32ed;
+  background: #252c31f2;
   border: 1px solid #8b9db366;
   color: #e7eaf0;
   border-radius: 3px;
@@ -336,8 +337,8 @@
 }
 .mapOptions {
   position: absolute;
-  left: 28px;
-  top: 143px;
+  left: 16px;
+  top: 53px;
   display: flex;
   gap: 5px;
   z-index: 4;
@@ -349,7 +350,7 @@
   padding: 7px 9px;
   border: 1px solid #7084a066;
   border-radius: 4px;
-  background: #101d32ef;
+  background: linear-gradient(#41483cf2, #242c25f2);
   color: #a6b8cf;
   font-size: 10px;
   line-height: 1.2;
@@ -358,7 +359,7 @@
 .mapOptions button[aria-pressed="true"] {
   border-color: #b9bc8a99;
   color: #e6e5bb;
-  background: #2c3d57ed;
+  background: #4c5844ed;
 }
 .mapOptions button:focus-visible {
   outline: 2px solid #ffe4a4;
@@ -368,14 +369,15 @@
   font-size: 13px;
 }
 .navigation {
-  bottom: 104px;
+  bottom: 176px;
 }
 .navigation button:disabled {
   opacity: 0.4;
   cursor: default;
 }
 .legend {
-  max-width: calc(100% - 210px);
+  max-width: calc(100% - 230px);
+  bottom: 164px;
 }
 .legend .readinessLegend {
   display: flex;
@@ -415,25 +417,31 @@
 }
 @media (max-width: 700px) {
   .search {
-    top: 104px;
+    top: 12px;
     left: 14px;
     width: 155px;
   }
   .mapOptions {
-    top: 146px;
+    top: 58px;
     left: 14px;
     gap: 4px;
   }
   .mapOptions button {
-    min-height: 34px;
+    min-height: 40px;
     padding: 7px 8px;
     font-size: 9px;
   }
   .navigation {
-    bottom: 86px;
+    bottom: 190px;
+  }
+  .navigation button {
+    width: 40px;
+    height: 40px;
   }
   .legend {
     max-width: calc(100% - 28px);
+    bottom: 178px;
+    font-size: 8px;
   }
   .legend .readinessLegend {
     display: none;

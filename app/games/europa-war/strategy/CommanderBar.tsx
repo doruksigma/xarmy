@@ -1,7 +1,7 @@
 "use client";
 import MilitaryIcon from "./MilitaryIcon";
 
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   COMMANDER_CAPACITY,
   commanderArmies,
@@ -12,42 +12,107 @@ import { atWar } from "./world";
 import type { Action, General, World } from "./types";
 import styles from "./commander-bar.module.css";
 
-/** Original vector portrait, drawn locally; no remote images or asset loading. */
+/** Original local portrait art; a reusable SVG keeps the dock sharp at every scale. */
 const CommanderPortrait = memo(function CommanderPortrait({
   id,
 }: {
   id: string;
 }) {
+  const gradient = useId();
   const variant = [...id].reduce((sum, c) => sum + c.charCodeAt(0), 0);
-  const uniform = ["#64715c", "#596a70", "#706659"][variant % 3];
+  const uniform = ["#626b56", "#596269", "#726756"][variant % 3];
   const skin = ["#cfaa86", "#c09975", "#b88f70"][variant % 3];
   return (
     <svg viewBox="0 0 72 82" aria-hidden="true" focusable="false">
-      <path fill="#23352e" d="M0 0h72v82H0z" />
-      <path fill="#344c3e" d="m0 49 72-34v67H0z" />
-      <path fill={uniform} d="M7 82V68q3-12 19-15h20q16 3 19 15v14" />
-      <path fill="#b38c6c" d="M29 45h14v16l-7 6-7-6z" />
-      <ellipse cx="36" cy="32" rx="15" ry="22" fill={skin} />
-      <path fill="#a67e5c" d="M42 14q15 23-1 37l-5 2q14-19 6-39" />
-      <path fill="#3a3931" d="M21 23v13l3-7 2-12h20l3 14 2 5V22L43 9H28z" />
-      <path fill={uniform} d="M14 16 23 5h27l8 11-7 8H21z" />
-      <path fill="#b8a56b" d="M19 19h34v4H19z" />
-      <path fill="#26352e" d="M19 23h34q-2 6-17 6t-17-6" />
-      <path fill="#d7be7f" d="m36 9 2 4 4 1-3 3v4l-3-2-4 2 1-4-3-3 4-1z" />
-      <path d="m26 33 5-1m10 0 5 1" stroke="#4d4439" strokeWidth="2" />
+      <defs>
+        <linearGradient id={`${gradient}-back`} x2="1" y2="1">
+          <stop stopColor="#665e4d" />
+          <stop offset=".5" stopColor="#343a32" />
+          <stop offset="1" stopColor="#131b19" />
+        </linearGradient>
+        <linearGradient id={`${gradient}-cloth`} x2="1" y2=".2">
+          <stop stopColor="#252d28" />
+          <stop offset=".42" stopColor={uniform} />
+          <stop offset="1" stopColor="#343c32" />
+        </linearGradient>
+        <linearGradient id={`${gradient}-face`} x2="1" y2=".4">
+          <stop stopColor="#967155" />
+          <stop offset=".4" stopColor={skin} />
+          <stop offset=".65" stopColor="#d5b291" />
+          <stop offset="1" stopColor="#785b49" />
+        </linearGradient>
+      </defs>
+      <path fill={`url(#${gradient}-back)`} d="M0 0h72v82H0z" />
+      <path fill="#a1947050" d="m0 0 18 0L0 65z" />
       <path
-        d="m35 34-2 9h5m-8 4 6 2 6-2"
-        fill="none"
-        stroke="#8d654a"
-        strokeWidth="1.4"
+        fill={`url(#${gradient}-cloth)`}
+        d="M2 82 6 66q2-6 20-11h21q16 5 19 11l5 16z"
       />
+      <path fill="#8f6b50" d="m29 46 14-1 1 14-8 11-9-12z" />
+      <path fill="#a27f60" d="m21 29-3 1 1 11 5 3m25-15 4 2-2 11-4 2" />
+      <path
+        fill={`url(#${gradient}-face)`}
+        d="M22 22q14-11 27 0l-2 21-5 10-7 4-8-6-4-11z"
+      />
+      <path fill="#ded0b346" d="m27 28 6-2-3 8-5 2m12-10 7 3 1 5-5-1z" />
+      <path fill="#614d3d" d="m25 49 11 3 9-6-4 8-6 3z" opacity=".48" />
+      <path d="m25 32 7-1m7 0 7 2" stroke="#514335" strokeWidth="1.7" />
+      <path d="m26 34 5 .2m9-.1 5 .6" stroke="#302f2b" strokeWidth="1" />
+      <path
+        d="m35 34-2 9 5 1m-7 4 6 1 5-2"
+        fill="none"
+        stroke="#8f624a"
+        strokeWidth="1.2"
+      />
+      <path
+        d="m27 39-2 5m19-6 1 5"
+        stroke="#87634d"
+        strokeWidth=".7"
+        opacity=".7"
+      />
+      <path fill="#3b3b31" d="M21 27v10l3-9 1-8h22l1 10 2 4V22L43 11H28z" />
+      <path
+        fill={`url(#${gradient}-cloth)`}
+        d="m14 18 8-10 14-3 16 5 7 10-8 6H21z"
+      />
+      <path
+        d="m21 15 15-6 17 7"
+        fill="none"
+        stroke="#afb091"
+        strokeWidth=".6"
+        opacity=".65"
+      />
+      <path fill="#373e32" d="m20 21 32 1v6H21z" />
+      <path fill="#b8a56b" d="m21 24 31 1-.4 1.4-30.4-1z" />
+      <path fill="#19211e" d="m21 27 32 1q-4 5-18 4l-13-2z" />
+      <path d="m23 29 23 1" stroke="#8a9078" strokeWidth=".65" />
+      <path fill="#c3ae79" d="m36 13 3 3-1 5-4 1-2-4 1-4z" />
+      <path fill="#555b43" d="m35 15 2 1-.5 3-1.5.5-1-2z" />
       {variant % 2 === 0 && (
-        <path d="m28 46 8-2 8 2-4 3-4-1-4 1z" fill="#514438" />
+        <path d="m29 46 7-1.5 7 1.5-3 2-4-.5-4 .5z" fill="#574738" />
       )}
-      <path fill="#28392e" d="m25 54 11 13-10 8-6-18m27-3L36 67l10 8 6-18" />
-      <path fill="#d3bc7c" d="m9 64 13-4 2 5-14 4m53-5-13-4-2 5 14 4" />
-      <path d="M36 67v15" stroke="#a3a88b" strokeWidth="1" />
-      <path fill="#bea866" d="M45 73h10v2H45z" />
+      <path fill="#2d352d" d="m26 54 10 15-10 9-7-20m28-4L36 69l10 9 7-20" />
+      <path
+        d="m25 57 7 12-7 5m23-17-8 12 7 5"
+        fill="none"
+        stroke="#b6b194"
+        strokeWidth=".65"
+      />
+      <path fill="#aaa079" d="m7 66 14-6 2 4-15 6m57-4-14-6-2 4 15 6" />
+      <path d="m10 66 11-4m31 0 10 4" stroke="#d9c9a1" strokeWidth="1" />
+      <path d="M36 68v14" stroke="#9c9f80" strokeWidth=".8" />
+      <circle cx="37" cy="75" r="1.1" fill="#c3b27b" />
+      <circle cx="37" cy="81" r="1.1" fill="#c3b27b" />
+      <path fill="#bda774" d="M46 70h11v2H46z" />
+      <path fill="#773e32" d="M46 72h3v3h-3z" />
+      <path fill="#b6bba5" d="M50 72h3v3h-3z" />
+      <path fill="#beaa6f" d="M54 72h3v3h-3z" />
+      <path
+        d="M1 1h70v80H1z"
+        fill="none"
+        stroke="#c9b98a"
+        strokeOpacity=".18"
+      />
     </svg>
   );
 });
@@ -304,76 +369,87 @@ export default function CommanderBar({
           )}
         </section>
       )}
-      <div className={styles.toolbar}>
-        <strong>KOMUTANLAR</strong>
-        <label className={styles.autoAssign}>
-          <input
-            type="checkbox"
-            data-testid="commander-auto-assign"
-            checked={country.autoAssignCommanders === true}
-            disabled={locked}
-            onChange={(event) =>
-              command({
-                type: "commanderAutoAssign",
-                enabled: event.currentTarget.checked,
-              })
-            }
-          />
-          <span>Yeni tümenleri otomatik komutana ata</span>
-        </label>
-        <button
-          type="button"
-          data-testid="commander-create"
-          aria-label="+ Komutan"
-          disabled={locked}
-          onClick={() => command({ type: "commanderCreate" })}
-        >
-          <MilitaryIcon name="plus" size={13} />
-          Komutan
-        </button>
-      </div>
-      <div className={styles.roster}>
-        {country.generals.map((general) => {
-          const size = members.get(general.id) ?? 0;
-          const opponent =
-            general.front && world.countries[general.front.target];
-          return (
-            <button
-              type="button"
-              key={general.id}
-              data-testid={`commander-card-${general.id}`}
-              data-general={general.id}
-              className={styles.card}
+      <div className={styles.dock}>
+        <div className={styles.toolbar}>
+          <strong>KOMUTANLAR</strong>
+          <label className={styles.autoAssign}>
+            <input
+              type="checkbox"
+              data-testid="commander-auto-assign"
+              checked={country.autoAssignCommanders === true}
               disabled={locked}
-              aria-expanded={selected?.id === general.id}
-              aria-label={`${general.name}, ${size}/${COMMANDER_CAPACITY} tümen`}
-              onClick={(event) => {
-                activeCard.current = event.currentTarget;
-                choose(general);
-              }}
-            >
-              <span className={styles.portrait}>
-                <CommanderPortrait id={general.id} />
-              </span>
-              <span className={styles.cardText}>
-                <strong>{general.name}</strong>
-                <span>
-                  {size}/{COMMANDER_CAPACITY} tümen
+              onChange={(event) =>
+                command({
+                  type: "commanderAutoAssign",
+                  enabled: event.currentTarget.checked,
+                })
+              }
+            />
+            <span title="Yeni tümenleri otomatik komutana ata">
+              Otomatik ata
+            </span>
+            <span className={styles.srOnly}>
+              {" "}
+              — Yeni tümenleri otomatik komutana ata
+            </span>
+          </label>
+          <button
+            type="button"
+            data-testid="commander-create"
+            aria-label="+ Komutan"
+            disabled={locked}
+            onClick={() => command({ type: "commanderCreate" })}
+          >
+            <MilitaryIcon name="plus" size={13} />
+            Komutan
+          </button>
+        </div>
+        <div className={styles.roster}>
+          {country.generals.map((general) => {
+            const size = members.get(general.id) ?? 0;
+            const opponent =
+              general.front && world.countries[general.front.target];
+            return (
+              <button
+                type="button"
+                key={general.id}
+                data-testid={`commander-card-${general.id}`}
+                data-general={general.id}
+                className={styles.card}
+                data-stance={general.front?.stance ?? "idle"}
+                disabled={locked}
+                title={`${general.name} · ${size}/${COMMANDER_CAPACITY} tümen · ${opponent ? `${opponent.name}: ${general.front!.stance === "attack" ? "Saldırıyor" : "Savunuyor"}` : "Emir bekliyor"}`}
+                aria-expanded={selected?.id === general.id}
+                aria-label={`${general.name}, ${size}/${COMMANDER_CAPACITY} tümen${opponent ? `, ${opponent.name}, ${general.front!.stance === "attack" ? "Saldırıyor" : "Savunuyor"}` : ", Emir bekliyor"}`}
+                onClick={(event) => {
+                  activeCard.current = event.currentTarget;
+                  choose(general);
+                }}
+              >
+                <span className={styles.portrait}>
+                  <CommanderPortrait id={general.id} />
                 </span>
-                <small>
-                  {opponent
-                    ? `${opponent.flag} ${general.front!.stance === "attack" ? "Saldırıyor" : "Savunuyor"}`
-                    : "Emir bekliyor"}
-                </small>
-              </span>
-            </button>
-          );
-        })}
-        <span className={styles.capacityHint}>
-          Her komutan en fazla 12 tümen yönetir.
-          <br />
-          Hepsi dolunca yeni tümen için komutan oluşturulur.
-        </span>
+                <span className={styles.cardText}>
+                  <strong>{general.name}</strong>
+                  <span>
+                    {size}/{COMMANDER_CAPACITY}
+                    <span className={styles.srOnly}> tümen</span>
+                  </span>
+                  <small>
+                    {opponent
+                      ? `${opponent.flag} ${general.front!.stance === "attack" ? "Saldırıyor" : "Savunuyor"}`
+                      : "Emir bekliyor"}
+                  </small>
+                </span>
+              </button>
+            );
+          })}
+          <span className={styles.capacityHint}>
+            Her komutan en fazla 12 tümen yönetir.
+            <br />
+            Hepsi dolunca yeni tümen için komutan oluşturulur.
+          </span>
+        </div>
       </div>
     </section>
   );

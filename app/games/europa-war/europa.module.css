@@ -1948,3 +1948,641 @@
     margin-inline-end: 2px;
   }
 }
+
+/* Compact operational desk: the map stays full-width behind real panels. */
+.commandView {
+  --panel: #252821;
+  --line: #4c5044;
+  --gold: #c7b582;
+  --ink: #e2dfce;
+  --muted: #a1a89b;
+  background: #171d1e;
+}
+.commandView .screenReader {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+  pointer-events: none;
+}
+.commandView .topbar {
+  height: 52px;
+  gap: 0;
+  background: linear-gradient(#383a32 0, #20251f 55%, #181e1b);
+  border-bottom: 1px solid #87816a;
+  box-shadow:
+    inset 0 1px #c6bd9133,
+    0 2px 8px #0008;
+}
+.commandView .brand {
+  width: 85px;
+  height: auto;
+  padding: 10px 10px;
+  font-size: 13px;
+  letter-spacing: 1px;
+  border-right-color: #79766355;
+}
+.commandView .brand small {
+  margin-top: 3px;
+  font-size: 6px;
+  letter-spacing: 1.5px;
+}
+.commandView .nation {
+  min-width: 138px;
+  max-width: 182px;
+  height: auto;
+  padding: 0 10px;
+  gap: 8px;
+  align-items: center;
+}
+.commandView .nation > div {
+  min-width: 0;
+}
+.commandView .nation > span {
+  width: 34px;
+  height: 34px;
+  border-radius: 1px;
+  box-shadow:
+    inset 0 0 9px #0007,
+    0 1px 3px #0008;
+}
+.commandView .nation strong {
+  font-size: 11px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.commandView .nation small {
+  margin-top: 2px;
+  font-size: 6px;
+  letter-spacing: 1px;
+}
+.commandView .topStats {
+  min-width: 0;
+  flex: 1;
+  width: auto;
+  gap: 4px;
+  height: 39px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  align-items: stretch;
+  padding: 0 6px;
+  overscroll-behavior-x: contain;
+}
+.commandView .topStats > div {
+  display: flex;
+  flex: 1 0 65px;
+  min-width: 0;
+  gap: 1px;
+  justify-content: center;
+  padding: 2px 7px;
+  border: 1px solid #696b565c;
+  border-radius: 2px;
+  background: linear-gradient(#171e1bbd, #0f1513d4);
+  box-shadow:
+    inset 0 1px 4px #0005,
+    0 1px #b6b28d16;
+}
+.commandView .topStats span {
+  color: #aeb29e;
+  letter-spacing: 0.4px;
+  font-size: 6px;
+}
+.commandView .topStats b {
+  font-size: 13px;
+  font-weight: 600;
+  color: #e2dec6;
+  white-space: nowrap;
+  line-height: 1.3;
+}
+.commandView .clock {
+  width: 191px;
+  min-width: 191px;
+  padding: 0 9px;
+  border-left-color: #686950;
+}
+.commandView .clock > strong {
+  margin-bottom: 3px;
+  font-size: 10px;
+  letter-spacing: 0.2px;
+}
+.commandView .clock > div {
+  justify-content: flex-end;
+  gap: 3px;
+}
+.commandView .clock button {
+  height: 23px;
+  min-width: 23px;
+  padding: 3px 5px;
+  font-size: 9px;
+  border: 1px solid #636451;
+  border-radius: 2px;
+  background: linear-gradient(#3c4135, #20281f);
+  box-shadow:
+    inset 0 1px #c8c49922,
+    0 1px 3px #0008;
+}
+.commandView .clock button:first-child {
+  width: 27px;
+}
+.commandView button.active {
+  background: linear-gradient(#6d7151, #3d4b34);
+  border-color: #b8aa75;
+  color: #f6e8bf;
+}
+.commandView .workspace {
+  padding: 44px 0 0;
+}
+.commandView .rail {
+  position: absolute;
+  inset: 0 0 auto;
+  width: auto;
+  height: 44px;
+  padding: 3px 8px;
+  gap: 4px;
+  flex-direction: row;
+  align-items: stretch;
+  overflow: auto hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  border: 0;
+  border-bottom: 1px solid #7c7b61;
+  background: linear-gradient(#30372c, #20271f);
+  box-shadow:
+    inset 0 1px #d6cd9f25,
+    0 2px 7px #0007;
+  z-index: 5;
+}
+.commandView .rail button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  min-height: 0;
+  min-width: 68px;
+  padding: 3px 9px 3px 5px;
+  border: 1px solid #5f67524d;
+  background: linear-gradient(#3b44342e, #111a1466);
+  box-shadow: inset 0 1px #c4c19417;
+  border-radius: 2px;
+}
+.commandView .rail button > .militaryEmblem {
+  width: 28px;
+  height: 27px;
+  border-color: #787e5e73;
+  color: #d3c59f;
+  background: linear-gradient(155deg, #73765a50, #182019);
+}
+.commandView .rail button > .militaryEmblem svg {
+  width: 22px;
+  height: 22px;
+}
+.commandView .rail button > small {
+  margin: 0;
+  font-size: 9px;
+  color: #cecfba;
+  white-space: nowrap;
+}
+.commandView .rail button:last-child {
+  margin: 0 0 0 auto;
+}
+.commandView .theater {
+  width: 100%;
+}
+.commandView .mapTop {
+  inset: 12px 14px auto auto;
+  width: auto;
+  padding: 0;
+  background: none;
+}
+.commandView .mapPresentation {
+  gap: 5px;
+  padding: 5px;
+  border: 1px solid #92917977;
+  background: linear-gradient(#333a30ef, #20281fee);
+  box-shadow:
+    0 3px 10px #0005,
+    inset 0 1px #d2c99b24;
+}
+.commandView .mapTop label {
+  width: 100%;
+  font-size: 0;
+  letter-spacing: 0;
+}
+.commandView .mapTop select {
+  width: 100%;
+  height: 26px;
+  margin: 0;
+  padding: 3px 25px 3px 7px;
+  font-size: 10px;
+  background: #182119;
+}
+.commandView .mapViewButtons button {
+  min-height: 25px;
+  padding: 4px 8px;
+  font-size: 9px;
+}
+.commandView .panel {
+  position: absolute;
+  left: 14px;
+  right: auto;
+  top: 56px;
+  bottom: 126px;
+  width: min(380px, calc(100% - 28px));
+  height: auto;
+  max-height: 760px;
+  border: 1px solid #9c9675;
+  border-radius: 2px;
+  background: linear-gradient(115deg, #2c3027, #1c241d);
+  box-shadow:
+    0 6px 24px #0009,
+    inset 0 0 0 3px #353b2e;
+  z-index: 4;
+}
+.commandView .panel[data-tab="army"] {
+  width: min(680px, calc(100% - 28px));
+}
+.commandView .panelTop {
+  height: 32px;
+  min-height: 32px;
+  padding: 0 7px 0 13px;
+  background: linear-gradient(#4a4b3b, #292f24);
+  border-bottom: 1px solid #8e8967;
+  box-shadow: inset 0 1px #ded5a231;
+}
+.commandView .panelTop > span {
+  color: #e8dfbc;
+  font-size: 9px;
+  letter-spacing: 2px;
+}
+.commandView .panelTop button {
+  min-width: 26px;
+  min-height: 26px;
+  padding: 2px;
+  border: 1px solid #756e4e;
+  border-radius: 1px;
+  background: #252e23;
+}
+.commandView .panelBody {
+  min-height: 0;
+  padding: 14px 16px;
+  overscroll-behavior: contain;
+}
+.commandView .panelBody h2 {
+  font-size: 24px;
+}
+.commandView .bottomBar {
+  left: 12px;
+  right: auto;
+  width: max-content;
+  max-width: calc(100% - 230px);
+  bottom: 124px;
+  height: 27px;
+  padding: 0 8px;
+  border: 1px solid #8d8e7063;
+  background: #1b251edb;
+  font-size: 9px;
+}
+.commandView .bottomBar > span:first-child {
+  font-size: 8px;
+}
+.commandView .bottomBar button {
+  font-size: 9px;
+  padding: 3px 5px;
+}
+.commandView .mapControls {
+  left: 18px;
+  bottom: 176px;
+}
+.commandView .mapLegend {
+  left: 62px;
+  bottom: 164px;
+}
+.commandView .eventLog {
+  bottom: 146px;
+  left: 12px;
+  right: 12px;
+  max-height: 38%;
+  border: 1px solid #7c8165;
+  background: #1d291ff5;
+  box-shadow: 0 5px 18px #0008;
+}
+.commandView .orderBanner {
+  top: 95px;
+  max-width: min(560px, 90%);
+  font-size: 11px;
+  background: #353b29ed;
+}
+.commandView .orderBanner.mapNotice {
+  top: auto;
+  bottom: 152px;
+}
+.commandView .openPanel {
+  top: 93px;
+  right: 14px;
+  font-size: 10px !important;
+}
+.commandView .setupShade {
+  inset: 96px 0 0;
+}
+.commandView[data-setup="true"] .bottomBar {
+  bottom: 12px;
+}
+@media (max-width: 1000px) and (min-width: 701px) {
+  .commandView .brand {
+    width: 72px;
+    padding-inline: 7px;
+  }
+  .commandView .nation {
+    min-width: 115px;
+    max-width: 150px;
+    padding-inline: 7px;
+  }
+  .commandView .nation > span {
+    width: 29px;
+    height: 30px;
+  }
+  .commandView .rail button {
+    padding-right: 6px;
+    gap: 4px;
+  }
+}
+@media (max-width: 700px) {
+  .commandView .topbar {
+    display: grid;
+    height: 110px;
+    grid-template-columns: 46px minmax(0, 1fr) 266px;
+    grid-template-rows: 72px 38px;
+    align-content: stretch;
+  }
+  .commandView .brand {
+    width: auto;
+    min-width: 0;
+    padding: 22px 4px;
+    font-size: 8px;
+    letter-spacing: 0;
+    align-self: stretch;
+  }
+  .commandView .brand small {
+    font-size: 5px;
+    letter-spacing: 0;
+    line-height: 1.3;
+  }
+  .commandView .nation {
+    min-width: 0;
+    max-width: none;
+    height: 72px;
+    padding: 4px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px;
+  }
+  .commandView .nation > span {
+    display: flex;
+    width: 27px;
+    height: 27px;
+    font-size: 17px;
+  }
+  .commandView .nation > div {
+    width: 100%;
+  }
+  .commandView .nation strong {
+    font-size: 9px;
+    text-align: center;
+  }
+  .commandView .nation small {
+    display: none;
+  }
+  .commandView .clock {
+    min-width: 0;
+    width: 266px;
+    height: 72px;
+    padding: 0 2px 0 0;
+    border: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  .commandView .clock > strong {
+    font-size: 10px;
+    margin-bottom: 3px;
+    text-align: right;
+  }
+  .commandView .clock > div {
+    gap: 0;
+    justify-content: stretch;
+  }
+  .commandView .clock button,
+  .commandView .clock button:first-child {
+    min-width: 44px;
+    width: 44px;
+    height: 44px;
+    padding: 4px;
+    border-radius: 0;
+    font-size: 10px;
+  }
+  .commandView .clock > small {
+    position: absolute;
+    top: 73px;
+    right: 4px;
+    z-index: 8;
+    padding: 3px;
+    background: #111d16;
+  }
+  .commandView .topStats {
+    grid-row: 2;
+    grid-column: 1/-1;
+    height: 38px;
+    min-height: 0;
+    width: auto;
+    padding: 2px 4px;
+    gap: 3px;
+    border-top: 1px solid #78775b66;
+    justify-content: flex-start;
+  }
+  .commandView .topStats > div {
+    flex: 0 0 66px;
+    gap: 0;
+    padding: 1px 5px;
+  }
+  .commandView .topStats b {
+    font-size: 11px;
+  }
+  .commandView .topStats span {
+    font-size: 6px;
+  }
+  .commandView .workspace {
+    padding: 48px 0 0;
+  }
+  .commandView .rail {
+    height: 48px;
+    padding: 2px 4px;
+    gap: 3px;
+  }
+  .commandView .rail button {
+    min-height: 44px;
+    min-width: 56px;
+    padding: 2px 5px;
+    gap: 2px;
+    flex-direction: column;
+    justify-content: center;
+  }
+  .commandView .rail button > .militaryEmblem {
+    width: 25px;
+    height: 23px;
+  }
+  .commandView .rail button > small {
+    font-size: 7px;
+  }
+  .commandView .mapTop {
+    inset: 10px 10px auto auto;
+    padding: 0;
+  }
+  .commandView .mapPresentation {
+    width: 166px;
+    gap: 3px;
+    padding: 3px;
+  }
+  .commandView .mapViewButtons {
+    width: 100%;
+    gap: 2px;
+  }
+  .commandView .mapViewButtons button {
+    flex: 1;
+    min-height: 44px;
+    padding: 3px 4px;
+    font-size: 9px;
+  }
+  .commandView .mapTop select {
+    min-height: 44px;
+    height: 44px;
+  }
+  .commandView .panel,
+  .commandView .panel[data-tab="army"] {
+    left: 10px;
+    right: 10px;
+    top: 58px;
+    bottom: calc(118px + env(safe-area-inset-bottom, 0px));
+    width: auto;
+    height: auto;
+    max-height: none;
+    border-radius: 2px;
+    box-shadow: 0 5px 26px #0009;
+  }
+  .commandView .panelTop {
+    min-height: 44px;
+    height: 44px;
+    padding: 0 5px 0 12px;
+  }
+  .commandView .panelTop button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .commandView .panelBody {
+    padding: 12px;
+  }
+  .commandView .panelBody h2 {
+    font-size: 24px;
+  }
+  .commandView .panelBody button,
+  .commandView .panelBody select {
+    min-height: 44px;
+  }
+  .commandView .bottomBar {
+    left: 8px;
+    right: 8px;
+    bottom: calc(124px + env(safe-area-inset-bottom, 0px));
+    width: auto;
+    max-width: none;
+    height: 44px;
+    padding: 0 6px;
+  }
+  .commandView .bottomBar button {
+    min-height: 44px;
+    padding: 4px;
+  }
+  .commandView .mapControls {
+    left: 10px;
+    bottom: 180px;
+  }
+  .commandView .mapControls button {
+    width: 44px;
+    height: 44px;
+  }
+  .commandView .mapLegend {
+    left: 60px;
+    bottom: 178px;
+    max-width: calc(100% - 70px);
+    font-size: 7px;
+  }
+  .commandView .openPanel {
+    top: 113px;
+    right: 10px;
+    min-height: 44px;
+  }
+  .commandView .orderBanner {
+    top: 116px;
+    width: calc(100% - 20px);
+    max-width: none;
+    font-size: 10px;
+  }
+  .commandView .orderBanner.mapNotice {
+    top: auto;
+    bottom: 178px;
+    max-height: 24vh;
+    overflow: auto;
+  }
+  .commandView .orderBanner button {
+    min-height: 44px;
+  }
+  .commandView .eventLog {
+    left: 8px;
+    right: 8px;
+    bottom: 178px;
+    max-height: 44%;
+  }
+  .commandView .setupShade {
+    inset: 158px 0 0;
+    padding: 16px;
+  }
+}
+@media (max-width: 359px) {
+  .commandView .topbar {
+    grid-template-columns: 0 minmax(0, 1fr) 266px;
+  }
+  .commandView .brand {
+    position: absolute;
+    width: 44px;
+    height: 20px;
+    top: 0;
+    left: 0;
+    padding: 2px;
+    font-size: 7px;
+    z-index: 2;
+  }
+  .commandView .brand small {
+    display: none;
+  }
+  .commandView .nation {
+    padding-top: 14px;
+  }
+}
+@media (max-width: 700px) and (max-height: 620px) {
+  /* A short landscape phone needs the opened window above the portrait dock. */
+  .commandView .panel,
+  .commandView .panel[data-tab="army"] {
+    bottom: 6px;
+    z-index: 8;
+  }
+  .commandView .orderBanner.mapNotice {
+    top: 106px;
+    bottom: auto;
+    max-height: calc(100% - 112px);
+  }
+}

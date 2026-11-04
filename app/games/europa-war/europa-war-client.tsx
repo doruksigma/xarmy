@@ -167,12 +167,14 @@ export default function EuropaWarClient() {
   );
   const [campaignRevision, setCampaignRevision] = useState(0);
   const [recruitProvince, setRecruitProvince] = useState<string | null>(null);
-  const [mapView, setMapView] = useState<"3d" | "2d">("3d");
+  const [mapView, setMapView] = useState<"3d" | "2d">("2d");
   const [simple, setSimple] = useState(true);
   const [guideGeneralId, setGuideGeneralId] = useState("");
   useEffect(() => {
     try {
-      if (localStorage.getItem(MAP_VIEW_KEY) === "2d") setMapView("2d");
+      const savedMapView = localStorage.getItem(MAP_VIEW_KEY);
+      if (savedMapView === "3d" || savedMapView === "2d")
+        setMapView(savedMapView);
       setSimple(
         easyPresentationPreference(localStorage.getItem(EASY_PLAY_PREFERENCE)),
       );
@@ -532,7 +534,9 @@ export default function EuropaWarClient() {
     }
     setOrder(value);
     setFrontPoints([]);
-    if (window.matchMedia("(max-width:700px)").matches) setPanel(false);
+    // Floating windows cover the map on desktop too. Expose the target and
+    // city search whenever a movement, drop or battle-plan order is started.
+    setPanel(false);
   }
   async function newCampaign() {
     if (transitionPending.current) return;
@@ -558,7 +562,11 @@ export default function EuropaWarClient() {
     (p) => p.controller === c.id,
   ).length;
   return (
-    <div className={`${styles.app}${simple ? ` ${styles.simpleView}` : ""}`}>
+    <div
+      className={`${styles.app} ${styles.commandView}${simple ? ` ${styles.simpleView}` : ""}`}
+      data-testid="command-map-shell"
+      data-setup={setup}
+    >
       <header className={styles.topbar}>
         <Link
           className={styles.brand}
@@ -628,6 +636,27 @@ export default function EuropaWarClient() {
             </span>
             <b>{number(c.political)}</b>
           </div>
+          <div title="İstikrar">
+            <span>
+              <MilitaryIcon name="command" size={12} />
+              İSTİKRAR
+            </span>
+            <b>%{Math.round(c.stability)}</b>
+          </div>
+          <div title="Savaş desteği">
+            <span>
+              <MilitaryIcon name="infantry" size={12} />
+              SAVAŞ DESTEĞİ
+            </span>
+            <b>%{Math.round(c.warSupport)}</b>
+          </div>
+          <div title="Yakıt stoku">
+            <span>
+              <MilitaryIcon name="supply" size={12} />
+              YAKIT
+            </span>
+            <b>{number(c.stock.fuel)}</b>
+          </div>
           <div title="Dünya gerilimi">
             <span>
               <MilitaryIcon name="tension" size={12} />
@@ -664,6 +693,7 @@ export default function EuropaWarClient() {
                 className={speed === s ? styles.active : ""}
                 disabled={setup || transition !== null}
                 aria-label={`${s} kat hız`}
+                aria-pressed={speed === s}
                 title={`${s}×: saniyede en fazla ${((s * 1000) / SIMULATION_HOUR_MS).toLocaleString("tr-TR", { maximumFractionDigits: 1 })} oyun saati; hesaplama tamamlanınca ilerler`}
                 onClick={() => setSpeed(s)}
               >
@@ -680,6 +710,7 @@ export default function EuropaWarClient() {
               <button
                 key={id}
                 className={tab === id && panel ? styles.active : ""}
+                aria-pressed={tab === id && panel}
                 onClick={() => {
                   setTab(id);
                   setPanel(true);
@@ -703,18 +734,7 @@ export default function EuropaWarClient() {
         </nav>
         <main className={styles.theater}>
           <div className={styles.mapTop}>
-            <div>
-              <span className={styles.eyebrow}>DÜNYA HAREKÂT SAHASI</span>
-              <h1>
-                {setup
-                  ? "Fırtınadan önce"
-                  : order
-                    ? "Harekât hedefini seç"
-                    : paused
-                      ? "Komuta sende."
-                      : "Dünya değişiyor."}
-              </h1>
-            </div>
+            <h1 className={styles.screenReader}>Dünya harekât sahası</h1>
             <div className={styles.mapPresentation}>
               <div
                 className={styles.mapViewButtons}
@@ -912,7 +932,7 @@ export default function EuropaWarClient() {
           )}
         </main>
         {panel && (
-          <aside className={styles.panel}>
+          <aside className={styles.panel} data-tab={tab}>
             <div className={styles.panelTop}>
               <span>
                 {TABS.find((t) => t[0] === tab)?.[2].toLocaleUpperCase("tr-TR")}
