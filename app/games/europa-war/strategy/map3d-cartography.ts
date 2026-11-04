@@ -155,7 +155,7 @@ function boundaryGeography(): GeographicEdge[] {
       dy = edge.to.y - edge.from.y;
     const length = Math.hypot(dx, dy);
     if (length < 1e-6) continue;
-    const steps = Math.ceil(length / 7);
+    const steps = Math.ceil(length / (MAP.width > 2000 ? 10 : 7));
     for (let step = 0; step < steps; step++) {
       const from = {
         x: edge.from.x + (dx * step) / steps,
@@ -267,7 +267,8 @@ export function createPoliticalBorders(
       stats.rebuilds++;
       stats.countrySegments = stats.coastSegments = stats.frontSegments = 0;
       const positions: number[] = [],
-        colors: number[] = [];
+        colors: number[] = [],
+        indices: number[] = [];
       const color = new THREE.Color();
       const ribbon = (
         edge: GeographicEdge,
@@ -287,8 +288,8 @@ export function createPoliticalBorders(
           [edge.from.x - nx, edge.from.y - nz],
         ];
         color.setHex(tint);
-        for (const index of [0, 1, 2, 0, 2, 3]) {
-          const [x, z] = corners[index];
+        const start = positions.length / 3;
+        for (const [x, z] of corners) {
           positions.push(
             x - MAP.width / 2,
             groundHeightAt(x, z) + lift,
@@ -296,6 +297,7 @@ export function createPoliticalBorders(
           );
           colors.push(color.r, color.g, color.b);
         }
+        indices.push(start, start + 1, start + 2, start, start + 2, start + 3);
       };
       for (const edge of politicalBoundarySegments(world)) {
         if (edge.kind === "coast") {
@@ -310,6 +312,7 @@ export function createPoliticalBorders(
         }
       }
       const geometry = new THREE.BufferGeometry()
+        .setIndex(indices)
         .setAttribute(
           "position",
           new THREE.Float32BufferAttribute(positions, 3),

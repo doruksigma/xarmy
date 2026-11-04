@@ -1,5 +1,6 @@
 import type { Action } from "./types";
 import { HOURS_PER_DAY, MAX_CAMPAIGN_HOUR } from "./time";
+import mapData from "./map-data.json";
 
 export const COMMAND_RECEIPT_LIMIT = 64;
 export const COMMAND_PLAYER_RECEIPT_RESERVE = 12;
@@ -93,7 +94,14 @@ const buildings = one(
   "airfield",
   "antiAir",
 );
-const areas = one("economy", "research", "recruitment", "operations");
+const areas = one(
+  "economy",
+  "research",
+  "recruitment",
+  "operations",
+  "air",
+  "navy",
+);
 const airModels = one(
   "fighter",
   "bomber",
@@ -170,7 +178,19 @@ const actionValidators: Record<Action["type"], Validator> = {
   ship: actionShape({
     id: safeId,
     mission: one("idle", "patrol", "raid", "escort"),
-    zone: one("atlantic", "north", "baltic", "mediterranean", "black"),
+    zone: one(
+      "atlantic",
+      "north",
+      "baltic",
+      "mediterranean",
+      "black",
+      "southAtlantic",
+      "northPacific",
+      "southPacific",
+      "indian",
+      "caribbean",
+      "arctic",
+    ),
   }),
   carrierAircraft: actionShape({ id: safeId, count: integer }),
   peaceClaim: actionShape({
@@ -325,7 +345,7 @@ export function isValidCommandState(
   const state = value as CommandState;
   const entries = Object.entries(state.cursors);
   if (
-    entries.length > 60 ||
+    entries.length > Math.max(60, mapData.countries.length * 2) ||
     entries.some(
       ([id, n]) =>
         !safeId(id) ||

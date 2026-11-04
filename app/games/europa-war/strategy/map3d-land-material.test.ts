@@ -138,7 +138,11 @@ test("Shared unit-model teardown releases the procedural texture once with all r
       armies: Array.from(
         { length: 4 },
         (_, index) =>
-          ({ id: `${country}-${index}`, country, type: "infantry" }) as Army,
+          ({
+            id: `${country}-${index}`,
+            country,
+            type: ["infantry", "mediumTank", "artillery", "motorized"][index],
+          }) as Army,
       ),
       position: new THREE.Vector3(),
       angle: 0,

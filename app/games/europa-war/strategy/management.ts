@@ -7,6 +7,7 @@ import {
   UNITS,
 } from "./catalog";
 import { researchSlots } from "./politics";
+import { mapDistance } from "./geography-distance";
 import { portZone, seaRoute } from "./military-assets";
 import {
   capacity,
@@ -31,8 +32,24 @@ export const AUTOMATION = {
   economy: "Sanayi ve tedarik",
   research: "Araştırma ve ulusal odak",
   recruitment: "Tümen eğitimi",
-  operations: "Hava ve deniz görevleri",
+  air: "Hava kuvvetleri",
+  navy: "Deniz kuvvetleri",
 };
+
+/** Old combined opt-in remains effective until a branch receives its own choice. */
+export function effectiveAutomationEnabled(
+  c: Country,
+  area: keyof Country["automation"],
+): boolean {
+  if (area === "air" || area === "navy")
+    return c.automation[area] ?? c.automation.operations;
+  return c.automation[area] === true;
+}
+export function activeAutomationCount(c: Country): number {
+  return (Object.keys(AUTOMATION) as (keyof Country["automation"])[]).filter(
+    (area) => effectiveAutomationEnabled(c, area),
+  ).length;
+}
 export function manage(
   w: World,
   c: Country,
@@ -219,10 +236,12 @@ export function manage(
     if (safe && type)
       attempt({ type: "recruit", unit: type, province: safe.id });
   }
-  if (area === "operations") {
+  if (area === "operations" || area === "air" || area === "navy") {
+    const controlAir = area !== "navy",
+      controlNavy = area !== "air";
     const base = lands.find((p) => p.buildings.airfield > 0),
       port = lands.find((p) => GEOGRAPHY[p.id].port);
-    if (base)
+    if (controlAir && base)
       for (const model of Object.keys(AIRCRAFT) as AirModel[])
         if (c.equipment[model] >= 8 && c.air.wings.length < 40)
           attempt({
@@ -231,7 +250,7 @@ export function manage(
             base: base.id,
             count: Math.min(50, Math.floor(c.equipment[model])),
           });
-    if (port)
+    if (controlNavy && port)
       for (const model of Object.keys(SHIPS) as ShipModel[])
         if (c.equipment[model] >= 1)
           attempt({ type: "commission", model, port: port.id });
@@ -239,14 +258,8 @@ export function manage(
       .filter((id) => !w.countries[id].capitulated)
       .sort(
         (a, b) =>
-          Math.hypot(
-            GEOGRAPHY[c.capital].x - GEOGRAPHY[w.countries[a].capital].x,
-            GEOGRAPHY[c.capital].y - GEOGRAPHY[w.countries[a].capital].y,
-          ) -
-          Math.hypot(
-            GEOGRAPHY[c.capital].x - GEOGRAPHY[w.countries[b].capital].x,
-            GEOGRAPHY[c.capital].y - GEOGRAPHY[w.countries[b].capital].y,
-          ),
+          mapDistance(GEOGRAPHY[c.capital], GEOGRAPHY[w.countries[a].capital]) -
+          mapDistance(GEOGRAPHY[c.capital], GEOGRAPHY[w.countries[b].capital]),
       )[0];
     // A convenience support/raid order requires a real bomber/submarine.
     // Choose a mission the deployed force can perform instead of repeatedly
@@ -271,6 +284,7 @@ export function manage(
     // still needs its first mission. Special wings keep their final individual
     // orders instead of being reset to idle by a redundant weekly bulk order.
     if (
+      controlAir &&
       c.air.wings.length > 0 &&
       (c.air.mission !== airMission ||
         c.air.target !== countryTarget ||
@@ -303,6 +317,7 @@ export function manage(
       zone = coast ? portZone(coast.id) : c.navy.zone;
     const homeRoutes = new Map<string, boolean>();
     if (
+      controlNavy &&
       c.navy.ships.length > 0 &&
       (c.navy.mission !== navyMission ||
         c.navy.target !== countryTarget ||
@@ -336,7 +351,7 @@ export function manage(
         }))
     )
       attempt({ type: "navy", mission: navyMission, target: countryTarget });
-    for (const id of c.air.wings.map((wing) => wing.id)) {
+    for (const id of controlAir ? c.air.wings.map((wing) => wing.id) : []) {
       const wing = c.air.wings.find((candidate) => candidate.id === id)!;
       if (
         target &&
@@ -362,16 +377,20 @@ export function managementAction(
 ): boolean {
   if (a.type === "automation" || a.type === "autoPlan") {
     requireRule(
-      Object.hasOwn(AUTOMATION, a.area),
+      a.area === "operations" || Object.hasOwn(AUTOMATION, a.area),
       "Geçersiz otomatik yönetim alanı.",
     );
     if (a.type === "automation") {
       c.automation[a.area] = a.enabled;
+      if (a.area === "operations") {
+        c.automation.air = a.enabled;
+        c.automation.navy = a.enabled;
+      }
       if (a.enabled) manage(w, c, a.area, submit);
     } else manage(w, c, a.area, submit);
     event(
       w,
-      `${AUTOMATION[a.area]}: ${a.type === "autoPlan" ? "mevcut kaynaklarla plan uygulandı" : a.enabled ? "yardımcı yönetimi açıldı" : "manuel yönetime geçildi"}.`,
+      `${a.area === "operations" ? "Hava ve deniz görevleri" : AUTOMATION[a.area]}: ${a.type === "autoPlan" ? "mevcut kaynaklarla plan uygulandı" : a.enabled ? "yardımcı yönetimi açıldı" : "manuel yönetime geçildi"}.`,
     );
     return true;
   }
@@ -405,7 +424,7 @@ export function managementDay(
     AUTOMATION,
   ) as (keyof Country["automation"])[]) {
     c = w.countries[countryId];
-    if (c.automation[area])
+    if (effectiveAutomationEnabled(c, area))
       manage(w, c, area, (action) => submit(countryId, action));
   }
 }

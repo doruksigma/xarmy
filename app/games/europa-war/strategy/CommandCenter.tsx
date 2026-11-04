@@ -4,7 +4,12 @@ import { useState } from "react";
 import ActionPreview from "./ActionPreview";
 import EasyCommandGuide from "./EasyCommandGuide";
 import SimpleManagement from "./SimpleManagement";
-import { advice, AUTOMATION } from "./management";
+import {
+  advice,
+  AUTOMATION,
+  activeAutomationCount,
+  effectiveAutomationEnabled,
+} from "./management";
 import { BUILDINGS, focusTree, TECHNOLOGIES } from "./catalog";
 import { controlled, dateLabel, GEOGRAPHY } from "./world";
 import { hourLabel } from "./time";
@@ -44,7 +49,7 @@ export default function CommandCenter({
   const [costPreviewOpen, setCostPreviewOpen] = useState(false);
   const c = w.countries[w.player],
     priorities = simple ? [] : advice(w),
-    activeAssistants = Object.values(c.automation).filter(Boolean).length;
+    activeAssistants = activeAutomationCount(c);
   const armies = w.armies.filter((a) => a.country === c.id),
     wings = c.air.wings.reduce((n, a) => n + a.count, 0);
   return (
@@ -186,14 +191,16 @@ export default function CommandCenter({
             <span>
               {name}
               <small>
-                {c.automation[area] ? "Yardımcı yönetiyor" : "Sen yönetiyorsun"}
+                {effectiveAutomationEnabled(c, area)
+                  ? "Yardımcı yönetiyor"
+                  : "Sen yönetiyorsun"}
               </small>
             </span>
             <input
               type="checkbox"
               role="switch"
               aria-label={`${name} otomatik yönetim`}
-              checked={c.automation[area]}
+              checked={effectiveAutomationEnabled(c, area)}
               onChange={(e) =>
                 command({ type: "automation", area, enabled: e.target.checked })
               }

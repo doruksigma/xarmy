@@ -34,6 +34,7 @@ test("Gece şehir ışıkları gerçek kara üzerindeki her şehri kapsar ve her
   >;
   assert.ok(mesh);
   const positions = mesh.geometry.getAttribute("cityPosition");
+  const coordinatePrecision = Math.max(MAP.width, MAP.height) / 2 ** 24;
   assert.equal(positions.count, sites.length);
   for (let i = 0; i < positions.count; i++) {
     assert.ok(
@@ -41,10 +42,12 @@ test("Gece şehir ışıkları gerçek kara üzerindeki her şehri kapsar ve her
       "Uses the actual terrain sampler",
     );
     assert.ok(
-      Math.abs(positions.getX(i) + MAP.width / 2 - sites[i].x) < 0.0001,
+      Math.abs(positions.getX(i) + MAP.width / 2 - sites[i].x) <
+        coordinatePrecision,
     );
     assert.ok(
-      Math.abs(positions.getZ(i) + MAP.height / 2 - sites[i].y) < 0.0001,
+      Math.abs(positions.getZ(i) + MAP.height / 2 - sites[i].y) <
+        coordinatePrecision,
     );
   }
   const counts: number[] = [];

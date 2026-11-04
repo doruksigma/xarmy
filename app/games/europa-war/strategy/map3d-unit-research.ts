@@ -1,6 +1,7 @@
 import { TECHNOLOGIES } from "./catalog";
 import type { Army, Country, World } from "./types";
 import { getCountryModelProfile } from "./map3d-national-profiles";
+import { WORLD_UNIT_DIRECTIONS } from "./map3d-world-profiles";
 
 export type VisualResearchTier = 0 | 1 | 2 | 3;
 export type UnitVisualKind = "infantry" | "tank" | "artillery" | "truck";
@@ -19,6 +20,12 @@ export type UnitVisualCountry = Pick<Country, "id" | "tech">;
 /** Original subdued palettes inspired by period uniforms, not exact replicas. */
 export const COUNTRY_UNIFORM_COLORS: Readonly<Record<string, number>> =
   Object.freeze({
+    ...Object.fromEntries(
+      Object.entries(WORLD_UNIT_DIRECTIONS).map(([id, direction]) => [
+        id,
+        direction.uniform,
+      ]),
+    ),
     turkey: 0x9b916c,
     germany: 0x727a6d,
     france: 0x637a91,

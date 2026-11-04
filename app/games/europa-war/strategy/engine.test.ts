@@ -3,6 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   createWorld,
+  MAP,
   GEOGRAPHY,
   supplyNetwork,
   dateLabel,
@@ -15,7 +16,7 @@ import { manage } from "./management";
 test("1936 senaryosu: geçerli başkentler, simetrik komşuluk ve sonlu insan gücü", () => {
   const w = createWorld("turkey");
   assert.equal(dateLabel(0), "1 Ocak 1936");
-  assert.equal(Object.keys(w.countries).length, 29);
+  assert.equal(Object.keys(w.countries).length, MAP.countries.length);
   for (const c of Object.values(w.countries)) {
     assert.ok(w.provinces[c.capital]);
     assert.ok(c.manpower >= 0);

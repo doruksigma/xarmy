@@ -586,7 +586,12 @@ export function createScenery(
       const random = visualRandom(visualSeed(p.id));
       const urban = p.terrain === "urban";
       const homes = Math.min(
-        34,
+        // Reserve a fair share of the finite roof/masonry batches for every
+        // settlement. Adding continents must not exhaust the buffers in Europe
+        // and leave later countries with no houses.
+        MAP.width > 2000
+          ? Math.max(3, Math.floor(7200 / MAP.provinces.length))
+          : 34,
         Math.ceil(
           Math.min(
             20,

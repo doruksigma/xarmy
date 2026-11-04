@@ -11,7 +11,7 @@ import atlas from "./map.module.css";
 import mapAssets from "./map-assets.json";
 import MinimapBackdrop from "./MinimapBackdrop";
 import MilitaryIcon, { unitIcon } from "./MilitaryIcon";
-import { countryMapLabels } from "./map3d-country-labels";
+import { countryLabelsOverlap, countryMapLabels } from "./map3d-country-labels";
 import { movementRoutes, movementArrowHead } from "./movement-routes";
 import {
   CARTOGRAPHIC_TERRAINS,
@@ -201,7 +201,13 @@ const MAP_BACKGROUND = (
         ))}
       </clipPath>
       <mask id="ocean-mask">
-        <rect x="-1000" y="-1000" width="4000" height="4000" fill="white" />
+        <rect
+          x="-1000"
+          y="-1000"
+          width={MAP.width + 2000}
+          height={MAP.height + 2000}
+          fill="white"
+        />
         {MAP.countries.map((c) => (
           <path key={c.id} d={c.path} fill="black" />
         ))}
@@ -228,22 +234,22 @@ const MAP_BACKGROUND = (
     <rect
       x="-1000"
       y="-1000"
-      width="4000"
-      height="4000"
+      width={MAP.width + 2000}
+      height={MAP.height + 2000}
       fill="url(#sea-glow)"
     />
     <rect
       x="-1000"
       y="-1000"
-      width="4000"
-      height="4000"
+      width={MAP.width + 2000}
+      height={MAP.height + 2000}
       fill="url(#sea-lines)"
     />
     <rect
       x="-1000"
       y="-1000"
-      width="4000"
-      height="4000"
+      width={MAP.width + 2000}
+      height={MAP.height + 2000}
       fill="url(#sea-grid)"
     />
   </>
@@ -474,24 +480,33 @@ function WarMap({
       return count * 31;
     });
   }, [formations]);
-  const countryLabels = useMemo(
-    () =>
-      countryMapLabels(world).map((label) => {
+  const countryLabels = useMemo(() => {
+    const scale = MAP.width > 2000 ? Math.max(0.5, strokeScale) : 1;
+    const occupied: {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      angle: number;
+    }[] = [];
+    return countryMapLabels(world)
+      .map((label) => {
         const country = world.countries[label.country];
         const name = (
           country.id === "uk" ? "Britanya" : country.name
         ).toLocaleUpperCase("tr-TR");
-        const letterSpacing = close ? 1.3 : label.provinces > 5 ? 2 : 1;
+        const letterSpacing =
+          (close ? 1.3 : label.provinces > 5 ? 2 : 1) * scale;
         const fontSize = Math.max(
-          7,
+          7 * scale,
           Math.min(
-            close
+            (close
               ? 8.5
               : label.provinces > 8
                 ? 16
                 : label.provinces > 3
                   ? 12
-                  : 9,
+                  : 9) * scale,
             (label.span * 0.92 - name.length * letterSpacing) /
               (name.length * 0.66),
           ),
@@ -509,11 +524,30 @@ function WarMap({
           axisY: label.axisY,
           fontSize,
           letterSpacing,
+          span: label.span,
           width: name.length * (fontSize * 0.66 + letterSpacing),
         };
-      }),
-    [world, close, detailed],
-  );
+      })
+      .filter((label) => {
+        if (MAP.width <= 2000) return true;
+        const player = label.country.id === world.player;
+        if (!player && label.width > label.span * 1.25) return false;
+        const box = {
+          x: label.x,
+          y: label.y,
+          width: label.width,
+          height: label.fontSize * 1.3,
+          angle: (label.angle * Math.PI) / 180,
+        };
+        if (
+          !player &&
+          occupied.some((other) => countryLabelsOverlap(other, box, 4 * scale))
+        )
+          return false;
+        occupied.push(box);
+        return true;
+      });
+  }, [world, close, detailed, strokeScale]);
   const cityLabels = useMemo(() => {
     // Capitals are named at every zoom. Other names appear only on selection.
     type Box = { x: number; y: number; w: number; h: number };
@@ -1757,7 +1791,7 @@ function WarMap({
         className={atlas.canvas}
         viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`}
         preserveAspectRatio="xMidYMid meet"
-        aria-label="Avrupa strateji haritası. Ok tuşlarıyla gezin, artı ve eksi ile yakınlaştırın, Home ile tüm haritayı gösterin."
+        aria-label="Dünya strateji haritası. Ok tuşlarıyla gezin, artı ve eksi ile yakınlaştırın, Home ile tüm haritayı gösterin."
         tabIndex={0}
         data-testid="war-map"
         onKeyDown={(e) => {
@@ -2088,7 +2122,7 @@ function WarMap({
           <b>{Math.round((fitCamera(view.w / view.h).w / view.w) * 100)}%</b>
         </span>
         <svg
-          viewBox="0 0 1320 880"
+          viewBox={`0 0 ${MAP.width} ${MAP.height}`}
           role="button"
           aria-label="Küçük haritada konuma git"
           tabIndex={0}
@@ -2109,7 +2143,7 @@ function WarMap({
             );
           }}
         >
-          <rect width="1320" height="880" fill="#071222" />
+          <rect width={MAP.width} height={MAP.height} fill="#071222" />
           <g className={atlas.overviewTerrain}>
             <MinimapBackdrop world={world} />
           </g>

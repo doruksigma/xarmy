@@ -196,8 +196,16 @@ test("örnekleyici geometriyi değiştirmez ve bölge rengi değişince yeniden 
   geometry.dispose();
 });
 
-for (const maxEdge of [24, 18]) {
-  test(`${maxEdge === 24 ? "Low" : "Medium"} gerçek arazi yüzeyi üçgen içi/kenar ve gömülen Türkiye raylarında raycast ile eşleşir`, () => {
+for (const [quality, maxEdge] of (map.width > 2000
+  ? [
+      ["Low", 48],
+      ["Medium", 32],
+    ]
+  : [
+      ["Low", 24],
+      ["Medium", 18],
+    ]) as [string, number][]) {
+  test(`${quality} gerçek arazi yüzeyi üçgen içi/kenar ve gömülen Türkiye raylarında raycast ile eşleşir`, () => {
     const terrain = buildTerrain({ maxEdge });
     const surface = createTerrainSurfaceSampler(terrain.geometry);
     const probe = downwardProbe(terrain.geometry);
@@ -226,10 +234,28 @@ for (const maxEdge of [24, 18]) {
       }
     }
     assert.ok(checked > 35);
-    const buried =
-      maxEdge === 24
-        ? [919.8740041331824, 715.775362441165]
-        : [947.1345527708286, 690.602100775031];
+    // Find the worst Turkish rail clearance in the current geographic frame.
+    // Translating Europe onto the globe must not keep old absolute probe points.
+    let buried: [number, number] = [0, 0],
+      largestGap = -Infinity;
+    for (let face = 0; face < terrain.faceProvinceIds.length; face++) {
+      if (!terrain.faceProvinceIds[face].startsWith("turkey-")) continue;
+      let x = 0,
+        y = 0,
+        height = 0;
+      for (let i = 0; i < 3; i++) {
+        x += position.getX(face * 3 + i) / 3;
+        y += position.getZ(face * 3 + i) / 3;
+        height += position.getY(face * 3 + i) / 3;
+      }
+      x += map.width / 2;
+      y += map.height / 2;
+      const gap = height - heightAt(x, y);
+      if (gap > largestGap) {
+        largestGap = gap;
+        buried = [x, y];
+      }
+    }
     const actual = probe.height(buried[0], buried[1]);
     assert.notEqual(actual, undefined);
     close(surface(buried[0], buried[1]), actual!, "buried rail regression");

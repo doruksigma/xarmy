@@ -1,6 +1,7 @@
 import data from "./map-data.json";
 import { initializeAssets, seaEdgeOpen, shipPower } from "./military-assets";
 import { UNITS } from "./catalog";
+import { MAX_ARMIES } from "./campaign-limits";
 import { assignAvailableCommander } from "./commander-roster";
 import { current, isDraft } from "immer";
 import { createRandomStreams, nextRandom } from "./rng";
@@ -182,6 +183,10 @@ export function addArmy(
   province: string,
   type: Army["type"] = "infantry",
 ): Army {
+  requireRule(
+    w.armies.length < MAX_ARMIES,
+    "Seferin toplam birlik kapasitesi dolu.",
+  );
   const army: Army = {
     id: uid(w, "army"),
     country,
@@ -217,6 +222,9 @@ export function createWorld(
   );
   const w: World = {
     version: 3,
+    ...((data as { scenario?: string }).scenario === "world-1936-v1"
+      ? { mapVersion: "world-1936-v1" as const }
+      : {}),
     player,
     mode,
     difficulty,
@@ -238,11 +246,14 @@ export function createWorld(
     events: [],
     firedEvents: [],
   };
+  const capitals = new Set(data.countries.map((country) => country.capital));
   for (const p of data.provinces)
     w.provinces[p.id] = {
       id: p.id,
       owner: p.country,
-      controller: p.country,
+      controller:
+        (p as typeof p & { initialController?: string | null })
+          .initialController ?? p.country,
       resistance: 0,
       compliance: 0,
       damage: 0,
@@ -253,13 +264,13 @@ export function createWorld(
         dock: p.dock,
         infra: p.infra,
         rail: 1,
-        hub: p.id === `${p.country}-0` ? 1 : 0,
-        refinery: p.id === `${p.country}-0` ? 1 : 0,
+        hub: capitals.has(p.id) ? 1 : 0,
+        refinery: capitals.has(p.id) ? 1 : 0,
         synthetic: 0,
         fort: 0,
         radar: 0,
         mine: 0,
-        airfield: p.id === `${p.country}-0` ? 1 : 0,
+        airfield: capitals.has(p.id) ? 1 : 0,
         antiAir: 0,
       },
     };
@@ -307,15 +318,19 @@ export function createWorld(
         reconPlane: 0,
         transport: 0,
         carrierFighter: 0,
-        destroyer: ["uk", "france", "italy"].includes(d.id) ? 4 : 0,
-        battleship: ["uk", "france", "italy"].includes(d.id) ? 2 : 0,
-        ship: ["uk", "france", "italy"].includes(d.id)
+        destroyer: ["uk", "france", "italy", "usa", "japan"].includes(d.id)
+          ? 4
+          : 0,
+        battleship: ["uk", "france", "italy", "usa", "japan"].includes(d.id)
+          ? 2
+          : 0,
+        ship: ["uk", "france", "italy", "usa", "japan"].includes(d.id)
           ? 8
           : data.provinces.some((p) => p.country === d.id && p.port)
             ? 1
             : 0,
         submarine: major ? 2 : 0,
-        carrier: d.id === "uk" ? 1 : 0,
+        carrier: ["uk", "usa", "japan"].includes(d.id) ? 1 : 0,
       },
       production: [{ equipment: "rifle", factories: 1, efficiency: 0.45 }],
       construction: [],
@@ -334,7 +349,9 @@ export function createWorld(
       pacts: {},
       justification: {},
       claims: [],
-      subjectOf: null,
+      subjectOf:
+        (d as typeof d & { initialSubjectOf?: string | null })
+          .initialSubjectOf ?? null,
       capitulated: false,
       victor: null,
       generals: [
@@ -371,6 +388,8 @@ export function createWorld(
         research: false,
         recruitment: false,
         operations: false,
+        air: false,
+        navy: false,
       },
       cabinet: {
         economy: "builder",
@@ -417,13 +436,30 @@ export function createWorld(
       c.manpower -= UNITS[type].men;
     }
   }
-  w.countries.uk.allies = ["france"];
-  w.countries.france.allies = ["uk"];
+  for (const d of data.countries) {
+    const c = w.countries[d.id];
+    const allies = (d as typeof d & { allies?: string[] }).allies ?? [];
+    for (const id of allies) {
+      if (id === c.id || !w.countries[id]) continue;
+      if (!c.allies.includes(id)) c.allies.push(id);
+      if (!w.countries[id].allies.includes(c.id))
+        w.countries[id].allies.push(c.id);
+    }
+    if (c.subjectOf && w.countries[c.subjectOf]) {
+      if (!c.allies.includes(c.subjectOf)) c.allies.push(c.subjectOf);
+      if (!w.countries[c.subjectOf].allies.includes(c.id))
+        w.countries[c.subjectOf].allies.push(c.id);
+    }
+  }
+  if (!w.countries.uk.allies.includes("france"))
+    w.countries.uk.allies.push("france");
+  if (!w.countries.france.allies.includes("uk"))
+    w.countries.france.allies.push("uk");
   w.countries.france.relations.uk = 60;
   w.countries.uk.relations.france = 60;
   event(
     w,
-    "1 Ocak 1936. Avrupa yeniden silahlanıyor. Ülkenin geleceği verdiğin kararlara bağlı.",
+    "1 Ocak 1936. Dünya yeniden silahlanıyor. Ülkenin geleceği verdiğin kararlara bağlı.",
     "politics",
   );
   return w;

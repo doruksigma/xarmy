@@ -52,7 +52,7 @@ function distanceToSegment(
   return Math.hypot(x - a.x - along * dx, y - a.y - along * dy);
 }
 
-test("Beş deniz bölgesinin bütün devriye, gövde ve dümen suyu diski gerçek kıyılardan uzaktadır", () => {
+test("Tüm dünya deniz bölgelerinin devriye, gövde ve dümen suyu diski gerçek kıyılardan uzaktadır", () => {
   for (const zone of Object.keys(SEA_ZONES) as SeaZone[]) {
     const anchor = SEA_ZONES[zone],
       layout = NAVAL_PRESENTATION[zone];

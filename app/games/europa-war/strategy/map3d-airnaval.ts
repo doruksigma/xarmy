@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { MAP } from "./world";
+import { mapDeltaX, mapWrapX } from "./geography-distance";
 import { formationSnapshotTransition } from "./map3d-unit-events";
 import { createAirNavalGeometry } from "./map3d-airnaval-models";
 import { navalPatrolPose } from "./map3d-naval-space";
@@ -172,7 +173,7 @@ export function createAirNavalVisuals(
         angle = -phase + direction * 0.35;
       } else {
         const t = (1 - Math.cos(phase)) / 2;
-        const dx = unit.target.x - unit.from.x,
+        const dx = mapDeltaX(unit.from.x, unit.target.x),
           dz = unit.target.y - unit.from.y;
         const distance = Math.max(1, Math.hypot(dx, dz));
         x = unit.from.x + dx * t - (dz / distance) * Math.sin(phase) * 9;
@@ -186,6 +187,7 @@ export function createAirNavalVisuals(
           -dz * Math.sin(phase) - (dx / distance) * Math.cos(phase) * 18,
         );
       }
+      x = mapWrapX(x);
       y = heightAt(x, z) + 29 + Math.sin(phase * 2) * 3 + unit.phase * 7;
       bank = Math.sin(phase) * 0.18;
     } else if (unit.airborne) {
@@ -352,10 +354,16 @@ export function createAirNavalVisuals(
           y: land ? heightAt(outcome.to.x, outcome.to.y) + 1 : air ? 31 : 1,
           z,
         };
-        const start = source ?? {
+        const sourcePose = source ?? {
           x: x - (air ? 16 : 22),
           y: land || outcome.kind === "navalStrike" ? end.y + 32 : air ? 26 : 5,
           z: z - 8,
+        };
+        // Two nearby aircraft can be drawn on opposite map edges. Keep the
+        // tracer beside its impact instead of streaking across the whole globe.
+        const start = {
+          ...sourcePose,
+          x: end.x - mapDeltaX(sourcePose.x, end.x),
         };
         if (
           options.camera &&

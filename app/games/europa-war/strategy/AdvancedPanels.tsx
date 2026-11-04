@@ -265,7 +265,22 @@ export function AirNavalPanel({
     [count, setCount] = useState(10),
     [base, setBase] = useState(c.capital),
     [shipModel, setShipModel] = useState<ShipModel>("destroyer"),
-    [port, setPort] = useState(ports[0]?.id ?? "");
+    [port, setPort] = useState(ports[0]?.id ?? ""),
+    [wingId, setWingId] = useState(""),
+    [shipId, setShipId] = useState("");
+  const selectedWing =
+    c.air.wings.find((wing) => wing.id === wingId) ?? c.air.wings[0];
+  const selectedShip =
+    c.navy.ships.find((ship) => ship.id === shipId) ?? c.navy.ships[0];
+  const validBase = bases.some((p) => p.id === base)
+    ? base
+    : (bases.find((p) => p.id === c.capital)?.id ?? bases[0]?.id ?? "");
+  const validPort = ports.some((p) => p.id === port)
+    ? port
+    : (ports[0]?.id ?? "");
+  const targets = Object.values(w.provinces).filter(
+    (p) => friendly(w, c.id, p.controller) || c.wars.includes(p.controller),
+  );
   const defaultTarget = w.countries[target]?.capital ?? c.capital;
   return (
     <>
@@ -278,7 +293,29 @@ export function AirNavalPanel({
           Her kanadın üssü, menzili ve görevi ayrıdır. Sağlam ve yeterli
           büyüklükte üsler uçuşları verimli kılar.
         </p>
-        {c.air.wings.map((wing) => (
+        {c.air.wings.length > 0 ? (
+          <label className={styles.field}>
+            Yönetilecek hava kanadı
+            <select
+              aria-label="Yönetilecek hava kanadı"
+              value={selectedWing?.id ?? ""}
+              onChange={(event) => setWingId(event.target.value)}
+            >
+              {c.air.wings.map((wing) => (
+                <option key={wing.id} value={wing.id}>
+                  {wing.name} · {Math.floor(wing.count)} uçak ·{" "}
+                  {AIR_MISSIONS[wing.mission]}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : (
+          <p className={styles.hint}>
+            Henüz hava kanadın yok. Yedek uçaklarınla aşağıdan bir kanat
+            kurabilirsin; uçak üretimi Sanayi panelinde.
+          </p>
+        )}
+        {(selectedWing ? [selectedWing] : []).map((wing) => (
           <div key={wing.id} className={styles.card}>
             <h4>
               <MilitaryIcon name={equipmentIcon(wing.model)} />
@@ -299,7 +336,7 @@ export function AirNavalPanel({
                     type: "wing",
                     id: wing.id,
                     base: e.target.value,
-                    target: wing.target,
+                    target: e.target.value,
                     mission: "idle",
                   })
                 }
@@ -325,17 +362,11 @@ export function AirNavalPanel({
                   })
                 }
               >
-                {Object.values(w.provinces)
-                  .filter(
-                    (p) =>
-                      friendly(w, c.id, p.controller) ||
-                      c.wars.includes(p.controller),
-                  )
-                  .map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {GEOGRAPHY[p.id].name} · {w.countries[p.controller].name}
-                    </option>
-                  ))}
+                {targets.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {GEOGRAPHY[p.id].name} · {w.countries[p.controller].name}
+                  </option>
+                ))}
               </select>
             </label>
             <label className={styles.field}>
@@ -402,7 +433,7 @@ export function AirNavalPanel({
             Üs
             <select
               aria-label="Üs"
-              value={base}
+              value={validBase}
               onChange={(e) => setBase(e.target.value)}
             >
               {bases.map((p) => (
@@ -426,10 +457,13 @@ export function AirNavalPanel({
             disabled={
               !bases.length ||
               c.equipment[model] < count ||
+              !Number.isInteger(count) ||
               count < 1 ||
               count > 100
             }
-            onClick={() => command({ type: "createWing", model, count, base })}
+            onClick={() =>
+              command({ type: "createWing", model, count, base: validBase })
+            }
           >
             Kanat kur
           </button>
@@ -452,7 +486,29 @@ export function AirNavalPanel({
           Deniz üstünlüğü, açık boğazlar ve eskortlar ikmali korur. Hasarlı
           gemiler güvenli limanda çelik ve tersane kapasitesiyle onarılır.
         </p>
-        {c.navy.ships.map((ship) => (
+        {c.navy.ships.length > 0 ? (
+          <label className={styles.field}>
+            Yönetilecek gemi
+            <select
+              aria-label="Yönetilecek gemi"
+              value={selectedShip?.id ?? ""}
+              onChange={(event) => setShipId(event.target.value)}
+            >
+              {c.navy.ships.map((ship) => (
+                <option key={ship.id} value={ship.id}>
+                  {ship.name} · %{Math.floor(ship.health)} gövde ·{" "}
+                  {SEA_ZONES[ship.zone].name}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : (
+          <p className={styles.hint}>
+            Henüz gemin yok. Sanayide tersanelere üretim ver, tamamlanan gemiyi
+            aşağıdan filoya kat.
+          </p>
+        )}
+        {(selectedShip ? [selectedShip] : []).map((ship) => (
           <div className={styles.card} key={ship.id}>
             <h4>
               <MilitaryIcon name={equipmentIcon(ship.model)} />
@@ -551,7 +607,7 @@ export function AirNavalPanel({
           </label>
           <label className={styles.field}>
             Liman
-            <select value={port} onChange={(e) => setPort(e.target.value)}>
+            <select value={validPort} onChange={(e) => setPort(e.target.value)}>
               {ports.map((p) => (
                 <option key={p.id} value={p.id}>
                   {GEOGRAPHY[p.id].name}
@@ -562,7 +618,7 @@ export function AirNavalPanel({
           <button
             disabled={!ports.length || c.equipment[shipModel] < 1}
             onClick={() =>
-              command({ type: "commission", model: shipModel, port })
+              command({ type: "commission", model: shipModel, port: validPort })
             }
           >
             Filoya kat

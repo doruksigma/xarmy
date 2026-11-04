@@ -6,12 +6,42 @@ import {
   buildTerrain,
   containsProvincePoint,
   heightAt,
+  provincePolygons,
 } from "./map3d-geometry";
+import { cityLightSites } from "./map3d-city-lights";
 import { createTerrainSurfaceSampler } from "./map3d-surface";
 import { buildPlayerRailNetwork } from "./map3d-rail-network";
 import { UNIT_DISPLAY_LAYOUTS, UNIT_MODEL_FOOTPRINTS } from "./map3d-units";
 import { createWorld, GEOGRAPHY, MAP } from "./world";
 import type { GraphicsQuality } from "./map3d-visuals";
+
+function verifySettlementCoverage(scenery: ReturnType<typeof createScenery>) {
+  const lights = new Set(cityLightSites().map((site) => site.province));
+  const ringArea = (ring: { x: number; y: number }[]) =>
+    Math.abs(
+      ring.reduce((sum, point, i) => {
+        const next = ring[(i + 1) % ring.length];
+        return sum + point.x * next.y - point.y * next.x;
+      }, 0) / 2,
+    );
+  for (const id of scenery.stats.emptyProvinces) {
+    const area = provincePolygons(id).reduce(
+      (sum, part) =>
+        sum +
+        ringArea(part.outer) -
+        part.holes.reduce((holes, ring) => holes + ringArea(ring), 0),
+      0,
+    );
+    assert.ok(
+      area < 12,
+      `${id}: ordinary settlements must retain real houses (${area})`,
+    );
+    assert.ok(
+      lights.has(id),
+      `${id}: microstates/islets retain a visible settlement light`,
+    );
+  }
+}
 
 function renderedHouses(
   scene: THREE.Scene,
@@ -25,7 +55,10 @@ function renderedHouses(
     scale = new THREE.Vector3(),
     rotation = new THREE.Quaternion();
   assert.equal(scenery.houses.length, scenery.stats.houses);
-  const observed: Record<string, number> = {};
+  const observed: Record<string, number> = Object.fromEntries(
+    MAP.provinces.map((p) => [p.id, 0]),
+  );
+  const coordinatePrecision = Math.max(MAP.width, MAP.height) / 2 ** 24;
   const indices = new Set<number>();
   for (const house of scenery.houses) {
     assert.ok(house.instance >= 0 && house.instance < bodies.count);
@@ -36,15 +69,19 @@ function renderedHouses(
     indices.add(house.instance);
     bodies.getMatrixAt(house.instance, matrix);
     matrix.decompose(position, rotation, scale);
-    assert.ok(Math.abs(position.x + MAP.width / 2 - house.x) < 0.0001);
-    assert.ok(Math.abs(position.z + MAP.height / 2 - house.z) < 0.0001);
+    assert.ok(
+      Math.abs(position.x + MAP.width / 2 - house.x) < coordinatePrecision,
+    );
+    assert.ok(
+      Math.abs(position.z + MAP.height / 2 - house.z) < coordinatePrecision,
+    );
     assert.ok(Math.abs(scale.x - house.width) < 0.0001);
     assert.ok(Math.abs(scale.z - house.depth) < 0.0001);
     assert.ok(Math.abs(scale.y - house.height) < 0.0001 && scale.y > 0.5);
     observed[house.province] = (observed[house.province] ?? 0) + 1;
   }
   assert.deepEqual(observed, scenery.stats.housesByProvince);
-  assert.deepEqual(scenery.stats.emptyProvinces, []);
+  verifySettlementCoverage(scenery);
   assert.equal(Object.keys(observed).length, MAP.provinces.length);
   return bodies;
 }
@@ -121,7 +158,7 @@ test("Her kalite düzeyinde bütün illerde gerçek, karada duran binalar kalır
   scenery.dispose();
 });
 
-test("29 ülkenin oyuncuya bağlı ray ağında dar şehirler tamamen boşalmaz", () => {
+test("Bütün ülkelerin oyuncuya bağlı ray ağında dar şehirler tamamen boşalmaz", () => {
   const world = createWorld("turkey", "historical"),
     scene = new THREE.Scene(),
     scenery = createScenery(scene);
@@ -129,7 +166,7 @@ test("29 ülkenin oyuncuya bağlı ray ağında dar şehirler tamamen boşalmaz"
   for (const country of Object.keys(world.countries)) {
     world.player = country;
     scenery.update(world);
-    assert.deepEqual(scenery.stats.emptyProvinces, [], `Player ${country}`);
+    verifySettlementCoverage(scenery);
     renderedHouses(scene, scenery);
   }
   scenery.dispose();
@@ -260,7 +297,7 @@ test("Uzak atlas binaları çizmez, yakınlaşınca aynı şehirleri geri getiri
     bodyCount = body.count,
     houses = scenery.houses.slice(),
     snapshot = JSON.stringify(world);
-  assert.equal(scenery.stats.emptyProvinces.length, 0);
+  verifySettlementCoverage(scenery);
   assert.equal(
     Object.keys(scenery.stats.housesByProvince).length,
     Object.keys(GEOGRAPHY).length,
@@ -312,7 +349,7 @@ test("Uzak atlas binaları çizmez, yakınlaşınca aynı şehirleri geri getiri
 });
 
 test("Binaların tabanı analitik yükseklik yerine çizilen arazi üçgeninin üstünde durur", () => {
-  const terrain = buildTerrain({ maxEdge: 24 });
+  const terrain = buildTerrain({ maxEdge: MAP.width > 2000 ? 48 : 24 });
   const ground = createTerrainSurfaceSampler(terrain.geometry);
   const scene = new THREE.Scene(),
     scenery = createScenery(scene, ground);

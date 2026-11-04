@@ -1,0 +1,4180 @@
+{
+  "scenario": "world-1936-v1",
+  "date": "1936-01-01",
+  "countries": [
+    {
+      "id": "usa",
+      "name": "Amerika Birleşik Devletleri",
+      "flag": "🇺🇸",
+      "leader": "Franklin D. Roosevelt",
+      "ideology": "democracy",
+      "population": 128000000,
+      "industry": 65,
+      "science": 0.25,
+      "color": "#698e8a",
+      "initialSubjectOf": null,
+      "codes": [
+        "USA",
+        "PRI",
+        "VIR",
+        "GUM",
+        "ASM"
+      ],
+      "cities": [
+        {
+          "id": "usa-0",
+          "name": "Washington",
+          "lon": -77.04,
+          "lat": 38.91
+        },
+        {
+          "id": "usa-1",
+          "name": "New York",
+          "lon": -74.01,
+          "lat": 40.71
+        },
+        {
+          "id": "usa-2",
+          "name": "Boston",
+          "lon": -71.06,
+          "lat": 42.36
+        },
+        {
+          "id": "usa-3",
+          "name": "Chicago",
+          "lon": -87.63,
+          "lat": 41.88
+        },
+        {
+          "id": "usa-4",
+          "name": "Detroit",
+          "lon": -83.05,
+          "lat": 42.33
+        },
+        {
+          "id": "usa-5",
+          "name": "Pittsburgh",
+          "lon": -80.0,
+          "lat": 40.44
+        },
+        {
+          "id": "usa-6",
+          "name": "Atlanta",
+          "lon": -84.39,
+          "lat": 33.75
+        },
+        {
+          "id": "usa-7",
+          "name": "Miami",
+          "lon": -80.19,
+          "lat": 25.76
+        },
+        {
+          "id": "usa-8",
+          "name": "New Orleans",
+          "lon": -90.07,
+          "lat": 29.95
+        },
+        {
+          "id": "usa-9",
+          "name": "Houston",
+          "lon": -95.37,
+          "lat": 29.76
+        },
+        {
+          "id": "usa-10",
+          "name": "Dallas",
+          "lon": -96.8,
+          "lat": 32.78
+        },
+        {
+          "id": "usa-11",
+          "name": "St. Louis",
+          "lon": -90.2,
+          "lat": 38.63
+        },
+        {
+          "id": "usa-12",
+          "name": "Minneapolis",
+          "lon": -93.27,
+          "lat": 44.98
+        },
+        {
+          "id": "usa-13",
+          "name": "Denver",
+          "lon": -104.99,
+          "lat": 39.74
+        },
+        {
+          "id": "usa-14",
+          "name": "Salt Lake City",
+          "lon": -111.89,
+          "lat": 40.76
+        },
+        {
+          "id": "usa-15",
+          "name": "Los Angeles",
+          "lon": -118.24,
+          "lat": 34.05
+        },
+        {
+          "id": "usa-16",
+          "name": "San Francisco",
+          "lon": -122.42,
+          "lat": 37.77
+        },
+        {
+          "id": "usa-17",
+          "name": "Seattle",
+          "lon": -122.33,
+          "lat": 47.61
+        },
+        {
+          "id": "usa-18",
+          "name": "Portland",
+          "lon": -122.68,
+          "lat": 45.52
+        },
+        {
+          "id": "usa-19",
+          "name": "San Diego",
+          "lon": -117.16,
+          "lat": 32.72
+        },
+        {
+          "id": "usa-20",
+          "name": "Phoenix",
+          "lon": -112.07,
+          "lat": 33.45
+        },
+        {
+          "id": "usa-21",
+          "name": "Anchorage",
+          "lon": -149.9,
+          "lat": 61.22
+        },
+        {
+          "id": "usa-22",
+          "name": "Fairbanks",
+          "lon": -147.72,
+          "lat": 64.84
+        },
+        {
+          "id": "usa-23",
+          "name": "Honolulu",
+          "lon": -157.86,
+          "lat": 21.31
+        },
+        {
+          "id": "usa-24",
+          "name": "San Juan",
+          "lon": -66.11,
+          "lat": 18.47
+        },
+        {
+          "id": "usa-25",
+          "name": "Guam",
+          "lon": 144.79,
+          "lat": 13.44
+        },
+        {
+          "id": "usa-26",
+          "name": "Pago Pago",
+          "lon": -170.7,
+          "lat": -14.28
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "canada",
+      "name": "Kanada",
+      "flag": "🇨🇦",
+      "leader": "William Lyon Mackenzie King",
+      "ideology": "democracy",
+      "population": 11000000,
+      "industry": 14,
+      "science": 0.12,
+      "color": "#898568",
+      "initialSubjectOf": null,
+      "codes": [
+        "CAN"
+      ],
+      "cities": [
+        {
+          "id": "canada-0",
+          "name": "Ottawa",
+          "lon": -75.7,
+          "lat": 45.42
+        },
+        {
+          "id": "canada-1",
+          "name": "Toronto",
+          "lon": -79.38,
+          "lat": 43.65
+        },
+        {
+          "id": "canada-2",
+          "name": "Montréal",
+          "lon": -73.57,
+          "lat": 45.5
+        },
+        {
+          "id": "canada-3",
+          "name": "Québec",
+          "lon": -71.21,
+          "lat": 46.81
+        },
+        {
+          "id": "canada-4",
+          "name": "Halifax",
+          "lon": -63.58,
+          "lat": 44.65
+        },
+        {
+          "id": "canada-5",
+          "name": "Winnipeg",
+          "lon": -97.14,
+          "lat": 49.9
+        },
+        {
+          "id": "canada-6",
+          "name": "Regina",
+          "lon": -104.62,
+          "lat": 50.45
+        },
+        {
+          "id": "canada-7",
+          "name": "Calgary",
+          "lon": -114.07,
+          "lat": 51.05
+        },
+        {
+          "id": "canada-8",
+          "name": "Edmonton",
+          "lon": -113.49,
+          "lat": 53.55
+        },
+        {
+          "id": "canada-9",
+          "name": "Vancouver",
+          "lon": -123.12,
+          "lat": 49.28
+        },
+        {
+          "id": "canada-10",
+          "name": "Prince Rupert",
+          "lon": -130.32,
+          "lat": 54.32
+        },
+        {
+          "id": "canada-11",
+          "name": "Whitehorse",
+          "lon": -135.06,
+          "lat": 60.72
+        },
+        {
+          "id": "canada-12",
+          "name": "Yellowknife",
+          "lon": -114.38,
+          "lat": 62.45
+        },
+        {
+          "id": "canada-13",
+          "name": "Iqaluit",
+          "lon": -68.52,
+          "lat": 63.75
+        },
+        {
+          "id": "canada-14",
+          "name": "Churchill",
+          "lon": -94.17,
+          "lat": 58.77
+        },
+        {
+          "id": "canada-15",
+          "name": "Alert",
+          "lon": -62.35,
+          "lat": 82.5
+        }
+      ],
+      "allies": [
+        "uk"
+      ]
+    },
+    {
+      "id": "newfoundland",
+      "name": "Newfoundland",
+      "flag": "NF",
+      "leader": "Sir Humphrey Walwyn",
+      "ideology": "monarchy",
+      "population": 290000,
+      "industry": 1,
+      "science": 0.0,
+      "color": "#ad866f",
+      "initialSubjectOf": "uk",
+      "codes": [],
+      "cities": [
+        {
+          "id": "newfoundland-0",
+          "name": "St. John's",
+          "lon": -52.71,
+          "lat": 47.56
+        },
+        {
+          "id": "newfoundland-1",
+          "name": "Corner Brook",
+          "lon": -57.95,
+          "lat": 48.95
+        },
+        {
+          "id": "newfoundland-2",
+          "name": "Labrador",
+          "lon": -60.4,
+          "lat": 53.3
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "mexico",
+      "name": "Meksika",
+      "flag": "🇲🇽",
+      "leader": "Lázaro Cárdenas",
+      "ideology": "republic",
+      "population": 18000000,
+      "industry": 8,
+      "science": 0.03,
+      "color": "#858eaa",
+      "initialSubjectOf": null,
+      "codes": [
+        "MEX"
+      ],
+      "cities": [
+        {
+          "id": "mexico-0",
+          "name": "Meksiko",
+          "lon": -99.13,
+          "lat": 19.43
+        },
+        {
+          "id": "mexico-1",
+          "name": "Guadalajara",
+          "lon": -103.35,
+          "lat": 20.67
+        },
+        {
+          "id": "mexico-2",
+          "name": "Monterrey",
+          "lon": -100.32,
+          "lat": 25.68
+        },
+        {
+          "id": "mexico-3",
+          "name": "Veracruz",
+          "lon": -96.13,
+          "lat": 19.17
+        },
+        {
+          "id": "mexico-4",
+          "name": "Mérida",
+          "lon": -89.59,
+          "lat": 20.97
+        },
+        {
+          "id": "mexico-5",
+          "name": "Tijuana",
+          "lon": -117.04,
+          "lat": 32.51
+        },
+        {
+          "id": "mexico-6",
+          "name": "Chihuahua",
+          "lon": -106.08,
+          "lat": 28.63
+        },
+        {
+          "id": "mexico-7",
+          "name": "Acapulco",
+          "lon": -99.88,
+          "lat": 16.86
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "cuba",
+      "name": "Küba",
+      "flag": "🇨🇺",
+      "leader": "José A. Barnet",
+      "ideology": "republic",
+      "population": 4200000,
+      "industry": 3,
+      "science": 0.0,
+      "color": "#869768",
+      "initialSubjectOf": null,
+      "codes": [
+        "CUB"
+      ],
+      "cities": [
+        {
+          "id": "cuba-0",
+          "name": "Havana",
+          "lon": -82.37,
+          "lat": 23.11
+        },
+        {
+          "id": "cuba-1",
+          "name": "Santiago de Cuba",
+          "lon": -75.83,
+          "lat": 20.02
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "haiti",
+      "name": "Haiti",
+      "flag": "🇭🇹",
+      "leader": "Sténio Vincent",
+      "ideology": "republic",
+      "population": 2500000,
+      "industry": 1,
+      "science": 0.0,
+      "color": "#a58181",
+      "initialSubjectOf": null,
+      "codes": [
+        "HTI"
+      ],
+      "cities": [
+        {
+          "id": "haiti-0",
+          "name": "Port-au-Prince",
+          "lon": -72.34,
+          "lat": 18.54
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "dominican",
+      "name": "Dominik Cumhuriyeti",
+      "flag": "🇩🇴",
+      "leader": "Rafael Trujillo",
+      "ideology": "republic",
+      "population": 1500000,
+      "industry": 1,
+      "science": 0.0,
+      "color": "#7b9a95",
+      "initialSubjectOf": null,
+      "codes": [
+        "DOM"
+      ],
+      "cities": [
+        {
+          "id": "dominican-0",
+          "name": "Santo Domingo",
+          "lon": -69.9,
+          "lat": 18.48
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "guatemala",
+      "name": "Guatemala",
+      "flag": "🇬🇹",
+      "leader": "Jorge Ubico",
+      "ideology": "republic",
+      "population": 1800000,
+      "industry": 1,
+      "science": 0.0,
+      "color": "#a99472",
+      "initialSubjectOf": null,
+      "codes": [
+        "GTM"
+      ],
+      "cities": [
+        {
+          "id": "guatemala-0",
+          "name": "Guatemala",
+          "lon": -90.51,
+          "lat": 14.64
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "honduras",
+      "name": "Honduras",
+      "flag": "🇭🇳",
+      "leader": "Tiburcio Carías Andino",
+      "ideology": "republic",
+      "population": 1000000,
+      "industry": 1,
+      "science": 0.0,
+      "color": "#817c9e",
+      "initialSubjectOf": null,
+      "codes": [
+        "HND"
+      ],
+      "cities": [
+        {
+          "id": "honduras-0",
+          "name": "Tegucigalpa",
+          "lon": -87.21,
+          "lat": 14.07
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "elsalvador",
+      "name": "El Salvador",
+      "flag": "🇸🇻",
+      "leader": "Maximiliano Hernández Martínez",
+      "ideology": "republic",
+      "population": 1500000,
+      "industry": 1,
+      "science": 0.0,
+      "color": "#b09187",
+      "initialSubjectOf": null,
+      "codes": [
+        "SLV"
+      ],
+      "cities": [
+        {
+          "id": "elsalvador-0",
+          "name": "San Salvador",
+          "lon": -89.22,
+          "lat": 13.69
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "nicaragua",
+      "name": "Nikaragua",
+      "flag": "🇳🇮",
+      "leader": "Juan Bautista Sacasa",
+      "ideology": "republic",
+      "population": 700000,
+      "industry": 1,
+      "science": 0.0,
+      "color": "#8eab84",
+      "initialSubjectOf": null,
+      "codes": [
+        "NIC"
+      ],
+      "cities": [
+        {
+          "id": "nicaragua-0",
+          "name": "Managua",
+          "lon": -86.25,
+          "lat": 12.14
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "costarica",
+      "name": "Kosta Rika",
+      "flag": "🇨🇷",
+      "leader": "Ricardo Jiménez Oreamuno",
+      "ideology": "democracy",
+      "population": 550000,
+      "industry": 1,
+      "science": 0.0,
+      "color": "#87a7b1",
+      "initialSubjectOf": null,
+      "codes": [
+        "CRI"
+      ],
+      "cities": [
+        {
+          "id": "costarica-0",
+          "name": "San José",
+          "lon": -84.09,
+          "lat": 9.93
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "panama",
+      "name": "Panama",
+      "flag": "🇵🇦",
+      "leader": "Harmodio Arias Madrid",
+      "ideology": "republic",
+      "population": 470000,
+      "industry": 1,
+      "science": 0.0,
+      "color": "#698e8a",
+      "initialSubjectOf": null,
+      "codes": [
+        "PAN"
+      ],
+      "cities": [
+        {
+          "id": "panama-0",
+          "name": "Panama ve Kanal",
+          "lon": -79.52,
+          "lat": 8.98
+        },
+        {
+          "id": "panama-1",
+          "name": "Colón",
+          "lon": -79.9,
+          "lat": 9.36
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "colombia",
+      "name": "Kolombiya",
+      "flag": "🇨🇴",
+      "leader": "Alfonso López Pumarejo",
+      "ideology": "democracy",
+      "population": 8700000,
+      "industry": 4,
+      "science": 0.0,
+      "color": "#898568",
+      "initialSubjectOf": null,
+      "codes": [
+        "COL"
+      ],
+      "cities": [
+        {
+          "id": "colombia-0",
+          "name": "Bogotá",
+          "lon": -74.07,
+          "lat": 4.71
+        },
+        {
+          "id": "colombia-1",
+          "name": "Medellín",
+          "lon": -75.56,
+          "lat": 6.25
+        },
+        {
+          "id": "colombia-2",
+          "name": "Barranquilla",
+          "lon": -74.78,
+          "lat": 10.97
+        },
+        {
+          "id": "colombia-3",
+          "name": "Cali",
+          "lon": -76.53,
+          "lat": 3.45
+        },
+        {
+          "id": "colombia-4",
+          "name": "Leticia",
+          "lon": -69.94,
+          "lat": -4.22
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "venezuela",
+      "name": "Venezuela",
+      "flag": "🇻🇪",
+      "leader": "Eleazar López Contreras",
+      "ideology": "republic",
+      "population": 3300000,
+      "industry": 4,
+      "science": 0.0,
+      "color": "#ad866f",
+      "initialSubjectOf": null,
+      "codes": [
+        "VEN"
+      ],
+      "cities": [
+        {
+          "id": "venezuela-0",
+          "name": "Caracas",
+          "lon": -66.9,
+          "lat": 10.48
+        },
+        {
+          "id": "venezuela-1",
+          "name": "Maracaibo",
+          "lon": -71.64,
+          "lat": 10.65
+        },
+        {
+          "id": "venezuela-2",
+          "name": "Ciudad Bolívar",
+          "lon": -63.55,
+          "lat": 8.12
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "ecuador",
+      "name": "Ekvador",
+      "flag": "🇪🇨",
+      "leader": "Federico Páez",
+      "ideology": "republic",
+      "population": 2900000,
+      "industry": 2,
+      "science": 0.0,
+      "color": "#858eaa",
+      "initialSubjectOf": null,
+      "codes": [
+        "ECU"
+      ],
+      "cities": [
+        {
+          "id": "ecuador-0",
+          "name": "Quito",
+          "lon": -78.47,
+          "lat": -0.18
+        },
+        {
+          "id": "ecuador-1",
+          "name": "Guayaquil",
+          "lon": -79.89,
+          "lat": -2.17
+        },
+        {
+          "id": "ecuador-2",
+          "name": "Galápagos",
+          "lon": -90.31,
+          "lat": -0.75
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "peru",
+      "name": "Peru",
+      "flag": "🇵🇪",
+      "leader": "Óscar R. Benavides",
+      "ideology": "republic",
+      "population": 6200000,
+      "industry": 3,
+      "science": 0.0,
+      "color": "#869768",
+      "initialSubjectOf": null,
+      "codes": [
+        "PER"
+      ],
+      "cities": [
+        {
+          "id": "peru-0",
+          "name": "Lima",
+          "lon": -77.04,
+          "lat": -12.05
+        },
+        {
+          "id": "peru-1",
+          "name": "Arequipa",
+          "lon": -71.54,
+          "lat": -16.4
+        },
+        {
+          "id": "peru-2",
+          "name": "Cusco",
+          "lon": -71.97,
+          "lat": -13.53
+        },
+        {
+          "id": "peru-3",
+          "name": "Iquitos",
+          "lon": -73.25,
+          "lat": -3.75
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "brazil",
+      "name": "Brezilya",
+      "flag": "🇧🇷",
+      "leader": "Getúlio Vargas",
+      "ideology": "republic",
+      "population": 40000000,
+      "industry": 10,
+      "science": 0.02,
+      "color": "#a58181",
+      "initialSubjectOf": null,
+      "codes": [
+        "BRA"
+      ],
+      "cities": [
+        {
+          "id": "brazil-0",
+          "name": "Rio de Janeiro",
+          "lon": -43.17,
+          "lat": -22.91
+        },
+        {
+          "id": "brazil-1",
+          "name": "São Paulo",
+          "lon": -46.63,
+          "lat": -23.55
+        },
+        {
+          "id": "brazil-2",
+          "name": "Belo Horizonte",
+          "lon": -43.94,
+          "lat": -19.92
+        },
+        {
+          "id": "brazil-3",
+          "name": "Porto Alegre",
+          "lon": -51.23,
+          "lat": -30.03
+        },
+        {
+          "id": "brazil-4",
+          "name": "Curitiba",
+          "lon": -49.27,
+          "lat": -25.43
+        },
+        {
+          "id": "brazil-5",
+          "name": "Salvador",
+          "lon": -38.5,
+          "lat": -12.97
+        },
+        {
+          "id": "brazil-6",
+          "name": "Recife",
+          "lon": -34.88,
+          "lat": -8.05
+        },
+        {
+          "id": "brazil-7",
+          "name": "Fortaleza",
+          "lon": -38.54,
+          "lat": -3.73
+        },
+        {
+          "id": "brazil-8",
+          "name": "Belém",
+          "lon": -48.5,
+          "lat": -1.45
+        },
+        {
+          "id": "brazil-9",
+          "name": "Manaus",
+          "lon": -60.02,
+          "lat": -3.12
+        },
+        {
+          "id": "brazil-10",
+          "name": "Goiânia",
+          "lon": -49.25,
+          "lat": -16.68
+        },
+        {
+          "id": "brazil-11",
+          "name": "Cuiabá",
+          "lon": -56.1,
+          "lat": -15.6
+        },
+        {
+          "id": "brazil-12",
+          "name": "Rio Branco",
+          "lon": -67.81,
+          "lat": -9.97
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "bolivia",
+      "name": "Bolivya",
+      "flag": "🇧🇴",
+      "leader": "José Luis Tejada Sorzano",
+      "ideology": "republic",
+      "population": 2300000,
+      "industry": 2,
+      "science": 0.0,
+      "color": "#7b9a95",
+      "initialSubjectOf": null,
+      "codes": [
+        "BOL"
+      ],
+      "cities": [
+        {
+          "id": "bolivia-0",
+          "name": "La Paz",
+          "lon": -68.15,
+          "lat": -16.5
+        },
+        {
+          "id": "bolivia-1",
+          "name": "Sucre",
+          "lon": -65.26,
+          "lat": -19.04
+        },
+        {
+          "id": "bolivia-2",
+          "name": "Santa Cruz",
+          "lon": -63.18,
+          "lat": -17.78
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "paraguay",
+      "name": "Paraguay",
+      "flag": "🇵🇾",
+      "leader": "Eusebio Ayala",
+      "ideology": "republic",
+      "population": 950000,
+      "industry": 1,
+      "science": 0.0,
+      "color": "#a99472",
+      "initialSubjectOf": null,
+      "codes": [
+        "PRY"
+      ],
+      "cities": [
+        {
+          "id": "paraguay-0",
+          "name": "Asunción",
+          "lon": -57.64,
+          "lat": -25.26
+        },
+        {
+          "id": "paraguay-1",
+          "name": "Boquerón",
+          "lon": -60.5,
+          "lat": -22.4
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "chile",
+      "name": "Şili",
+      "flag": "🇨🇱",
+      "leader": "Arturo Alessandri",
+      "ideology": "democracy",
+      "population": 4600000,
+      "industry": 5,
+      "science": 0.03,
+      "color": "#817c9e",
+      "initialSubjectOf": null,
+      "codes": [
+        "CHL"
+      ],
+      "cities": [
+        {
+          "id": "chile-0",
+          "name": "Santiago",
+          "lon": -70.67,
+          "lat": -33.45
+        },
+        {
+          "id": "chile-1",
+          "name": "Valparaíso",
+          "lon": -71.62,
+          "lat": -33.05
+        },
+        {
+          "id": "chile-2",
+          "name": "Antofagasta",
+          "lon": -70.4,
+          "lat": -23.65
+        },
+        {
+          "id": "chile-3",
+          "name": "Concepción",
+          "lon": -73.05,
+          "lat": -36.83
+        },
+        {
+          "id": "chile-4",
+          "name": "Puerto Montt",
+          "lon": -72.94,
+          "lat": -41.47
+        },
+        {
+          "id": "chile-5",
+          "name": "Punta Arenas",
+          "lon": -70.91,
+          "lat": -53.16
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "argentina",
+      "name": "Arjantin",
+      "flag": "🇦🇷",
+      "leader": "Agustín Pedro Justo",
+      "ideology": "republic",
+      "population": 13300000,
+      "industry": 8,
+      "science": 0.04,
+      "color": "#b09187",
+      "initialSubjectOf": null,
+      "codes": [
+        "ARG"
+      ],
+      "cities": [
+        {
+          "id": "argentina-0",
+          "name": "Buenos Aires",
+          "lon": -58.38,
+          "lat": -34.6
+        },
+        {
+          "id": "argentina-1",
+          "name": "Córdoba",
+          "lon": -64.19,
+          "lat": -31.42
+        },
+        {
+          "id": "argentina-2",
+          "name": "Rosario",
+          "lon": -60.64,
+          "lat": -32.95
+        },
+        {
+          "id": "argentina-3",
+          "name": "Mendoza",
+          "lon": -68.85,
+          "lat": -32.89
+        },
+        {
+          "id": "argentina-4",
+          "name": "Tucumán",
+          "lon": -65.2,
+          "lat": -26.81
+        },
+        {
+          "id": "argentina-5",
+          "name": "Bahía Blanca",
+          "lon": -62.27,
+          "lat": -38.72
+        },
+        {
+          "id": "argentina-6",
+          "name": "Comodoro Rivadavia",
+          "lon": -67.5,
+          "lat": -45.86
+        },
+        {
+          "id": "argentina-7",
+          "name": "Río Gallegos",
+          "lon": -69.22,
+          "lat": -51.62
+        },
+        {
+          "id": "argentina-8",
+          "name": "Ushuaia",
+          "lon": -68.3,
+          "lat": -54.8
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "uruguay",
+      "name": "Uruguay",
+      "flag": "🇺🇾",
+      "leader": "Gabriel Terra",
+      "ideology": "republic",
+      "population": 2100000,
+      "industry": 2,
+      "science": 0.0,
+      "color": "#8eab84",
+      "initialSubjectOf": null,
+      "codes": [
+        "URY"
+      ],
+      "cities": [
+        {
+          "id": "uruguay-0",
+          "name": "Montevideo",
+          "lon": -56.16,
+          "lat": -34.9
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "japan",
+      "name": "Japonya",
+      "flag": "🇯🇵",
+      "leader": "Hirohito",
+      "ideology": "monarchy",
+      "population": 70000000,
+      "industry": 25,
+      "science": 0.18,
+      "color": "#87a7b1",
+      "initialSubjectOf": null,
+      "codes": [
+        "JPN",
+        "KOR",
+        "PRK",
+        "TWN",
+        "PLW",
+        "MHL",
+        "FSM",
+        "MNP"
+      ],
+      "cities": [
+        {
+          "id": "japan-0",
+          "name": "Tokyo",
+          "lon": 139.69,
+          "lat": 35.69
+        },
+        {
+          "id": "japan-1",
+          "name": "Osaka",
+          "lon": 135.5,
+          "lat": 34.69
+        },
+        {
+          "id": "japan-2",
+          "name": "Nagoya",
+          "lon": 136.91,
+          "lat": 35.18
+        },
+        {
+          "id": "japan-3",
+          "name": "Hiroşima",
+          "lon": 132.46,
+          "lat": 34.39
+        },
+        {
+          "id": "japan-4",
+          "name": "Nagasaki",
+          "lon": 129.88,
+          "lat": 32.75
+        },
+        {
+          "id": "japan-5",
+          "name": "Fukuoka",
+          "lon": 130.4,
+          "lat": 33.59
+        },
+        {
+          "id": "japan-6",
+          "name": "Sendai",
+          "lon": 140.87,
+          "lat": 38.27
+        },
+        {
+          "id": "japan-7",
+          "name": "Sapporo",
+          "lon": 141.35,
+          "lat": 43.06
+        },
+        {
+          "id": "japan-8",
+          "name": "Hakodate",
+          "lon": 140.73,
+          "lat": 41.77
+        },
+        {
+          "id": "japan-9",
+          "name": "Niigata",
+          "lon": 139.04,
+          "lat": 37.92
+        },
+        {
+          "id": "japan-10",
+          "name": "Naha",
+          "lon": 127.68,
+          "lat": 26.21
+        },
+        {
+          "id": "japan-11",
+          "name": "Keijō (Seul)",
+          "lon": 126.98,
+          "lat": 37.57
+        },
+        {
+          "id": "japan-12",
+          "name": "Heijō (Pyongyang)",
+          "lon": 125.75,
+          "lat": 39.03
+        },
+        {
+          "id": "japan-13",
+          "name": "Fusan (Busan)",
+          "lon": 129.08,
+          "lat": 35.18
+        },
+        {
+          "id": "japan-14",
+          "name": "Taihoku (Taipei)",
+          "lon": 121.57,
+          "lat": 25.03
+        },
+        {
+          "id": "japan-15",
+          "name": "Takao",
+          "lon": 120.3,
+          "lat": 22.63
+        },
+        {
+          "id": "japan-16",
+          "name": "Palau",
+          "lon": 134.48,
+          "lat": 7.5
+        },
+        {
+          "id": "japan-17",
+          "name": "Saipan",
+          "lon": 145.75,
+          "lat": 15.19
+        },
+        {
+          "id": "japan-18",
+          "name": "Truk",
+          "lon": 151.84,
+          "lat": 7.45
+        },
+        {
+          "id": "japan-19",
+          "name": "Majuro",
+          "lon": 171.38,
+          "lat": 7.09
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "china",
+      "name": "Çin Cumhuriyeti",
+      "flag": "🇹🇼",
+      "leader": "Chiang Kai-shek",
+      "ideology": "republic",
+      "population": 450000000,
+      "industry": 18,
+      "science": 0.02,
+      "color": "#698e8a",
+      "initialSubjectOf": null,
+      "codes": [
+        "CHN"
+      ],
+      "cities": [
+        {
+          "id": "china-0",
+          "name": "Nankin",
+          "lon": 118.8,
+          "lat": 32.06
+        },
+        {
+          "id": "china-1",
+          "name": "Şanghay",
+          "lon": 121.47,
+          "lat": 31.23
+        },
+        {
+          "id": "china-2",
+          "name": "Pekin",
+          "lon": 116.4,
+          "lat": 39.9
+        },
+        {
+          "id": "china-3",
+          "name": "Tientsin",
+          "lon": 117.2,
+          "lat": 39.13
+        },
+        {
+          "id": "china-4",
+          "name": "Wuhan",
+          "lon": 114.31,
+          "lat": 30.59
+        },
+        {
+          "id": "china-5",
+          "name": "Kanton",
+          "lon": 113.26,
+          "lat": 23.13
+        },
+        {
+          "id": "china-6",
+          "name": "Fuzhou",
+          "lon": 119.3,
+          "lat": 26.08
+        },
+        {
+          "id": "china-7",
+          "name": "Hangzhou",
+          "lon": 120.16,
+          "lat": 30.27
+        },
+        {
+          "id": "china-8",
+          "name": "Chongqing",
+          "lon": 106.55,
+          "lat": 29.56
+        },
+        {
+          "id": "china-9",
+          "name": "Chengdu",
+          "lon": 104.07,
+          "lat": 30.57
+        },
+        {
+          "id": "china-10",
+          "name": "Xi'an",
+          "lon": 108.94,
+          "lat": 34.34
+        },
+        {
+          "id": "china-11",
+          "name": "Lanzhou",
+          "lon": 103.83,
+          "lat": 36.06
+        },
+        {
+          "id": "china-12",
+          "name": "Kunming",
+          "lon": 102.71,
+          "lat": 25.04
+        },
+        {
+          "id": "china-13",
+          "name": "Guiyang",
+          "lon": 106.63,
+          "lat": 26.65
+        },
+        {
+          "id": "china-14",
+          "name": "Nanning",
+          "lon": 108.32,
+          "lat": 22.82
+        },
+        {
+          "id": "china-15",
+          "name": "Changsha",
+          "lon": 112.94,
+          "lat": 28.23
+        },
+        {
+          "id": "china-16",
+          "name": "Jinan",
+          "lon": 117.12,
+          "lat": 36.65
+        },
+        {
+          "id": "china-17",
+          "name": "Taiyuan",
+          "lon": 112.55,
+          "lat": 37.87
+        },
+        {
+          "id": "china-18",
+          "name": "Hohhot",
+          "lon": 111.75,
+          "lat": 40.84
+        },
+        {
+          "id": "china-19",
+          "name": "Qingdao",
+          "lon": 120.38,
+          "lat": 36.07
+        },
+        {
+          "id": "china-20",
+          "name": "Hainan",
+          "lon": 110.35,
+          "lat": 20.02
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "manchukuo",
+      "name": "Mançukuo",
+      "flag": "MCH",
+      "leader": "Puyi",
+      "ideology": "monarchy",
+      "population": 35000000,
+      "industry": 10,
+      "science": 0.02,
+      "color": "#898568",
+      "initialSubjectOf": "japan",
+      "codes": [],
+      "cities": [
+        {
+          "id": "manchukuo-0",
+          "name": "Hsinking (Changchun)",
+          "lon": 125.32,
+          "lat": 43.82
+        },
+        {
+          "id": "manchukuo-1",
+          "name": "Mukden",
+          "lon": 123.43,
+          "lat": 41.8
+        },
+        {
+          "id": "manchukuo-2",
+          "name": "Harbin",
+          "lon": 126.64,
+          "lat": 45.76
+        },
+        {
+          "id": "manchukuo-3",
+          "name": "Qiqihar",
+          "lon": 123.92,
+          "lat": 47.35
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "mongolia",
+      "name": "Moğolistan",
+      "flag": "🇲🇳",
+      "leader": "Peljidiin Genden",
+      "ideology": "communism",
+      "population": 750000,
+      "industry": 1,
+      "science": 0.0,
+      "color": "#ad866f",
+      "initialSubjectOf": "ussr",
+      "codes": [
+        "MNG"
+      ],
+      "cities": [
+        {
+          "id": "mongolia-0",
+          "name": "Ulan Batur",
+          "lon": 106.91,
+          "lat": 47.92
+        },
+        {
+          "id": "mongolia-1",
+          "name": "Hovd",
+          "lon": 91.64,
+          "lat": 48.0
+        },
+        {
+          "id": "mongolia-2",
+          "name": "Çoybalsan",
+          "lon": 114.53,
+          "lat": 48.07
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "tannutuva",
+      "name": "Tannu Tuva",
+      "flag": "TUVA",
+      "leader": "Salçak Toka",
+      "ideology": "communism",
+      "population": 80000,
+      "industry": 1,
+      "science": 0.0,
+      "color": "#858eaa",
+      "initialSubjectOf": "ussr",
+      "codes": [],
+      "cities": [
+        {
+          "id": "tannutuva-0",
+          "name": "Kızıl",
+          "lon": 94.45,
+          "lat": 51.72
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "tibet",
+      "name": "Tibet",
+      "flag": "TIB",
+      "leader": "Reting Rinpoche",
+      "ideology": "monarchy",
+      "population": 3200000,
+      "industry": 1,
+      "science": 0.0,
+      "color": "#869768",
+      "initialSubjectOf": null,
+      "codes": [],
+      "cities": [
+        {
+          "id": "tibet-0",
+          "name": "Lhasa",
+          "lon": 91.12,
+          "lat": 29.65
+        },
+        {
+          "id": "tibet-1",
+          "name": "Shigatse",
+          "lon": 88.88,
+          "lat": 29.27
+        },
+        {
+          "id": "tibet-2",
+          "name": "Ngari",
+          "lon": 80.1,
+          "lat": 32.5
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "xinjiang",
+      "name": "Sinkiang",
+      "flag": "SIK",
+      "leader": "Sheng Shicai",
+      "ideology": "republic",
+      "population": 4300000,
+      "industry": 2,
+      "science": 0.0,
+      "color": "#a58181",
+      "initialSubjectOf": "china",
+      "codes": [],
+      "cities": [
+        {
+          "id": "xinjiang-0",
+          "name": "Urumçi",
+          "lon": 87.62,
+          "lat": 43.83
+        },
+        {
+          "id": "xinjiang-1",
+          "name": "Kaşgar",
+          "lon": 75.99,
+          "lat": 39.47
+        },
+        {
+          "id": "xinjiang-2",
+          "name": "Yining",
+          "lon": 81.33,
+          "lat": 43.92
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "siam",
+      "name": "Siyam",
+      "flag": "🇹🇭",
+      "leader": "Ananda Mahidol",
+      "ideology": "monarchy",
+      "population": 14000000,
+      "industry": 3,
+      "science": 0.0,
+      "color": "#7b9a95",
+      "initialSubjectOf": null,
+      "codes": [
+        "THA"
+      ],
+      "cities": [
+        {
+          "id": "siam-0",
+          "name": "Bangkok",
+          "lon": 100.5,
+          "lat": 13.76
+        },
+        {
+          "id": "siam-1",
+          "name": "Chiang Mai",
+          "lon": 98.99,
+          "lat": 18.79
+        },
+        {
+          "id": "siam-2",
+          "name": "Songkhla",
+          "lon": 100.59,
+          "lat": 7.2
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "iran",
+      "name": "İran",
+      "flag": "🇮🇷",
+      "leader": "Rıza Şah",
+      "ideology": "monarchy",
+      "population": 14000000,
+      "industry": 4,
+      "science": 0.0,
+      "color": "#a99472",
+      "initialSubjectOf": null,
+      "codes": [
+        "IRN"
+      ],
+      "cities": [
+        {
+          "id": "iran-0",
+          "name": "Tahran",
+          "lon": 51.39,
+          "lat": 35.69
+        },
+        {
+          "id": "iran-1",
+          "name": "Tebriz",
+          "lon": 46.29,
+          "lat": 38.08
+        },
+        {
+          "id": "iran-2",
+          "name": "İsfahan",
+          "lon": 51.67,
+          "lat": 32.65
+        },
+        {
+          "id": "iran-3",
+          "name": "Şiraz",
+          "lon": 52.53,
+          "lat": 29.59
+        },
+        {
+          "id": "iran-4",
+          "name": "Meşhed",
+          "lon": 59.61,
+          "lat": 36.3
+        },
+        {
+          "id": "iran-5",
+          "name": "Abadan",
+          "lon": 48.3,
+          "lat": 30.35
+        },
+        {
+          "id": "iran-6",
+          "name": "Bender Abbas",
+          "lon": 56.28,
+          "lat": 27.18
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "iraq",
+      "name": "Irak",
+      "flag": "🇮🇶",
+      "leader": "I. Gazi",
+      "ideology": "monarchy",
+      "population": 3500000,
+      "industry": 2,
+      "science": 0.0,
+      "color": "#817c9e",
+      "initialSubjectOf": null,
+      "codes": [
+        "IRQ"
+      ],
+      "cities": [
+        {
+          "id": "iraq-0",
+          "name": "Bağdat",
+          "lon": 44.37,
+          "lat": 33.32
+        },
+        {
+          "id": "iraq-1",
+          "name": "Basra",
+          "lon": 47.78,
+          "lat": 30.5
+        },
+        {
+          "id": "iraq-2",
+          "name": "Musul",
+          "lon": 43.13,
+          "lat": 36.34
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "afghanistan",
+      "name": "Afganistan",
+      "flag": "🇦🇫",
+      "leader": "Muhammed Zahir Şah",
+      "ideology": "monarchy",
+      "population": 7000000,
+      "industry": 1,
+      "science": 0.0,
+      "color": "#b09187",
+      "initialSubjectOf": null,
+      "codes": [
+        "AFG"
+      ],
+      "cities": [
+        {
+          "id": "afghanistan-0",
+          "name": "Kabil",
+          "lon": 69.17,
+          "lat": 34.56
+        },
+        {
+          "id": "afghanistan-1",
+          "name": "Kandahar",
+          "lon": 65.71,
+          "lat": 31.63
+        },
+        {
+          "id": "afghanistan-2",
+          "name": "Herat",
+          "lon": 62.2,
+          "lat": 34.35
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "nepal",
+      "name": "Nepal",
+      "flag": "🇳🇵",
+      "leader": "Tribhuvan",
+      "ideology": "monarchy",
+      "population": 5600000,
+      "industry": 1,
+      "science": 0.0,
+      "color": "#8eab84",
+      "initialSubjectOf": null,
+      "codes": [
+        "NPL"
+      ],
+      "cities": [
+        {
+          "id": "nepal-0",
+          "name": "Katmandu",
+          "lon": 85.32,
+          "lat": 27.72
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "bhutan",
+      "name": "Bhutan",
+      "flag": "🇧🇹",
+      "leader": "Jigme Wangchuck",
+      "ideology": "monarchy",
+      "population": 300000,
+      "industry": 1,
+      "science": 0.0,
+      "color": "#87a7b1",
+      "initialSubjectOf": null,
+      "codes": [
+        "BTN"
+      ],
+      "cities": [
+        {
+          "id": "bhutan-0",
+          "name": "Punakha",
+          "lon": 89.86,
+          "lat": 27.59
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "saudi",
+      "name": "Suudi Arabistan",
+      "flag": "🇸🇦",
+      "leader": "Abdülaziz bin Suud",
+      "ideology": "monarchy",
+      "population": 3100000,
+      "industry": 1,
+      "science": 0.0,
+      "color": "#698e8a",
+      "initialSubjectOf": null,
+      "codes": [
+        "SAU"
+      ],
+      "cities": [
+        {
+          "id": "saudi-0",
+          "name": "Riyad",
+          "lon": 46.68,
+          "lat": 24.71
+        },
+        {
+          "id": "saudi-1",
+          "name": "Cidde",
+          "lon": 39.19,
+          "lat": 21.49
+        },
+        {
+          "id": "saudi-2",
+          "name": "Dammam",
+          "lon": 50.1,
+          "lat": 26.42
+        },
+        {
+          "id": "saudi-3",
+          "name": "Medine",
+          "lon": 39.61,
+          "lat": 24.47
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "yemen",
+      "name": "Yemen",
+      "flag": "🇾🇪",
+      "leader": "Yahya Muhammed Hamideddin",
+      "ideology": "monarchy",
+      "population": 2000000,
+      "industry": 1,
+      "science": 0.0,
+      "color": "#898568",
+      "initialSubjectOf": null,
+      "codes": [
+        "YEM"
+      ],
+      "cities": [
+        {
+          "id": "yemen-0",
+          "name": "Sana",
+          "lon": 44.21,
+          "lat": 15.35
+        },
+        {
+          "id": "yemen-1",
+          "name": "Hudeyde",
+          "lon": 42.95,
+          "lat": 14.8
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "oman",
+      "name": "Maskat ve Umman",
+      "flag": "🇴🇲",
+      "leader": "Said bin Teymur",
+      "ideology": "monarchy",
+      "population": 500000,
+      "industry": 1,
+      "science": 0.0,
+      "color": "#ad866f",
+      "initialSubjectOf": null,
+      "codes": [
+        "OMN"
+      ],
+      "cities": [
+        {
+          "id": "oman-0",
+          "name": "Maskat",
+          "lon": 58.41,
+          "lat": 23.59
+        },
+        {
+          "id": "oman-1",
+          "name": "Salalah",
+          "lon": 54.09,
+          "lat": 17.02
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "kuwait",
+      "name": "Kuveyt",
+      "flag": "🇰🇼",
+      "leader": "Ahmed el-Cabir es-Sabah",
+      "ideology": "monarchy",
+      "population": 70000,
+      "industry": 1,
+      "science": 0.0,
+      "color": "#858eaa",
+      "initialSubjectOf": "uk",
+      "codes": [
+        "KWT"
+      ],
+      "cities": [
+        {
+          "id": "kuwait-0",
+          "name": "Kuveyt",
+          "lon": 47.98,
+          "lat": 29.38
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "bahrain",
+      "name": "Bahreyn",
+      "flag": "🇧🇭",
+      "leader": "Hamad bin İsa el-Halife",
+      "ideology": "monarchy",
+      "population": 100000,
+      "industry": 1,
+      "science": 0.0,
+      "color": "#869768",
+      "initialSubjectOf": "uk",
+      "codes": [
+        "BHR"
+      ],
+      "cities": [
+        {
+          "id": "bahrain-0",
+          "name": "Manama",
+          "lon": 50.59,
+          "lat": 26.22
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "qatar",
+      "name": "Katar",
+      "flag": "🇶🇦",
+      "leader": "Abdullah bin Casim es-Sani",
+      "ideology": "monarchy",
+      "population": 30000,
+      "industry": 1,
+      "science": 0.0,
+      "color": "#a58181",
+      "initialSubjectOf": "uk",
+      "codes": [
+        "QAT"
+      ],
+      "cities": [
+        {
+          "id": "qatar-0",
+          "name": "Doha",
+          "lon": 51.53,
+          "lat": 25.29
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "trucial",
+      "name": "Ateşkes Devletleri",
+      "flag": "TRU",
+      "leader": "Yerel emirlikler",
+      "ideology": "monarchy",
+      "population": 80000,
+      "industry": 1,
+      "science": 0.0,
+      "color": "#7b9a95",
+      "initialSubjectOf": "uk",
+      "codes": [
+        "ARE"
+      ],
+      "cities": [
+        {
+          "id": "trucial-0",
+          "name": "Abu Dabi",
+          "lon": 54.37,
+          "lat": 24.45
+        },
+        {
+          "id": "trucial-1",
+          "name": "Dubai",
+          "lon": 55.27,
+          "lat": 25.2
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "transjordan",
+      "name": "Transürdün",
+      "flag": "🇯🇴",
+      "leader": "I. Abdullah",
+      "ideology": "monarchy",
+      "population": 300000,
+      "industry": 1,
+      "science": 0.0,
+      "color": "#a99472",
+      "initialSubjectOf": "uk",
+      "codes": [
+        "JOR"
+      ],
+      "cities": [
+        {
+          "id": "transjordan-0",
+          "name": "Amman",
+          "lon": 35.93,
+          "lat": 31.95
+        },
+        {
+          "id": "transjordan-1",
+          "name": "Akabe",
+          "lon": 35.01,
+          "lat": 29.53
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "india",
+      "name": "Britanya Hindistanı",
+      "flag": "RAJ",
+      "leader": "Lord Willingdon",
+      "ideology": "monarchy",
+      "population": 355000000,
+      "industry": 11,
+      "science": 0.02,
+      "color": "#817c9e",
+      "initialSubjectOf": "uk",
+      "codes": [
+        "IND",
+        "PAK",
+        "BGD",
+        "MMR",
+        "KAS"
+      ],
+      "cities": [
+        {
+          "id": "india-0",
+          "name": "Yeni Delhi",
+          "lon": 77.21,
+          "lat": 28.61
+        },
+        {
+          "id": "india-1",
+          "name": "Bombay",
+          "lon": 72.88,
+          "lat": 19.08
+        },
+        {
+          "id": "india-2",
+          "name": "Kalküta",
+          "lon": 88.36,
+          "lat": 22.57
+        },
+        {
+          "id": "india-3",
+          "name": "Madras",
+          "lon": 80.27,
+          "lat": 13.08
+        },
+        {
+          "id": "india-4",
+          "name": "Karaçi",
+          "lon": 67.01,
+          "lat": 24.86
+        },
+        {
+          "id": "india-5",
+          "name": "Lahor",
+          "lon": 74.36,
+          "lat": 31.55
+        },
+        {
+          "id": "india-6",
+          "name": "Dakka",
+          "lon": 90.41,
+          "lat": 23.81
+        },
+        {
+          "id": "india-7",
+          "name": "Rangoon",
+          "lon": 96.2,
+          "lat": 16.84
+        },
+        {
+          "id": "india-8",
+          "name": "Mandalay",
+          "lon": 96.08,
+          "lat": 21.98
+        },
+        {
+          "id": "india-9",
+          "name": "Lucknow",
+          "lon": 80.95,
+          "lat": 26.85
+        },
+        {
+          "id": "india-10",
+          "name": "Bangalore",
+          "lon": 77.59,
+          "lat": 12.97
+        },
+        {
+          "id": "india-11",
+          "name": "Haydarabad",
+          "lon": 78.49,
+          "lat": 17.39
+        },
+        {
+          "id": "india-12",
+          "name": "Peşaver",
+          "lon": 71.52,
+          "lat": 34.02
+        },
+        {
+          "id": "india-13",
+          "name": "Quetta",
+          "lon": 66.99,
+          "lat": 30.18
+        },
+        {
+          "id": "india-14",
+          "name": "Ahmedabad",
+          "lon": 72.57,
+          "lat": 23.02
+        },
+        {
+          "id": "india-15",
+          "name": "Nagpur",
+          "lon": 79.09,
+          "lat": 21.15
+        },
+        {
+          "id": "india-16",
+          "name": "Guwahati",
+          "lon": 91.74,
+          "lat": 26.14
+        },
+        {
+          "id": "india-17",
+          "name": "Srinagar",
+          "lon": 74.8,
+          "lat": 34.08
+        },
+        {
+          "id": "india-18",
+          "name": "Port Blair",
+          "lon": 92.75,
+          "lat": 11.62
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "malaya",
+      "name": "Britanya Malayası",
+      "flag": "MAL",
+      "leader": "Shenton Thomas",
+      "ideology": "monarchy",
+      "population": 5000000,
+      "industry": 3,
+      "science": 0.0,
+      "color": "#b09187",
+      "initialSubjectOf": "uk",
+      "codes": [
+        "MYS",
+        "SGP"
+      ],
+      "cities": [
+        {
+          "id": "malaya-0",
+          "name": "Singapur",
+          "lon": 103.82,
+          "lat": 1.35
+        },
+        {
+          "id": "malaya-1",
+          "name": "Kuala Lumpur",
+          "lon": 101.69,
+          "lat": 3.14
+        },
+        {
+          "id": "malaya-2",
+          "name": "Penang",
+          "lon": 100.33,
+          "lat": 5.41
+        },
+        {
+          "id": "malaya-3",
+          "name": "Kuching",
+          "lon": 110.36,
+          "lat": 1.55
+        },
+        {
+          "id": "malaya-4",
+          "name": "Jesselton",
+          "lon": 116.07,
+          "lat": 5.98
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "brunei",
+      "name": "Brunei",
+      "flag": "🇧🇳",
+      "leader": "Ahmad Tajuddin",
+      "ideology": "monarchy",
+      "population": 40000,
+      "industry": 1,
+      "science": 0.0,
+      "color": "#8eab84",
+      "initialSubjectOf": "uk",
+      "codes": [
+        "BRN"
+      ],
+      "cities": [
+        {
+          "id": "brunei-0",
+          "name": "Brunei",
+          "lon": 114.94,
+          "lat": 4.89
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "indochina",
+      "name": "Fransız Hindiçini",
+      "flag": "INDO",
+      "leader": "René Robin",
+      "ideology": "republic",
+      "population": 23000000,
+      "industry": 3,
+      "science": 0.0,
+      "color": "#87a7b1",
+      "initialSubjectOf": "france",
+      "codes": [
+        "VNM",
+        "LAO",
+        "KHM"
+      ],
+      "cities": [
+        {
+          "id": "indochina-0",
+          "name": "Hanoi",
+          "lon": 105.83,
+          "lat": 21.03
+        },
+        {
+          "id": "indochina-1",
+          "name": "Saygon",
+          "lon": 106.7,
+          "lat": 10.82
+        },
+        {
+          "id": "indochina-2",
+          "name": "Huế",
+          "lon": 107.59,
+          "lat": 16.46
+        },
+        {
+          "id": "indochina-3",
+          "name": "Phnom Penh",
+          "lon": 104.93,
+          "lat": 11.56
+        },
+        {
+          "id": "indochina-4",
+          "name": "Vientiane",
+          "lon": 102.63,
+          "lat": 17.97
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "eastindies",
+      "name": "Hollanda Doğu Hint Adaları",
+      "flag": "NEI",
+      "leader": "Bonifacius de Jonge",
+      "ideology": "monarchy",
+      "population": 65000000,
+      "industry": 6,
+      "science": 0.0,
+      "color": "#698e8a",
+      "initialSubjectOf": "netherlands",
+      "codes": [
+        "IDN"
+      ],
+      "cities": [
+        {
+          "id": "eastindies-0",
+          "name": "Batavia",
+          "lon": 106.85,
+          "lat": -6.21
+        },
+        {
+          "id": "eastindies-1",
+          "name": "Surabaya",
+          "lon": 112.75,
+          "lat": -7.25
+        },
+        {
+          "id": "eastindies-2",
+          "name": "Medan",
+          "lon": 98.67,
+          "lat": 3.6
+        },
+        {
+          "id": "eastindies-3",
+          "name": "Palembang",
+          "lon": 104.76,
+          "lat": -2.99
+        },
+        {
+          "id": "eastindies-4",
+          "name": "Padang",
+          "lon": 100.35,
+          "lat": -0.95
+        },
+        {
+          "id": "eastindies-5",
+          "name": "Banjarmasin",
+          "lon": 114.59,
+          "lat": -3.32
+        },
+        {
+          "id": "eastindies-6",
+          "name": "Balikpapan",
+          "lon": 116.85,
+          "lat": -1.24
+        },
+        {
+          "id": "eastindies-7",
+          "name": "Makassar",
+          "lon": 119.43,
+          "lat": -5.15
+        },
+        {
+          "id": "eastindies-8",
+          "name": "Manado",
+          "lon": 124.84,
+          "lat": 1.47
+        },
+        {
+          "id": "eastindies-9",
+          "name": "Ambon",
+          "lon": 128.19,
+          "lat": -3.7
+        },
+        {
+          "id": "eastindies-10",
+          "name": "Hollandia",
+          "lon": 140.7,
+          "lat": -2.53
+        },
+        {
+          "id": "eastindies-11",
+          "name": "Kupang",
+          "lon": 123.6,
+          "lat": -10.18
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "philippines",
+      "name": "Filipinler",
+      "flag": "🇵🇭",
+      "leader": "Manuel L. Quezon",
+      "ideology": "republic",
+      "population": 15000000,
+      "industry": 3,
+      "science": 0.0,
+      "color": "#898568",
+      "initialSubjectOf": "usa",
+      "codes": [
+        "PHL"
+      ],
+      "cities": [
+        {
+          "id": "philippines-0",
+          "name": "Manila",
+          "lon": 120.98,
+          "lat": 14.6
+        },
+        {
+          "id": "philippines-1",
+          "name": "Cebu",
+          "lon": 123.89,
+          "lat": 10.32
+        },
+        {
+          "id": "philippines-2",
+          "name": "Davao",
+          "lon": 125.61,
+          "lat": 7.07
+        },
+        {
+          "id": "philippines-3",
+          "name": "Iloilo",
+          "lon": 122.56,
+          "lat": 10.72
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "ethiopia",
+      "name": "Etiyopya",
+      "flag": "🇪🇹",
+      "leader": "Haile Selassie",
+      "ideology": "monarchy",
+      "population": 9000000,
+      "industry": 1,
+      "science": 0.0,
+      "color": "#ad866f",
+      "initialSubjectOf": null,
+      "codes": [
+        "ETH"
+      ],
+      "cities": [
+        {
+          "id": "ethiopia-0",
+          "name": "Addis Ababa",
+          "lon": 38.75,
+          "lat": 9.03
+        },
+        {
+          "id": "ethiopia-1",
+          "name": "Gondar",
+          "lon": 37.47,
+          "lat": 12.61
+        },
+        {
+          "id": "ethiopia-2",
+          "name": "Dire Dawa",
+          "lon": 41.87,
+          "lat": 9.59
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "liberia",
+      "name": "Liberya",
+      "flag": "🇱🇷",
+      "leader": "Edwin Barclay",
+      "ideology": "republic",
+      "population": 1100000,
+      "industry": 1,
+      "science": 0.0,
+      "color": "#858eaa",
+      "initialSubjectOf": null,
+      "codes": [
+        "LBR"
+      ],
+      "cities": [
+        {
+          "id": "liberia-0",
+          "name": "Monrovia",
+          "lon": -10.8,
+          "lat": 6.31
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "egypt",
+      "name": "Mısır",
+      "flag": "🇪🇬",
+      "leader": "I. Fuad",
+      "ideology": "monarchy",
+      "population": 15900000,
+      "industry": 4,
+      "science": 0.0,
+      "color": "#869768",
+      "initialSubjectOf": null,
+      "codes": [
+        "EGY"
+      ],
+      "cities": [
+        {
+          "id": "egypt-0",
+          "name": "Kahire",
+          "lon": 31.24,
+          "lat": 30.04
+        },
+        {
+          "id": "egypt-1",
+          "name": "İskenderiye",
+          "lon": 29.92,
+          "lat": 31.2
+        },
+        {
+          "id": "egypt-2",
+          "name": "Süveyş",
+          "lon": 32.55,
+          "lat": 29.97
+        },
+        {
+          "id": "egypt-3",
+          "name": "Asvan",
+          "lon": 32.9,
+          "lat": 24.09
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "southafrica",
+      "name": "Güney Afrika",
+      "flag": "🇿🇦",
+      "leader": "J. B. M. Hertzog",
+      "ideology": "democracy",
+      "population": 9800000,
+      "industry": 7,
+      "science": 0.05,
+      "color": "#a58181",
+      "initialSubjectOf": null,
+      "codes": [
+        "ZAF",
+        "NAM"
+      ],
+      "cities": [
+        {
+          "id": "southafrica-0",
+          "name": "Pretoria",
+          "lon": 28.19,
+          "lat": -25.75
+        },
+        {
+          "id": "southafrica-1",
+          "name": "Cape Town",
+          "lon": 18.42,
+          "lat": -33.93
+        },
+        {
+          "id": "southafrica-2",
+          "name": "Johannesburg",
+          "lon": 28.05,
+          "lat": -26.2
+        },
+        {
+          "id": "southafrica-3",
+          "name": "Durban",
+          "lon": 31.02,
+          "lat": -29.86
+        },
+        {
+          "id": "southafrica-4",
+          "name": "Bloemfontein",
+          "lon": 26.23,
+          "lat": -29.09
+        },
+        {
+          "id": "southafrica-5",
+          "name": "Windhoek",
+          "lon": 17.08,
+          "lat": -22.56
+        },
+        {
+          "id": "southafrica-6",
+          "name": "Walvis Bay",
+          "lon": 14.51,
+          "lat": -22.96
+        }
+      ],
+      "allies": [
+        "uk"
+      ]
+    },
+    {
+      "id": "australia",
+      "name": "Avustralya",
+      "flag": "🇦🇺",
+      "leader": "Joseph Lyons",
+      "ideology": "democracy",
+      "population": 6800000,
+      "industry": 8,
+      "science": 0.1,
+      "color": "#7b9a95",
+      "initialSubjectOf": null,
+      "codes": [
+        "AUS",
+        "PNG",
+        "NRU",
+        "NFK",
+        "IOA",
+        "HMD",
+        "ATC"
+      ],
+      "cities": [
+        {
+          "id": "australia-0",
+          "name": "Canberra",
+          "lon": 149.13,
+          "lat": -35.28
+        },
+        {
+          "id": "australia-1",
+          "name": "Sydney",
+          "lon": 151.21,
+          "lat": -33.87
+        },
+        {
+          "id": "australia-2",
+          "name": "Melbourne",
+          "lon": 144.96,
+          "lat": -37.81
+        },
+        {
+          "id": "australia-3",
+          "name": "Brisbane",
+          "lon": 153.03,
+          "lat": -27.47
+        },
+        {
+          "id": "australia-4",
+          "name": "Adelaide",
+          "lon": 138.6,
+          "lat": -34.93
+        },
+        {
+          "id": "australia-5",
+          "name": "Perth",
+          "lon": 115.86,
+          "lat": -31.95
+        },
+        {
+          "id": "australia-6",
+          "name": "Darwin",
+          "lon": 130.84,
+          "lat": -12.46
+        },
+        {
+          "id": "australia-7",
+          "name": "Alice Springs",
+          "lon": 133.88,
+          "lat": -23.7
+        },
+        {
+          "id": "australia-8",
+          "name": "Hobart",
+          "lon": 147.33,
+          "lat": -42.88
+        },
+        {
+          "id": "australia-9",
+          "name": "Port Moresby",
+          "lon": 147.18,
+          "lat": -9.44
+        },
+        {
+          "id": "australia-10",
+          "name": "Rabaul",
+          "lon": 152.18,
+          "lat": -4.2
+        },
+        {
+          "id": "australia-11",
+          "name": "Nauru",
+          "lon": 166.93,
+          "lat": -0.53
+        }
+      ],
+      "allies": [
+        "uk"
+      ]
+    },
+    {
+      "id": "newzealand",
+      "name": "Yeni Zelanda",
+      "flag": "🇳🇿",
+      "leader": "Michael Joseph Savage",
+      "ideology": "democracy",
+      "population": 1500000,
+      "industry": 3,
+      "science": 0.06,
+      "color": "#a99472",
+      "initialSubjectOf": null,
+      "codes": [
+        "NZL",
+        "COK",
+        "NIU",
+        "WSM"
+      ],
+      "cities": [
+        {
+          "id": "newzealand-0",
+          "name": "Wellington",
+          "lon": 174.78,
+          "lat": -41.29
+        },
+        {
+          "id": "newzealand-1",
+          "name": "Auckland",
+          "lon": 174.76,
+          "lat": -36.85
+        },
+        {
+          "id": "newzealand-2",
+          "name": "Christchurch",
+          "lon": 172.64,
+          "lat": -43.53
+        },
+        {
+          "id": "newzealand-3",
+          "name": "Dunedin",
+          "lon": 170.5,
+          "lat": -45.88
+        },
+        {
+          "id": "newzealand-4",
+          "name": "Apia",
+          "lon": -171.75,
+          "lat": -13.83
+        }
+      ],
+      "allies": [
+        "uk"
+      ]
+    },
+    {
+      "id": "tonga",
+      "name": "Tonga",
+      "flag": "🇹🇴",
+      "leader": "Salote Tupou III",
+      "ideology": "monarchy",
+      "population": 30000,
+      "industry": 1,
+      "science": 0.0,
+      "color": "#817c9e",
+      "initialSubjectOf": "uk",
+      "codes": [
+        "TON"
+      ],
+      "cities": [
+        {
+          "id": "tonga-0",
+          "name": "Nuku'alofa",
+          "lon": -175.2,
+          "lat": -21.14
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "iceland",
+      "name": "İzlanda",
+      "flag": "🇮🇸",
+      "leader": "Hermann Jónasson",
+      "ideology": "monarchy",
+      "population": 120000,
+      "industry": 1,
+      "science": 0.0,
+      "color": "#b09187",
+      "initialSubjectOf": null,
+      "codes": [
+        "ISL"
+      ],
+      "cities": [
+        {
+          "id": "iceland-0",
+          "name": "Reykjavik",
+          "lon": -21.94,
+          "lat": 64.15
+        },
+        {
+          "id": "iceland-1",
+          "name": "Akureyri",
+          "lon": -18.09,
+          "lat": 65.68
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "andorra",
+      "name": "Andorra",
+      "flag": "🇦🇩",
+      "leader": "Eş prensler",
+      "ideology": "monarchy",
+      "population": 4000,
+      "industry": 1,
+      "science": 0.0,
+      "color": "#8eab84",
+      "initialSubjectOf": null,
+      "codes": [
+        "AND"
+      ],
+      "cities": [
+        {
+          "id": "andorra-0",
+          "name": "Andorra la Vella",
+          "lon": 1.52,
+          "lat": 42.51
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "monaco",
+      "name": "Monako",
+      "flag": "🇲🇨",
+      "leader": "II. Louis",
+      "ideology": "monarchy",
+      "population": 22000,
+      "industry": 1,
+      "science": 0.0,
+      "color": "#87a7b1",
+      "initialSubjectOf": null,
+      "codes": [
+        "MCO"
+      ],
+      "cities": [
+        {
+          "id": "monaco-0",
+          "name": "Monako",
+          "lon": 7.42,
+          "lat": 43.74
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "sanmarino",
+      "name": "San Marino",
+      "flag": "🇸🇲",
+      "leader": "Naip kaptanlar",
+      "ideology": "republic",
+      "population": 13000,
+      "industry": 1,
+      "science": 0.0,
+      "color": "#698e8a",
+      "initialSubjectOf": null,
+      "codes": [
+        "SMR"
+      ],
+      "cities": [
+        {
+          "id": "sanmarino-0",
+          "name": "San Marino",
+          "lon": 12.45,
+          "lat": 43.94
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "vatican",
+      "name": "Vatikan",
+      "flag": "🇻🇦",
+      "leader": "XI. Pius",
+      "ideology": "monarchy",
+      "population": 1000,
+      "industry": 1,
+      "science": 0.0,
+      "color": "#898568",
+      "initialSubjectOf": null,
+      "codes": [
+        "VAT"
+      ],
+      "cities": [
+        {
+          "id": "vatican-0",
+          "name": "Vatikan",
+          "lon": 12.45,
+          "lat": 41.9
+        }
+      ],
+      "allies": []
+    },
+    {
+      "id": "liechtenstein",
+      "name": "Lihtenştayn",
+      "flag": "🇱🇮",
+      "leader": "I. Franz",
+      "ideology": "monarchy",
+      "population": 10000,
+      "industry": 1,
+      "science": 0.0,
+      "color": "#ad866f",
+      "initialSubjectOf": null,
+      "codes": [
+        "LIE"
+      ],
+      "cities": [
+        {
+          "id": "liechtenstein-0",
+          "name": "Vaduz",
+          "lon": 9.52,
+          "lat": 47.14
+        }
+      ],
+      "allies": []
+    }
+  ],
+  "assignments": {
+    "uk": [
+      "GBR",
+      "AIA",
+      "BMU",
+      "VGB",
+      "TCA",
+      "MSR",
+      "CYM",
+      "FLK",
+      "SGS",
+      "IOT",
+      "SHN",
+      "PCN",
+      "JEY",
+      "GGY",
+      "IMN",
+      "ARE",
+      "UGA",
+      "TTO",
+      "TZA",
+      "SWZ",
+      "SLB",
+      "SLE",
+      "SYC",
+      "SDS",
+      "SDN",
+      "LKA",
+      "VCT",
+      "LCA",
+      "KNA",
+      "QAT",
+      "NGA",
+      "KWT",
+      "KIR",
+      "KEN",
+      "JAM",
+      "ISR",
+      "PSX",
+      "MUS",
+      "MLT",
+      "MDV",
+      "MYS",
+      "MWI",
+      "LSO",
+      "JOR",
+      "GMB",
+      "GHA",
+      "GRD",
+      "FJI",
+      "DMA",
+      "CYN",
+      "CYP",
+      "BRB",
+      "BHS",
+      "BLZ",
+      "BWA",
+      "ATG",
+      "ZWE",
+      "ZMB",
+      "VUT",
+      "TUV",
+      "SOL",
+      "HKG",
+      "GUY"
+    ],
+    "france": [
+      "FRA",
+      "TUN",
+      "TGO",
+      "SEN",
+      "NER",
+      "MRT",
+      "MLI",
+      "MDG",
+      "LBN",
+      "SYR",
+      "LAO",
+      "GIN",
+      "GAB",
+      "COG",
+      "COM",
+      "CIV",
+      "TCD",
+      "CAF",
+      "CMR",
+      "KHM",
+      "BFA",
+      "BEN",
+      "DZA",
+      "MAR",
+      "DJI",
+      "VNM",
+      "SPM",
+      "WLF",
+      "MAF",
+      "BLM",
+      "PYF",
+      "NCL",
+      "ATF"
+    ],
+    "italy": [
+      "ITA",
+      "LBY",
+      "ERI",
+      "SOM"
+    ],
+    "belgium": [
+      "BEL",
+      "COD",
+      "RWA",
+      "BDI"
+    ],
+    "portugal": [
+      "PRT",
+      "AGO",
+      "MOZ",
+      "GNB",
+      "CPV",
+      "STP",
+      "TLS",
+      "MAC"
+    ],
+    "netherlands": [
+      "NLD",
+      "ABW",
+      "CUW",
+      "SXM",
+      "SUR"
+    ],
+    "spain": [
+      "ESP",
+      "SAH",
+      "GNQ"
+    ],
+    "denmark": [
+      "DNK",
+      "GRL",
+      "FRO"
+    ],
+    "norway": [
+      "NOR"
+    ],
+    "finland": [
+      "FIN",
+      "ALD"
+    ],
+    "ussr": [
+      "RUS",
+      "UKR",
+      "BLR",
+      "GEO",
+      "ARM",
+      "AZE",
+      "KAZ",
+      "KGZ",
+      "TJK",
+      "TKM",
+      "UZB"
+    ],
+    "germany": [
+      "DEU"
+    ],
+    "poland": [
+      "POL"
+    ],
+    "czechoslovakia": [
+      "CZE",
+      "SVK"
+    ],
+    "yugoslavia": [
+      "SRB",
+      "HRV",
+      "SVN",
+      "BIH",
+      "MNE",
+      "MKD",
+      "KOS"
+    ],
+    "romania": [
+      "ROU",
+      "MDA"
+    ],
+    "turkey": [
+      "TUR"
+    ],
+    "switzerland": [
+      "CHE"
+    ],
+    "sweden": [
+      "SWE"
+    ],
+    "hungary": [
+      "HUN"
+    ],
+    "bulgaria": [
+      "BGR"
+    ],
+    "greece": [
+      "GRC"
+    ],
+    "albania": [
+      "ALB"
+    ],
+    "austria": [
+      "AUT"
+    ],
+    "estonia": [
+      "EST"
+    ],
+    "latvia": [
+      "LVA"
+    ],
+    "lithuania": [
+      "LTU"
+    ],
+    "ireland": [
+      "IRL"
+    ],
+    "luxembourg": [
+      "LUX"
+    ],
+    "usa": [
+      "USA",
+      "PRI",
+      "VIR",
+      "GUM",
+      "ASM"
+    ],
+    "canada": [
+      "CAN"
+    ],
+    "newfoundland": [],
+    "mexico": [
+      "MEX"
+    ],
+    "cuba": [
+      "CUB"
+    ],
+    "haiti": [
+      "HTI"
+    ],
+    "dominican": [
+      "DOM"
+    ],
+    "guatemala": [
+      "GTM"
+    ],
+    "honduras": [
+      "HND"
+    ],
+    "elsalvador": [
+      "SLV"
+    ],
+    "nicaragua": [
+      "NIC"
+    ],
+    "costarica": [
+      "CRI"
+    ],
+    "panama": [
+      "PAN"
+    ],
+    "colombia": [
+      "COL"
+    ],
+    "venezuela": [
+      "VEN"
+    ],
+    "ecuador": [
+      "ECU"
+    ],
+    "peru": [
+      "PER"
+    ],
+    "brazil": [
+      "BRA"
+    ],
+    "bolivia": [
+      "BOL"
+    ],
+    "paraguay": [
+      "PRY"
+    ],
+    "chile": [
+      "CHL"
+    ],
+    "argentina": [
+      "ARG"
+    ],
+    "uruguay": [
+      "URY"
+    ],
+    "japan": [
+      "JPN",
+      "KOR",
+      "PRK",
+      "TWN",
+      "PLW",
+      "MHL",
+      "FSM",
+      "MNP"
+    ],
+    "china": [
+      "CHN"
+    ],
+    "manchukuo": [],
+    "mongolia": [
+      "MNG"
+    ],
+    "tannutuva": [],
+    "tibet": [],
+    "xinjiang": [],
+    "siam": [
+      "THA"
+    ],
+    "iran": [
+      "IRN"
+    ],
+    "iraq": [
+      "IRQ"
+    ],
+    "afghanistan": [
+      "AFG"
+    ],
+    "nepal": [
+      "NPL"
+    ],
+    "bhutan": [
+      "BTN"
+    ],
+    "saudi": [
+      "SAU"
+    ],
+    "yemen": [
+      "YEM"
+    ],
+    "oman": [
+      "OMN"
+    ],
+    "kuwait": [
+      "KWT"
+    ],
+    "bahrain": [
+      "BHR"
+    ],
+    "qatar": [
+      "QAT"
+    ],
+    "trucial": [
+      "ARE"
+    ],
+    "transjordan": [
+      "JOR"
+    ],
+    "india": [
+      "IND",
+      "PAK",
+      "BGD",
+      "MMR",
+      "KAS"
+    ],
+    "malaya": [
+      "MYS",
+      "SGP"
+    ],
+    "brunei": [
+      "BRN"
+    ],
+    "indochina": [
+      "VNM",
+      "LAO",
+      "KHM"
+    ],
+    "eastindies": [
+      "IDN"
+    ],
+    "philippines": [
+      "PHL"
+    ],
+    "ethiopia": [
+      "ETH"
+    ],
+    "liberia": [
+      "LBR"
+    ],
+    "egypt": [
+      "EGY"
+    ],
+    "southafrica": [
+      "ZAF",
+      "NAM"
+    ],
+    "australia": [
+      "AUS",
+      "PNG",
+      "NRU",
+      "NFK",
+      "IOA",
+      "HMD",
+      "ATC"
+    ],
+    "newzealand": [
+      "NZL",
+      "COK",
+      "NIU",
+      "WSM"
+    ],
+    "tonga": [
+      "TON"
+    ],
+    "iceland": [
+      "ISL"
+    ],
+    "andorra": [
+      "AND"
+    ],
+    "monaco": [
+      "MCO"
+    ],
+    "sanmarino": [
+      "SMR"
+    ],
+    "vatican": [
+      "VAT"
+    ],
+    "liechtenstein": [
+      "LIE"
+    ]
+  },
+  "extraCities": {
+    "uk": [
+      {
+        "id": "uk-global-gibraltar",
+        "name": "Gibraltar",
+        "lon": -5.35,
+        "lat": 36.14
+      },
+      {
+        "id": "uk-global-1",
+        "name": "Valletta",
+        "lon": 14.51,
+        "lat": 35.9
+      },
+      {
+        "id": "uk-global-2",
+        "name": "Lefkoşa",
+        "lon": 33.38,
+        "lat": 35.18
+      },
+      {
+        "id": "uk-global-3",
+        "name": "Kudüs",
+        "lon": 35.21,
+        "lat": 31.77
+      },
+      {
+        "id": "uk-global-4",
+        "name": "Aden",
+        "lon": 45.03,
+        "lat": 12.78
+      },
+      {
+        "id": "uk-global-5",
+        "name": "Hartum",
+        "lon": 32.56,
+        "lat": 15.5
+      },
+      {
+        "id": "uk-global-6",
+        "name": "Port Sudan",
+        "lon": 37.22,
+        "lat": 19.62
+      },
+      {
+        "id": "uk-global-7",
+        "name": "Lagos",
+        "lon": 3.38,
+        "lat": 6.52
+      },
+      {
+        "id": "uk-global-8",
+        "name": "Kano",
+        "lon": 8.52,
+        "lat": 12.0
+      },
+      {
+        "id": "uk-global-9",
+        "name": "Accra",
+        "lon": -0.19,
+        "lat": 5.56
+      },
+      {
+        "id": "uk-global-10",
+        "name": "Freetown",
+        "lon": -13.23,
+        "lat": 8.48
+      },
+      {
+        "id": "uk-global-11",
+        "name": "Banjul",
+        "lon": -16.58,
+        "lat": 13.45
+      },
+      {
+        "id": "uk-global-12",
+        "name": "Nairobi",
+        "lon": 36.82,
+        "lat": -1.29
+      },
+      {
+        "id": "uk-global-13",
+        "name": "Mombasa",
+        "lon": 39.67,
+        "lat": -4.04
+      },
+      {
+        "id": "uk-global-14",
+        "name": "Kampala",
+        "lon": 32.58,
+        "lat": 0.35
+      },
+      {
+        "id": "uk-global-15",
+        "name": "Darüsselam",
+        "lon": 39.28,
+        "lat": -6.82
+      },
+      {
+        "id": "uk-global-16",
+        "name": "Lusaka",
+        "lon": 28.32,
+        "lat": -15.42
+      },
+      {
+        "id": "uk-global-17",
+        "name": "Salisbury",
+        "lon": 31.05,
+        "lat": -17.83
+      },
+      {
+        "id": "uk-global-18",
+        "name": "Blantyre",
+        "lon": 35.01,
+        "lat": -15.79
+      },
+      {
+        "id": "uk-global-19",
+        "name": "Gaborone",
+        "lon": 25.91,
+        "lat": -24.66
+      },
+      {
+        "id": "uk-global-20",
+        "name": "Maseru",
+        "lon": 27.48,
+        "lat": -29.32
+      },
+      {
+        "id": "uk-global-21",
+        "name": "Mbabane",
+        "lon": 31.14,
+        "lat": -26.31
+      },
+      {
+        "id": "uk-global-22",
+        "name": "Hargeisa",
+        "lon": 44.06,
+        "lat": 9.56
+      },
+      {
+        "id": "uk-global-23",
+        "name": "Colombo",
+        "lon": 79.86,
+        "lat": 6.93
+      },
+      {
+        "id": "uk-global-24",
+        "name": "Port Louis",
+        "lon": 57.5,
+        "lat": -20.16
+      },
+      {
+        "id": "uk-global-25",
+        "name": "Victoria",
+        "lon": 55.45,
+        "lat": -4.62
+      },
+      {
+        "id": "uk-global-26",
+        "name": "Hong Kong",
+        "lon": 114.17,
+        "lat": 22.28
+      },
+      {
+        "id": "uk-global-27",
+        "name": "Nassau",
+        "lon": -77.35,
+        "lat": 25.04
+      },
+      {
+        "id": "uk-global-28",
+        "name": "Kingston",
+        "lon": -76.79,
+        "lat": 18.02
+      },
+      {
+        "id": "uk-global-29",
+        "name": "Port of Spain",
+        "lon": -61.52,
+        "lat": 10.67
+      },
+      {
+        "id": "uk-global-30",
+        "name": "Georgetown",
+        "lon": -58.16,
+        "lat": 6.8
+      },
+      {
+        "id": "uk-global-31",
+        "name": "Belize",
+        "lon": -88.19,
+        "lat": 17.5
+      },
+      {
+        "id": "uk-global-32",
+        "name": "Stanley",
+        "lon": -57.85,
+        "lat": -51.7
+      },
+      {
+        "id": "uk-global-33",
+        "name": "Hamilton",
+        "lon": -64.78,
+        "lat": 32.29
+      },
+      {
+        "id": "uk-global-34",
+        "name": "Suva",
+        "lon": 178.44,
+        "lat": -18.14
+      },
+      {
+        "id": "uk-global-35",
+        "name": "Honiara",
+        "lon": 159.95,
+        "lat": -9.43
+      },
+      {
+        "id": "uk-global-36",
+        "name": "Port Vila",
+        "lon": 168.32,
+        "lat": -17.73
+      },
+      {
+        "id": "uk-global-37",
+        "name": "Tarawa",
+        "lon": 172.97,
+        "lat": 1.45
+      }
+    ],
+    "france": [
+      {
+        "id": "france-global-0",
+        "name": "Cezayir",
+        "lon": 3.06,
+        "lat": 36.75
+      },
+      {
+        "id": "france-global-1",
+        "name": "Oran",
+        "lon": -0.64,
+        "lat": 35.7
+      },
+      {
+        "id": "france-global-2",
+        "name": "Tamanrasset",
+        "lon": 5.53,
+        "lat": 22.79
+      },
+      {
+        "id": "france-global-3",
+        "name": "Rabat",
+        "lon": -6.85,
+        "lat": 34.02
+      },
+      {
+        "id": "france-global-4",
+        "name": "Kazablanka",
+        "lon": -7.59,
+        "lat": 33.57
+      },
+      {
+        "id": "france-global-5",
+        "name": "Marakeş",
+        "lon": -7.98,
+        "lat": 31.63
+      },
+      {
+        "id": "france-global-6",
+        "name": "Tunus",
+        "lon": 10.18,
+        "lat": 36.81
+      },
+      {
+        "id": "france-global-7",
+        "name": "Dakar",
+        "lon": -17.45,
+        "lat": 14.69
+      },
+      {
+        "id": "france-global-8",
+        "name": "Saint-Louis",
+        "lon": -16.49,
+        "lat": 16.02
+      },
+      {
+        "id": "france-global-9",
+        "name": "Bamako",
+        "lon": -8.0,
+        "lat": 12.64
+      },
+      {
+        "id": "france-global-10",
+        "name": "Timbuktu",
+        "lon": -3.0,
+        "lat": 16.77
+      },
+      {
+        "id": "france-global-11",
+        "name": "Abidjan",
+        "lon": -4.03,
+        "lat": 5.35
+      },
+      {
+        "id": "france-global-12",
+        "name": "Conakry",
+        "lon": -13.71,
+        "lat": 9.64
+      },
+      {
+        "id": "france-global-13",
+        "name": "Niamey",
+        "lon": 2.12,
+        "lat": 13.51
+      },
+      {
+        "id": "france-global-14",
+        "name": "Agadez",
+        "lon": 7.99,
+        "lat": 16.97
+      },
+      {
+        "id": "france-global-15",
+        "name": "Fort-Lamy",
+        "lon": 15.05,
+        "lat": 12.11
+      },
+      {
+        "id": "france-global-16",
+        "name": "Bangui",
+        "lon": 18.56,
+        "lat": 4.39
+      },
+      {
+        "id": "france-global-17",
+        "name": "Brazzaville",
+        "lon": 15.27,
+        "lat": -4.27
+      },
+      {
+        "id": "france-global-18",
+        "name": "Libreville",
+        "lon": 9.45,
+        "lat": 0.39
+      },
+      {
+        "id": "france-global-19",
+        "name": "Douala",
+        "lon": 9.71,
+        "lat": 4.05
+      },
+      {
+        "id": "france-global-20",
+        "name": "Ouagadougou",
+        "lon": -1.52,
+        "lat": 12.37
+      },
+      {
+        "id": "france-global-21",
+        "name": "Porto Novo",
+        "lon": 2.63,
+        "lat": 6.5
+      },
+      {
+        "id": "france-global-22",
+        "name": "Lomé",
+        "lon": 1.23,
+        "lat": 6.13
+      },
+      {
+        "id": "france-global-23",
+        "name": "Cibuti",
+        "lon": 43.15,
+        "lat": 11.59
+      },
+      {
+        "id": "france-global-24",
+        "name": "Antananarivo",
+        "lon": 47.51,
+        "lat": -18.88
+      },
+      {
+        "id": "france-global-25",
+        "name": "Tamatave",
+        "lon": 49.4,
+        "lat": -18.15
+      },
+      {
+        "id": "france-global-26",
+        "name": "Beyrut",
+        "lon": 35.5,
+        "lat": 33.89
+      },
+      {
+        "id": "france-global-27",
+        "name": "Şam",
+        "lon": 36.29,
+        "lat": 33.51
+      },
+      {
+        "id": "france-global-28",
+        "name": "Halep",
+        "lon": 37.16,
+        "lat": 36.2
+      },
+      {
+        "id": "france-global-29",
+        "name": "Cayenne",
+        "lon": -52.33,
+        "lat": 4.94
+      },
+      {
+        "id": "france-global-30",
+        "name": "Papeete",
+        "lon": -149.57,
+        "lat": -17.55
+      },
+      {
+        "id": "france-global-31",
+        "name": "Nouméa",
+        "lon": 166.45,
+        "lat": -22.28
+      }
+    ],
+    "ussr": [
+      {
+        "id": "ussr-global-0",
+        "name": "Novosibirsk",
+        "lon": 82.92,
+        "lat": 55.03
+      },
+      {
+        "id": "ussr-global-1",
+        "name": "Omsk",
+        "lon": 73.37,
+        "lat": 54.99
+      },
+      {
+        "id": "ussr-global-2",
+        "name": "Sverdlovsk",
+        "lon": 60.6,
+        "lat": 56.84
+      },
+      {
+        "id": "ussr-global-3",
+        "name": "Çelyabinsk",
+        "lon": 61.4,
+        "lat": 55.16
+      },
+      {
+        "id": "ussr-global-4",
+        "name": "Krasnoyarsk",
+        "lon": 92.87,
+        "lat": 56.01
+      },
+      {
+        "id": "ussr-global-5",
+        "name": "İrkutsk",
+        "lon": 104.3,
+        "lat": 52.29
+      },
+      {
+        "id": "ussr-global-6",
+        "name": "Çita",
+        "lon": 113.5,
+        "lat": 52.03
+      },
+      {
+        "id": "ussr-global-7",
+        "name": "Habarovsk",
+        "lon": 135.07,
+        "lat": 48.48
+      },
+      {
+        "id": "ussr-global-8",
+        "name": "Vladivostok",
+        "lon": 131.89,
+        "lat": 43.12
+      },
+      {
+        "id": "ussr-global-9",
+        "name": "Yakutsk",
+        "lon": 129.73,
+        "lat": 62.03
+      },
+      {
+        "id": "ussr-global-10",
+        "name": "Magadan",
+        "lon": 150.81,
+        "lat": 59.56
+      },
+      {
+        "id": "ussr-global-11",
+        "name": "Petropavlovsk",
+        "lon": 158.65,
+        "lat": 53.05
+      },
+      {
+        "id": "ussr-global-12",
+        "name": "Anadır",
+        "lon": 177.51,
+        "lat": 64.73
+      },
+      {
+        "id": "ussr-global-13",
+        "name": "Norilsk",
+        "lon": 88.19,
+        "lat": 69.36
+      },
+      {
+        "id": "ussr-global-14",
+        "name": "Dikson",
+        "lon": 80.53,
+        "lat": 73.51
+      },
+      {
+        "id": "ussr-global-15",
+        "name": "Tikssi",
+        "lon": 128.87,
+        "lat": 71.64
+      },
+      {
+        "id": "ussr-global-16",
+        "name": "Vorkuta",
+        "lon": 64.05,
+        "lat": 67.5
+      },
+      {
+        "id": "ussr-global-17",
+        "name": "Syktyvkar",
+        "lon": 50.84,
+        "lat": 61.67
+      },
+      {
+        "id": "ussr-global-18",
+        "name": "Alma-Ata",
+        "lon": 76.89,
+        "lat": 43.24
+      },
+      {
+        "id": "ussr-global-19",
+        "name": "Taşkent",
+        "lon": 69.24,
+        "lat": 41.3
+      },
+      {
+        "id": "ussr-global-20",
+        "name": "Aşkabat",
+        "lon": 58.38,
+        "lat": 37.96
+      },
+      {
+        "id": "ussr-global-21",
+        "name": "Duşanbe",
+        "lon": 68.79,
+        "lat": 38.56
+      },
+      {
+        "id": "ussr-global-22",
+        "name": "Frunze",
+        "lon": 74.59,
+        "lat": 42.87
+      },
+      {
+        "id": "ussr-global-23",
+        "name": "Karaganda",
+        "lon": 73.1,
+        "lat": 49.8
+      },
+      {
+        "id": "ussr-global-24",
+        "name": "Semipalatinsk",
+        "lon": 80.23,
+        "lat": 50.41
+      },
+      {
+        "id": "ussr-global-25",
+        "name": "Kızılorda",
+        "lon": 65.5,
+        "lat": 44.85
+      },
+      {
+        "id": "ussr-global-26",
+        "name": "Guryev",
+        "lon": 51.88,
+        "lat": 47.1
+      }
+    ],
+    "italy": [
+      {
+        "id": "italy-global-0",
+        "name": "Trablus",
+        "lon": 13.19,
+        "lat": 32.89
+      },
+      {
+        "id": "italy-global-1",
+        "name": "Bingazi",
+        "lon": 20.07,
+        "lat": 32.12
+      },
+      {
+        "id": "italy-global-2",
+        "name": "Tobruk",
+        "lon": 23.96,
+        "lat": 32.08
+      },
+      {
+        "id": "italy-global-3",
+        "name": "Sebha",
+        "lon": 14.43,
+        "lat": 27.04
+      },
+      {
+        "id": "italy-global-4",
+        "name": "Asmara",
+        "lon": 38.93,
+        "lat": 15.32
+      },
+      {
+        "id": "italy-global-5",
+        "name": "Massawa",
+        "lon": 39.45,
+        "lat": 15.61
+      },
+      {
+        "id": "italy-global-6",
+        "name": "Mogadişu",
+        "lon": 45.34,
+        "lat": 2.05
+      },
+      {
+        "id": "italy-global-7",
+        "name": "Kismayo",
+        "lon": 42.55,
+        "lat": -0.36
+      }
+    ],
+    "belgium": [
+      {
+        "id": "belgium-global-0",
+        "name": "Léopoldville",
+        "lon": 15.32,
+        "lat": -4.32
+      },
+      {
+        "id": "belgium-global-1",
+        "name": "Elisabethville",
+        "lon": 27.48,
+        "lat": -11.66
+      },
+      {
+        "id": "belgium-global-2",
+        "name": "Stanleyville",
+        "lon": 25.2,
+        "lat": 0.52
+      },
+      {
+        "id": "belgium-global-3",
+        "name": "Boma",
+        "lon": 13.05,
+        "lat": -5.85
+      },
+      {
+        "id": "belgium-global-4",
+        "name": "Kigali",
+        "lon": 30.06,
+        "lat": -1.94
+      },
+      {
+        "id": "belgium-global-5",
+        "name": "Usumbura",
+        "lon": 29.36,
+        "lat": -3.38
+      }
+    ],
+    "portugal": [
+      {
+        "id": "portugal-global-0",
+        "name": "Luanda",
+        "lon": 13.23,
+        "lat": -8.84
+      },
+      {
+        "id": "portugal-global-1",
+        "name": "Lobito",
+        "lon": 13.54,
+        "lat": -12.36
+      },
+      {
+        "id": "portugal-global-2",
+        "name": "Huambo",
+        "lon": 15.73,
+        "lat": -12.78
+      },
+      {
+        "id": "portugal-global-3",
+        "name": "Lourenço Marques",
+        "lon": 32.58,
+        "lat": -25.97
+      },
+      {
+        "id": "portugal-global-4",
+        "name": "Beira",
+        "lon": 34.84,
+        "lat": -19.84
+      },
+      {
+        "id": "portugal-global-5",
+        "name": "Nampula",
+        "lon": 39.27,
+        "lat": -15.12
+      },
+      {
+        "id": "portugal-global-6",
+        "name": "Bissau",
+        "lon": -15.6,
+        "lat": 11.86
+      },
+      {
+        "id": "portugal-global-7",
+        "name": "Praia",
+        "lon": -23.51,
+        "lat": 14.92
+      },
+      {
+        "id": "portugal-global-8",
+        "name": "São Tomé",
+        "lon": 6.73,
+        "lat": 0.34
+      },
+      {
+        "id": "portugal-global-9",
+        "name": "Dili",
+        "lon": 125.56,
+        "lat": -8.56
+      },
+      {
+        "id": "portugal-global-10",
+        "name": "Macau",
+        "lon": 113.54,
+        "lat": 22.2
+      }
+    ],
+    "netherlands": [
+      {
+        "id": "netherlands-global-0",
+        "name": "Paramaribo",
+        "lon": -55.2,
+        "lat": 5.85
+      },
+      {
+        "id": "netherlands-global-1",
+        "name": "Willemstad",
+        "lon": -68.93,
+        "lat": 12.11
+      },
+      {
+        "id": "netherlands-global-2",
+        "name": "Oranjestad",
+        "lon": -70.03,
+        "lat": 12.52
+      }
+    ],
+    "spain": [
+      {
+        "id": "spain-global-0",
+        "name": "El Aaiún",
+        "lon": -13.2,
+        "lat": 27.15
+      },
+      {
+        "id": "spain-global-1",
+        "name": "Villa Cisneros",
+        "lon": -15.96,
+        "lat": 23.71
+      },
+      {
+        "id": "spain-global-2",
+        "name": "Santa Isabel",
+        "lon": 8.78,
+        "lat": 3.75
+      },
+      {
+        "id": "spain-global-3",
+        "name": "Bata",
+        "lon": 9.77,
+        "lat": 1.86
+      },
+      {
+        "id": "spain-global-4",
+        "name": "Tetuán",
+        "lon": -5.37,
+        "lat": 35.57
+      },
+      {
+        "id": "spain-global-5",
+        "name": "Las Palmas",
+        "lon": -15.43,
+        "lat": 28.12
+      }
+    ],
+    "denmark": [
+      {
+        "id": "denmark-global-0",
+        "name": "Godthåb",
+        "lon": -51.72,
+        "lat": 64.18
+      },
+      {
+        "id": "denmark-global-1",
+        "name": "Tórshavn",
+        "lon": -6.77,
+        "lat": 62.01
+      },
+      {
+        "id": "denmark-global-2",
+        "name": "Scoresbysund",
+        "lon": -21.97,
+        "lat": 70.48
+      },
+      {
+        "id": "denmark-global-3",
+        "name": "Thule",
+        "lon": -69.22,
+        "lat": 77.47
+      }
+    ],
+    "norway": [
+      {
+        "id": "norway-global-0",
+        "name": "Longyearbyen",
+        "lon": 15.65,
+        "lat": 78.22
+      }
+    ]
+  },
+  "extraPopulation": {
+    "uk": 65000000,
+    "france": 65000000,
+    "ussr": 75000000,
+    "italy": 3000000,
+    "belgium": 12000000,
+    "portugal": 9000000,
+    "netherlands": 300000,
+    "spain": 1500000,
+    "denmark": 50000,
+    "norway": 5000
+  },
+  "notes": [
+    "Modern Natural Earth coastline, manually assigned approximate 1936 administrations; not exact historical borders.",
+    "Existing447 city-province IDs remain stable; Iceland becomes a separate starting polity without renaming denmark-2 or denmark-city-3.",
+    "Political division of China is simplified to Republic of China, Sinkiang, Tibet, and Manchukuo; local warlord boundaries are not represented.",
+    "Colonial populations, industry and resources are scenario-scale estimates, not census reconstructions."
+  ]
+}

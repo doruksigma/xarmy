@@ -1,5 +1,7 @@
 "use client";
 import CommandCenter from "./CommandCenter";
+import ArmyRecruitment from "./ArmyRecruitment";
+import AirNavalControl from "./AirNavalControl";
 import UnitResearchGuide from "./UnitResearchGuide";
 import MilitaryIcon, {
   unitIcon,
@@ -10,12 +12,7 @@ import MilitaryIcon, {
 } from "./MilitaryIcon";
 import type { ReactNode } from "react";
 import ActionPreview from "./ActionPreview";
-import {
-  AirNavalPanel,
-  ArmyTools,
-  CabinetPanel,
-  PeacePanel,
-} from "./AdvancedPanels";
+import { ArmyTools, CabinetPanel, PeacePanel } from "./AdvancedPanels";
 import { tradeRoute } from "./trade-routes";
 import type { OffensivePlan } from "./types";
 import { useMemo, useState } from "react";
@@ -53,7 +50,6 @@ import type {
   Equipment,
   Ideology,
   Resource,
-  UnitType,
   World,
 } from "./types";
 import styles from "../europa.module.css";
@@ -66,7 +62,7 @@ export const TABS = [
   ["diplomacy", "diplomacy", "Diplomasi"],
   ["research", "research", "Araştırma"],
   ["politics", "politics", "Siyaset"],
-  ["operations", "operations", "Harekât"],
+  ["operations", "operations", "Hava / Deniz"],
   ["saves", "save", "Kayıtlar"],
 ] as const;
 export type Tab = (typeof TABS)[number][0];
@@ -168,6 +164,8 @@ interface Props {
   armyIds: string[];
   target: string;
   onTarget: (id: string) => void;
+  preferredRecruitmentProvince?: string | null;
+  onRecruitmentProvinceChange: (id: string) => void;
   command: (a: Action) => void;
   onProvince: (id: string) => void;
   onArmy: (id: string) => void;
@@ -187,6 +185,8 @@ export default function WarPanels({
   armyIds,
   target,
   onTarget,
+  preferredRecruitmentProvince,
+  onRecruitmentProvinceChange,
   command,
   onProvince,
   onArmy,
@@ -203,8 +203,7 @@ export default function WarPanels({
     owner = w.countries[p.controller],
     a = w.armies.find((a) => a.id === armyId && a.country === c.id),
     t = w.countries[target] ?? w.countries.germany;
-  const [unit, setUnit] = useState<UnitType>("infantry"),
-    [building, setBuilding] = useState<Building>("civil"),
+  const [building, setBuilding] = useState<Building>("civil"),
     [tradeResource, setTradeResource] = useState<Resource>("oil"),
     [branch, setBranch] = useState("Tümü"),
     [armySearch, setArmySearch] = useState(""),
@@ -482,6 +481,12 @@ export default function WarPanels({
         <p className={styles.subtitle}>
           {own.length} tümen · {number(c.manpower)} yedek insan gücü
         </p>
+        <ArmyRecruitment
+          world={w}
+          command={command}
+          preferredProvince={preferredRecruitmentProvince}
+          onProvinceChange={onRecruitmentProvinceChange}
+        />
         {w.battles
           .filter((b) => b.attacker === c.id || b.defender === c.id)
           .map((b) => (
@@ -795,69 +800,6 @@ export default function WarPanels({
               </div>
             ))}
         </details>
-        <h3>
-          <MilitaryIcon name="infantry" />
-          Yeni tümen eğit
-        </h3>
-        <label className={styles.field}>
-          Birlik tipi
-          <select
-            value={unit}
-            onChange={(e) => setUnit(e.target.value as UnitType)}
-          >
-            {Object.entries(UNITS).map(([id, d]) => (
-              <option key={id} value={id}>
-                {d.name}
-                {d.tech && !c.tech.includes(d.tech)
-                  ? " · araştırma gerekli"
-                  : ""}
-              </option>
-            ))}
-          </select>
-        </label>
-        <p>
-          <MilitaryIcon name={unitIcon(unit)} />
-          {number(UNITS[unit].men)} asker · {UNITS[unit].days} gün
-          <br />
-          {Object.entries(UNITS[unit].equipment)
-            .map(([id, n]) => `${n} ${EQUIPMENT[id as Equipment].name}`)
-            .join(", ")}
-        </p>
-        <ActionPreview
-          world={w}
-          action={{
-            type: "recruit",
-            unit,
-            province:
-              p.controller === c.id && p.owner === c.id ? p.id : c.capital,
-          }}
-        />
-        <button
-          className={styles.primary}
-          onClick={() =>
-            command({
-              type: "recruit",
-              unit,
-              province:
-                p.controller === c.id && p.owner === c.id ? p.id : c.capital,
-            })
-          }
-        >
-          <MilitaryIcon name="infantry" />
-          Eğitime başla ·{" "}
-          {p.controller === c.id && p.owner === c.id
-            ? geo.name
-            : GEOGRAPHY[c.capital].name}
-        </button>
-        {c.recruitment.map((q) => (
-          <div className={styles.card} key={q.id}>
-            <h4>
-              <MilitaryIcon name={unitIcon(q.type)} />
-              {UNITS[q.type].name} · {GEOGRAPHY[q.province].name}
-            </h4>
-            <Progress value={q.progress} total={q.total} />
-          </div>
-        ))}
       </>
     );
   if (tab === "economy")
@@ -1483,7 +1425,7 @@ export default function WarPanels({
           Harekât merkezi
         </h2>
         {targetSelect}
-        <AirNavalPanel w={w} command={command} target={target} />
+        <AirNavalControl w={w} command={command} target={target} />
         <details className={styles.fold}>
           <summary>Hızlı hava ve deniz emirleri</summary>
           <div className={styles.card}>

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
 import * as THREE from "three";
+import legacyEurope from "./legacy-europe-map.json";
 import {
   createLandModelGeometries,
   createLandModelGeometry,
@@ -346,12 +347,15 @@ test("Repeated tier creation is deterministic with independently owned disposabl
   }
 });
 
-test("all 29 national rigs retain researched geometry, animation anchors, clearances and safe shape sharing", () => {
+test("all national rigs retain researched geometry, animation anchors, clearances and safe family sharing", () => {
   const signatures = new Map<string, string>();
   const nationalShapes = new Map<string, Set<string>>(
     [0, 2, 3, 4].flatMap((part) =>
       TIERS.map((tier) => [`${part}:${tier}`, new Set<string>()] as const),
     ),
+  );
+  const originalShapes = new Map(
+    [...nationalShapes.keys()].map((key) => [key, new Set<string>()]),
   );
   const hash = (geometry: THREE.BufferGeometry, allAttributes = false) => {
     const digest = createHash("sha256");
@@ -446,6 +450,8 @@ test("all 29 national rigs retain researched geometry, animation anchors, cleara
               ? [2, 6].map((index) => hash(parts[index])).join(":")
               : hash(parts[part]);
         nationalShapes.get(`${part}:${tier}`)!.add(shape);
+        if (legacyEurope.countryIds.includes(profile.id))
+          originalShapes.get(`${part}:${tier}`)!.add(shape);
       }
       dispose(parts);
     }
@@ -456,12 +462,18 @@ test("all 29 national rigs retain researched geometry, animation anchors, cleara
         `${profile.id}/${PARTS[part]}: four research stages`,
       );
   }
-  for (const [part, shapes] of nationalShapes)
+  for (const [part, shapes] of nationalShapes) {
     assert.equal(
-      shapes.size,
-      29,
-      `part/tier ${part}: distinct national silhouettes`,
+      originalShapes.get(part)!.size,
+      legacyEurope.countryIds.length,
+      `part/tier ${part}: existing national silhouettes are preserved`,
     );
+    assert.ok(
+      shapes.size >= originalShapes.get(part)!.size &&
+        shapes.size <= Object.keys(COUNTRY_MODEL_PROFILES).length,
+      `part/tier ${part}: additional countries may share supported vehicle families`,
+    );
+  }
 });
 
 const positionSignature = (geometry: THREE.BufferGeometry) => {
@@ -508,11 +520,17 @@ test("advanced national vehicle references change geometry only after the second
             landModelGeometryKey(part, tier, relabeled),
             `${id}/${tier}/${part}: labels do not duplicate cached geometry`,
           );
-          if (tier < 2) {
+          const kind =
+            part === 2 || part === 6
+              ? "tank"
+              : part === 3
+                ? "truck"
+                : "artillery";
+          if (tier < 2 || !profile[kind].variant) {
             assert.equal(
               positionSignature(actual),
               positionSignature(baseline),
-              `${id}/${tier}/${part}: early equipment is retained`,
+              `${id}/${tier}/${part}: early or generic equipment is retained`,
             );
             assert.equal(
               landModelGeometryKey(part, tier, profile),

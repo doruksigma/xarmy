@@ -4,6 +4,7 @@ import { advanceHour, advanceHours, createWorld } from "./engine";
 import { decodeSave, encodeSave } from "./storage";
 import { createCommand, executeCommand } from "./commands";
 import { declareWar } from "./diplomacy";
+import { MAP } from "./world";
 import {
   fingerprintValue,
   fingerprintWorld,
@@ -41,8 +42,8 @@ test("diagnostic fingerprints are stable across serialization and never consume 
     format: 1,
     tick: 0,
     digest: fingerprintWorld(world),
-    countries: 29,
-    provinces: 447,
+    countries: MAP.countries.length,
+    provinces: MAP.provinces.length,
     armies: world.armies.length,
     battles: 0,
   });

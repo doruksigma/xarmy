@@ -169,6 +169,9 @@ export interface Country {
     research: boolean;
     recruitment: boolean;
     operations: boolean;
+    /** Separate opt-in helpers; absent legacy fields inherit operations. */
+    air?: boolean;
+    navy?: boolean;
   };
   cabinet: { economy: string; military: string; science: string };
   decisions: Record<string, number>;
@@ -255,6 +258,8 @@ export interface World {
   /** Recorded only after a protocol command succeeds. */
   commandState?: CommandState;
   version: 3;
+  /** Missing only on saves created before the global scenario. */
+  mapVersion?: "world-1936-v1";
   player: string;
   mode: "historical" | "alternative";
   difficulty: "easy" | "normal" | "hard";
@@ -304,7 +309,13 @@ export type SeaZone =
   | "north"
   | "baltic"
   | "mediterranean"
-  | "black";
+  | "black"
+  | "southAtlantic"
+  | "northPacific"
+  | "southPacific"
+  | "indian"
+  | "caribbean"
+  | "arctic";
 export type SupportType =
   | "artillery"
   | "engineers"

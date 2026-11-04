@@ -10,7 +10,7 @@ import {
   detectAirNavalOutcomes,
   type AirNavalModel,
 } from "./map3d-airnaval-state";
-import { createWorld, GEOGRAPHY } from "./world";
+import { createWorld, GEOGRAPHY, MAP } from "./world";
 import type { AirWing, Equipment, Warship, World } from "./types";
 
 function wing(
@@ -87,6 +87,51 @@ function settle(before: World) {
   airNavalDay(after);
   return after;
 }
+
+test("Uçak mini modelleri küçülür; kanadın gerçek gücü ve askerî özellikleri değişmez", () => {
+  const world = battle(),
+    original = structuredClone(world);
+  const units = airNavalUnits(world).filter((unit) => unit.airborne);
+  assert.equal(units.find((unit) => unit.id === "own-fighter")?.scale, 0.55);
+  assert.equal(units.find((unit) => unit.id === "own-bomber")?.scale, 0.62);
+  assert.deepEqual(world, original);
+});
+
+test("Tarih çizgisinden geçen uçak kısa Pasifik yolunda kalır, tüm haritayı aşmaz", () => {
+  const originalWidth = MAP.width;
+  const base = GEOGRAPHY["turkey-0"],
+    target = GEOGRAPHY["bulgaria-2"];
+  const oldBase = { x: base.x, y: base.y },
+    oldTarget = { x: target.x, y: target.y };
+  const scene = new THREE.Scene(),
+    visuals = createAirNavalVisuals(scene, () => 0);
+  try {
+    MAP.width = Math.max(MAP.width, 5400);
+    Object.assign(base, { x: MAP.width - 20, y: 800 });
+    Object.assign(target, { x: 20, y: 800 });
+    const world = battle();
+    world.countries.turkey.air.wings = [
+      wing("dateline-visual", base.id, target.id),
+    ];
+    world.countries.bulgaria.air.wings = [];
+    visuals.update(world);
+    for (let frame = 0; frame < 90; frame++) {
+      visuals.animate(frame * 200, { quality: "low" });
+      const aircraft = visuals
+        .stats()
+        .positions.find((position) => position.id === "dateline-visual");
+      assert.ok(aircraft);
+      const x = aircraft.x + MAP.width / 2;
+      assert.ok(x >= 0 && x < MAP.width);
+      assert.ok(x < 60 || x > MAP.width - 60, `plane crossed inland: ${x}`);
+    }
+  } finally {
+    MAP.width = originalWidth;
+    Object.assign(base, oldBase);
+    Object.assign(target, oldTarget);
+    visuals.dispose();
+  }
+});
 
 test("Ardışık üretilen filo kimlikleri aynı devriye noktasına yığılmaz; kayıt ve sefer rastgeleliği korunur", () => {
   const world = battle();

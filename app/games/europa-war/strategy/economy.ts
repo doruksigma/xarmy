@@ -2,6 +2,7 @@ import { tradeRoute } from "./trade-routes";
 import { BUILDINGS, EQUIPMENT, UNITS } from "./catalog";
 import { ECONOMIES, PRODUCTION_BALANCE } from "./economy-balance";
 import { applyProduction } from "./production";
+import { hasArmyCapacity, MAX_ARMIES } from "./campaign-limits";
 export { ECONOMIES } from "./economy-balance";
 import {
   addArmy,
@@ -117,6 +118,10 @@ export function economyAction(w: World, c: Country, a: Action): boolean {
   if (a.type === "recruit") {
     const def = UNITS[a.unit];
     requireRule(def, "Geçersiz birlik.");
+    requireRule(
+      hasArmyCapacity(w),
+      `Dünya tümen kapasitesi (${MAX_ARMIES}) dolu. Eğitimdeki tümenler de bu sayıya dahildir.`,
+    );
     requireRule(
       w.provinces[a.province]?.controller === c.id &&
         w.provinces[a.province].owner === c.id,
@@ -304,13 +309,20 @@ export function economyDay(w: World) {
       }
     }
     for (const q of c.recruitment)
-      if (w.provinces[q.province].controller === c.id) q.progress++;
+      if (w.provinces[q.province].controller === c.id)
+        q.progress = Math.min(q.total, q.progress + 1);
+    const completed = new Set<string>();
     for (const q of c.recruitment.filter((q) => q.progress >= q.total)) {
+      // Older saves can already have paid queues beyond today's finite budget.
+      // Preserve those formations at 100% until losses make room for them.
+      if (w.armies.length >= MAX_ARMIES) break;
+      if (w.provinces[q.province].controller !== c.id) continue;
       addArmy(w, c.id, q.province, q.type);
+      completed.add(q.id);
       if (c.id === w.player)
         event(w, `${UNITS[q.type].name} eğitimi tamamlandı.`);
     }
-    c.recruitment = c.recruitment.filter((q) => q.progress < q.total);
+    c.recruitment = c.recruitment.filter((q) => !completed.has(q.id));
     for (const r of Object.keys(c.stock) as Resource[])
       c.stock[r] = clamp(c.stock[r], 0, 100000);
     for (const r of Object.keys(c.equipment) as Equipment[])

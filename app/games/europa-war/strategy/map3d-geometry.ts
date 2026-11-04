@@ -176,16 +176,27 @@ let heights: Float32Array | undefined;
 function heightGrid() {
   if (heights) return heights;
   const grid = new Float32Array(COLS * ROWS);
-  const mountain = map.provinces.filter((p) => p.terrain === "mountain");
+  // A mountain only affects the surrounding 80 map units. Scatter these local
+  // contributions once instead of checking every mountain at every world cell.
+  // This keeps the 5400×3300 atlas proportional to grid size + mountain count.
+  const influenceGrid = new Float64Array(COLS * ROWS);
+  for (const p of map.provinces) {
+    if (p.terrain !== "mountain") continue;
+    const firstRow = Math.max(0, Math.floor((p.y - 80) / CELL));
+    const lastRow = Math.min(ROWS - 1, Math.ceil((p.y + 80) / CELL));
+    const firstCol = Math.max(0, Math.floor((p.x - 80) / CELL));
+    const lastCol = Math.min(COLS - 1, Math.ceil((p.x + 80) / CELL));
+    for (let row = firstRow; row <= lastRow; row++)
+      for (let col = firstCol; col <= lastCol; col++) {
+        const d2 = (p.x - col * CELL) ** 2 + (p.y - row * CELL) ** 2;
+        if (d2 < 6400) influenceGrid[row * COLS + col] += Math.exp(-d2 / 850);
+      }
+  }
   for (let row = 0; row < ROWS; row++)
     for (let col = 0; col < COLS; col++) {
       const x = col * CELL,
         y = row * CELL;
-      let influence = 0;
-      for (const p of mountain) {
-        const d2 = (p.x - x) ** 2 + (p.y - y) ** 2;
-        if (d2 < 6400) influence += Math.exp(-d2 / 850);
-      }
+      const influence = influenceGrid[row * COLS + col];
       const ridge =
         0.62 +
         0.23 * Math.sin(x * 0.092 + y * 0.039) +
@@ -254,6 +265,7 @@ export function provinceOutline(id: string, lift = 0.55): BufferGeometry {
  * the province surface, picking identity or political border geometry. */
 function buildCoastSkirt() {
   const positions: number[] = [];
+  const indices: number[] = [];
   for (const country of map.countries) {
     for (const part of parsePolygonPath(country.path)) {
       for (const [ring, hole] of [
@@ -262,6 +274,7 @@ function buildCoastSkirt() {
       ] as [Point[], boolean][]) {
         const contour =
           signedArea(ring) > 0 === !hole ? ring : [...ring].reverse();
+        const firstVertex = positions.length / 3;
         for (let i = 0; i < contour.length; i++) {
           const a = contour[i],
             b = contour[(i + 1) % contour.length];
@@ -272,14 +285,23 @@ function buildCoastSkirt() {
           for (let n = 0; n < count; n++) {
             const ax = a.x + ((b.x - a.x) * n) / count;
             const ay = a.y + ((b.y - a.y) * n) / count;
-            const bx = a.x + ((b.x - a.x) * (n + 1)) / count;
-            const by = a.y + ((b.y - a.y) * (n + 1)) / count;
-            const at = [ax - WIDTH / 2, heightAt(ax, ay), ay - HEIGHT / 2];
-            const bt = [bx - WIDTH / 2, heightAt(bx, by), by - HEIGHT / 2];
-            const ab = [at[0], -0.4, at[2]],
-              bb = [bt[0], -0.4, bt[2]];
-            positions.push(...at, ...bt, ...bb, ...at, ...bb, ...ab);
+            positions.push(
+              ax - WIDTH / 2,
+              heightAt(ax, ay),
+              ay - HEIGHT / 2,
+              ax - WIDTH / 2,
+              -0.4,
+              ay - HEIGHT / 2,
+            );
           }
+        }
+        // Neighboring walls reuse their top/bottom vertices. The global coast
+        // retains every source bend with one third of the previous attributes.
+        const points = (positions.length / 3 - firstVertex) / 2;
+        for (let i = 0; i < points; i++) {
+          const at = firstVertex + i * 2;
+          const bt = firstVertex + ((i + 1) % points) * 2;
+          indices.push(at, bt, bt + 1, at, bt + 1, at + 1);
         }
       }
     }
@@ -288,15 +310,21 @@ function buildCoastSkirt() {
     "position",
     new Float32BufferAttribute(positions, 3),
   );
+  geometry.setIndex(indices);
   geometry.computeVertexNormals();
   geometry.computeBoundingSphere();
   return geometry;
 }
 
 export function buildTerrain(options: { maxEdge?: number } = {}): TerrainMesh {
+  // Preserve local detail while bounding subdivision for a globe-sized atlas.
+  const defaultEdge = WIDTH > 2000 ? 32 : 16;
   const maxEdge = Math.max(
     8,
-    Math.min(48, Number.isFinite(options.maxEdge) ? options.maxEdge! : 16),
+    Math.min(
+      80,
+      Number.isFinite(options.maxEdge) ? options.maxEdge! : defaultEdge,
+    ),
   );
   const positions: number[] = [],
     normals: number[] = [],

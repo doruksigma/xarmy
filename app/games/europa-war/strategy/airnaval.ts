@@ -1,5 +1,6 @@
 import { AIRCRAFT, SEA_ZONES, SHIPS } from "./advanced-catalog";
 import { current, isDraft } from "immer";
+import { mapDistance } from "./geography-distance";
 import {
   portZone,
   seaRoute,
@@ -77,10 +78,7 @@ function orderWing(
     a.mission !== "naval" || GEOGRAPHY[a.target].port,
     "Deniz saldırısı için düşman limanı seç.",
   );
-  const distance = Math.hypot(
-    GEOGRAPHY[base].x - GEOGRAPHY[a.target].x,
-    GEOGRAPHY[base].y - GEOGRAPHY[a.target].y,
-  );
+  const distance = mapDistance(GEOGRAPHY[base], GEOGRAPHY[a.target]);
   requireRule(
     a.mission === "idle" ||
       distance <=
@@ -165,10 +163,7 @@ export function wingEfficiency(
         (wing.mission === "naval" && !GEOGRAPHY[wing.target].port)))
   )
     return 0;
-  const distance = Math.hypot(
-    GEOGRAPHY[wing.base].x - GEOGRAPHY[wing.target].x,
-    GEOGRAPHY[wing.base].y - GEOGRAPHY[wing.target].y,
-  );
+  const distance = mapDistance(GEOGRAPHY[wing.base], GEOGRAPHY[wing.target]);
   if (
     distance >
     AIRCRAFT[wing.model].range * (c.tech.includes("aviation3") ? 1.2 : 1)
@@ -198,17 +193,11 @@ export function regionalAirPower(
   const relevant = c.air.wings.filter(
     (a) =>
       a.mission === mission &&
-      Math.hypot(
-        GEOGRAPHY[a.target].x - GEOGRAPHY[province].x,
-        GEOGRAPHY[a.target].y - GEOGRAPHY[province].y,
-      ) < 180 &&
+      mapDistance(GEOGRAPHY[a.target], GEOGRAPHY[province]) < 180 &&
       // The regional mission radius cannot extend an aircraft's flight range.
       // Ground support, interception and paradrops need reach to the actual
       // affected province, not only to the nearby assigned mission marker.
-      Math.hypot(
-        GEOGRAPHY[a.base].x - GEOGRAPHY[province].x,
-        GEOGRAPHY[a.base].y - GEOGRAPHY[province].y,
-      ) <=
+      mapDistance(GEOGRAPHY[a.base], GEOGRAPHY[province]) <=
         AIRCRAFT[a.model].range * (c.tech.includes("aviation3") ? 1.2 : 1),
   );
   if (!relevant.length) return 0;

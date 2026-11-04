@@ -15,12 +15,19 @@ import {
 } from "./map3d-cartography-palette";
 
 test("Gece atlası bütün ülkeleri kapsar ve yeni ülke renklerini geçerli, ayırt edilebilir biçimde gösterir", () => {
+  const colors = new Set<string>();
   for (const country of MAP.countries) {
     assert.ok(Object.hasOwn(NIGHT_COUNTRY_COLORS, country.id));
     const css = politicalCountryColor(country.id, country.color);
     assert.match(css, /^#[\da-f]{6}$/i);
     assert.ok(new THREE.Color(css).getHSL({ h: 0, s: 0, l: 0 }).l < 0.4);
+    colors.add(css);
   }
+  assert.equal(
+    colors.size,
+    MAP.countries.length,
+    "Every country has its own night-atlas colour",
+  );
   const rebel = politicalCountryColor("new-republic", "#d9b3b3");
   assert.match(rebel, /^#[\da-f]{6}$/i);
   assert.equal(rebel, politicalCountryColor("new-republic", "#d9b3b3"));

@@ -882,19 +882,42 @@ export function createRailways(
           railHeightAt(front.x, front.y) - railHeightAt(back.x, back.y),
           length * 0.8,
         );
+        const angle = -Math.atan2(front.y - back.y, front.x - back.x);
+        const carPosition = at(p.x, p.y, 0.46 * size, true).clone();
+        if (groundHeightAt !== heightAt) {
+          // A rigid carriage can bridge a triangle ridge even when its centre
+          // and both axle chords sit above the fitted rail. Sample its wheel
+          // corridor only for the bounded set of visible trains; geography is
+          // never rebuilt while the vehicle moves across a coarse world mesh.
+          const steps = Math.ceil(length / 0.5);
+          const cos = Math.cos(angle),
+            sin = Math.sin(angle);
+          const cosPitch = Math.cos(pitch),
+            sinPitch = Math.sin(pitch);
+          for (let step = 0; step <= steps; step++) {
+            const along = -length / 2 + (length * step) / steps;
+            for (const across of [-0.92 * size, 0.92 * size]) {
+              const x = p.x + cos * along * cosPitch + sin * across;
+              const y = p.y - sin * along * cosPitch + cos * across;
+              carPosition.y = Math.max(
+                carPosition.y,
+                groundHeightAt(x, y) - along * sinPitch + 0.46 * size,
+              );
+            }
+          }
+        }
         poses.push({
           kind: car.kind,
-          position: at(p.x, p.y, 0.46 * TRAIN_WORLD_SCALE, true).clone(),
+          position: carPosition,
           // A rigid carriage follows its axle chord through a junction; using
           // one segment heading would snap its entire body at the city anchor.
-          angle: -Math.atan2(front.y - back.y, front.x - back.x),
+          angle,
           pitch,
           scale: size,
           wheelPhase: -d / (TRAIN_DIMENSIONS.wheelRadius * size),
         });
       }
-      const p = railPointAt(route, head),
-        locomotivePosition = at(p.x, p.y, 0.46 * TRAIN_WORLD_SCALE, true);
+      const locomotivePosition = poses[poses.length - cars.length].position;
       stats.countries.push(route.country ?? "");
       stats.positions.push({
         x: locomotivePosition.x,

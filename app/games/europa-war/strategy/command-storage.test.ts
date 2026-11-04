@@ -14,6 +14,8 @@ import {
 import { advanceDay } from "./engine";
 import { decodeSave, encodeSave, validateWorld } from "./storage";
 import { createWorld, GEOGRAPHY, MAP } from "./world";
+import europeanSave from "./fixtures/europe-v3-before-world.json";
+import legacyEurope from "./legacy-europe-map.json";
 import type { Action, Country, Province, World } from "./types";
 
 function order(world: World, action: Action, issuer = world.player) {
@@ -369,19 +371,34 @@ test("Günlük kayıt sayısı, tek emir ve toplam emir metni bellek sınırlar�
 });
 
 function regionalWorld() {
-  const world = createWorld("turkey");
+  const world = structuredClone(europeanSave.world) as unknown as World;
+  const regions = new Set(legacyEurope.regionalIds);
+  const region = (id: string) => GEOGRAPHY[id].legacyRegion;
   for (const id of Object.keys(world.provinces))
-    if (GEOGRAPHY[id].legacyRegion !== id) delete world.provinces[id];
-  for (const army of world.armies)
-    army.province = GEOGRAPHY[army.province].legacyRegion;
-  for (const country of Object.values(world.countries)) {
-    for (const wing of country.air.wings) {
-      wing.base = GEOGRAPHY[wing.base].legacyRegion;
-      wing.target = GEOGRAPHY[wing.target].legacyRegion;
-    }
-    for (const ship of country.navy.ships)
-      ship.port = GEOGRAPHY[ship.port].legacyRegion;
+    if (!regions.has(id)) delete world.provinces[id];
+  for (const army of world.armies) {
+    army.province = region(army.province);
+    army.route = army.route.map(region);
+    if (army.move) army.move.to = region(army.move.to);
   }
+  for (const country of Object.values(world.countries)) {
+    country.capital = region(country.capital);
+    for (const queued of [...country.construction, ...country.recruitment])
+      queued.province = region(queued.province);
+    for (const wing of country.air.wings) {
+      wing.base = region(wing.base);
+      wing.target = region(wing.target);
+    }
+    for (const ship of country.navy.ships) ship.port = region(ship.port);
+  }
+  assert.equal(
+    Object.keys(world.countries).length,
+    legacyEurope.countryIds.length,
+  );
+  assert.equal(
+    Object.keys(world.provinces).length,
+    legacyEurope.regionalIds.length,
+  );
   return world;
 }
 
@@ -393,7 +410,9 @@ test("Eski bölge kaydını şehir sınırlarına taşımak emir günlüğünü 
   const loaded = decodeSave(encodeSave(world));
   assert.equal(Object.keys(loaded.provinces).length, MAP.provinces.length);
   assert.deepEqual(loaded.commandState, world.commandState);
-  assert.equal(executeCommand(loaded, command, "turkey").world, loaded);
+  const duplicate = executeCommand(loaded, command, "turkey");
+  assert.equal(duplicate.status, "duplicate");
+  assert.equal(duplicate.world, loaded);
   world.commandState!.receipts[0].appliedTick = 24;
   assert.throws(() => decodeSave(encodeSave(world)));
 });

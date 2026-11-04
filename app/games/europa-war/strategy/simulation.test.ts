@@ -324,8 +324,8 @@ test("Simulation creates its worker lazily and never advances a paused campaign"
   f.controller.dispose();
 });
 
-test("Normal pace waits 500 ms per hour and 1–5× retain their relative intervals", () => {
-  assert.equal(SIMULATION_HOUR_MS, 500);
+test("Normal pace waits 300 ms per hour and 1–5× retain their relative intervals", () => {
+  assert.equal(SIMULATION_HOUR_MS, 300);
   for (const speed of [1, 2, 3, 4, 5]) {
     const interval = SIMULATION_HOUR_MS / speed;
     const f = fixture();

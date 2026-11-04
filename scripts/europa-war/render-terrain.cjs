@@ -19,6 +19,7 @@ require.extensions[".tsx"] = (module, filename) =>
     }).outputText,
     filename,
   );
+require.extensions[".ts"] = require.extensions[".tsx"];
 const { TerrainAtlas } = require("./terrain-source.tsx");
 const root = path.resolve(__dirname, "../..");
 (async () => {

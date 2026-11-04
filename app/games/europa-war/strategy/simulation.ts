@@ -7,8 +7,8 @@ import {
   type TransferMetrics,
 } from "./simulation-state";
 
-/** At 1× one game hour per 500 ms, always waiting for worker completion. */
-export const SIMULATION_HOUR_MS = 500;
+/** At 1× one game hour per 300 ms, always waiting for worker completion. */
+export const SIMULATION_HOUR_MS = 300;
 
 export type SimulationRequest = {
   type: "advance";

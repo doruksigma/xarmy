@@ -1,3 +1,9 @@
+import map from "./map-data.json";
+import {
+  WORLD_UNIT_DIRECTIONS,
+  type WorldUniformFamily,
+} from "./map3d-world-profiles";
+
 /** Original, period-inspired silhouettes. These are game art directions, not
  * claims that every country manufactured or fielded a particular tank or gun.
  * Shared equipment families reflect imported equipment as well as local design. */
@@ -417,7 +423,7 @@ function national(
 }
 
 /** Each country keeps its own cut even when its equipment shares a family. */
-export const COUNTRY_MODEL_PROFILES: Readonly<
+const EUROPEAN_COUNTRY_MODEL_PROFILES: Readonly<
   Record<string, NationalModelProfile>
 > = Object.freeze({
   turkey: national("turkey", "Türkiye", "german", "british", 1, {
@@ -574,6 +580,111 @@ export const COUNTRY_MODEL_PROFILES: Readonly<
     pack: "blanket",
   }),
 });
+
+const WORLD_FAMILIES: Readonly<
+  Record<
+    WorldUniformFamily,
+    readonly [keyof typeof INFANTRY_CUTS, EquipmentFamily]
+  >
+> = {
+  american: ["british", "french"],
+  japanese: ["soviet", "italian"],
+  chinese: ["german", "czech"],
+  british: ["british", "british"],
+  french: ["french", "french"],
+  german: ["german", "german"],
+  soviet: ["soviet", "soviet"],
+  nordic: ["nordic", "nordic"],
+  italian: ["italian", "italian"],
+  dutch: ["dutch", "nordic"],
+  desert: ["british", "british"],
+};
+
+function worldProfile(
+  id: string,
+  label: string,
+  index: number,
+): NationalModelProfile {
+  const direction = Object.hasOwn(WORLD_UNIT_DIRECTIONS, id)
+    ? WORLD_UNIT_DIRECTIONS[id as keyof typeof WORLD_UNIT_DIRECTIONS]
+    : { family: "british" as const };
+  const [infantry, equipment] = WORLD_FAMILIES[direction.family];
+  const tailoring: Partial<InfantryModelProfile> = {
+    // Fixed catalogue tailoring, bounded independently of arbitrary saved IDs.
+    packWidth: 0.901 + index * 0.002,
+  };
+  if (direction.family === "american")
+    Object.assign(tailoring, {
+      tunic: "tunic",
+      collar: "open",
+      webbing: "suspenders",
+      boots: "gaiters",
+    });
+  if (direction.family === "japanese")
+    Object.assign(tailoring, {
+      tunic: "tunic",
+      collar: "stand",
+      boots: "puttees",
+      pack: "square",
+    });
+  if (direction.family === "desert")
+    Object.assign(tailoring, {
+      tunic: "tunic",
+      headwear: "peaked",
+      scarf: true,
+      boots: "puttees",
+    });
+  const profile = national(
+    id,
+    label,
+    infantry,
+    equipment,
+    (index % 5) as 0 | 1 | 2 | 3 | 4,
+    tailoring,
+  );
+  // Our existing asset library contains no Sherman/Chi-Ha mesh. Use honest
+  // general silhouettes instead of labelling a Somua or M13 as those models.
+  if (direction.family === "american" || direction.family === "japanese") {
+    const american = direction.family === "american";
+    return Object.freeze({
+      ...profile,
+      tank: Object.freeze({
+        ...profile.tank,
+        variant: undefined,
+        modelName: undefined,
+        hull: american ? ("sloped" as const) : ("riveted" as const),
+        turret: american ? ("cast" as const) : ("compact" as const),
+        skirt: "none" as const,
+      }),
+      truck: Object.freeze({
+        ...profile.truck,
+        variant: undefined,
+        modelName: undefined,
+        cab: "bonnet" as const,
+        canvas: "round" as const,
+      }),
+      artillery: Object.freeze({
+        ...profile.artillery,
+        variant: undefined,
+        modelName: undefined,
+      }),
+    });
+  }
+  return profile;
+}
+
+/** Only actual scenario countries create profiles; unknown IDs share one fallback. */
+export const COUNTRY_MODEL_PROFILES: Readonly<
+  Record<string, NationalModelProfile>
+> = Object.freeze(
+  Object.fromEntries(
+    map.countries.map((country, index) => [
+      country.id,
+      EUROPEAN_COUNTRY_MODEL_PROFILES[country.id] ??
+        worldProfile(country.id, country.name, index),
+    ]),
+  ),
+);
 
 export const DEFAULT_COUNTRY_MODEL_PROFILE: NationalModelProfile =
   Object.freeze({

@@ -1,5 +1,6 @@
 import { AIRCRAFT, SEA_ZONES } from "./advanced-catalog";
 import { wingEfficiency } from "./airnaval";
+import { mapDistance } from "./geography-distance";
 import { portZone, seaRoute, shipOperational } from "./military-assets";
 import { formationSnapshotTransition } from "./map3d-unit-events";
 import { atWar, friendly, GEOGRAPHY } from "./world";
@@ -147,8 +148,8 @@ export function airNavalUnits(
         phase: airNavalPhase(wing.id),
         scale:
           wing.model === "strategicBomber" || wing.model === "transport"
-            ? 1.12
-            : 1,
+            ? 0.62
+            : 0.55,
       });
     }
     for (const ship of country.navy.ships) {
@@ -292,14 +293,8 @@ export function detectAirNavalOutcomes(
       ({ country: enemy, wing: fighter }) =>
         atWar(previous, country.id, enemy.id) &&
         fighter.mission === "superiority" &&
-        Math.hypot(
-          GEOGRAPHY[fighter.target].x - GEOGRAPHY[wing.target].x,
-          GEOGRAPHY[fighter.target].y - GEOGRAPHY[wing.target].y,
-        ) < 180 &&
-        Math.hypot(
-          GEOGRAPHY[fighter.base].x - GEOGRAPHY[wing.target].x,
-          GEOGRAPHY[fighter.base].y - GEOGRAPHY[wing.target].y,
-        ) <=
+        mapDistance(GEOGRAPHY[fighter.target], GEOGRAPHY[wing.target]) < 180 &&
+        mapDistance(GEOGRAPHY[fighter.base], GEOGRAPHY[wing.target]) <=
           AIRCRAFT[fighter.model].range *
             (enemy.tech.includes("aviation3") ? 1.2 : 1),
     );

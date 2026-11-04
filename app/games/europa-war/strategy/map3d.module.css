@@ -83,6 +83,28 @@
   box-shadow: 0 2px 5px #000a;
   color: white;
 }
+.labels :global(.map3d-unit-health) {
+  display: block;
+  min-width: 46px;
+  margin-top: 2px;
+  padding-bottom: 10px;
+  font-size: 8px;
+  line-height: 10px;
+  font-variant-numeric: tabular-nums;
+  color: #f5f4df;
+  pointer-events: none;
+  background:
+    linear-gradient(
+      to right,
+      var(--unit-health-color) 0 var(--unit-strength),
+      #142024 var(--unit-strength) 100%
+    ) left bottom 5px / 100% 4px no-repeat,
+    linear-gradient(
+      to right,
+      #91bfe2 0 var(--unit-organization),
+      #142024 var(--unit-organization) 100%
+    ) left bottom / 100% 2px no-repeat;
+}
 .labels :global(.map3d-label[data-selected="true"]) {
   border: 2px solid #ffdf8b;
   box-shadow: 0 0 0 2px #493c29;

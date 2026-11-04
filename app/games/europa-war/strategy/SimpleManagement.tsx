@@ -65,7 +65,8 @@ export default function SimpleManagement({
         Bu kısayollar ilgili seçimleri açar. Harcamayı ve emri sen onaylarsın.
       </p>
       <p className={styles.more}>
-        Siyaset, hava ve deniz harekâtları: <strong>Tüm ayrıntılar</strong>.
+        Uçak ve gemilerin için <strong>Hava / Deniz</strong> panelini aç.
+        Siyaset için <strong>Tüm ayrıntılar</strong> görünümünü kullan.
       </p>
     </section>
   );

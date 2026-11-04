@@ -13,6 +13,7 @@ import {
   getNationalModelDescription,
 } from "./map3d-national-profiles";
 import { createM40HelmetShell } from "./map3d-helmet-shell";
+import { WORLD_UNIT_DIRECTIONS } from "./map3d-world-profiles";
 
 test("Every playable country has a bounded national silhouette profile beyond its colour", () => {
   assert.deepEqual(
@@ -78,6 +79,45 @@ test("Reference uniforms keep their distinctive headwear, winter clothing and eq
     getNationalModelDescription(getCountryModelProfile("turkey"), "infantry"),
     /siperlikli asker kasketi/,
   );
+});
+
+test("Added world countries have explicit art directions while existing meshes are identified honestly", () => {
+  for (const id of [
+    "usa",
+    "japan",
+    "china",
+    "canada",
+    "india",
+    "australia",
+    "eastindies",
+    "egypt",
+    "iceland",
+  ] as const) {
+    assert.ok(Object.hasOwn(WORLD_UNIT_DIRECTIONS, id));
+    const profile = getCountryModelProfile(id);
+    assert.equal(profile.id, id);
+    assert.equal(getCountryModelProfile(`${id}-rebels`), profile);
+  }
+  const american = getCountryModelProfile("usa"),
+    japanese = getCountryModelProfile("japan");
+  assert.equal(american.infantry.helmet, "brodie");
+  assert.equal(american.infantry.webbing, "suspenders");
+  assert.equal(american.tank.hull, "sloped");
+  assert.equal(american.tank.turret, "cast");
+  assert.equal(japanese.infantry.boots, "puttees");
+  assert.equal(japanese.tank.hull, "riveted");
+  assert.equal(japanese.tank.turret, "compact");
+  for (const profile of [american, japanese])
+    for (const kind of ["tank", "truck", "artillery"] as const) {
+      assert.equal(profile[kind].variant, undefined);
+      assert.equal(profile[kind].modelName, undefined);
+    }
+  for (const id of ["canada", "india", "australia"])
+    assert.match(
+      getNationalModelDescription(getCountryModelProfile(id), "tank"),
+      /ortak Britanya tasarım ailesi/,
+    );
+  assert.equal(getCountryModelProfile("eastindies").infantry.helmet, "dutch");
 });
 
 test("Advanced vehicle references identify imported designs and shared families without claiming exact replicas", () => {

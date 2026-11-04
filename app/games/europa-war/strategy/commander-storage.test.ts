@@ -3,6 +3,8 @@ import { test } from "node:test";
 import { createWorld, GEOGRAPHY } from "./world";
 import { decodeSave, encodeSave, validateWorld } from "./storage";
 import { COMMANDER_CAPACITY, MAX_COMMANDERS } from "./commander-roster";
+import europeanSave from "./fixtures/europe-v3-before-world.json";
+import legacyEurope from "./legacy-europe-map.json";
 import type { World } from "./types";
 
 function withCommander() {
@@ -20,8 +22,7 @@ function withCommander() {
   return { world, country, general, army };
 }
 
-function legacyWorld(members = 29): World {
-  const world = createWorld("turkey");
+function legacyWorld(members = 29, world = createWorld("turkey")): World {
   for (const country of Object.values(world.countries)) {
     delete country.autoAssignCommanders;
     for (const general of country.generals) delete general.front;
@@ -212,15 +213,22 @@ test("Eski ve zaten kapasiteye uygun kayıt gereksizce değiştirilmez", () => {
 });
 
 test("Eski bölge haritası ve büyük komutan grubu aynı kayıt yüklemesinde taşınır", () => {
-  const world = legacyWorld();
+  const world = legacyWorld(
+    29,
+    structuredClone(europeanSave.world) as unknown as World,
+  );
+  const regions = new Set(legacyEurope.regionalIds);
   for (const id of Object.keys(world.provinces))
-    if (GEOGRAPHY[id].legacyRegion !== id) delete world.provinces[id];
+    if (!regions.has(id)) delete world.provinces[id];
   for (const army of world.armies) {
     army.province = GEOGRAPHY[army.province].legacyRegion;
     army.route = army.route.map((id) => GEOGRAPHY[id].legacyRegion);
     if (army.move) army.move.to = GEOGRAPHY[army.move.to].legacyRegion;
   }
   for (const country of Object.values(world.countries)) {
+    country.capital = GEOGRAPHY[country.capital].legacyRegion;
+    for (const queued of [...country.construction, ...country.recruitment])
+      queued.province = GEOGRAPHY[queued.province].legacyRegion;
     for (const wing of country.air.wings) {
       wing.base = GEOGRAPHY[wing.base].legacyRegion;
       wing.target = GEOGRAPHY[wing.target].legacyRegion;
@@ -228,6 +236,14 @@ test("Eski bölge haritası ve büyük komutan grubu aynı kayıt yüklemesinde 
     for (const ship of country.navy.ships)
       ship.port = GEOGRAPHY[ship.port].legacyRegion;
   }
+  assert.equal(
+    Object.keys(world.countries).length,
+    legacyEurope.countryIds.length,
+  );
+  assert.equal(
+    Object.keys(world.provinces).length,
+    legacyEurope.regionalIds.length,
+  );
   const loaded = decodeSave(encodeSave(world));
   assert.ok(validateWorld(loaded));
   assert.equal(

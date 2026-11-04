@@ -27,6 +27,7 @@ import {
 import { loadBrowserSave, saveAutomatic } from "./strategy/storage-browser";
 import { useOfflinePack } from "./strategy/useOfflinePack";
 import { useSimulation } from "./strategy/useSimulation";
+import { SIMULATION_HOUR_MS } from "./strategy/simulation";
 import SimulationMetrics from "./strategy/SimulationMetrics";
 import { useSaveSlots } from "./strategy/useSaveSlots";
 import type { Action, OffensivePlan, World } from "./strategy/types";
@@ -165,6 +166,7 @@ export default function EuropaWarClient() {
     null,
   );
   const [campaignRevision, setCampaignRevision] = useState(0);
+  const [recruitProvince, setRecruitProvince] = useState<string | null>(null);
   const [mapView, setMapView] = useState<"3d" | "2d">("3d");
   const [simple, setSimple] = useState(true);
   const [guideGeneralId, setGuideGeneralId] = useState("");
@@ -325,6 +327,7 @@ export default function EuropaWarClient() {
   }, [setup, setPaused]);
   function restore(w: World) {
     setCampaignRevision((revision) => revision + 1);
+    setRecruitProvince(null);
     setWorld(w);
     setSetup(false);
     setPaused(true);
@@ -661,7 +664,7 @@ export default function EuropaWarClient() {
                 className={speed === s ? styles.active : ""}
                 disabled={setup || transition !== null}
                 aria-label={`${s} kat hız`}
-                title={`${s}×: saniyede en fazla ${s * 2} oyun saati; hesaplama tamamlanınca ilerler`}
+                title={`${s}×: saniyede en fazla ${((s * 1000) / SIMULATION_HOUR_MS).toLocaleString("tr-TR", { maximumFractionDigits: 1 })} oyun saati; hesaplama tamamlanınca ilerler`}
                 onClick={() => setSpeed(s)}
               >
                 {s}×
@@ -672,25 +675,25 @@ export default function EuropaWarClient() {
       </header>
       <div className={styles.workspace}>
         <nav className={styles.rail} aria-label="Yönetim panelleri">
-          {TABS.filter(
-            ([id]) => !simple || (id !== "politics" && id !== "operations"),
-          ).map(([id, icon, label]) => (
-            <button
-              key={id}
-              className={tab === id && panel ? styles.active : ""}
-              onClick={() => {
-                setTab(id);
-                setPanel(true);
-              }}
-              title={label}
-              disabled={setup}
-            >
-              <span className={styles.militaryEmblem}>
-                <MilitaryIcon name={icon} size={24} />
-              </span>
-              <small>{label}</small>
-            </button>
-          ))}
+          {TABS.filter(([id]) => !simple || id !== "politics").map(
+            ([id, icon, label]) => (
+              <button
+                key={id}
+                className={tab === id && panel ? styles.active : ""}
+                onClick={() => {
+                  setTab(id);
+                  setPanel(true);
+                }}
+                title={label}
+                disabled={setup}
+              >
+                <span className={styles.militaryEmblem}>
+                  <MilitaryIcon name={icon} size={24} />
+                </span>
+                <small>{label}</small>
+              </button>
+            ),
+          )}
           <button onClick={newCampaign} title="Yeni sefer">
             <span className={styles.militaryEmblem}>
               <MilitaryIcon name="reset" size={23} />
@@ -701,7 +704,7 @@ export default function EuropaWarClient() {
         <main className={styles.theater}>
           <div className={styles.mapTop}>
             <div>
-              <span className={styles.eyebrow}>AVRUPA HAREKÂT SAHASI</span>
+              <span className={styles.eyebrow}>DÜNYA HAREKÂT SAHASI</span>
               <h1>
                 {setup
                   ? "Fırtınadan önce"
@@ -991,6 +994,8 @@ export default function EuropaWarClient() {
                   armyIds={selectedArmyIds}
                   target={target}
                   onTarget={setTarget}
+                  preferredRecruitmentProvince={recruitProvince}
+                  onRecruitmentProvinceChange={setRecruitProvince}
                   command={command}
                   onProvince={onProvince}
                   onArmy={onArmy}
@@ -1020,7 +1025,7 @@ export default function EuropaWarClient() {
                     <summary>Sefer bilgileri ve çevrimdışı durum</summary>
                     <p>{offline}</p>
                     <small>
-                      Avrupa 1936 · Yaklaşık tarihsel sınırlar, şehir merkezli
+                      Dünya 1936 · Yaklaşık tarihsel sınırlar, şehir merkezli
                       stratejik bölgeler. Veriler oyun ölçeğine uyarlanmıştır.
                     </small>
                   </details>
@@ -1059,7 +1064,7 @@ export default function EuropaWarClient() {
           >
             <div className={styles.eyebrow}>XARMY / BÜYÜK STRATEJİ</div>
             <h2 id="scenario-heading">
-              AVRUPA, <em>1936.</em>
+              DÜNYA, <em>1936.</em>
             </h2>
             <p className={styles.setupIntro}>
               Bir ulusun geleceğini yönet.
@@ -1071,9 +1076,9 @@ export default function EuropaWarClient() {
               {simple
                 ? "Tümen eğit, yapı kur, teknoloji seç; komutanını sınırına yerleştir. Her önemli seçimi sen yaparsın."
                 : "Ülke istatistikleri ve ayrıntılı öneriler doğrudan gösterilir. İstediğin zaman kolay yönetime dönebilirsin."}{" "}
-              Siyaset, hava ve deniz harekâtları Tüm ayrıntılar görünümünde.
-              Görünüm seçimi oyun kurallarını veya yönetim yardımcısı ayarlarını
-              değiştirmez.
+              Hava ve deniz kuvvetlerini Hava / Deniz panelinden yönetebilirsin.
+              Siyaset için Tüm ayrıntılar görünümünü aç. Görünüm seçimi oyun
+              kurallarını veya yönetim yardımcısı ayarlarını değiştirmez.
             </p>
             <div className={styles.scenarioTag}>
               II. DÜNYA SAVAŞI DÖNEMİ <span>01 OCAK 1936</span>

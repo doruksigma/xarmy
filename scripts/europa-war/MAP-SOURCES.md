@@ -1,5 +1,9 @@
 # Europa 1936 harita kaynakları
 
+Bu belge korunmuş Avrupa tabanını açıklar. Dünya senaryosunun güncel kapsamı,
+koloni atamaları ve yeniden üretimi için [WORLD-MAP-SOURCES.md](./WORLD-MAP-SOURCES.md)
+belgesine bakın.
+
 Ana kaynak: Natural Earth, `ne_50m_admin_0_countries.geojson`.
 
 - Kaynak deposu: https://github.com/nvkelso/natural-earth-vector

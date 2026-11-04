@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import * as THREE from "three";
-import type { Army } from "./types";
+import type { Army, UnitType } from "./types";
+import { UNITS } from "./catalog";
 import { INFANTRY_NECK_PIVOT, landModelGeometryKey } from "./map3d-land-models";
 import {
   COUNTRY_MODEL_PROFILES,
@@ -19,6 +20,7 @@ import {
   UNIT_MODEL_SCALE,
   UNIT_LABEL_HEIGHT,
   unitDisplayLayout,
+  unitDisplayKind,
   type UnitFormation,
 } from "./map3d-units";
 
@@ -26,7 +28,10 @@ const formation = (count: number, moving = false): UnitFormation => ({
   armies: Array.from(
     { length: count },
     (_, i) =>
-      ({ id: `army-${i}`, type: i % 2 ? "heavyTank" : "infantry" }) as Army,
+      ({
+        id: `army-${i}`,
+        type: ["infantry", "heavyTank", "artillery", "motorized"][i % 4],
+      }) as Army,
   ),
   position: new THREE.Vector3(25, 12, 30),
   angle: Math.PI / 4,
@@ -56,7 +61,7 @@ const sceneSnapshot = (scene: THREE.Scene) =>
     };
   });
 
-test("1/2/3/4/12 tümen, gerçek tipleri değiştirmeden tam istenen sayı sembollerini yakın ve uzak çizer", () => {
+test("karma tümenler yalnız gerçekten bulunan türleri yakın ve uzak çizer", () => {
   const scene = new THREE.Scene(),
     models = createUnitModels(scene);
   const cases = [
@@ -86,7 +91,7 @@ test("1/2/3/4/12 tümen, gerçek tipleri değiştirmeden tam istenen sayı sembo
       const group = formation(item.count),
         before = JSON.stringify(group);
       assert.deepEqual(
-        unitDisplayLayout(item.count).map((s) => s.kind),
+        unitDisplayLayout(group.armies).map((s) => s.kind),
         item.kinds,
       );
       models.update([group], 100, options);
@@ -101,8 +106,7 @@ test("1/2/3/4/12 tümen, gerçek tipleri değiştirmeden tam istenen sayı sembo
       );
       assert.equal(JSON.stringify(group), before);
     }
-  assert.equal(unitDisplayLayout(0).length, 0);
-  assert.equal(unitDisplayLayout(NaN).length, 0);
+  assert.equal(unitDisplayLayout([]).length, 0);
   assert.equal(
     models.stats.modelParts,
     13,
@@ -131,13 +135,94 @@ test("1/2/3/4/12 tümen, gerçek tipleri değiştirmeden tam istenen sayı sembo
 });
 
 test("takviye geldiğinde mevcut semboller sabit tip yuvalarında kalır", () => {
-  const all = unitDisplayLayout(4);
+  const all = unitDisplayLayout(formation(4).armies);
   for (const count of [1, 2, 3])
-    for (const slot of unitDisplayLayout(count)) {
+    for (const slot of unitDisplayLayout(formation(count).armies)) {
       const existing = all.find((s) => s.kind === slot.kind)!;
       assert.equal(slot.x, existing.x);
       assert.equal(slot.z, existing.z);
     }
+});
+
+test("her gerçek tümen türü yalnız kendi modelini çizer; aynı türden takviye sahte araç üretmez", () => {
+  const scene = new THREE.Scene(),
+    models = createUnitModels(scene);
+  const expected = {
+    infantry: "infantry",
+    special: "infantry",
+    mountain: "infantry",
+    paratrooper: "infantry",
+    lightTank: "tank",
+    mediumTank: "tank",
+    heavyTank: "tank",
+    artillery: "artillery",
+    motorized: "truck",
+    mechanized: "truck",
+  } as const;
+  for (const type of Object.keys(UNITS) as UnitType[]) {
+    assert.equal(unitDisplayKind(type), expected[type]);
+    for (const count of [1, 12, 250]) {
+      const group = formation(count);
+      group.armies = group.armies.map((army) => ({ ...army, type }));
+      const before = JSON.stringify(group);
+      for (const options of [
+        settings,
+        { quality: "low" as const, distance: 1800 },
+      ]) {
+        const layout = unitDisplayLayout(group.armies);
+        assert.deepEqual(
+          layout.map((slot) => slot.kind),
+          [expected[type]],
+        );
+        assert.equal(
+          layout,
+          unitDisplayLayout(group.armies),
+          "layouts are reused rather than allocated per frame",
+        );
+        models.update([group], 0, options);
+        const counts = {
+          infantry: models.stats.infantry,
+          tank: models.stats.tanks,
+          artillery: models.stats.artillery,
+          truck: models.stats.trucks,
+        };
+        assert.equal(counts[expected[type]], 1, type);
+        assert.equal(
+          Object.values(counts).reduce((n, value) => n + value, 0),
+          1,
+        );
+      }
+      assert.equal(JSON.stringify(group), before);
+    }
+  }
+  models.dispose();
+});
+
+test("aynı sayıda tümenin türü değişince görünüm ve çatışma efektleri gerçek türe geçer", () => {
+  const scene = new THREE.Scene(),
+    models = createUnitModels(scene),
+    group = formation(1);
+  group.combat = {
+    key: "single-type-change",
+    target: new THREE.Vector3(100, 12, 70),
+  };
+  for (const type of [
+    "heavyTank",
+    "artillery",
+    "motorized",
+    "infantry",
+  ] as const) {
+    group.armies = [{ ...group.armies[0], type }];
+    models.update([group], 0, settings);
+    const expected = unitDisplayKind(type);
+    assert.equal(models.stats.infantry, expected === "infantry" ? 1 : 0);
+    assert.equal(models.stats.tanks, expected === "tank" ? 1 : 0);
+    assert.equal(models.stats.artillery, expected === "artillery" ? 1 : 0);
+    assert.equal(models.stats.trucks, expected === "truck" ? 1 : 0);
+    assert.equal(models.stats.muzzleFlashes, expected === "truck" ? 0 : 1);
+    if (expected === "truck") assert.ok(models.stats.headlights > 0);
+  }
+  models.dispose();
 });
 
 test("her tür hareket animasyonu oynatır; hareketsiz durumda kendi kendine yürümez veya ateş etmez", () => {

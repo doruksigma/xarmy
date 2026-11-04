@@ -61,9 +61,15 @@ export function openConference(w: World, defeated: string) {
     status: "open",
   };
   w.conferences.push(conference);
+  const delegates = participants
+    .slice(0, 4)
+    .map((id) => w.countries[id].name.slice(0, 60))
+    .join(", ");
+  const remainder =
+    participants.length > 4 ? ` ve ${participants.length - 4} ülke daha` : "";
   event(
     w,
-    `${loser.name} barış konferansı açıldı. ${participants.map((id) => w.countries[id].name).join(", ")} savaş katkılarıyla söz sahibi.`,
+    `${loser.name.slice(0, 60)} barış konferansı açıldı. ${delegates}${remainder} savaş katkılarıyla söz sahibi.`,
     "politics",
   );
   return conference;

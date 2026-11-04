@@ -201,7 +201,8 @@ test("Tarihsel limanlar doğru deniz havzasına bağlıdır", () => {
   assert.equal(portZone("france-4"), "mediterranean"); // Marseille
   assert.equal(portZone("germany-8"), "baltic"); // Stettin
   assert.equal(portZone("denmark-2"), "atlantic"); // Reykjavik
-  assert.equal(portZone("ussr-9"), "north"); // Northern/Arctic sea abstraction
+  assert.equal(portZone("ussr-9"), "arctic"); // Murmansk: now a separate Arctic basin
+  assert.equal(portZone("ussr-10"), "arctic"); // Arkhangelsk / White Sea
 });
 
 test("Yakıtı tükenen donanma deniz üstünlüğü sağlayamaz", () => {

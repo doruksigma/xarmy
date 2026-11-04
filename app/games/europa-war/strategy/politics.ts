@@ -2,6 +2,7 @@ import { decisionAction, nationalFocus } from "./decisions";
 import { focusTree, IDEOLOGIES, TECHNOLOGIES } from "./catalog";
 import { declareWar } from "./diplomacy";
 import { detachArmy } from "./planning";
+import { hasArmyCapacity } from "./campaign-limits";
 import {
   addArmy,
   changeRelation,
@@ -248,7 +249,11 @@ export function startCivilWar(
     }
   w.fronts = w.fronts.filter((f) => f.armies.length > 0);
   w.plans = w.plans.filter((p) => p.armies.length > 0);
-  if (!w.armies.some((a) => a.country === id) && r.manpower >= 9000) {
+  if (
+    !w.armies.some((a) => a.country === id) &&
+    r.manpower >= 9000 &&
+    hasArmyCapacity(w)
+  ) {
     addArmy(w, id, r.capital);
     r.manpower -= 9000;
   }
@@ -467,7 +472,7 @@ export function politicsDay(w: World) {
           ? owner.capital
           : p.id;
         if (!owner.wars.includes(c.id)) declareWar(w, owner.id, c.id);
-        if (owner.manpower >= 9000) {
+        if (owner.manpower >= 9000 && hasArmyCapacity(w)) {
           addArmy(w, owner.id, p.id);
           owner.manpower -= 9000;
         }

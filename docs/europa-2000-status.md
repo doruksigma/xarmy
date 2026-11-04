@@ -23,6 +23,68 @@ iddia edilmez. Kod incelemesi, çalışma zamanı doğrulamasının yerini tutma
   sürümünün tarihsel kaydıdır ve burada değiştirilmez. Sonradan eklenen 3D
   sistemler yeni değerlendirmeye dahildir.
 
+## Dünya 1936, doğrudan kuvvet yönetimi ve birlik görselleri — 4 Kasım 2026
+
+Kullanıcının seçimiyle harita 1936 ülkeleri ve bağlı yönetimlere genişletildi:
+92 oynanabilir yönetim, 909 şehir bölgesi, 11 deniz havzası. Eski Avrupa'nın
+447 bölge kimliği ve aralarındaki yollar aynı mesafe ölçeğinde korundu.
+Natural Earth kamu malı kıyıları üzerine senaryo atamaları kullanılır;
+sınırlar, nüfuslar ve sanayi değerleri yaklaşık oyun verileridir. Çin'deki
+bütün savaş ağaları ve küçük uluslararası yönetimler ayrı ülke değildir.
+Ayrıntılı kaynaklar ve tekrar üretim komutu:
+[WORLD-MAP-SOURCES.md](../scripts/europa-war/WORLD-MAP-SOURCES.md).
+
+- Ordu panelinde birlik türü, gerçek maliyet/istatistik ve eğitim çıkış şehri
+  birlikte seçilir. İlk konum başkenttir; haritada başka şehre dokunmak bunu
+  değiştirmez. Verilmiş eğitim emirleri kendi çıkış yerlerini korur; işgal
+  edilen çıkış şehirlerinde eğitim bekler.
+- Hava / Deniz paneli kolay görünümde de açıktır. Kanatlar ve gemiler manuel
+  yönetilir; hava ve donanma yardımcıları ayrı ve yeni seferde kapalıdır.
+  Eski ortak otomasyon seçimi eski kayıtlarda anlamını korur. Hava menzili
+  tarih çizgisinde kısa Pasifik mesafesini kullanır; kanal erişimi ve alternatif
+  deniz yolları gerçek görev/ikmal hesaplarına bağlıdır.
+- 3D asker, tank, top ve kamyonlar grubun gerçek türlerinden seçilir. Sırf
+  tümen sayısı arttığı için grupta bulunmayan araç gösterilmez. Temsilî birlik
+  etiketleri ortalama can ve organizasyonu gösterir. Uçakların çizim ölçeği
+  küçültüldü; muharebe gücü görsel ölçekten bağımsızdır.
+- Saat adımı 500 ms'den 300 ms'ye indirildi; 1×–5× aynı kuralları ve tek
+  bekleyen worker düzenini kullanır. 3D kamera, küçük harita, su, kıyılar ve
+  görünürlük dünya boyutuna uyar; arazi atlası uzun kenarda 4096 piksel ile
+  sınırlıdır. Mikrodevletlerde bina sığmayan gerçek küçük alanlar şehir ışığı
+  ve seçilebilir işaretle temsil edilir.
+- 144 ve 447 bölgeli eski Avrupa kayıtları önce doğrulanır, sonra dünya
+  senaryosuna genişletilir. Eski ordular, kuyruklar, ele geçirmeler ve verilen
+  emirler korunur. Tamamlanmış ilhaklar geri alınmaz; açık barış konferanslarına
+  yeni bölgeler ve bunların bütçesi eklenir. Eksik/bozuk dünya kaydı otomatik
+  tamir edilmez. Dünya ölçeğinde tümen sayısı ve eğitim rezervasyonu ortak
+  kayıt/simülasyon sınırına bağlıdır.
+
+Bu aşama bütün 2.000 satırlık şartnamenin tamamlandığı anlamına gelmez.
+Yeni ülkeler ortak yönetim mekaniklerini kullanır; her biri için ayrı yüksek
+ayrıntılı model, özgün odak ağacı veya tam tarihsel envanter oluşturulmadı.
+Fiziksel telefon ve Windows donanımında yüzde yüz akıcılık garantisi verilmez.
+
+Dünya verisiyle üç gerçek 48 saatlik aktarım deneyi (barış, grup yürüyüşü,
+yoğun çatışma; 317–637 başlangıç tümeni) fark aktarımını tam dünya kopyalarıyla
+karşılaştırdı. Aynı durumun alıcıda eksiksiz yeniden kurulması doğrulandı;
+JSON eşdeğer aktarım hacmi sırasıyla %89,11 / %89,10 / %75,86 azaldı.
+Bu ölçüm ağ hızı veya FPS değildir. Üretim derlemesi, motor/kayıt/harita
+regresyonları ve altı farklı ülkeyle 90 günlük savaş/kayıt devamlılığı geçti.
+12 uçtan uca tarayıcı kontrolü; ABD/Japonya/Brezilya başlangıçları, gerçek
+ücretli eğitim kuyrukları, manuel hava/deniz emirleri, bağımsız otomasyonun
+kayıt/yüklemesi, worker saat eşdeğerliği, türlere bağlı modeller, can çubukları
+ve 390 piksel dokunmatik arayüzü kapsadı. Bunlar Chromium masaüstü ve mobil
+emülasyon kontrolleridir, fiziksel telefon/Windows FPS ölçümü değildir.
+Son üretim derlemesinde ayrıca dört odaklı kontrol geçti: 390 pikselde
+kaydırmadan gerçek ücretli eğitim; 3D uzak görünümde başkent etiketlerinde
+sıfır çakışma ve yakınlaşınca etiketin geri gelmesi; ağ ve HTTP önbelleği
+kapalıyken kayıt yükleme, yeni worker ile zaman ilerletme, küresel 2D/3D
+atlasın açılması ve yeni Brezilya seferi başlatma. Test kodu:
+`scripts/test-europa-world-controls-browser.cjs`; son odaklı tur için
+`EUROPA_RECRUITMENT_OFFLINE_ONLY=1` kullanılır.
+Komut, muharebe ve kayıt doğrulamaları ayrı çalıştırıldı; 1936–1945 uzun sefer testinin yeni dünya haritasındaki
+tekrarı bu aşamanın doğrulama kapsamına dahil değildir.
+
 ## İlk bağımlılık grubu: komut ve kayıt temeli
 
 Şartnamenin 99. bölümü önce komut, zaman, veri ve kayıt temelinde gerçek kod
@@ -803,12 +865,12 @@ yerine kullanılamaz.
 | --- | --- | --- |
 | 01–03 Hedef, kapsam, mimari | Tek oyunculu yerel kampanya; TypeScript alan modülleri, React arayüzü ve worker (`engine.ts`, `types.ts`). | Doğrulanmış HOI4 kaynak eşlemesi ve bütün katmanları kapsayan kabul ölçütleri tamamlanmadı. |
 | 04–07 Dünya, komut, saat, worker | Kimlikli dünya, saatlik kara adımı ve eşzamanlı hasar, günlük ekonomi, atomik komutlar; kayıtlı ayrı RNG akışları, dönemsel dünya özeti, protokol 2 fark aktarımı ve tek bekleyen worker (`engine.ts`, `rng.ts`, `world-digest.ts`, `simulation-state.ts`, `simulation.ts`). | Genel varlık hareket defteri, tüm alt sistemlerde eşzamanlı çözüm ve komutların tamamen worker içinde yürütülmesi yok. Günlük AI emirleri ortak doğrulama yolundadır. |
-| 08–10 Senaryo, tarih, coğrafya | 1936 başlangıcı, ülke/zorluk/tarihsel yönelim, 29 ülke ve 447 hareket bölgesi; kara/deniz komşulukları (`map-data.json`, `world.ts`). | Ayrı 1939 senaryosu; kaynaklarıyla doğrulanmış küresel tarihsel sınırlar/karakterler; daha ayrıntılı eyalet–hareket bölgesi ve geçiş veri katmanları. |
+| 08–10 Senaryo, tarih, coğrafya | 1936 başlangıcı, ülke/zorluk/tarihsel yönelim, 92 yönetim ve 909 hareket bölgesi; kara/deniz komşulukları (`map-data.json`, `world.ts`). | Ayrı 1939 senaryosu; kaynaklarıyla doğrulanmış küresel tarihsel sınırlar/karakterler; daha ayrıntılı eyalet–hareket bölgesi ve geçiş veri katmanları. |
 | 11–12 3D arazi, şehir, tesis | Gerçek 3D arazi, su, şehir/tesis dekoru ve tekrarlı nesneler (`map3d-geometry.ts`, `map3d-scenery.ts`, `map3d-renderer.ts`). | Bütün coğrafyayı kapsayan ayrıntılı varlık seti, bölgesel varlık yükleme ve istenen tüm yüksek ayrıntı düzeyleri yok; mevcut modeller prosedüreldir. |
 | 13–14 Kamera, seçim, harita modları | Kaydırma/yakınlaştırma, dokunma, şehir/birlik seçimi, küçük harita ve siyasi/askerî veri görünümleri (`WarMap3D.tsx`, `WarMap.tsx`, `useMapCamera.ts`). | Tam kutu seçimi ve şartnamedeki bütün tematik veri katmanları; yeni gözlem/ikmal modelleri tamamlandıkça bunlara bağlı kaplamalar. |
 | 15–16 Birlik animasyonu, efektler | Temsilî asker/tank/top/kamyon, hareket, mevcut ve kısa sürede sonuçlanan gerçek çatışma efektleri, şehir ele geçirme gösterimi (`map3d-units.ts`, `map3d-unit-events.ts`). | Tüm hava/deniz/lojistik varlıklarının ayrı durumları ve özgün ses/uyarlanan atmosfer seti. Görsel efektler muharebe sonucunu belirlemez. |
 | 17 Hava, mevsim, yerel saat | Mevcut görsel atmosfer ve saatli kampanya takvimi temelidir. | Bölgesel hava durumu, çamur/kar birikimi, iklim alışkanlığı ve boylama bağlı simülasyon saati yok. |
-| 18 Yönetim arayüzü | Türkçe yönetim panelleri, komuta önerileri ve dört ayrı yardımcı yönetim seçeneği (`WarPanels.tsx`, `CommandCenter.tsx`, `management.ts`). | Genel arama, ayrıntılı neden/önizleme kapsamı, yapılandırılabilir bildirim/otomatik duraklama; inşaat/eğitim önizlemesi ve oyuncu emir geçmişi bu iterasyonda eklendi. |
+| 18 Yönetim arayüzü | Türkçe yönetim panelleri, komuta önerileri ve beş ayrı yardımcı yönetim seçeneği (`WarPanels.tsx`, `CommandCenter.tsx`, `management.ts`). | Genel arama, ayrıntılı neden/önizleme kapsamı, yapılandırılabilir bildirim/otomatik duraklama; inşaat/eğitim önizlemesi ve oyuncu emir geçmişi bu iterasyonda eklendi. |
 | 19–22 Siyaset, yasalar, personel | İstikrar, savaş desteği/yorgunluğu, hükümet/partiler/kabine, ekonomi ve askerlik yasaları, eğitim için personel ayırma (`politics.ts`, `economy.ts`). | Ülkeye özgü parlamenter kurallar, kademeli seferberlik, ayrı yaralı/garnizon/taşıma havuzları ve gecikmeli personel dönüş muhasebesi. |
 | 23–25 Odak, karar, ruh, kriz | Önkoşul/dışlama ve süreli odaklar, maliyetli kararlar, seçilmiş tarihsel olaylar, siyasi kriz/iç savaş (`catalog.ts`, `politics.ts`, `advanced-catalog.ts`). | Genel koşullu olay dili, süreli etki defteri, ulusal ruh/yönetim güç dengeleri ve kapsamlı olay zincirleri. |
 | 26–28 İnşaat, kaynak, yakıt | Yapı kuyruğu, hasar/onarım, maden/rafineri/sentetik tesis, sınırlı kaynak ve yakıt üretimi/tüketimi (`economy.ts`, `economy-balance.ts`). | Ayrıntılı yapı yuvası ve onarım kapasitesi tahsisi, kömür/enerji/krom/tungsten modeli, yerel yakıt rezervleri. |
@@ -829,7 +891,7 @@ yerine kullanılamaz.
 | 76–77 Proje, bilim insanı, baskın | Normal araştırma, sabotaj ve sürekli bombardıman mevcut ortak temellerdir. | Ayrı araştırma tesisi/bilim insanı/prototip, tahsis edilmiş kuvvetle çok aşamalı baskın ve soyut stratejik silah sistemleri yok. |
 | 78–82 Avrupa büyük güçleri ve Asya paketleri | Avrupa ülkeleri için genel ağaç; Almanya, Sovyetler, Britanya, Fransa ve İtalya ek odakları (`catalog.ts`). | Bölümlerde sayılan bütün ülkeler, parlamento/kurum rekabeti/özerklik/sürgün/birleşme içerikleri ve kaynaklı ülke paketleri tamamlanmadı. |
 | 83–84 Türkiye ve Balkanlar | Türkiye sanayileşme, modernizasyon, Montrö, Balkan güvenliği ve tarafsızlık odakları (`catalog.ts`, `national.ts`). | Ayrıntılı iç gruplar, diplomatik boğaz rejimi, lisans/pazar bağlantıları ve ödüllerin inşaat/üretim/teslim süreçlerine dönüşmesi. Mevcut Montrö odağı tahkimat/ilişki etkisidir. |
-| 85–90 Nordikler, diğer bölgeler, genel içerik | Haritada bulunan küçük ülkeler ortak ekonomi/araştırma/diplomasi/ordu döngüsünü kullanır (`map-data.json`, `catalog.ts`). | Bütün dünya ülkeleri, özgün bölgesel yollar, oluşturulabilir devletler, koşullu birleşme/bağımsızlık içerikleri ve kaynaklı envanter raporu. |
+| 85–90 Nordikler, diğer bölgeler, genel içerik | Haritada bulunan küçük ülkeler ortak ekonomi/araştırma/diplomasi/ordu döngüsünü kullanır (`map-data.json`, `catalog.ts`). | Eksik küçük tarihsel yönetimler, özgün bölgesel yollar, oluşturulabilir devletler, koşullu birleşme/bağımsızlık içerikleri ve kaynaklı envanter raporu. |
 | 91–92 Stratejik/operasyonel AI | Haftaya dağıtılmış tehdit/ekonomi/araştırma, yerel güç ve ikmale göre saldırı/geri çekilme; oyuncuyla ortak atomik komutlar (`ai.ts`, `management.ts`, `commands.ts`). | Kalıcı hedef/histerezis, ayrıştırılmış karar puanı, ortak gözlem modeli, başarısızlıktan yeniden planlama ve birleşik çıkarma. Mevcut AI kesin düşman durumunu okuyabilir. |
 | 93 Kayıt ve tekrar oynatma | V3 saatli kayıt, v1/v2 geçişi, boyut/şema/referans denetimi, yerel yuvalar ve IndexedDB otomatik kayıt (`storage.ts`, `storage-browser.ts`). | Tam komut günlüğü+snapshot replay, oyun/senaryo/içerik hash başlığı, içerik paketi doğrulaması. Sınırlı, doğrulanan komut makbuzları bu iterasyonda eklendi. |
 | 94 Performans ve paketleme | Dört kalite seviyesi, instancing/görünürlük sınırları, FPS/geometri/doku ölçümü; saatlik worker fark aktarımı ve ayrı hesaplama/paket süreleri; çevrimdışı paket, WebGL kaybında 2D dönüş (`simulation-state.ts`, `SimulationMetrics.tsx`, `map3d-renderer.ts`, `offline-assets.ts`). | Otomatik WebGL geri yükleme, bölgesel varlık yükleme ve 10 yıllık bellek/perf değerlendirmesi. Üç yükte aktarım deneyi fiziksel cihaz testi veya 60 FPS garantisi değildir. |

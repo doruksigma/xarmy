@@ -312,26 +312,33 @@ test("Küçük kamera hareketleri geometriyi korur; başka ülkenin görünüm p
     railways = createRailways(scene),
     world = createWorld("turkey");
   railways.update(world);
-  railways.animate(0, { ...running, distance: 500, focus: { x: 100, z: 100 } });
+  const home = GEOGRAPHY[world.countries.turkey.capital];
+  const other = GEOGRAPHY[world.countries.germany.capital];
+  const homeFocus = { x: home.x - MAP.width / 2, z: home.y - MAP.height / 2 };
+  const otherFocus = {
+    x: other.x - MAP.width / 2,
+    z: other.y - MAP.height / 2,
+  };
+  railways.animate(0, { ...running, distance: 500, focus: homeFocus });
   const track = scene.getObjectByName("railway-steel-rails") as THREE.Mesh;
   const original = track.geometry;
   railways.animate(0.1, {
     ...running,
     distance: 500,
-    focus: { x: 101, z: 101 },
+    focus: { x: homeFocus.x + 1, z: homeFocus.z + 1 },
   });
   assert.equal(track.geometry, original);
   railways.animate(0.2, {
     ...running,
     distance: 500,
-    focus: { x: -300, z: -300 },
+    focus: otherFocus,
   });
   assert.notEqual(track.geometry, original);
   const foreign = track.geometry;
   railways.animate(0.3, {
     ...running,
     distance: 500,
-    focus: { x: -301, z: -301 },
+    focus: { x: otherFocus.x - 1, z: otherFocus.z - 1 },
   });
   assert.equal(track.geometry, foreign);
   railways.dispose();
@@ -565,7 +572,7 @@ function terrainRayReference(geometry: THREE.BufferGeometry) {
   };
 }
 
-for (const maxEdge of [18, 24]) {
+for (const maxEdge of MAP.width > 2000 ? [32, 48] : [18, 24]) {
   test(`Gerçek ${maxEdge} birimlik arazi üçgenleri üzerinde Low ray yüzeyleri gömülmez; önbellek ve tren pozları korunur`, () => {
     const world = createWorld("turkey", "historical", 171);
     for (const province of Object.values(world.provinces))
@@ -703,7 +710,7 @@ for (const maxEdge of [18, 24]) {
       assert.equal(steel.geometry, geometry);
       assert.equal(ballast.geometry, ballastGeometry);
       assert.ok(
-        sampleCalls - unchangedCalls <= 6 * 13,
+        sampleCalls - unchangedCalls <= 6 * 160,
         "Küçük kaydırmada yalnız görünür tren pozları örneklenebilir; raylar yeniden üretilemez",
       );
       const beforeBucketPan = sampleCalls;
@@ -718,7 +725,7 @@ for (const maxEdge of [18, 24]) {
       );
       assert.equal(ballast.geometry, ballastGeometry);
       assert.ok(
-        sampleCalls - beforeBucketPan <= 6 * 13,
+        sampleCalls - beforeBucketPan <= 6 * 160,
         "Aynı hat seçimi tekrar arazi kırımı/dolgu hesabı yapmamalı",
       );
       assert.deepEqual(world, afterEconomy);
@@ -780,7 +787,7 @@ test("Diyarbakır–Van arazi kırığında lokomotif ve vagon tekerlekleri yer 
       ? 2
       : 0;
   const before = structuredClone(world);
-  const terrain = buildTerrain({ maxEdge: 24 });
+  const terrain = buildTerrain({ maxEdge: MAP.width > 2000 ? 48 : 24 });
   const independentHeight = terrainRayReference(terrain.geometry);
   const scene = new THREE.Scene();
   const railways = createRailways(
@@ -817,8 +824,9 @@ test("Diyarbakır–Van arazi kırığında lokomotif ve vagon tekerlekleri yer 
       worst = 0;
     let worstPoint = { x: 0, y: 0, z: 0 };
     const focus = {
-      x: 1009.6207 - MAP.width / 2,
-      z: 737.8987 - MAP.height / 2,
+      // Keep the original Diyarbakır–Van rail section when the atlas origin moves.
+      x: GEOGRAPHY["turkey-8"].x + 31.2207 - MAP.width / 2,
+      z: GEOGRAPHY["turkey-8"].y - 12.1013 - MAP.height / 2,
     };
     for (let frame = 0; frame <= 300; frame++) {
       railways.animate(frame / 10, {

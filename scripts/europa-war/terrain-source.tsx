@@ -1,6 +1,7 @@
 // Source for the static terrain overlay. Regenerate with render-terrain.cjs.
 // Borders, interaction, ownership and military overlays stay live in WarMap.
 import MAP from "../../app/games/europa-war/strategy/map-data.json";
+import { terrainAtlasSize } from "../../app/games/europa-war/strategy/map-camera-bounds";
 function TerrainTexture({
   terrain,
   id,
@@ -70,11 +71,12 @@ function TerrainTexture({
   );
 }
 export function TerrainAtlas() {
+  const raster = terrainAtlasSize(MAP.width, MAP.height);
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
-      width={MAP.width * 2}
-      height={MAP.height * 2}
+      width={raster.width}
+      height={raster.height}
       viewBox={`0 0 ${MAP.width} ${MAP.height}`}
     >
       <defs>

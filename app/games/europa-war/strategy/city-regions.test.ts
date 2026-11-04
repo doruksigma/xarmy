@@ -6,35 +6,65 @@ import { declareWar } from "./diplomacy";
 import { resolveLandDay } from "./land";
 import { decodeSave, encodeSave, validateWorld } from "./storage";
 import { BUILDINGS } from "./catalog";
+import europeanSave from "./fixtures/europe-v3-before-world.json";
+import legacyEurope from "./legacy-europe-map.json";
 import type { Building, World } from "./types";
 
-const parents = MAP.provinces.filter((p) => p.id === p.legacyRegion);
+const oldProvinceIds = new Set(legacyEurope.provinceIds);
+const oldCities = MAP.provinces.filter((p) => oldProvinceIds.has(p.id));
+const parents = legacyEurope.regionalIds;
 function regionalFixture() {
-  const w = createWorld("turkey");
+  // A regional save predates world-map expansion. Starting with a fresh global
+  // campaign would incorrectly give the old save new countries and colonies.
+  const w = structuredClone(europeanSave.world) as unknown as World;
   for (const parent of parents) {
-    const cities = MAP.provinces.filter((p) => p.legacyRegion === parent.id);
+    const cities = oldCities.filter((p) => p.legacyRegion === parent);
     for (const b of Object.keys(BUILDINGS) as Building[]) {
       if (b === "infra" || b === "rail") continue;
-      w.provinces[parent.id].buildings[b] = cities.reduce(
+      w.provinces[parent].buildings[b] = cities.reduce(
         (n, p) => n + w.provinces[p.id].buildings[b],
         0,
       );
     }
-    for (const p of cities) if (p.id !== parent.id) delete w.provinces[p.id];
+    for (const p of cities) if (p.id !== parent) delete w.provinces[p.id];
   }
-  for (const a of w.armies) a.province = GEOGRAPHY[a.province].legacyRegion;
+  const region = (id: string) => GEOGRAPHY[id].legacyRegion;
+  for (const a of w.armies) {
+    a.province = region(a.province);
+    if (a.move) a.move.to = region(a.move.to);
+    a.route = a.route.map(region);
+  }
   for (const c of Object.values(w.countries)) {
+    c.capital = region(c.capital);
+    for (const queued of [...c.construction, ...c.recruitment])
+      queued.province = region(queued.province);
+    for (const general of c.generals)
+      if (general.front)
+        for (const [army, province] of Object.entries(
+          general.front.assignments,
+        ))
+          general.front.assignments[army] = region(province);
     for (const a of c.air.wings) {
-      a.base = GEOGRAPHY[a.base].legacyRegion;
-      a.target = GEOGRAPHY[a.target].legacyRegion;
+      a.base = region(a.base);
+      a.target = region(a.target);
     }
-    for (const s of c.navy.ships) s.port = GEOGRAPHY[s.port].legacyRegion;
+    for (const s of c.navy.ships) s.port = region(s.port);
+  }
+  for (const battle of w.battles) battle.province = region(battle.province);
+  for (const front of w.fronts)
+    front.provinces = [...new Set(front.provinces.map(region))];
+  for (const plan of w.plans)
+    plan.objectives = [...new Set(plan.objectives.map(region))];
+  for (const conference of w.conferences) {
+    conference.available = [...new Set(conference.available.map(region))];
+    for (const award of conference.awards)
+      award.province = region(award.province);
   }
   return w;
 }
 function totals(w: World) {
   return Object.fromEntries(
-    Object.keys(w.countries).map((id) => [
+    legacyEurope.countryIds.map((id) => [
       id,
       Object.fromEntries(
         (Object.keys(BUILDINGS) as Building[])
@@ -42,7 +72,7 @@ function totals(w: World) {
           .map((b) => [
             b,
             Object.values(w.provinces)
-              .filter((p) => p.owner === id)
+              .filter((p) => oldProvinceIds.has(p.id) && p.owner === id)
               .reduce((n, p) => n + p.buildings[b], 0),
           ]),
       ),
@@ -50,12 +80,14 @@ function totals(w: World) {
   );
 }
 
-test("447 şehrin ayrı sınırı, kontrolü ve simetrik bağlantısı vardır; yeni şehirler bedava başkent tesisleri vermez", () => {
+test("Eski Avrupa'nın 447 şehrinin ayrı sınırları ve simetrik bağlantıları dünya haritasında korunur", () => {
   const w = createWorld("turkey");
-  assert.equal(MAP.provinces.length, 447);
+  assert.equal(legacyEurope.countryIds.length, 29);
+  assert.equal(Object.keys(europeanSave.world.provinces).length, 447);
+  assert.equal(oldCities.length, 447);
   assert.equal(parents.length, 144);
-  assert.equal(new Set(MAP.provinces.map((p) => p.path)).size, 447);
-  for (const p of MAP.provinces) {
+  assert.equal(new Set(oldCities.map((p) => p.path)).size, 447);
+  for (const p of oldCities) {
     assert.ok(p.path.startsWith("M") && p.path.endsWith("Z"));
     assert.ok(w.provinces[p.id]);
     assert.ok(GEOGRAPHY[p.legacyRegion]);
@@ -67,8 +99,10 @@ test("447 şehrin ayrı sınırı, kontrolü ve simetrik bağlantısı vardır; 
         ),
       );
   }
-  for (const c of MAP.countries) {
-    const cities = Object.values(w.provinces).filter((p) => p.owner === c.id);
+  for (const country of legacyEurope.countryIds) {
+    const cities = Object.values(w.provinces).filter(
+      (p) => oldProvinceIds.has(p.id) && p.owner === country,
+    );
     assert.equal(
       cities.reduce((n, p) => n + p.buildings.refinery, 0),
       1,
@@ -115,8 +149,10 @@ test("Yeni şehri ele geçirmek aynı eski bölgenin diğer şehirlerini ele ge�
   assert.ok(validateWorld(w));
 });
 
-test("144 bölgeli kayıt 447 şehre taşınır; işgal ve tesisler korunur, eski uzun yol temizlenir", () => {
+test("Eski 144 bölge önce Avrupa şehirlerine sonra dünya haritasına taşınır; işgal ve tesisler korunur", () => {
   const old = regionalFixture();
+  assert.equal(Object.keys(old.countries).length, 29);
+  assert.equal(Object.keys(old.provinces).length, 144);
   const p = old.provinces["turkey-0"];
   p.controller = "germany";
   p.resistance = 25;
@@ -129,9 +165,9 @@ test("144 bölgeli kayıt 447 şehre taşınır; işgal ve tesisler korunur, esk
   a.route = ["turkey-1"];
   const before = totals(old);
   const w = decodeSave(encodeSave(old));
-  assert.equal(Object.keys(w.provinces).length, 447);
+  assert.equal(Object.keys(w.provinces).length, MAP.provinces.length);
   assert.deepEqual(totals(w), before);
-  for (const p of MAP.provinces.filter((p) => p.legacyRegion === "turkey-0")) {
+  for (const p of oldCities.filter((p) => p.legacyRegion === "turkey-0")) {
     assert.equal(w.provinces[p.id].controller, "germany");
     assert.equal(w.provinces[p.id].resistance, 25);
   }
@@ -177,7 +213,7 @@ test("Canlı v1 biçimindeki 144 bölgeli sefer yeni hava/deniz ve şehir sistem
   const w = decodeSave(
     JSON.stringify({ format: "xarmy-europa-1936", version: 1, world: old }),
   );
-  assert.equal(Object.keys(w.provinces).length, 447);
+  assert.equal(Object.keys(w.provinces).length, MAP.provinces.length);
   assert.equal(w.version, 3);
   assert.equal(w.difficulty, "easy");
   assert.ok(w.countries.turkey.air.wings.length > 0);

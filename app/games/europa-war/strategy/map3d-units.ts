@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import type { Army } from "./types";
+import type { Army, UnitType } from "./types";
 import type { GraphicsQuality } from "./map3d-visuals";
 import { createCombatLighting } from "./map3d-combat-lighting";
 import {
@@ -39,20 +39,66 @@ const INFANTRY_SLOT = { kind: "infantry", x: 5.3, z: -5.7 } as const;
 const TANK_SLOT = { kind: "tank", x: 5.3, z: 4.3 } as const;
 const ARTILLERY_SLOT = { kind: "artillery", x: -5.3, z: 4.3 } as const;
 const TRUCK_SLOT = { kind: "truck", x: -5.3, z: -9.7 } as const;
+const UNIT_KIND: Record<UnitType, UnitDisplayKind> = {
+  infantry: "infantry",
+  special: "infantry",
+  mountain: "infantry",
+  paratrooper: "infantry",
+  lightTank: "tank",
+  mediumTank: "tank",
+  heavyTank: "tank",
+  artillery: "artillery",
+  motorized: "truck",
+  mechanized: "truck",
+};
+const UNIT_KIND_MASK: Record<UnitDisplayKind, number> = {
+  infantry: 1,
+  tank: 2,
+  artillery: 4,
+  truck: 8,
+};
+/** Shared footprint templates; scenery reserves the largest four-family space. */
 export const UNIT_DISPLAY_LAYOUTS = {
   1: [INFANTRY_SLOT],
   2: [TANK_SLOT, INFANTRY_SLOT],
   3: [ARTILLERY_SLOT, INFANTRY_SLOT, TANK_SLOT],
   4: [TRUCK_SLOT, INFANTRY_SLOT, ARTILLERY_SLOT, TANK_SLOT],
 } as const;
-const EMPTY_LAYOUT: readonly { kind: UnitDisplayKind; x: number; z: number }[] =
-  [];
-/** Count-based strategic symbols; never change the actual division equipment/type. */
-export function unitDisplayLayout(count: number) {
-  const whole = Math.floor(count);
-  return !Number.isFinite(whole) || whole <= 0
-    ? EMPTY_LAYOUT
-    : UNIT_DISPLAY_LAYOUTS[Math.min(4, whole) as 1 | 2 | 3 | 4];
+/** Fixed slots retain visual continuity when another real type joins the stack. */
+const TYPED_UNIT_LAYOUTS: readonly (readonly {
+  kind: UnitDisplayKind;
+  x: number;
+  z: number;
+}[])[] = Array.from({ length: 16 }, (_, mask) => {
+  if (!mask) return [];
+  const lead =
+    mask & 8
+      ? TRUCK_SLOT
+      : mask & 4
+        ? ARTILLERY_SLOT
+        : mask & 2
+          ? TANK_SLOT
+          : INFANTRY_SLOT;
+  return [
+    lead,
+    ...[INFANTRY_SLOT, ARTILLERY_SLOT, TANK_SLOT].filter(
+      (slot) => slot !== lead && (mask & UNIT_KIND_MASK[slot.kind]) !== 0,
+    ),
+  ];
+});
+export function unitDisplayKind(type: UnitType): UnitDisplayKind {
+  return UNIT_KIND[type] ?? "infantry";
+}
+/** One representative per actual family, never invented vehicles from headcount.
+ * All sixteen layouts are shared: scanning the visible stack allocates no arrays.
+ */
+export function unitDisplayLayout(armies: readonly Pick<Army, "type">[]) {
+  let mask = 0;
+  for (const army of armies) {
+    mask |= UNIT_KIND_MASK[unitDisplayKind(army.type)];
+    if (mask === 15) break;
+  }
+  return TYPED_UNIT_LAYOUTS[mask];
 }
 export interface UnitFormation {
   armies: readonly Army[];
@@ -595,7 +641,7 @@ export function createUnitModels(
       let reserved = 0,
         poles = 0;
       for (const formation of formations) {
-        const layout = unitDisplayLayout(formation.armies.length);
+        const layout = unitDisplayLayout(formation.armies);
         if (!layout.length || reserved + layout.length > MAX_UNIT_MINIATURES)
           continue;
         reserved += layout.length;
@@ -645,7 +691,7 @@ export function createUnitModels(
       let models = 0;
       for (let f = 0; f < formations.length; f++) {
         const formation = formations[f],
-          layout = unitDisplayLayout(formation.armies.length);
+          layout = unitDisplayLayout(formation.armies);
         if (!layout.length || models + layout.length > MAX_UNIT_MINIATURES)
           continue;
         const combat =
@@ -762,7 +808,10 @@ export function createUnitModels(
               -walk * 0.37 - rally * 0.08 + (combat ? 0.13 : 0),
             );
             if (stats.detail) put(5, 0, bob + stance, -kick, pitch);
-            const identity = formation.armies[0]?.id ?? `formation-${f}`;
+            const identity =
+              formation.armies.find(
+                (army) => unitDisplayKind(army.type) === "infantry",
+              )?.id ?? `formation-${f}`;
             let idle = idleHeads.get(identity);
             if (!idle) {
               let hash = 2166136261;

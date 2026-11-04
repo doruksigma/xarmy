@@ -11,10 +11,13 @@ import {
   provinceOutline,
 } from "./map3d-geometry";
 import { createScenery } from "./map3d-scenery";
+import { fitMapDistance, mapCameraFar } from "./map-camera-bounds";
 import { createCityLights } from "./map3d-city-lights";
 import { createMovementArrows } from "./map3d-movement-arrows";
 import { createMilitaryMapIcon } from "./military-symbols";
 import { getVisibleUnitVisualResearch } from "./map3d-unit-research";
+import { createUnitHealthOverlay } from "./map3d-unit-health";
+import { createOverlayLabelLayout } from "./map3d-overlay-layout";
 import { politicalCountryColor } from "./map3d-cartography-palette";
 import {
   createUnitModels,
@@ -80,6 +83,10 @@ type Overlay = {
   element: HTMLButtonElement;
   position: THREE.Vector3;
   kind: "capital" | "army" | "city" | "sea";
+  labelWidth: number;
+  labelHeight: number;
+  priority: number;
+  pinned: boolean;
 };
 type CaptureVisual = FormationCapture & { elapsed: number };
 type ResolvedCombatVisual = ResolvedFormationCombat & {
@@ -115,11 +122,17 @@ const RESOLVED_COMBAT_DURATION = 1800;
 const HALF_X = MAP.width / 2,
   HALF_Z = MAP.height / 2;
 const VEC = new THREE.Vector3();
+const SUN_OFFSET = new THREE.Vector3(-300, 550, 250);
 
 /** Presentation owns its buffers and camera; it never writes into the campaign. */
 export class Map3DRenderer {
   private scene = new THREE.Scene();
-  private camera = new THREE.PerspectiveCamera(42, 1, 0.5, 6000);
+  private camera = new THREE.PerspectiveCamera(
+    42,
+    1,
+    0.5,
+    mapCameraFar(MAP.width, MAP.height),
+  );
   private renderer: THREE.WebGLRenderer;
   private controls: OrbitControls;
   private terrain: ReturnType<typeof buildTerrain>;
@@ -149,6 +162,7 @@ export class Map3DRenderer {
   private lastUnitFrame = 0;
   private unitAnimationActive = false;
   private overlays: Overlay[] = [];
+  private overlayLayout = createOverlayLabelLayout();
   private countryLabels: {
     element: HTMLSpanElement;
     label: CountryMapLabel;
@@ -232,7 +246,16 @@ export class Map3DRenderer {
       this.sun.shadow.bias = -0.0003;
       this.sun.shadow.normalBias = 0.7;
       this.scene.add(this.sun, this.sun.target);
-      this.terrain = buildTerrain({ maxEdge: quality === "low" ? 24 : 18 });
+      this.terrain = buildTerrain({
+        maxEdge:
+          MAP.width > 2000
+            ? quality === "low"
+              ? 48
+              : 32
+            : quality === "low"
+              ? 24
+              : 18,
+      });
       this.surfaceHeightAt = createTerrainSurfaceSampler(this.terrain.geometry);
       const noiseData = new Uint8Array(64 * 64 * 4),
         random = visualRandom(64851);
@@ -279,7 +302,10 @@ export class Map3DRenderer {
         this.surfaceHeightAt,
       );
       this.sea = new THREE.Mesh(
-        new THREE.PlaneGeometry(4000, 3400),
+        new THREE.PlaneGeometry(
+          Math.max(4000, MAP.width + 2500),
+          Math.max(3400, MAP.height + 2500),
+        ),
         new THREE.ShaderMaterial({
           uniforms: {
             time: { value: 0 },
@@ -325,7 +351,10 @@ void main() {
       this.controls.enableDamping = true;
       this.controls.dampingFactor = 0.13;
       this.controls.minDistance = 45;
-      this.controls.maxDistance = 1900;
+      this.controls.maxDistance = Math.max(
+        1900,
+        fitMapDistance(MAP.width, MAP.height, 1),
+      );
       this.controls.minPolarAngle = 0.2;
       this.controls.maxPolarAngle = Math.PI * 0.46;
       this.controls.mouseButtons.LEFT = THREE.MOUSE.PAN;
@@ -396,6 +425,10 @@ void main() {
     this.width = Math.max(1, box.width);
     this.height = Math.max(1, box.height);
     this.camera.aspect = this.width / this.height;
+    this.controls.maxDistance = Math.max(
+      1900,
+      fitMapDistance(MAP.width, MAP.height, this.camera.aspect) * 1.15,
+    );
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(this.width, this.height, false);
     this.markDirty();
@@ -728,7 +761,16 @@ void main() {
       action(e);
     });
     this.labels.appendChild(element);
-    const item = { element, position, kind };
+    const item: Overlay = {
+      element,
+      position,
+      kind,
+      labelWidth:
+        kind === "army" ? 64 : text.length * 7 + (kind === "capital" ? 26 : 12),
+      labelHeight: kind === "army" ? 50 : 22,
+      priority: kind === "army" ? 4000 : kind === "sea" ? 0 : 1000,
+      pinned: kind === "army",
+    };
     this.overlays.push(item);
     return item;
   }
@@ -759,6 +801,10 @@ void main() {
       if (capitals.has(id))
         overlay.element.prepend(createMilitaryMapIcon("capital", 12));
       overlay.element.dataset.provinceLabel = id;
+      overlay.pinned =
+        id === selected || id === world.countries[world.player].capital;
+      overlay.priority =
+        id === selected ? 3000 : overlay.pinned ? 2000 : 1000 + p.vp;
       overlay.element.setAttribute(
         "aria-label",
         `${p.name}, ${world.countries[world.provinces[id].controller].name}`,
@@ -804,6 +850,13 @@ void main() {
       overlay.element.setAttribute(
         "aria-label",
         `${world.countries[army.country].name}, ${armies.length} tümen, ${GEOGRAPHY[army.province].name}`,
+      );
+      const health = createUnitHealthOverlay(armies);
+      overlay.element.appendChild(health);
+      overlay.element.title = `${armies.length} tümen · ${health.title}`;
+      overlay.element.setAttribute(
+        "aria-label",
+        `${overlay.element.getAttribute("aria-label")}, ${health.title}`,
       );
       overlay.element.dataset.selected = String(
         armies.some((a) => chosen.has(a.id)),
@@ -925,6 +978,8 @@ void main() {
           () => {},
         ).element.disabled = true;
       }
+    // Stable sorting happens only when markers change, never in the frame loop.
+    this.overlays.sort((a, b) => b.priority - a.priority);
   }
   private updateRoutes() {
     if (this.selection) {
@@ -1077,7 +1132,11 @@ void main() {
   }
   reset() {
     this.controls.target.set(0, 0, 0);
-    const distance = this.width / this.height < 0.8 ? 1550 : 1100;
+    const distance = fitMapDistance(
+      MAP.width,
+      MAP.height,
+      this.width / this.height,
+    );
     this.camera.position.copy(this.viewOffset(distance));
     this.controls.update();
     this.markDirty();
@@ -1283,6 +1342,29 @@ void main() {
         -HALF_Z,
         HALF_Z,
       );
+      // The atlas now spans the globe. Keep the local shadow map at the viewed
+      // country and move the haze range with the camera so full-world framing
+      // does not disappear inside the old European fog distances.
+      this.sun.target.position.copy(this.controls.target);
+      this.sun.position
+        .copy(this.controls.target)
+        .addScaledVector(SUN_OFFSET, 1);
+      const cameraDistance = this.camera.position.distanceTo(
+        this.controls.target,
+      );
+      // A fixed sub-unit near plane wastes depth precision at continental zoom
+      // and makes the thin border ribbons flicker against the terrain.
+      const near = Math.max(0.5, cameraDistance / 500);
+      if (Math.abs(this.camera.near - near) > near * 0.05) {
+        this.camera.near = near;
+        this.camera.updateProjectionMatrix();
+      }
+      const fog = this.scene.fog as THREE.Fog;
+      fog.near = Math.max(1200, cameraDistance * 0.9);
+      fog.far = Math.max(
+        3200,
+        cameraDistance + Math.hypot(MAP.width, MAP.height),
+      );
       this.sea.material.uniforms.time.value = this.reduced ? 0 : now / 1000;
       for (let i = 0; i < this.battleRings.length; i++)
         this.battleRings[i].material.opacity =
@@ -1332,20 +1414,36 @@ void main() {
       );
       this.canvas.dataset.renderedFrames = String(++this.renderedFrames);
       this.frameCount++;
+      this.overlayLayout.reset(this.width, this.height);
       for (const item of this.overlays) {
         VEC.copy(item.position).project(this.camera);
         const x = ((VEC.x + 1) * this.width) / 2,
           y = ((-VEC.y + 1) * this.height) / 2;
-        const visible =
+        const inView =
           VEC.z > -1 &&
           VEC.z < 1 &&
           x > -80 &&
           x < this.width + 80 &&
           y > -30 &&
           y < this.height + 30;
-        item.element.style.display = visible ? "" : "none";
-        if (visible)
-          item.element.style.transform = `translate(${x.toFixed(1)}px,${y.toFixed(1)}px) translate(-50%,-100%)`;
+        const placement = inView
+          ? this.overlayLayout.place(
+              {
+                x,
+                y,
+                width: item.labelWidth,
+                height: item.labelHeight,
+              },
+              item.kind === "army"
+                ? "army"
+                : item.pinned
+                  ? "pinned"
+                  : "ordinary",
+            )
+          : null;
+        item.element.style.display = placement ? "" : "none";
+        if (placement)
+          item.element.style.transform = `translate(${placement.x.toFixed(1)}px,${placement.y.toFixed(1)}px) translate(-50%,-100%)`;
       }
       this.canvas.dataset.ready = "true";
       this.canvas.dataset.railEdges = String(this.railways.stats.edges);
@@ -1398,11 +1496,21 @@ void main() {
       );
       this.canvas.dataset.unitModelBanks = String(this.units.stats.modelBanks);
       this.canvas.dataset.unitModelParts = String(this.units.stats.modelParts);
-      this.canvas.dataset.unitModelVertices = String(this.units.stats.modelVertices);
-      this.canvas.dataset.unitModelCapacity = String(this.units.stats.modelCapacity);
-      this.canvas.dataset.unitModelIdleParts = String(this.units.stats.modelIdleParts);
-      this.canvas.dataset.unitModelIdleVertices = String(this.units.stats.modelIdleVertices);
-      this.canvas.dataset.unitModelIdleCapacity = String(this.units.stats.modelIdleCapacity);
+      this.canvas.dataset.unitModelVertices = String(
+        this.units.stats.modelVertices,
+      );
+      this.canvas.dataset.unitModelCapacity = String(
+        this.units.stats.modelCapacity,
+      );
+      this.canvas.dataset.unitModelIdleParts = String(
+        this.units.stats.modelIdleParts,
+      );
+      this.canvas.dataset.unitModelIdleVertices = String(
+        this.units.stats.modelIdleVertices,
+      );
+      this.canvas.dataset.unitModelIdleCapacity = String(
+        this.units.stats.modelIdleCapacity,
+      );
       this.canvas.dataset.idleHeads = String(this.units.stats.idleHeads);
       this.canvas.dataset.idleAnimating = String(
         this.units.stats.idleAnimating,

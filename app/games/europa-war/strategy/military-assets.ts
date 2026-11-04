@@ -12,6 +12,12 @@ import type {
 const geography = Object.fromEntries(map.provinces.map((p) => [p.id, p]));
 /** Geographic sea basins; gates are checked using the current controller, not starting owner. */
 export function portZone(province: string): SeaZone {
+  // The world atlas assigns every port geographically, including opposite
+  // coastlines of the USA/Russia. Legacy regional saves still use the fallback.
+  const explicit = (geography[province] as { seaZone?: string } | undefined)
+    ?.seaZone;
+  if (explicit && Object.hasOwn(SEA_ZONES, explicit))
+    return explicit as SeaZone;
   // New city ports inherit their former region's sea basin.
   const original = geography[province]?.legacyRegion;
   if (original && original !== province) return portZone(original);
@@ -46,6 +52,7 @@ export function portZone(province: string): SeaZone {
   };
   if (zones[province]) return zones[province];
   const p = geography[province];
+  if (!p) return "atlantic";
   if (["romania", "bulgaria"].includes(p.country)) return "black";
   if (["italy", "greece", "albania", "yugoslavia"].includes(p.country))
     return "mediterranean";
@@ -65,7 +72,12 @@ export function seaRoute(
   const queue: SeaZone[][] = [[from]],
     seen = new Set([from]);
   const hostileGate = (province: string) =>
+    !!w.provinces[province] &&
     w.countries[country].wars.includes(w.provinces[province].controller);
+  const crossing = (a: SeaZone, b: SeaZone, one: SeaZone, two: SeaZone) =>
+    (a === one && b === two) || (a === two && b === one);
+  const canalClosed = (province: string) =>
+    !w.provinces[province] || hostileGate(province);
   for (const path of queue) {
     const zone = path[path.length - 1];
     if (zone === to) return path;
@@ -73,7 +85,22 @@ export function seaRoute(
       if (seen.has(next)) continue;
       if ([zone, next].includes("black") && hostileGate("turkey-1")) continue;
       if ([zone, next].includes("baltic") && hostileGate("denmark-0")) continue;
-      // Gibraltar lies outside this regional map; Atlantic–Mediterranean stays open.
+      if (
+        crossing(zone, next, "atlantic", "mediterranean") &&
+        hostileGate("uk-global-gibraltar")
+      )
+        continue;
+      // Closed canals require a real longer route around the relevant cape.
+      if (
+        crossing(zone, next, "mediterranean", "indian") &&
+        canalClosed("egypt-2")
+      )
+        continue;
+      if (
+        crossing(zone, next, "caribbean", "northPacific") &&
+        canalClosed("usa-global-panama-canal")
+      )
+        continue;
       seen.add(next);
       queue.push([...path, next]);
     }

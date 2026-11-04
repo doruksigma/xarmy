@@ -14,6 +14,12 @@ export const NAVAL_PRESENTATION: Record<
   baltic: { separation: 3, radius: 5, scale: 0.5 },
   mediterranean: { separation: 8, radius: 18, scale: 1 },
   black: { separation: 5, radius: 7, scale: 0.85 },
+  southAtlantic: { separation: 8, radius: 22, scale: 1 },
+  northPacific: { separation: 8, radius: 22, scale: 1 },
+  southPacific: { separation: 8, radius: 22, scale: 1 },
+  indian: { separation: 8, radius: 22, scale: 1 },
+  caribbean: { separation: 5, radius: 8, scale: 0.55 },
+  arctic: { separation: 8, radius: 18, scale: 0.85 },
 };
 
 // Includes the maximum battleship scale (1.25), roll, and wake extent.

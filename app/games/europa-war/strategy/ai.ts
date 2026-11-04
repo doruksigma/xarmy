@@ -5,6 +5,7 @@ import { seaEdgeOpen } from "./military-assets";
 import { focusTree, TECHNOLOGIES } from "./catalog";
 import { diplomaticAcceptance } from "./diplomacy";
 import { combatPower } from "./land";
+import { mapDistance } from "./geography-distance";
 import { researchSlots } from "./politics";
 import {
   atWar,
@@ -356,10 +357,7 @@ export function aiDay(w: World) {
         for (const p of borders) {
           const score =
             (ownCounts.get(p.id) ?? 0) * 100 +
-            Math.hypot(
-              GEOGRAPHY[a.province].x - GEOGRAPHY[p.id].x,
-              GEOGRAPHY[a.province].y - GEOGRAPHY[p.id].y,
-            );
+            mapDistance(GEOGRAPHY[a.province], GEOGRAPHY[p.id]);
           if (score < bestScore) {
             border = p;
             bestScore = score;

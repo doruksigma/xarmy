@@ -21,6 +21,12 @@ import { COMMANDER_CAPACITY, MAX_COMMANDERS } from "./commander-roster";
 import { isValidCommandState } from "./command-types";
 import { HOURS_PER_DAY, hourLabel, worldHour } from "./time";
 import { isUint32, isValidRandomStreams } from "./rng";
+import { MAX_ARMIES } from "./campaign-limits";
+import legacyEurope from "./legacy-europe-map.json";
+import {
+  extendEuropeanCampaign,
+  GLOBAL_MAP_VERSION,
+} from "./world-map-migration";
 import type { Building, Country, World } from "./types";
 
 type Validator = (value: unknown) => boolean;
@@ -69,6 +75,22 @@ const shapeWithOptionalField = (
     extended = shape({ ...fields, [key]: validator });
   return (x) => original(x) || extended(x);
 };
+const shapeWithOptionalFields =
+  (
+    fields: Record<string, Validator>,
+    optional: Record<string, Validator>,
+  ): Validator =>
+  (value) =>
+    object(value) &&
+    Object.keys(value).every(
+      (key) => Object.hasOwn(fields, key) || Object.hasOwn(optional, key),
+    ) &&
+    Object.entries(fields).every(
+      ([key, validate]) => Object.hasOwn(value, key) && validate(value[key]),
+    ) &&
+    Object.entries(optional).every(
+      ([key, validate]) => !Object.hasOwn(value, key) || validate(value[key]),
+    );
 const province = one(Object.keys(GEOGRAPHY)),
   unit = one(Object.keys(UNITS)),
   equipment = one(Object.keys(EQUIPMENT)),
@@ -76,7 +98,8 @@ const province = one(Object.keys(GEOGRAPHY)),
 const ideology = one(Object.keys(IDEOLOGIES)),
   tech = one(TECHNOLOGIES.map((t) => t.id)),
   focus = one(MAP.countries.flatMap((c) => focusTree(c.id).map((f) => f.id)));
-const countries = arr(str, 60),
+const MAX_COUNTRIES = Math.max(60, MAP.countries.length * 2);
+const countries = arr(str, MAX_COUNTRIES),
   values = (keys: string[], max = 1e9) =>
     shape(Object.fromEntries(keys.map((k) => [k, num(max)])));
 const project = { id: str, progress: num(), total: num(1e7, 0.01) };
@@ -119,13 +142,13 @@ export const countrySchema: Record<
   research: arr(shape({ ...project, id: tech }), 3),
   focuses: arr(focus, 40),
   focus: nullable(shape({ ...project, id: focus })),
-  relations: record(num(100, -100), 60),
+  relations: record(num(100, -100), MAX_COUNTRIES),
   wars: countries,
   allies: countries,
   access: countries,
   embargoes: countries,
-  pacts: record(num(), 60),
-  justification: record(num(), 60),
+  pacts: record(num(), MAX_COUNTRIES),
+  justification: record(num(), MAX_COUNTRIES),
   claims: countries,
   subjectOf: nullable(str),
   capitulated: bool,
@@ -149,12 +172,15 @@ export const countrySchema: Record<
     MAX_COMMANDERS,
   ),
   advisor: one(["industry", "science", "army"]),
-  automation: shape({
-    economy: bool,
-    research: bool,
-    recruitment: bool,
-    operations: bool,
-  }),
+  automation: shapeWithOptionalFields(
+    {
+      economy: bool,
+      research: bool,
+      recruitment: bool,
+      operations: bool,
+    },
+    { air: bool, navy: bool },
+  ),
   cabinet: shape({
     economy: one(["builder", "producer", "trader"]),
     military: one(["defender", "planner", "quartermaster"]),
@@ -170,7 +196,7 @@ export const countrySchema: Record<
     shape({ ...project, target: str, type: one(Object.keys(MISSIONS)) }),
     5,
   ),
-  intel: record(shape({ level: num(100), expires: num() }), 60),
+  intel: record(shape({ level: num(100), expires: num() }), MAX_COUNTRIES),
   air: shape({
     mission: one(["idle", "superiority", "support", "strategic"]),
     target: str,
@@ -227,7 +253,7 @@ const worldFields: Record<string, Validator> = {
   tension: num(100),
   countries: record(
     shapeWithOptionalField(countrySchema, "autoAssignCommanders", bool),
-    60,
+    MAX_COUNTRIES,
   ),
   provinces: record(
     shape({
@@ -276,7 +302,7 @@ const worldFields: Record<string, Validator> = {
       "marchGroup",
       (v) => typeof v === "string" && safeKey(v),
     ),
-    2500,
+    MAX_ARMIES,
   ),
   battles: arr(
     shape({
@@ -305,7 +331,7 @@ const worldFields: Record<string, Validator> = {
       id: str,
       country: str,
       provinces: arr(province, 20),
-      armies: arr(str, 2500),
+      armies: arr(str, MAX_ARMIES),
     }),
     80,
   ),
@@ -314,7 +340,7 @@ const worldFields: Record<string, Validator> = {
       id: str,
       country: str,
       name: str,
-      armies: arr(str, 2500),
+      armies: arr(str, MAX_ARMIES),
       objectives: arr(province, 12),
       preparation: num(100),
       active: bool,
@@ -326,8 +352,8 @@ const worldFields: Record<string, Validator> = {
     shape({
       id: str,
       defeated: str,
-      participants: arr(str, 60),
-      points: record(num(), 60),
+      participants: arr(str, MAX_COUNTRIES),
+      points: record(num(), MAX_COUNTRIES),
       available: arr(province, MAP.provinces.length),
       awards: arr(
         shape({
@@ -339,12 +365,12 @@ const worldFields: Record<string, Validator> = {
         MAP.provinces.length,
       ),
       round: num(100, 1),
-      turn: num(59),
+      turn: num(MAX_COUNTRIES - 1),
       status: one(["open", "closed"]),
     }),
     100,
   ),
-  warScore: record(record(num(1e7), 60), 60),
+  warScore: record(record(num(1e7), MAX_COUNTRIES), MAX_COUNTRIES),
   events: arr(
     shapeWithOptionalField(
       {
@@ -359,21 +385,18 @@ const worldFields: Record<string, Validator> = {
   ),
   firedEvents: arr(str, 200),
 };
-const legacySchema = shapeWithOptionalField(
-  worldFields,
-  "commandState",
-  isValidCommandState,
-);
-const streamSchema = shapeWithOptionalField(
-  { ...worldFields, rng: isValidRandomStreams },
-  "commandState",
-  isValidCommandState,
-);
-const schema: Validator = (value) => legacySchema(value) || streamSchema(value);
+const schema = shapeWithOptionalFields(worldFields, {
+  commandState: isValidCommandState,
+  rng: isValidRandomStreams,
+  mapVersion: one(["world-1936-v1"]),
+});
 function validateWithRegions(
   value: unknown,
   regionIds: readonly string[],
   allowLegacyCommanderOverflow = false,
+  requiredCountries: readonly string[] = MAP.countries.map(
+    (country) => country.id,
+  ),
 ): value is World {
   if (!schema(value)) return false;
   const w = value as World,
@@ -392,14 +415,16 @@ function validateWithRegions(
     !has(w.player) ||
     Object.keys(w.provinces).length !== regionIds.length ||
     regionIds.some((id) => !Object.hasOwn(w.provinces, id)) ||
-    MAP.countries.some((c) => !has(c.id))
+    requiredCountries.some((id) => !has(id))
   )
     return false;
   if (
     Object.entries(w.countries).some(
       ([id, c]) =>
         id !== c.id ||
-        !MAP.countries.some((d) => id === d.id || id === `${d.id}-rebels`),
+        !requiredCountries.some(
+          (base) => id === base || id === `${base}-rebels`,
+        ),
     )
   )
     return false;
@@ -598,9 +623,13 @@ export function validateWorld(value: unknown): value is World {
 
 const legacyRegion = (p: (typeof MAP.provinces)[number]) =>
   (p as typeof p & { legacyRegion?: string }).legacyRegion ?? p.id;
-const oldRegionIds = MAP.provinces
-  .filter((p) => legacyRegion(p) === p.id)
-  .map((p) => p.id);
+const oldRegionIds = legacyEurope.regionalIds;
+const isGlobalMap = () =>
+  (MAP as { scenario?: string }).scenario === GLOBAL_MAP_VERSION;
+const legacyCountriesFor = (regionIds: readonly string[]) =>
+  regionIds === oldRegionIds || regionIds === legacyEurope.provinceIds
+    ? legacyEurope.countryIds
+    : MAP.countries.map((country) => country.id);
 
 /** Old saves had no general capacity. Split only validated legacy groups;
  * modern, malformed commander orders must never be silently repaired. */
@@ -652,8 +681,14 @@ function migrateCommanderCapacity(value: unknown): unknown {
     object(value.provinces) &&
     Object.keys(value.provinces).length === oldRegionIds.length
       ? oldRegionIds
-      : MAP.provinces.map((p) => p.id);
-  if (!validateWithRegions(value, regionIds, true))
+      : object(value.provinces) &&
+          Object.keys(value.provinces).length ===
+            legacyEurope.provinceIds.length
+        ? legacyEurope.provinceIds
+        : MAP.provinces.map((p) => p.id);
+  if (
+    !validateWithRegions(value, regionIds, true, legacyCountriesFor(regionIds))
+  )
     throw new Error("Geçersiz eski komutan kaydı");
   const w = structuredClone(value);
   const used = new Set(
@@ -706,10 +741,14 @@ function migrateCityRegions(value: unknown): unknown {
     !object(value) ||
     !object(value.provinces) ||
     Object.keys(value.provinces).length === MAP.provinces.length ||
+    Object.keys(value.provinces).length === legacyEurope.provinceIds.length ||
     oldRegionIds.length === MAP.provinces.length
   )
     return value;
-  if (!validateWithRegions(value, oldRegionIds))
+  if (
+    Object.hasOwn(value, "mapVersion") ||
+    !validateWithRegions(value, oldRegionIds, false, legacyEurope.countryIds)
+  )
     throw new Error("Geçersiz eski bölge haritası");
   const w = structuredClone(value);
   const groups = new Map(
@@ -819,6 +858,27 @@ function migrateCityRegions(value: unknown): unknown {
   return w;
 }
 
+/** Only a complete recognized Europe save may expand; never repair a damaged world save. */
+function migrateGlobalMap(value: unknown): unknown {
+  if (!isGlobalMap() || !object(value) || Object.hasOwn(value, "mapVersion"))
+    return value;
+  if (
+    !object(value.provinces) ||
+    Object.keys(value.provinces).length === MAP.provinces.length
+  )
+    return value;
+  if (
+    !validateWithRegions(
+      value,
+      legacyEurope.provinceIds,
+      false,
+      legacyEurope.countryIds,
+    )
+  )
+    throw new Error("Geçersiz eski Avrupa haritası");
+  return extendEuropeanCampaign(value);
+}
+
 export function encodeSave(w: World) {
   return JSON.stringify({
     format: "xarmy-europa-1936",
@@ -906,9 +966,13 @@ export function migrateLegacy(value: unknown): World {
   w.conferences = [];
   w.warScore = {};
   w.difficulty = "easy";
-  const expanded = migrateCityRegions(migrateCommanderCapacity(w));
+  const expanded = migrateGlobalMap(
+    migrateCityRegions(migrateCommanderCapacity(w)),
+  );
   if (!validateWorld(expanded)) throw new Error("Geçersiz eski sefer");
   for (const c of Object.values(expanded.countries)) {
+    // Newly added global countries already own initialized, paid-for assets.
+    if (!Object.hasOwn(value.countries, c.id)) continue;
     initializeAssets(expanded, c);
     quickAirOrder(expanded, c, c.air.mission, c.air.target);
     quickNavalOrder(expanded, c, c.navy.mission, c.navy.target);
@@ -958,7 +1022,9 @@ export function decodeSave(text: string): World {
     if (data.version === 1) world = migrateLegacy(world);
     else {
       if (data.version === 2) world = migrateDailyWorld(world);
-      world = migrateCityRegions(migrateCommanderCapacity(world));
+      world = migrateGlobalMap(
+        migrateCityRegions(migrateCommanderCapacity(world)),
+      );
     }
   } catch {
     throw new Error("Eski kayıt bozuk; mevcut seferin değiştirilmedi.");

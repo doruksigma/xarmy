@@ -21,7 +21,7 @@ import {
 const mesh = buildTerrain();
 test.after(() => mesh.dispose());
 
-test("3D arazi tüm 447 bölgeyi ayrı seçim ve renk aralıklarıyla gerçek yükseklikte oluşturur", () => {
+test("3D arazi bütün bölgeleri ayrı seçim ve renk aralıklarıyla gerçek yükseklikte oluşturur", () => {
   assert.equal(mesh.provinceVertexRanges.size, map.provinces.length);
   assert.equal(mesh.provinceBorderRanges.size, map.provinces.length);
   const position = mesh.geometry.getAttribute("position");
@@ -157,7 +157,7 @@ test("Kontrol rengi güncellemesi geometriyi yenilemez ve başka bölgenin rengi
 });
 
 test("Kalite geometrinin maliyetini değiştirir; kabartı, sınırlar ve bölge kimlikleri aynı kalır", () => {
-  const low = buildTerrain({ maxEdge: 32 });
+  const low = buildTerrain({ maxEdge: map.width > 2000 ? 48 : 32 });
   assert.ok(low.faceProvinceIds.length < mesh.faceProvinceIds.length);
   assert.deepEqual(
     [...low.provinceVertexRanges.keys()],
