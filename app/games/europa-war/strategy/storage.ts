@@ -389,6 +389,33 @@ const schema = shapeWithOptionalFields(worldFields, {
   commandState: isValidCommandState,
   rng: isValidRandomStreams,
   mapVersion: one(["world-1936-v1"]),
+  airNavalReports: arr(
+    shape({
+      country: str,
+      day: (v) => num(36500)(v) && Number.isInteger(v),
+      air: shape({
+        flown: num(4000),
+        combatLosses: num(4000),
+        baseLosses: num(4000),
+        reinforced: num(80),
+        fuelSpent: num(),
+        bombingDamage: num(),
+        navalDamage: num(),
+        engagements: (v) => num(40)(v) && Number.isInteger(v),
+      }),
+      navy: shape({
+        active: (v) => num(120)(v) && Number.isInteger(v),
+        combatDamage: num(12000),
+        attritionDamage: num(12000),
+        sunk: (v) => num(120)(v) && Number.isInteger(v),
+        aircraftLost: num(3600),
+        repaired: num(12000),
+        fuelSpent: num(),
+        engagements: (v) => num(120)(v) && Number.isInteger(v),
+      }),
+    }),
+    MAX_COUNTRIES,
+  ),
 });
 function validateWithRegions(
   value: unknown,
@@ -403,6 +430,18 @@ function validateWithRegions(
     ids = Object.keys(w.countries),
     has = (id: string) => ids.includes(id);
   if (w.rng && w.rng.intelligence !== w.seed) return false;
+  if (
+    w.airNavalReports &&
+    (new Set(w.airNavalReports.map((report) => report.country)).size !==
+      w.airNavalReports.length ||
+      w.airNavalReports.some(
+        (report) =>
+          !has(report.country) ||
+          report.day > w.day ||
+          report.day !== w.airNavalReports![0].day,
+      ))
+  )
+    return false;
   // Receipts may refer to completed or destroyed assets, but their issuer and
   // execution time must belong to this campaign. Never repair a corrupt ledger:
   // doing so could allow an already-paid command to execute again after loading.

@@ -1,0 +1,117 @@
+.report {
+  min-width: 0;
+  margin: 12px 0 16px;
+  padding: 12px;
+  border: 1px solid #566050;
+  border-radius: 6px;
+  background: linear-gradient(135deg, #243129, #18241f);
+  color: #e9e6d6;
+  font-variant-numeric: tabular-nums;
+}
+.header {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+}
+.header > div {
+  min-width: 0;
+}
+.report .heading {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.report .date,
+.report .notice {
+  margin: 5px 0 0;
+  color: #bac4b7;
+  font-size: 11px;
+  line-height: 1.55;
+}
+.report .date strong {
+  color: #d9d7bd;
+  font-weight: 500;
+}
+.headlines {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  margin: 12px 0 8px;
+}
+.headlines .metric {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #3b493d;
+  border-radius: 4px;
+  background: #15221b;
+}
+.metric dt {
+  color: #bbc6b8;
+  font-size: 10px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.metric dd {
+  margin: 4px 0 0;
+  color: #ead9a5;
+  font-size: 15px;
+  line-height: 1.25;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.metric dd[data-tone="loss"] {
+  color: #efb2a5;
+}
+.metric dd small {
+  font-size: 10px;
+  font-weight: 400;
+}
+.breakdown {
+  border-top: 1px solid #3e4c3f;
+}
+.breakdown summary {
+  display: list-item;
+  min-height: 40px;
+  padding: 12px 2px 9px;
+  color: #ded7b7;
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1.4;
+}
+.breakdown summary:focus-visible {
+  outline: 2px solid #d6c48d;
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+.report .subheading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 14px 0 7px;
+  font-size: 12px;
+  color: #e4ddc5;
+}
+.rows {
+  margin: 0;
+}
+.rows .metric {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(65px, auto);
+  align-items: baseline;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid #344237;
+}
+.rows .metric dd {
+  margin: 0;
+  font-size: 12px;
+  text-align: right;
+}
+@media (max-width: 700px) {
+  .report {
+    padding: 10px;
+  }
+  .breakdown summary {
+    min-height: 44px;
+  }
+}

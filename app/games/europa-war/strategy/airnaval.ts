@@ -1,18 +1,12 @@
 import { AIRCRAFT, SEA_ZONES, SHIPS } from "./advanced-catalog";
+import { resolveAirNavalDay } from "./airnaval-resolution";
 import { current, isDraft } from "immer";
 import { mapDistance } from "./geography-distance";
-import {
-  portZone,
-  seaRoute,
-  shipPower,
-  shipOperational,
-} from "./military-assets";
+import { portZone, seaRoute } from "./military-assets";
 import {
   atWar,
-  capacity,
   clamp,
   controlled,
-  event,
   friendly,
   GEOGRAPHY,
   requireRule,
@@ -24,7 +18,6 @@ import type {
   AirWing,
   Country,
   Province,
-  SeaZone,
   Warship,
   World,
 } from "./types";
@@ -402,207 +395,5 @@ export function quickNavalOrder(
   return assigned;
 }
 export function airNavalDay(w: World) {
-  // Snapshot opposed strength so country iteration order does not decide combat.
-  const pressure: Record<string, number> = {};
-  const loads = baseLoads(w);
-  const powerCache = new Map<string, number>();
-  const power = (id: string, province: string) => {
-    const key = `${id}:${province}`;
-    if (!powerCache.has(key))
-      powerCache.set(
-        key,
-        regionalAirPower(w, id, province, "superiority", loads),
-      );
-    return powerCache.get(key)!;
-  };
-  for (const c of Object.values(w.countries))
-    for (const wing of c.air.wings)
-      pressure[wing.id] = c.wars.reduce(
-        (n, id) => n + power(id, wing.target),
-        0,
-      );
-  const sea = Object.fromEntries(
-    Object.values(w.countries).map((c) => [
-      c.id,
-      Object.fromEntries(
-        (Object.keys(SEA_ZONES) as SeaZone[]).map((z) => [
-          z,
-          shipPower(c, z, true, w),
-        ]),
-      ),
-    ]),
-  ) as Record<string, Record<SeaZone, number>>;
-  for (const c of Object.values(w.countries)) {
-    if (c.capitulated) {
-      c.air.wings.forEach((a) => {
-        a.mission = "idle";
-      });
-      c.navy.ships.forEach((s) => {
-        s.mission = "idle";
-      });
-      continue;
-    }
-    for (const wing of c.air.wings) {
-      if (!friendly(w, c.id, w.provinces[wing.base].controller)) {
-        const safe = controlled(w, c.id).find((p) => p.buildings.airfield > 0);
-        if (!safe) {
-          wing.count = 0;
-          continue;
-        }
-        wing.base = safe.id;
-        wing.target = safe.id;
-        wing.mission = "idle";
-        wing.readiness *= 0.5;
-        wing.count *= 0.8;
-      }
-      const replacement = Math.max(
-        0,
-        Math.min(2, wing.size - wing.count, c.equipment[wing.model]),
-      );
-      wing.count += replacement;
-      c.equipment[wing.model] -= replacement;
-      if (wing.mission === "idle") {
-        wing.readiness = clamp(wing.readiness + 6);
-        continue;
-      }
-      const controller = w.provinces[wing.target].controller,
-        hostile = atWar(w, c.id, controller);
-      if (
-        (!friendly(w, c.id, controller) && !hostile) ||
-        (["strategic", "naval"].includes(wing.mission) && !hostile) ||
-        (wing.mission === "naval" && !GEOGRAPHY[wing.target].port)
-      ) {
-        wing.mission = "idle";
-        continue;
-      }
-      const fuel = wing.count * AIRCRAFT[wing.model].fuel;
-      const efficiency = wingEfficiency(w, c, wing, loads);
-      if (efficiency <= 0 || c.stock.fuel < fuel) {
-        wing.readiness = clamp(wing.readiness + 1);
-        continue;
-      }
-      c.stock.fuel -= fuel;
-      wing.readiness = clamp(wing.readiness + 0.5);
-      wing.experience = clamp(wing.experience + 0.05);
-      const enemy = pressure[wing.id],
-        escort = power(c.id, wing.target);
-      const interception = clamp((escort + 10) / (enemy + 10), 0.15, 1);
-      const target = w.provinces[wing.target];
-      const flak = hostile ? target.buildings.antiAir : 0;
-      wing.count = Math.max(
-        0,
-        wing.count - Math.min(wing.count * 0.1, enemy * 0.0015 + flak * 0.015),
-      );
-      if (wing.mission === "strategic" && hostile) {
-        target.damage = clamp(
-          target.damage +
-            (wing.count *
-              (wing.model === "strategicBomber" ? 0.12 : 0.04) *
-              efficiency *
-              interception) /
-              (1 + flak * 0.35 + target.buildings.radar * 0.15),
-        );
-      }
-      if (wing.mission === "recon" && hostile)
-        c.intel[controller] = {
-          level: Math.max(
-            c.intel[controller]?.level ?? 0,
-            55 + Math.min(20, wing.count),
-          ),
-          expires: w.day + 14,
-        };
-      if (wing.mission === "naval" && hostile) {
-        const fleet = w.countries[controller].navy.ships.filter(
-          (s) =>
-            s.zone === portZone(target.id) &&
-            s.mission !== "idle" &&
-            !s.transit,
-        );
-        for (const s of fleet)
-          s.health = Math.max(
-            0,
-            s.health -
-              (wing.count * efficiency * interception * 0.025) /
-                Math.max(1, fleet.length),
-          );
-      }
-    }
-    c.air.wings = c.air.wings.filter(
-      (a) => a.count > 0 || c.equipment[a.model] > 0,
-    );
-    for (const ship of c.navy.ships) {
-      if (ship.transit) {
-        ship.transit--;
-        continue;
-      }
-      const d = SHIPS[ship.model];
-      const hasPort =
-        friendly(w, c.id, w.provinces[ship.port].controller) &&
-        !!seaRoute(w, c.id, portZone(ship.port), ship.zone);
-      if (!hasPort) {
-        ship.health = Math.max(0, ship.health - 0.3);
-        continue;
-      }
-      if (ship.mission === "idle") {
-        const repair = Math.min(
-          100 - ship.health,
-          (capacity(w, c.id, "dock") * 1.5) /
-            Math.max(
-              1,
-              c.navy.ships.filter((s) => s.mission === "idle" && s.health < 100)
-                .length,
-            ),
-          c.stock.steel * 2,
-        );
-        ship.health += repair;
-        c.stock.steel = Math.max(0, c.stock.steel - repair / 2);
-        continue;
-      }
-      if (c.stock.fuel < d.fuel) continue;
-      c.stock.fuel -= d.fuel;
-      const opposition = c.wars.reduce((n, id) => n + sea[id][ship.zone], 0);
-      const screens = c.navy.ships
-        .filter((s) => s.zone === ship.zone && shipOperational(w, c, s))
-        .reduce((n, s) => n + (SHIPS[s.model].antiSub * s.health) / 100, 0);
-      const submarine = c.wars.reduce(
-        (n, id) =>
-          n +
-          w.countries[id].navy.ships.filter(
-            (s) =>
-              s.zone === ship.zone &&
-              s.mission === "raid" &&
-              shipOperational(w, w.countries[id], s),
-          ).length,
-        0,
-      );
-      const loss =
-        (opposition * 0.018) /
-          d.armor /
-          Math.max(
-            1,
-            c.navy.ships.filter(
-              (s) => s.zone === ship.zone && s.mission !== "idle",
-            ).length,
-          ) +
-        (ship.model !== "submarine" ? (submarine * 0.08) / (1 + screens) : 0);
-      ship.health = clamp(ship.health - loss);
-      if (opposition) ship.experience = clamp(ship.experience + 0.1);
-      ship.aircraft = Math.max(0, ship.aircraft - loss * 0.04);
-      if (ship.health < 30 && ship.health > 0) {
-        const route = seaRoute(w, c.id, ship.zone, portZone(ship.port));
-        if (route) {
-          ship.zone = portZone(ship.port);
-          ship.transit = (route.length - 1) * 3;
-          ship.mission = "idle";
-        }
-      }
-      if (!ship.health && c.id === w.player)
-        event(
-          w,
-          `${ship.name}, ${SEA_ZONES[ship.zone].name} muharebesinde battı.`,
-          "war",
-        );
-    }
-    c.navy.ships = c.navy.ships.filter((s) => s.health > 0);
-  }
+  resolveAirNavalDay(w, wingEfficiency);
 }

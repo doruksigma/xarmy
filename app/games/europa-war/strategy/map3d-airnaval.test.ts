@@ -225,31 +225,37 @@ test("Yakıtı olmayan düşman gemisine gerçek hava saldırısı görünür; i
   );
 });
 
-test("Önceki geminin tükettiği ortak yakıt, son gemiye sahte deniz ateşi yazmaz", () => {
-  const before = battle();
-  before.countries = Object.fromEntries([
-    ["turkey", before.countries.turkey],
-    ...Object.entries(before.countries).filter(([id]) => id !== "turkey"),
-  ]);
-  const turkey = before.countries.turkey,
-    bulgaria = before.countries.bulgaria;
-  turkey.air.wings = [];
-  turkey.navy.ships.push(ship("fuel-starved-second", "turkey-1"));
-  turkey.stock.fuel = 0.5;
-  bulgaria.air.wings = [
-    wing("enemy-naval-bomber", "bulgaria-2", "turkey-1", "naval", "bomber"),
-  ];
-  const after = settle(before);
-  const second = after.countries.turkey.navy.ships.find(
-    (item) => item.id === "fuel-starved-second",
-  )!;
-  assert.ok(second.health < 100);
-  assert.equal(second.experience, 0);
-  const outcome = detectAirNavalOutcomes(before, after).find(
-    (item) => item.targetId === second.id,
-  );
-  assert.equal(outcome?.kind, "navalStrike");
-  assert.equal(outcome?.sourceId, "enemy-naval-bomber");
+test("Ortak yakıtın yetmediği gemi liste sırasından bağımsız sahte deniz ateşi üretmez", () => {
+  for (const reverse of [false, true]) {
+    const before = battle();
+    const turkey = before.countries.turkey,
+      bulgaria = before.countries.bulgaria;
+    turkey.air.wings = [];
+    // Scarce fuel now follows stable IDs, not the order of the UI asset list.
+    const unfundedId = "z-fuel-starved";
+    turkey.navy.ships.push(ship(unfundedId, "turkey-1"));
+    if (reverse) turkey.navy.ships.reverse();
+    turkey.stock.fuel = 0.5;
+    bulgaria.air.wings = [
+      wing("enemy-naval-bomber", "bulgaria-2", "turkey-1", "naval", "bomber"),
+    ];
+    const after = settle(before);
+    const unfunded = after.countries.turkey.navy.ships.find(
+      (item) => item.id === unfundedId,
+    )!;
+    assert.ok(unfunded.health < 100);
+    assert.equal(unfunded.experience, 0);
+    assert.ok(
+      after.countries.turkey.navy.ships.find((item) => item.id === "own-ship")!
+        .experience > 0,
+      "The affordable ship really participates in either list order",
+    );
+    const outcome = detectAirNavalOutcomes(before, after).find(
+      (item) => item.targetId === unfunded.id,
+    );
+    assert.equal(outcome?.kind, "navalStrike");
+    assert.equal(outcome?.sourceId, "enemy-naval-bomber");
+  }
 });
 
 test("Uzak gizli düşman hangarları ve donanmaları gösterilmez; istihbarat süresi dolunca gizlenir", () => {

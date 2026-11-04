@@ -254,6 +254,35 @@ export interface GameEvent {
   text: string;
   kind: "info" | "war" | "economy" | "politics";
 }
+/** Actual daily effects, not projected combat odds. Only the latest settlement
+ * is kept, with at most one aggregate per country. Fractional aircraft counts
+ * retain the existing abstract loss/replacement model. */
+export interface AirNavalDailyReport {
+  country: string;
+  day: number;
+  air: {
+    flown: number;
+    combatLosses: number;
+    baseLosses: number;
+    reinforced: number;
+    fuelSpent: number;
+    bombingDamage: number;
+    navalDamage: number;
+    /** Number of participating wings encountering fighters or ground AA. */
+    engagements: number;
+  };
+  navy: {
+    active: number;
+    combatDamage: number;
+    attritionDamage: number;
+    sunk: number;
+    aircraftLost: number;
+    repaired: number;
+    fuelSpent: number;
+    /** Number of ships exchanging fire or hit by naval strikes. */
+    engagements: number;
+  };
+}
 export interface World {
   /** Recorded only after a protocol command succeeds. */
   commandState?: CommandState;
@@ -275,6 +304,8 @@ export interface World {
   provinces: Record<string, Province>;
   armies: Army[];
   battles: Battle[];
+  /** Absent in legacy saves and before the first daily air/naval settlement. */
+  airNavalReports?: AirNavalDailyReport[];
   trades: Trade[];
   fronts: Front[];
   plans: OffensivePlan[];

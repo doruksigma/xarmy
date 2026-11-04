@@ -23,6 +23,77 @@ iddia edilmez. Kod incelemesi, çalışma zamanı doğrulamasının yerini tutma
   sürümünün tarihsel kaydıdır ve burada değiştirilmez. Sonradan eklenen 3D
   sistemler yeni değerlendirmeye dahildir.
 
+## Eşzamanlı hava/deniz hesabı ve günlük harekât raporu — 4 Kasım 2026
+
+Şartnamenin 04–07, 55–64 ve 96–98 bölümlerindeki günlük savaş temeli ilerletildi.
+`airnaval-resolution.ts` önce üs tahliyesi, gerçek stoktan takviye, tersane
+onarımı ve yakıt tahsisini hazırlar; iki tarafın saldırısını aynı hazırlanmış
+kuvvet durumundan hesaplar. Hasarlar toplandıktan sonra kayıp, batma ve geri
+çekilme uygulanır. Ülke veya birlik listesinin sırası ilk vuruş avantajı vermez.
+
+- Yakıtı gerçekten karşılanan kanatlar ve gemiler savaş gücü üretir. Yakıt veya
+  uçak takviyesi yetersizse öncelik kalıcı varlık kimliğine göredir; mevcut hava
+  görevlerinin donanmadan önce yakıt alması kuralı korunur. Yakıtsız, görevdeki
+  gemi ateş edemez fakat denizde hedef olmaya devam eder. İntikaldeki veya
+  dinlenen gemi bu günlük muharebeye katılmaz.
+- Aynı günün bombardımanı karşı tarafın o gün için hesaplanan üs verimini
+  geriye dönük değiştirmez. Geri çekilen denizaltı da o günün planlanmış saldırı
+  hesabından silinmez. Birleşik hava/deniz hasarı geminin kalan gövdesini aşamaz;
+  tek gemi bir kez batar ve güvertedeki kalan uçaklar gerçek kayba eklenir.
+- Tersanelerin günlük toplam onarım kapasitesi baştan sabitlenir. Tamir edilen
+  küçük hasarlı bir geminin kalan payı diğerlerine aktarılır; liste ilerledikçe
+  yeni kapasite oluşmaz. Gerçek onarıma karşılık gelen çelik bir kez düşülür.
+- **Hava / Deniz → Günlük harekât raporu** oyuncunun son tamamlanmış günündeki
+  uçak kaybını, batan gemileri, yakıtı ve verdiği tesis hasarını gösterir.
+  Açılır ayrıntılarda uçuş, çatışmaya katılım, üs/tahliye kaybı, takviye,
+  gemilere verilen hava hasarı, alınan gövde hasarı, ikmalsizlik ve onarım vardır.
+  Rapor gerçek çözümden gelir; düşman ülkenin raporu oyuncuya açılmaz.
+- `World.airNavalReports` her ülke için yalnız son günlük özeti saklar; sınırsız
+  geçmiş birikmez. Sayı/sınır, ülke, aynı gün, gelecek tarih ve yinelenen kayıt
+  doğrulaması vardır. Raporu olmayan eski kayıt aynen açılır ve ilk gün
+  hesabına kadar arayüz açıklama gösterir. Worker farkları ve kaydet/yükle
+  devamlılığı raporu taşır; batmış geminin raporu kaybolmaz.
+
+Sessiz Node 24/Linux ölçümünde 92 ülke ve 909 bölgeyle, her uygulama için
+ısınma sonrası 56 günlük çağrı karşılaştırıldı. 100 kanat/155 gemili yükte eski
+ve yeni medyan **1,66 / 1,50 ms**, p95 **4,95 / 5,87 ms**; dört ülkenin
+40 kanat/120 gemi sınırına ulaştığı toplam 254 kanat/613 gemili yükte medyan
+**19,05 / 2,94 ms**, p95 **32,46 / 11,93 ms** oldu. Değişen savaş kuralları
+nedeniyle eski ve yeni sonuçların aynı olması beklenmez; bu eşit sonuçlu bir
+hızlandırma veya telefon FPS ölçümü değildir. Her uygulamanın kendi tekrarları
+aynı dünya özetini verdi, son kayıtları doğrulamadan geçti. Ölçüm raporu:
+`/workspace/scratch/airnaval-resolution-audit.json`.
+
+**Doğrulama:** 733 motor/kayıt/harita/AI kontrolü doğrulandı. İlk geniş
+koşuda 732 test geçti; tek hata eski bir 3D efekt testinin yakıtı liste sırasına
+göre alan gemiyi varsaymasıydı. Veri kimlikleri yeni sabit önceliğe uygun hale
+getirilip her iki liste sırası için aynı sonuç istendi; ilgili 14 testin tamamı
+yeniden geçti. Üretim kodunu bu beklentiye uyduran bir geri dönüş yapılmadı.
+Altı farklı ülkeyle 90 günlük savaş/kayıt devamlılığı geniş koşuya dahildir;
+bir yıllık ve 1936–1945 uzun sefer testleri bu çalıştırmanın dışında tutuldu.
+
+`npm run build` geçti. `scripts/test-europa-airnaval-browser.cjs` üretim
+sunucusunda **7/7 kabul kontrolünü** geçti; sayfa hatası yok. Gerçek worker'ın
+gün sonu raporu, bütün kaydı ve indirilen JSON, aynı saatlerdeki motorla
+birebir eşleşti. Ağ kapalıyken açık sayfada ikinci güne ilerleme ve kaydet/yükle,
+düşman raporunun gösterilmemesi, kanat/gemi manuel emirleri ve hava yardımcısının
+donanmayı kendiliğinden açmaması doğrulandı. Masaüstü ve 390 piksel dokunmatik
+mobil emülasyonunda özet/ayrıntı/manuel kontrol ekranları görsel incelendi;
+raporda yatay taşma yoktu. Bu, fiziksel telefon testi veya yeni bir çevrimdışı
+ilk açılış doğrulaması değildir.
+
+Yerel kanıtlar `/workspace/scratch/` altındaki `europa-airnaval-regression.log`,
+`europa-airnaval-visual-regression.log`, `europa-airnaval-build.log` ve
+`europa-airnaval-browser/report.json` dosyalarıdır.
+
+**Kapsam sınırı:** Bu aşama günlük savaş çözümünü düzeltir. Saatler boyunca
+geçerli ödenmiş görev/yerel yakıt defteri henüz yoktur; mevcut anlık destek
+sorguları kalan yakıtı okumaya devam eder. 3D efekt bağdaştırıcısı hâlâ iki
+anlık durumun net farkını kullanır; aynı günkü takviyenin kaybı gizleyebildiği
+ve karma hasarın tek tek kaynağa ayrılamadığı durumlar için varlık bazlı olay
+defteri sonraki bağımlılıktır. Fazlı deniz teması, gerçek taşıyıcı kanatları,
+pilotlar ve genel sevkiyat/ikmal muhasebesi tamamlanmış sayılmaz.
+
 ## Sefer temposu, başkent savunması ve daha etkin AI — 4 Kasım 2026
 
 Son kullanıcı önceliği doğrultusunda zaman ve kara muharebesi hızlandırıldı:
@@ -946,8 +1017,8 @@ yerine kullanılamaz.
 | 44–46 Komuta, karargâh, kaptan | General beceri/tecrübesi, 12 birlik sınırı, otomatik yeni komutan ve hedef sınır ataması (`commanders.ts`, `commander-roster.ts`). | Ordu grubu/tiyatro, sahra karargâhı, emir gücü, tümen komutanları, gemi kaptanları ve madalyalar. |
 | 47–51 Hareket, cephe, savaş, kuşatma | Saatlik grup hareketi; arazi, mesafe ve mevcut ikmale göre maliyetli manuel/AI emir rotası, komutan sınır dağıtımı ve saldırı planı; hedef devlete özel saldır/savun, eşzamanlı hasar ve geri çekilme (`land.ts`, `land-movement-cost.ts`, `planning.ts`, `commanders.ts`). | Hava etkisi, stratejik demiryolu nakli, genişlik/rezerv/taktik/zırh/delme ve süreli geri çekilme. |
 | 52–54 İkmal ve taşıma | Başkent bağlantısı, liman/deniz erişimi, yerel altyapı/hasar/yığılma etkileri; oyuncuya ait bağlı ağda görsel trenler (`world.ts`, `map3d-rail-network.ts`). | Ortak tüketilen kenar/düğüm kapasitesi, gerçek tren/kamyon/konvoy tahsisi, sevkiyatlar, son kilometre ve yerel rezervler. Görsel trenler bu hesapların yerine geçmez. |
-| 55–58 Hava kuvvetleri | Stoktan kanat, üs yükü/menzil/hazırlık/yakıt, görevler, kayıp, bombardıman ve paraşüt koşulları (`airnaval.ts`, `operations.ts`). | Pilot/tasarım sürümleri, tespit/temas/sorti evreleri, ayrıntılı görev bölgesi, bina bazlı hasar ve yükle paylaşılan nakliye kapasitesi. |
-| 59–64 Donanma ve çıkarma | Tekil gemi, görev, intikal, yakıt, hasar/onarım, eskort/baskın ve taşıyıcı uçağı stoku (`airnaval.ts`, `military-assets.ts`). | Görev kuvveti hiyerarşisi, fazlı deniz muharebesi, mayınlar/antlaşmalar, gerçek taşıyıcı kanatları ve hazırlık/konvoy/yük tabanlı çıkarma. |
+| 55–58 Hava kuvvetleri | Stoktan kanat, üs yükü/menzil/hazırlık/yakıt, görevler, yakıtı ödenmiş kuvvetlerle eşzamanlı günlük kayıp/bombardıman ve paraşüt koşulları (`airnaval.ts`, `airnaval-resolution.ts`, `operations.ts`). | Pilot/tasarım sürümleri, tespit/temas/sorti evreleri, ayrıntılı görev bölgesi, bina bazlı hasar ve yükle paylaşılan nakliye kapasitesi. |
+| 59–64 Donanma ve çıkarma | Tekil gemi, görev, intikal, yakıt, eşzamanlı günlük hasar, sabit bütçeli onarım, eskort/baskın ve taşıyıcı uçağı stoku (`airnaval.ts`, `airnaval-resolution.ts`, `military-assets.ts`). | Görev kuvveti hiyerarşisi, fazlı deniz muharebesi, mayınlar/antlaşmalar, gerçek taşıyıcı kanatları ve hazırlık/konvoy/yük tabanlı çıkarma. |
 | 65–67 Diplomasi ve ittifak | Kabul hesabı, gerekçe, savaş, pakt, geçiş, yardım, ittifak ve barış (`diplomacy.ts`, `conference.ts`). | Süreçli teklifler, ittifak liderlik/kural/hedef/katkı varlığı, ortak tiyatrolar ve sahibi–denetleyicisi ayrı sefer kuvvetleri. |
 | 68–70 İstihbarat ve savaş sisi | Ajan eğitimi, süreli operasyon/risk, sabotaj/propaganda/direniş ve süreli istihbarat seviyesi (`operations.ts`). | Bireysel ajan/ağ, seyahat ve hazırlık, kaynak rezervasyonu, işbirliği ve kategorili gözlem geçmişi; AI için oyuncuyla ortak eksik bilgi modeli yok. |
 | 71–73 İşgal, bağlı devlet, iç savaş | Sahip/kontrol ayrımı, direniş/uyum/garnizon tüketimi, kukla/bağımsızlık ve gerçek iç savaş bölünmesi (`politics.ts`, `operations.ts`). | Ayrı iade edilebilir garnizon tahsisi, özerklik düzeyleri/sürgün, bölgesel sadakat, gönüllüler ve sınırlı sınır çatışmaları. |
@@ -960,19 +1031,20 @@ yerine kullanılamaz.
 | 93 Kayıt ve tekrar oynatma | V3 saatli kayıt, v1/v2 geçişi, boyut/şema/referans denetimi, yerel yuvalar ve IndexedDB otomatik kayıt (`storage.ts`, `storage-browser.ts`). | Tam komut günlüğü+snapshot replay, oyun/senaryo/içerik hash başlığı, içerik paketi doğrulaması. Sınırlı, doğrulanan komut makbuzları bu iterasyonda eklendi. |
 | 94 Performans ve paketleme | Dört kalite seviyesi, instancing/görünürlük sınırları, FPS/geometri/doku ölçümü; saatlik worker fark aktarımı ve ayrı hesaplama/paket süreleri; çevrimdışı paket, WebGL kaybında 2D dönüş (`simulation-state.ts`, `SimulationMetrics.tsx`, `map3d-renderer.ts`, `offline-assets.ts`). | Otomatik WebGL geri yükleme, bölgesel varlık yükleme ve 10 yıllık bellek/perf değerlendirmesi. Üç yükte aktarım deneyi fiziksel cihaz testi veya 60 FPS garantisi değildir. |
 | 95 Erişilebilirlik ve öğretici | Türkçe paneller, dokunma/klavye erişimi, sistem veya kullanıcı tercihli azaltılmış hareket (`WarMap3D.tsx`, `WarPanels.tsx`). | İngilizce/anahtarlı yerelleştirme, değiştirilebilir tuşlar, ayrıntılı UI ölçeği, ansiklopedi ve gerçek eylemlerle ilerleyen öğreticiler. |
-| 96 Raporlar ve kampanya sonu | Ekonomik geçmiş grafikleri ve olay günlüğü (`WarPanels.tsx`, `types.ts`). | Aylık muhasebe raporu, birim/gemi tarihçesi, ölçülen kampanya hedefleri/başarımlar, zaman çizelgesi ve rapor dışa aktarımı. |
+| 96 Raporlar ve kampanya sonu | Ekonomik geçmiş grafikleri, olay günlüğü ve gerçek günlük hava/deniz kayıp–yakıt–hasar özeti (`WarPanels.tsx`, `AirNavalReport.tsx`, `types.ts`). | Aylık muhasebe raporu, birim/gemi tarihçesi, ölçülen kampanya hedefleri/başarımlar, zaman çizelgesi ve rapor dışa aktarımı. |
 | 97–98 Değişmezler ve uçtan uca test | Motor, stok, savaş, AI, kayıt, worker ve harita regresyonları; çok ülkeyle 90 günlük ve 1936–1945 tarihsel kampanya testleri (`advanced.test.ts`, `campaign-scenarios.test.ts`, `engine.test.ts`, `simulation.test.ts`). | Saatlik kara ve kayıt regresyonları eklendi. Sevkiyat/kapasiteli ikmal/HQ/proje sistemleri henüz yok; bunların bütünleşik kabul testleri geçti denemez. Genel property testleri ve fiziksel cihazlarda uzun sefer bellek/FPS profili ayrı iştir. |
 | 99–100 Teslim ve referanslar | Bağımlılığa göre uygulama sırası bu belgede; özgün şartname değişmeden arşivlendi. | Sonraki modülleri ayrı kabul etme ve kaynakların bağımsız doğrulanması. Bütün özellikler tamamlandı veya canlıya dağıtıldı iddiası yok. |
 
 ## Sonraki bağımlılık sırası
 
-1. Hava/deniz çözümünü başlangıç görüntüsünden eşzamanlı işlemeye taşı.
-   Ayrı kayıtlı RNG akışları, dönemsel dünya özeti ve worker fark aktarımı
-   4 Kasım aşamasında uygulandı; bütün alanların sıralamadan bağımsız çözümü
-   ve tam tekrar oynatma hâlâ ayrı iştir.
-2. Personel/ekipman sürümü, rezervasyon, sevkiyat ve paylaşılan ikmal kapasitesini
+1. Personel/ekipman sürümü, rezervasyon, sevkiyat ve paylaşılan ikmal kapasitesini
    ortak muhasebeye bağla. Tasarımcılar, HQ, hava/deniz harekâtı ve ülke paketleri
    bu temeli atlayarak bağımsız ödül veya dekor olarak eklenmemeli.
+2. Ödenmiş görev katılımını ve varlık bazlı gerçek kayıp/hasar olaylarını
+   kayda bağla; anlık destek sorguları ve 3D efektler aynı defteri kullansın.
+   Eşzamanlı günlük hava/deniz hesabı, ayrı kayıtlı RNG akışları, dönemsel dünya
+   özeti ve worker fark aktarımı uygulandı; bütün alanların sıralamadan bağımsız
+   çözümü ve tam tekrar oynatma hâlâ ayrı iştir.
 
 Bu kayıt yerel üretim derlemesi ve tarayıcı testlerinin sonucudur. Canlı
 xarmygames.online dağıtımı bu çalışmada bağımsız doğrulanmadı.

@@ -2,6 +2,7 @@
 import CommandCenter from "./CommandCenter";
 import ArmyRecruitment from "./ArmyRecruitment";
 import AirNavalControl from "./AirNavalControl";
+import AirNavalReport from "./AirNavalReport";
 import UnitResearchGuide from "./UnitResearchGuide";
 import MilitaryIcon, {
   unitIcon,
@@ -1424,6 +1425,7 @@ export default function WarPanels({
           <MilitaryIcon name="operations" size={26} />
           Harekât merkezi
         </h2>
+        <AirNavalReport w={w} />
         {targetSelect}
         <AirNavalControl w={w} command={command} target={target} />
         <details className={styles.fold}>
