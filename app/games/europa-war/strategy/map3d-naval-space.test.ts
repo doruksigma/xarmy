@@ -3,9 +3,10 @@ import assert from "node:assert/strict";
 import { SEA_ZONES } from "./advanced-catalog";
 import { containsProvincePoint, provincePolygons } from "./map3d-geometry";
 import { createAirNavalGeometry } from "./map3d-airnaval-models";
-import { airNavalPhase } from "./map3d-airnaval-state";
 import {
   NAVAL_FOOTPRINT_RADIUS,
+  NAVAL_MODEL_SCALE,
+  navalFormationLayout,
   NAVAL_PRESENTATION,
   navalPatrolPose,
 } from "./map3d-naval-space";
@@ -85,39 +86,86 @@ test("Tüm dünya deniz bölgelerinin devriye, gövde ve dümen suyu diski gerç
   }
 });
 
-test("Her ülkenin tüm devriye evrelerinde gövde ve dümen suyu örnekleri yalnızca suda kalır", () => {
+test("Filo yerleşimi yoğun filolarda bile bütün gövdeleri ve izleri suda ve birbirinden ayrı tutar", () => {
   for (const zone of Object.keys(SEA_ZONES) as SeaZone[])
-    for (const country of map.countries)
-      for (const unitPhase of [0, 1])
-        for (let frame = 0; frame < 24; frame++) {
+    for (const count of [1, 4, 40, 160]) {
+      const slots = navalFormationLayout(zone, count);
+      assert.equal(slots.length, count);
+      const presentation = NAVAL_PRESENTATION[zone];
+      const waterRadius =
+        presentation.separation +
+        presentation.radius +
+        NAVAL_FOOTPRINT_RADIUS * presentation.scale;
+      const footprint =
+        NAVAL_FOOTPRINT_RADIUS * presentation.scale * NAVAL_MODEL_SCALE;
+      // A bound for every continuous animation phase, not only screenshot frames.
+      for (let i = 0; i < slots.length; i++) {
+        const slot = slots[i];
+        assert.ok(slot.scale > 0 && slot.scale <= 1);
+        assert.ok(
+          Math.hypot(slot.x, slot.y) +
+            slot.patrolRadius +
+            footprint * slot.scale <=
+            waterRadius + 1e-9,
+        );
+        for (let j = 0; j < i; j++) {
+          const other = slots[j];
+          const closest =
+            Math.hypot(slot.x - other.x, slot.y - other.y) -
+            slot.patrolRadius -
+            other.patrolRadius;
+          assert.ok(
+            closest > footprint * (slot.scale + other.scale),
+            `${zone}: ${count} ships, ${i}/${j}`,
+          );
+        }
+      }
+      for (const index of new Set([
+        0,
+        Math.floor((count - 1) / 2),
+        count - 1,
+      ])) {
+        const slot = slots[index];
+        for (let frame = 0; frame < 8; frame++) {
           const pose = navalPatrolPose(
             zone,
-            unitPhase,
-            airNavalPhase(country.id),
-            (frame / 24) * Math.PI * 2,
+            slot,
+            (frame / 8) * Math.PI * 2,
+            true,
           );
-          assert.equal(onLand(pose.x, pose.y), false, `${zone}/${country.id}`);
+          assert.equal(onLand(pose.x, pose.y), false, `${zone}/${count}`);
           for (let edge = 0; edge < 8; edge++) {
-            const angle = (edge / 8) * Math.PI * 2,
-              footprint =
-                NAVAL_FOOTPRINT_RADIUS * NAVAL_PRESENTATION[zone].scale;
+            const angle = (edge / 8) * Math.PI * 2;
             assert.equal(
               onLand(
-                pose.x + Math.cos(angle) * footprint,
-                pose.y + Math.sin(angle) * footprint,
+                pose.x + Math.cos(angle) * footprint * slot.scale,
+                pose.y + Math.sin(angle) * footprint * slot.scale,
               ),
               false,
-              `${zone}/${country.id}: ${frame}/${edge}`,
+              `${zone}/${count}: ${frame}/${edge}`,
             );
           }
         }
+        assert.deepEqual(
+          navalPatrolPose(zone, slot, 0, false),
+          navalPatrolPose(zone, slot, Math.PI, false),
+          "Idle ships must not drift",
+        );
+      }
+    }
 });
 
 test("Gerçek gemi geometrileri ve en büyük dümen suyu güvenlik zarfına sığar", () => {
-  for (const model of ["carrier", "ship", "submarine"] as const) {
+  for (const model of [
+    "carrier",
+    "ship",
+    "destroyer",
+    "battleship",
+    "submarine",
+  ] as const) {
     const geometry = createAirNavalGeometry(model),
       positions = geometry.getAttribute("position"),
-      scale = model === "ship" ? 1.25 : 1;
+      scale = model === "battleship" ? 1.08 : model === "destroyer" ? 0.94 : 1;
     for (let index = 0; index < positions.count; index++) {
       // Include the maximum animated roll instead of trusting a flat footprint.
       for (const roll of [-0.015, 0.015]) {

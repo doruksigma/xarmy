@@ -62,8 +62,12 @@ test("Aynı gündeki iki farklı ele geçirme birbirini silmez", () => {
   w.countries.germany.wars = ["poland"];
   w.countries.poland.wars = ["germany"];
   w.armies = w.armies.filter((a) => a.country === "germany");
-  for (const [i, p] of ["poland-2", "poland-1"].entries())
+  // Both completed moves must be real border legs. A capital-to-enemy
+  // teleport is now correctly repaired before occupation is resolved.
+  for (const [i, p] of ["poland-2", "poland-1"].entries()) {
+    w.armies[i].province = "germany-7";
     w.armies[i].move = { to: p, progress: 10, days: 2 };
+  }
   resolveLandDay(w);
   assert.equal(w.provinces["poland-2"].controller, "germany");
   assert.equal(w.provinces["poland-1"].controller, "germany");

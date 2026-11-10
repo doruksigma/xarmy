@@ -347,17 +347,26 @@ test("Offensive plans use weighted lookahead but issue only the currently legal 
 test("Equal-cost choices stay deterministic when adjacency and group iteration order change", () => {
   const { world, army } = campaign();
   const cost = createMovementTimeEstimator(world, [army]);
-  assert.equal(
-    pathCost(cost, origin, ["turkey-city-14", "turkey-city-13", "turkey-1"]),
-    pathCost(cost, origin, ["turkey-city-12", "turkey-3", "turkey-1"]),
-    "The fixture contains two genuinely equal-time approaches",
-  );
-  const first = routeTo(world, army, "turkey-1");
+  // Use a real, connected two-leg diamond. The former fixture's
+  // Bursa–Istanbul branch crossed Marmara and was never a land route.
+  const candidates = new Map<string, string[][]>();
+  for (const edge of GEOGRAPHY[origin].neighbors.filter((e) => !e.sea))
+    for (const end of GEOGRAPHY[edge.id].neighbors.filter(
+      (e) => !e.sea && e.id !== origin,
+    )) {
+      const path = [edge.id, end.id];
+      const key = `${end.id}:${pathCost(cost, origin, path)}`;
+      candidates.set(key, [...(candidates.get(key) ?? []), path]);
+    }
+  const equal = [...candidates.values()].find((paths) => paths.length > 1)!;
+  assert.ok(equal, "The fixture contains two genuinely equal-time approaches");
+  const destination = equal[0].at(-1)!;
+  const first = routeTo(world, army, destination);
   const seed = world.seed;
   try {
     for (const province of Object.values(GEOGRAPHY))
       province.neighbors.reverse();
-    assert.deepEqual(routeTo(world, army, "turkey-1"), first);
+    assert.deepEqual(routeTo(world, army, destination), first);
   } finally {
     for (const province of Object.values(GEOGRAPHY))
       province.neighbors.reverse();

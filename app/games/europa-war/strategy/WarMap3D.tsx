@@ -172,7 +172,7 @@ function WarMap3D(
           </strong>
           <span>
             {theater === "air"
-              ? `${ownCountry.air.wings.reduce((n, wing) => n + wing.count, 0)} uçak · ${ownCountry.air.wings.filter((wing) => wing.mission !== "idle" && wing.count > 0).length} filoya görev atandı`
+              ? `${Math.round(ownCountry.air.wings.reduce((n, wing) => n + wing.count, 0))} uçak · ${ownCountry.air.wings.filter((wing) => wing.mission !== "idle" && wing.count > 0).length} filoya görev atandı`
               : `${ownCountry.navy.ships.filter((ship) => ship.health > 0).length} gemi · ${ownCountry.navy.ships.filter((ship) => ship.mission !== "idle" && ship.health > 0).length} gemiye görev atandı`}
           </span>
           <small>

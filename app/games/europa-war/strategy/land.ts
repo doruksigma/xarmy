@@ -1,7 +1,8 @@
 import { airSupport } from "./airnaval";
 import { commanderOrderAllows } from "./commander-roster";
 import { addWarScore, openConference } from "./conference";
-import { equipmentNeeds } from "./planning";
+import { resolveReinforcements } from "./reinforcements";
+import { isObsoleteLandEdge, isTraversableLandEdge } from "./land-corridors";
 import { seaEdgeOpen } from "./military-assets";
 import { TERRAINS, UNITS } from "./catalog";
 import {
@@ -70,77 +71,87 @@ function findMovementRoute(
   )
     return null;
   const travelTime = createMovementTimeEstimator(w, formation);
-  const previous: Record<string, string> = {};
-  const distance = new Map([[from, 0]]);
-  // Dijkstra's heap stays bounded by relaxed edges. Equal costs use stable
-  // province IDs, never army order, map iteration luck or the campaign RNG.
-  type Node = { id: string; cost: number };
-  const heap: Node[] = [];
-  const before = (a: Node, b: Node) =>
-    a.cost < b.cost || (a.cost === b.cost && a.id < b.id);
-  const push = (node: Node) => {
-    let index = heap.length;
-    heap.push(node);
-    while (index > 0) {
-      const parent = (index - 1) >> 1;
-      if (!before(node, heap[parent])) break;
-      heap[index] = heap[parent];
-      index = parent;
-    }
-    heap[index] = node;
-  };
-  const pop = () => {
-    const first = heap[0],
-      last = heap.pop()!;
-    if (heap.length) {
-      let index = 0;
-      while (index * 2 + 1 < heap.length) {
-        const left = index * 2 + 1,
-          right = left + 1;
-        const child =
-          right < heap.length && before(heap[right], heap[left]) ? right : left;
-        if (!before(heap[child], last)) break;
-        heap[index] = heap[child];
-        index = child;
+  // Prefer an accessible ground route even when a fleet could cut across a
+  // neighbouring bay. Sea transport is the fallback for disconnected islands.
+  const search = (includeSea: boolean): string[] | null => {
+    const previous: Record<string, string> = {};
+    const distance = new Map([[from, 0]]);
+    // Dijkstra's heap stays bounded by relaxed edges. Equal costs use stable
+    // province IDs, never army order, map iteration luck or the campaign RNG.
+    type Node = { id: string; cost: number };
+    const heap: Node[] = [];
+    const before = (a: Node, b: Node) =>
+      a.cost < b.cost || (a.cost === b.cost && a.id < b.id);
+    const push = (node: Node) => {
+      let index = heap.length;
+      heap.push(node);
+      while (index > 0) {
+        const parent = (index - 1) >> 1;
+        if (!before(node, heap[parent])) break;
+        heap[index] = heap[parent];
+        index = parent;
       }
-      heap[index] = last;
-    }
-    return first;
-  };
-  push({ id: from, cost: 0 });
-  while (heap.length) {
-    const node = pop();
-    if (node.cost !== distance.get(node.id)) continue;
-    if (node.id === to) {
-      const path = [to];
-      while (previous[path[0]] !== from) path.unshift(previous[path[0]]);
-      return path;
-    }
-    for (const edge of GEOGRAPHY[node.id].neighbors) {
-      if (
-        edge.sea &&
-        (strategic || !seaEdgeOpen(w, army.country, node.id, edge.id))
-      )
-        continue;
-      const controller = w.provinces[edge.id].controller;
-      if (
-        !friendly(w, army.country, controller) &&
-        !atWar(w, army.country, controller)
-      )
-        continue;
-      // A route may end in hostile territory, but cannot plan through uncaptured enemy land.
-      if (!strategic && atWar(w, army.country, controller) && edge.id !== to)
-        continue;
-      const cost = node.cost + travelTime(node.id, edge.id, edge.sea);
-      const known = distance.get(edge.id) ?? Number.POSITIVE_INFINITY;
-      if (cost < known) {
-        distance.set(edge.id, cost);
-        previous[edge.id] = node.id;
-        push({ id: edge.id, cost });
+      heap[index] = node;
+    };
+    const pop = () => {
+      const first = heap[0],
+        last = heap.pop()!;
+      if (heap.length) {
+        let index = 0;
+        while (index * 2 + 1 < heap.length) {
+          const left = index * 2 + 1,
+            right = left + 1;
+          const child =
+            right < heap.length && before(heap[right], heap[left])
+              ? right
+              : left;
+          if (!before(heap[child], last)) break;
+          heap[index] = heap[child];
+          index = child;
+        }
+        heap[index] = last;
+      }
+      return first;
+    };
+    push({ id: from, cost: 0 });
+    while (heap.length) {
+      const node = pop();
+      if (node.cost !== distance.get(node.id)) continue;
+      if (node.id === to) {
+        const path = [to];
+        while (previous[path[0]] !== from) path.unshift(previous[path[0]]);
+        return path;
+      }
+      for (const edge of GEOGRAPHY[node.id].neighbors) {
+        if (!edge.sea && !isTraversableLandEdge(node.id, edge.id)) continue;
+        if (
+          edge.sea &&
+          (!includeSea ||
+            strategic ||
+            !seaEdgeOpen(w, army.country, node.id, edge.id))
+        )
+          continue;
+        const controller = w.provinces[edge.id].controller;
+        if (
+          !friendly(w, army.country, controller) &&
+          !atWar(w, army.country, controller)
+        )
+          continue;
+        // A route may end in hostile territory, but cannot plan through uncaptured enemy land.
+        if (!strategic && atWar(w, army.country, controller) && edge.id !== to)
+          continue;
+        const cost = node.cost + travelTime(node.id, edge.id, edge.sea);
+        const known = distance.get(edge.id) ?? Number.POSITIVE_INFINITY;
+        if (cost < known) {
+          distance.set(edge.id, cost);
+          previous[edge.id] = node.id;
+          push({ id: edge.id, cost });
+        }
       }
     }
-  }
-  return null;
+    return null;
+  };
+  return search(false) ?? (strategic ? null : search(true));
 }
 export function combatPower(
   w: World,
@@ -292,7 +303,27 @@ export function resolveLandStep(w: World, elapsedDays = 1) {
     throw new Error("Kara simülasyon adımı 0–1 gün arasında olmalı.");
   if (elapsedDays === 0) return;
   const orderedArmies = [...w.armies].sort((a, b) => compareIds(a.id, b.id));
+  for (const army of orderedArmies) {
+    const next = army.move?.to ?? army.route[0];
+    if (!next || army.move?.kind === "paradrop") continue;
+    const edge = GEOGRAPHY[army.province].neighbors.find((e) => e.id === next);
+    if (
+      !edge ||
+      (isObsoleteLandEdge(army.province, next) &&
+        army.move?.kind !== "transport")
+    ) {
+      // Existing saves can retain a former straight-water shortcut. Preserve
+      // the issued final destination and repair it once, rather than strand
+      // the division at the shoreline with an impossible active leg.
+      const destination = army.route.at(-1) ?? next;
+      const replacement = routeTo(w, army, destination);
+      army.move = null;
+      army.route = replacement ?? [];
+    }
+  }
   if (!orderedArmies.length) {
+    // Orphaned paid cargo must still return or settle as a loss.
+    resolveReinforcements(w, new Set(), elapsedDays);
     w.battles = [];
     resolveCapitulations(w);
     return;
@@ -377,6 +408,7 @@ export function resolveLandStep(w: World, elapsedDays = 1) {
     attacked.get(to)!.add(a.country);
   }
   w.battles = [];
+  const reinforcementRecipients = new Set<string>();
   for (const a of orderedArmies) {
     if (a.strength <= 0) continue;
     const engaged =
@@ -384,37 +416,15 @@ export function resolveLandStep(w: World, elapsedDays = 1) {
       [...(attacked.get(a.province) ?? [])].some((id) =>
         atWar(w, id, a.country),
       );
-    const c = w.countries[a.country],
-      d = UNITS[a.type];
     a.supply = movementSupply(w, a, supplyAt(a.country, a.province));
     if (a.supply < 0.25) {
       casualty(w, a, 0.25 * elapsedDays, 2 * elapsedDays, false);
     } else if (!engaged) {
+      reinforcementRecipients.add(a.id);
       a.organization = clamp(
         a.organization + (a.move ? 1 : 3) * a.supply * elapsedDays,
       );
       a.morale = clamp(a.morale + 0.5 * a.supply * elapsedDays);
-      if (a.strength < 100 && c.manpower > 0) {
-        const needs = equipmentNeeds(a);
-        let fraction = Math.min(
-          0.004 * a.supply * elapsedDays,
-          (100 - a.strength) / 100,
-          c.manpower / d.men,
-        );
-        for (const [key, count] of Object.entries(needs))
-          fraction = Math.min(
-            fraction,
-            c.equipment[key as keyof typeof c.equipment] / count,
-          );
-        fraction = Math.max(0, fraction);
-        c.manpower = Math.max(0, c.manpower - d.men * fraction);
-        for (const [key, count] of Object.entries(needs))
-          c.equipment[key as keyof typeof c.equipment] = Math.max(
-            0,
-            c.equipment[key as keyof typeof c.equipment] - count * fraction,
-          );
-        a.strength = clamp(a.strength + fraction * 100);
-      }
     }
     if (a.strength <= 0) continue;
     if (!a.move && a.route.length) {
@@ -434,6 +444,7 @@ export function resolveLandStep(w: World, elapsedDays = 1) {
           to: next,
           progress: 0,
           days: movementLegDays(w, a, a.province, next, edge.sea),
+          ...(edge.sea ? { kind: "transport" as const } : {}),
         };
         a.entrenchment = 0;
       }
@@ -459,6 +470,9 @@ export function resolveLandStep(w: World, elapsedDays = 1) {
       }
     } else a.entrenchment = clamp(a.entrenchment + 2 * elapsedDays, 0, 30);
   }
+  // Reserve replacements from real stock, then transport and deliver paid cargo.
+  // Eligibility comes from this step's actual contact and supply assessment.
+  resolveReinforcements(w, reinforcementRecipients, elapsedDays);
   // All motorized formations use the same remaining country fuel for this step.
   // Otherwise whichever unit happened to be visited last would suffer the shortage alone.
   const fuelCosts = new Map<string, number>();

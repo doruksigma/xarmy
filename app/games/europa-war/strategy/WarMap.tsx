@@ -14,6 +14,7 @@ import MilitaryIcon, { unitIcon } from "./MilitaryIcon";
 import { countryLabelsOverlap, countryMapLabels } from "./map3d-country-labels";
 import { movementRoutes, movementArrowHead } from "./movement-routes";
 import { strategicMapOverlay } from "./strategic-map-boundaries";
+import { armyMapPosition } from "./map3d-visuals";
 import {
   CARTOGRAPHIC_TERRAINS,
   politicalCountryColor,
@@ -339,6 +340,7 @@ function WarMap({
   mode,
   onSelect,
   ordering,
+  onTheater,
   draft = [],
 }: {
   world: World;
@@ -349,6 +351,7 @@ function WarMap({
   mode: MapMode;
   onSelect: (id: string, append: boolean) => void;
   ordering: boolean;
+  onTheater?: (theater: "air" | "naval") => void;
   draft?: string[];
 }) {
   const svg = useRef<SVGSVGElement>(null),
@@ -503,7 +506,7 @@ function WarMap({
           (n) => world.provinces[n.id].controller === world.player,
         );
       if (!known) continue;
-      const key = `${a.province}:${a.country}`;
+      const key = `${a.province}:${a.country}:${a.move?.to ?? "idle"}`;
       if (!out.has(key)) out.set(key, []);
       out.get(key)!.push(a);
     }
@@ -512,7 +515,7 @@ function WarMap({
   const formationOffsets = useMemo(() => {
     const counts = new Map<string, number>();
     return formations.map((group) => {
-      const province = group[0].province;
+      const province = `${group[0].province}:${group[0].move?.to ?? "idle"}`;
       const count = counts.get(province) ?? 0;
       counts.set(province, count + 1);
       return count * 31;
@@ -601,7 +604,7 @@ function WarMap({
       boxes.push({ x: label.x - w / 2, y: label.y - h / 2, w, h });
     }
     for (const f of formations) {
-      const p = GEOGRAPHY[f[0].province];
+      const p = armyMapPosition(f[0]);
       boxes.push({
         x: p.x - 14 * counterScale,
         y: p.y + 3 * counterScale,
@@ -1567,7 +1570,8 @@ function WarMap({
           </g>
         )}
         {formations.map((group, index) => {
-          const position = GEOGRAPHY[group[0].province];
+          const a = group.find((a) => a.id === armyId) ?? group[0];
+          const position = armyMapPosition(a);
           if (
             position.x < bounds.x - 50 * counterScale ||
             position.x > bounds.x + bounds.w + 50 * counterScale ||
@@ -1575,8 +1579,7 @@ function WarMap({
             position.y > bounds.y + bounds.h + 50 * counterScale
           )
             return null;
-          const a = group.find((a) => a.id === armyId) ?? group[0],
-            p = GEOGRAPHY[a.province],
+          const p = GEOGRAPHY[a.province],
             own = a.country === world.player,
             chosen = group.some((x) => selectedArmies.has(x.id));
           const offset = formationOffsets[index];
@@ -1624,8 +1627,8 @@ function WarMap({
           const showReadiness = own && mapDetails.readiness;
           return (
             <g
-              key={`${a.province}:${a.country}`}
-              transform={`translate(${p.x + (-13 + offset) * counterScale} ${p.y + 4 * counterScale}) scale(${counterScale})`}
+              key={`${a.province}:${a.country}:${a.move?.to ?? "idle"}`}
+              transform={`translate(${position.x + (-13 + offset) * counterScale} ${position.y + 4 * counterScale}) scale(${counterScale})`}
               role="button"
               tabIndex={own ? 0 : -1}
               aria-label={`${world.countries[a.country].name}: ${group.length} tümen, ${p.name}`}
@@ -2161,6 +2164,15 @@ function WarMap({
             </small>
           )}
         </div>
+      )}
+      {(mode === "air" || mode === "naval") && onTheater && (
+        <button
+          className={atlas.theaterOrders}
+          onClick={() => onTheater(mode)}
+          data-testid="map-theater-orders"
+        >
+          {mode === "air" ? "Hava emirlerini aç" : "Deniz emirlerini aç"}
+        </button>
       )}
       {mode === "air" && selectedWing && (
         <div className={atlas.layerInfo}>

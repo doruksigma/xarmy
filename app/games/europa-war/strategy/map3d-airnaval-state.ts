@@ -5,13 +5,18 @@ import { portZone, seaRoute, shipOperational } from "./military-assets";
 import { formationSnapshotTransition } from "./map3d-unit-events";
 import { atWar, friendly, GEOGRAPHY } from "./world";
 import { worldHour } from "./time";
-import { NAVAL_PRESENTATION } from "./map3d-naval-space";
+import { NAVAL_MODEL_SCALE, NAVAL_PRESENTATION } from "./map3d-naval-space";
 import type { AirWing, Country, SeaZone, World } from "./types";
 
 export type AirNavalModel =
   | "fighter"
   | "bomber"
+  | "strategicBomber"
+  | "transport"
+  | "reconPlane"
   | "ship"
+  | "destroyer"
+  | "battleship"
   | "carrier"
   | "submarine";
 export interface AirNavalPoint {
@@ -137,9 +142,7 @@ export function airNavalUnits(
         id: wing.id,
         country: country.id,
         color: country.color,
-        model: ["fighter", "carrierFighter"].includes(wing.model)
-          ? "fighter"
-          : "bomber",
+        model: wing.model === "carrierFighter" ? "fighter" : wing.model,
         airborne: true,
         active,
         // Contact reveals the observed mission area, never an unseen enemy airbase.
@@ -148,8 +151,8 @@ export function airNavalUnits(
         phase: airNavalPhase(wing.id),
         scale:
           wing.model === "strategicBomber" || wing.model === "transport"
-            ? 0.62
-            : 0.55,
+            ? 0.3
+            : 0.26,
       });
     }
     for (const ship of country.navy.ships) {
@@ -183,12 +186,7 @@ export function airNavalUnits(
         id: ship.id,
         country: country.id,
         color: country.color,
-        model:
-          ship.model === "carrier"
-            ? "carrier"
-            : ship.model === "submarine"
-              ? "submarine"
-              : "ship",
+        model: ship.model,
         airborne: false,
         seaZone: ship.zone,
         active: ship.transit > 0 || shipOperational(world, country, ship),
@@ -197,10 +195,11 @@ export function airNavalUnits(
         phase: airNavalPhase(ship.id),
         scale:
           NAVAL_PRESENTATION[ship.zone].scale *
+          NAVAL_MODEL_SCALE *
           (ship.model === "battleship"
-            ? 1.25
+            ? 1.08
             : ship.model === "destroyer"
-              ? 0.8
+              ? 0.94
               : 1),
       });
     }

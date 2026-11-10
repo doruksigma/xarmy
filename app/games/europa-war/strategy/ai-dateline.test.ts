@@ -6,9 +6,12 @@ import { addArmy, createWorld, GEOGRAPHY, MAP } from "./world";
 test("AI sends a reserve to the nearby border across the date line instead of the distant inland border", () => {
   const world = createWorld("turkey");
   const origin = "germany-0",
-    close = "germany-1",
-    distant = "germany-2",
-    enemy = "france-0";
+    // Keep a real geographic diamond; only project its coordinates around
+    // the date line. Invented Berlin–Hamburg/Paris adjacency is no longer
+    // a valid movement corridor.
+    close = "germany-city-11",
+    distant = "germany-city-8",
+    enemy = "germany-city-7";
   const ids = [origin, close, distant, enemy];
   const original = ids.map((id) => ({
     id,
@@ -59,6 +62,7 @@ test("AI sends a reserve to the nearby border across the date line instead of th
       country.air.wings = [];
       country.navy.ships = [];
     }
+    world.provinces[enemy].controller = "france";
     const country = world.countries.germany;
     country.wars = ["france"];
     world.countries.france.wars = ["germany"];

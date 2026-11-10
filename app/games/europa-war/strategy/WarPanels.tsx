@@ -1,6 +1,7 @@
 "use client";
 import CommandCenter from "./CommandCenter";
 import ArmyRecruitment from "./ArmyRecruitment";
+import ReinforcementLogistics from "./ReinforcementLogistics";
 import AirNavalControl from "./AirNavalControl";
 import AirNavalReport from "./AirNavalReport";
 import UnitResearchGuide from "./UnitResearchGuide";
@@ -158,6 +159,7 @@ function Chart({ values, label }: { values: number[]; label: string }) {
 }
 interface Props {
   simple?: boolean;
+  requestedTheater?: { kind: "air" | "naval"; revision: number };
   world: World;
   tab: Tab;
   selected: string;
@@ -179,6 +181,7 @@ interface Props {
 }
 export default function WarPanels({
   simple = false,
+  requestedTheater,
   world: w,
   tab,
   selected,
@@ -488,6 +491,7 @@ export default function WarPanels({
           preferredProvince={preferredRecruitmentProvince}
           onProvinceChange={onRecruitmentProvinceChange}
         />
+        <ReinforcementLogistics world={w} />
         {w.battles
           .filter((b) => b.attacker === c.id || b.defender === c.id)
           .map((b) => (
@@ -1425,9 +1429,15 @@ export default function WarPanels({
           <MilitaryIcon name="operations" size={26} />
           Harekât merkezi
         </h2>
-        <AirNavalReport w={w} />
         {targetSelect}
-        <AirNavalControl w={w} command={command} target={target} />
+        <AirNavalControl
+          key={`${w.player}:${requestedTheater?.revision ?? 0}`}
+          w={w}
+          command={command}
+          target={target}
+          requestedTheater={requestedTheater}
+        />
+        <AirNavalReport w={w} />
         <details className={styles.fold}>
           <summary>Hızlı hava ve deniz emirleri</summary>
           <div className={styles.card}>

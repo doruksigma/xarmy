@@ -218,6 +218,22 @@ export default function EuropaWarClient() {
     [attackStance, setAttackStance] =
       useState<OffensivePlan["stance"]>("balanced");
   const [frontPoints, setFrontPoints] = useState<string[]>([]);
+  const [directMove, setDirectMove] = useState(false);
+  const [theaterRequest, setTheaterRequest] = useState<{
+    kind: "air" | "naval";
+    revision: number;
+  }>({ kind: "air", revision: 0 });
+  const openTheater = useCallback((kind: "air" | "naval") => {
+    setTheaterRequest((previous) => ({
+      kind,
+      revision: previous.revision + 1,
+    }));
+    setMode(kind);
+    setTab("operations");
+    setPanel(true);
+    setDirectMove(false);
+    setOrder(null);
+  }, []);
   const say = useCallback((text: string) => {
     setMessage(text);
   }, []);
@@ -278,6 +294,7 @@ export default function EuropaWarClient() {
   }, [shown.armies, shown.player]);
   useEffect(() => {
     if (!armyId && (order === "move" || order === "paradrop")) setOrder(null);
+    if (!armyId) setDirectMove(false);
   }, [armyId, order]);
   useEffect(() => {
     if (!world || world.day % 14 !== 0 || world.day === lastAuto.current)
@@ -321,6 +338,7 @@ export default function EuropaWarClient() {
       }
       if (e.key === "Escape") {
         setOrder(null);
+        setDirectMove(false);
         setPaused(true);
       }
     };
@@ -337,6 +355,7 @@ export default function EuropaWarClient() {
     setArmyIds([]);
     setGuideGeneralId("");
     setOrder(null);
+    setDirectMove(false);
     setFrontPoints([]);
     setAttackArmies([]);
     setTarget(Object.keys(w.countries).find((id) => id !== w.player)!);
@@ -458,10 +477,29 @@ export default function EuropaWarClient() {
       setTab("army");
       setPanel(true);
       setOrder(null);
+      setDirectMove(false);
       const a = shown.armies.find((a) => a.id === eligible[0]);
       if (a) setSelected(a.province);
     },
     [shown],
+  );
+  // Map selection is a two-tap command: select your formation, then its target.
+  // Panel/list selection retains the inspection workflow and never issues orders.
+  const onMapArmies = useCallback(
+    (ids: string[], append = false) => {
+      if (setup || transitionPending.current) return;
+      if (
+        !shown.armies.some(
+          (army) => ids.includes(army.id) && army.country === shown.player,
+        )
+      )
+        return;
+      onArmies(ids, append);
+      setDirectMove(true);
+      setPanel(false);
+      setMessage("");
+    },
+    [shown, setup, onArmies],
   );
   const onProvince = useCallback(
     (id: string, append = false) => {
@@ -479,13 +517,14 @@ export default function EuropaWarClient() {
         setSelected(id);
         return;
       }
-      if ((order === "move" || order === "paradrop") && armyId) {
+      if ((order === "move" || order === "paradrop" || directMove) && armyId) {
         const accepted = command(
-          order === "move"
+          order !== "paradrop"
             ? { type: "moveGroup", armies: selectedArmyIds, to: id, append }
             : { type: "paradrop", army: armyId, to: id },
         );
         if (accepted) setOrder(null);
+        setDirectMove(false);
         setSelected(id);
         return;
       }
@@ -495,7 +534,7 @@ export default function EuropaWarClient() {
       const country = shown.provinces[id].controller;
       if (country !== shown.player) setTarget(country);
     },
-    [setup, shown, order, armyId, selectedArmyIds, command],
+    [setup, shown, order, directMove, armyId, selectedArmyIds, command],
   );
   const onMapOrder = useCallback(
     (id: string) => {
@@ -508,8 +547,11 @@ export default function EuropaWarClient() {
         say("Önce kendi tümenlerini seç; ardından hedef bölgeye sağ tıkla.");
         return;
       }
-      if (command({ type: "moveGroup", armies: selectedArmyIds, to: id }))
+      if (command({ type: "moveGroup", armies: selectedArmyIds, to: id })) {
         setSelected(id);
+        setDirectMove(false);
+        setPanel(false);
+      }
     },
     [setup, order, onProvince, selectedArmyIds, command, say],
   );
@@ -533,6 +575,7 @@ export default function EuropaWarClient() {
       return;
     }
     setOrder(value);
+    setDirectMove(false);
     setFrontPoints([]);
     // Floating windows cover the map on desktop too. Expose the target and
     // city search whenever a movement, drop or battle-plan order is started.
@@ -544,6 +587,7 @@ export default function EuropaWarClient() {
     setTransition("saving");
     setPaused(true);
     setOrder(null);
+    setDirectMove(false);
     setArmyIds([]);
     setFrontPoints([]);
     setAttackArmies([]);
@@ -714,6 +758,8 @@ export default function EuropaWarClient() {
                 onClick={() => {
                   setTab(id);
                   setPanel(true);
+                  setDirectMove(false);
+                  setOrder(null);
                 }}
                 title={label}
                 disabled={setup}
@@ -785,16 +831,13 @@ export default function EuropaWarClient() {
                 armyIds={selectedArmyIds}
                 mode={mode}
                 onSelect={onProvince}
-                onArmies={onArmies}
+                onArmies={onMapArmies}
                 ordering={!!order}
                 draft={frontPoints}
                 onOrder={onMapOrder}
                 onUnavailable={on3DUnavailable}
                 paused={paused || setup}
-                onTheater={() => {
-                  setTab("operations");
-                  setPanel(true);
-                }}
+                onTheater={openTheater}
               />
             </MapPresentationBoundary>
           ) : (
@@ -805,18 +848,32 @@ export default function EuropaWarClient() {
               armyIds={selectedArmyIds}
               mode={mode}
               onSelect={onProvince}
-              onArmies={onArmies}
+              onArmies={onMapArmies}
               ordering={!!order}
               draft={frontPoints}
+              onTheater={openTheater}
             />
           )}
-          {order && (
-            <div className={styles.orderBanner}>
+          {(order || directMove) && (
+            <div
+              className={styles.orderBanner}
+              data-testid="map-target-selection"
+            >
               {order === "front" || order === "offensive"
                 ? `${frontPoints.length} eyalet · ${order === "front" ? "Komşu savunma bölgelerini" : "Düşman hedeflerini"} sırayla seç.`
-                : order === "move"
+                : order === "move" || directMove
                   ? `${selectedArmyIds.length} tümen için haritada hedef eyalete tıkla. Shift: rotaya hedef ekle.`
                   : "Seçili paraşütçü tümeni için haritada hedef eyalete tıkla."}
+              {directMove && (
+                <button
+                  onClick={() => {
+                    setDirectMove(false);
+                    setPanel(true);
+                  }}
+                >
+                  Birlik ayrıntıları
+                </button>
+              )}
               {(order === "front" || order === "offensive") && (
                 <button
                   disabled={
@@ -854,6 +911,7 @@ export default function EuropaWarClient() {
               <button
                 onClick={() => {
                   setOrder(null);
+                  setDirectMove(false);
                   setFrontPoints([]);
                 }}
               >
@@ -861,7 +919,7 @@ export default function EuropaWarClient() {
               </button>
             </div>
           )}
-          {!setup && !panel && !order && message && (
+          {!setup && !panel && !order && !directMove && message && (
             <div
               role="status"
               className={`${styles.orderBanner} ${styles.mapNotice}`}
@@ -892,8 +950,14 @@ export default function EuropaWarClient() {
               </div>
             </div>
           )}
-          {!panel && (setup || order || !message) && (
-            <button className={styles.openPanel} onClick={() => setPanel(true)}>
+          {!panel && !directMove && (setup || order || !message) && (
+            <button
+              className={styles.openPanel}
+              onClick={() => {
+                setDirectMove(false);
+                setPanel(true);
+              }}
+            >
               Yönetim panelini aç →
             </button>
           )}
@@ -1029,6 +1093,7 @@ export default function EuropaWarClient() {
                     setAttackStance(stance);
                     beginOrder("offensive");
                   }}
+                  requestedTheater={theaterRequest}
                 />
               )}
               {!setup && tab === "command" && (

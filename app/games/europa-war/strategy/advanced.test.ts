@@ -296,10 +296,24 @@ test("Tank tümeni tank olmadan takviye alamaz; tank ve destek topu birlikte tü
   c.equipment.lightTank = 20;
   const tanks = c.equipment.lightTank,
     artillery = c.equipment.artillery;
+  w.day++;
   resolveLandDay(w);
-  assert.ok(a.strength > 80);
+  assert.equal(a.strength, 80, "Ayrılan ekipman teslim edilmeden güç vermez");
   assert.ok(c.equipment.lightTank < tanks);
   assert.ok(c.equipment.artillery < artillery);
+  const paidTanks = c.equipment.lightTank,
+    paidArtillery = c.equipment.artillery;
+  assert.ok(
+    w.reinforcements?.shipments.some((shipment) => shipment.army === a.id),
+  );
+  w.hour = 1;
+  resolveLandDay(w);
+  assert.ok(
+    a.strength > 80,
+    "Gerçekten ulaşan tank ve top takviyesi güç verir",
+  );
+  assert.equal(c.equipment.lightTank, paidTanks, "Tank ikinci kez ödenmez");
+  assert.equal(c.equipment.artillery, paidArtillery, "Top ikinci kez ödenmez");
 });
 
 test("Taarruz hazırlık ister; manuel dur emri tümeni otomatik plandan çıkarır", () => {

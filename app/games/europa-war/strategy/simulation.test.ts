@@ -772,7 +772,9 @@ test("Accepted deltas preserve unchanged references and publish measured diagnos
   };
   worker.onmessage?.({ data: response });
   assert.deepEqual(f.published[0], after);
-  assert.equal(f.published[0].countries, before.countries);
+  for (const id of Object.keys(before.countries))
+    if (after.countries[id] === before.countries[id])
+      assert.equal(f.published[0].countries[id], before.countries[id], id);
   assert.equal(f.diagnostics.length, 1);
   assert.equal(f.diagnostics[0].tick, 1);
   assert.equal(f.diagnostics[0].transport, "delta");

@@ -27,7 +27,11 @@ test("Saat farkı gerçek motorla eşittir; değişmeyen ülke ve bölge nesnele
   );
   assert.deepEqual(accepted, after);
   assert.deepEqual(before, frozen);
-  assert.equal(accepted.countries, before.countries);
+  // Isolated island garrisons can now suffer real supply attrition during
+  // this hour. Only unchanged countries must retain their references.
+  for (const id of Object.keys(before.countries))
+    if (after.countries[id] === before.countries[id])
+      assert.equal(accepted.countries[id], before.countries[id], id);
   assert.equal(accepted.provinces, before.provinces);
   assert.equal(accepted.countries.turkey, before.countries.turkey);
   assert.ok(metrics.payloadBytes < metrics.snapshotBytes * 0.25);

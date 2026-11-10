@@ -5,11 +5,15 @@ import { MAX_ARMIES } from "./campaign-limits";
 import { assignAvailableCommander } from "./commander-roster";
 import { current, isDraft } from "immer";
 import { createRandomStreams, nextRandom } from "./rng";
+import { isTraversableLandEdge, movementNeighbors } from "./land-corridors";
 import type { Army, Country, GameEvent, Terrain, World } from "./types";
 
 export const MAP = data;
 export const GEOGRAPHY = Object.fromEntries(
-  data.provinces.map((p) => [p.id, { ...p, terrain: p.terrain as Terrain }]),
+  data.provinces.map((p) => [
+    p.id,
+    { ...p, neighbors: movementNeighbors(p.id), terrain: p.terrain as Terrain },
+  ]),
 );
 export const clamp = (n: number, min = 0, max = 100) =>
   Math.max(min, Math.min(max, n));
@@ -110,6 +114,7 @@ export function supplyNetwork(w: World, country: string) {
     for (const edge of GEOGRAPHY[queue[i]].neighbors) {
       if (
         visited.has(edge.id) ||
+        (!edge.sea && !isTraversableLandEdge(queue[i], edge.id)) ||
         !friendly(w, country, w.provinces[edge.id].controller) ||
         (edge.sea && !seaEdgeOpen(w, country, queue[i], edge.id))
       )

@@ -47,6 +47,31 @@
   filter: grayscale(1) contrast(0.75) brightness(1.2);
   mix-blend-mode: multiply;
 }
+.theaterOrders {
+  position: absolute;
+  top: 100px;
+  left: 16px;
+  z-index: 5;
+  max-width: 190px;
+  min-height: 44px;
+  border: 1px solid #c9ba84;
+  background: #293a32f5;
+  color: #f4eacb;
+  padding: 8px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.theaterOrders:focus-visible {
+  outline: 2px solid #ffe2a2;
+  outline-offset: 2px;
+}
+@media (max-width: 700px) {
+  .theaterOrders {
+    top: 106px;
+    left: 14px;
+    max-width: 155px;
+  }
+}
 .overviewTerrain {
   filter: saturate(0.6) brightness(0.8);
 }

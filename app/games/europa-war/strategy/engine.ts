@@ -27,8 +27,9 @@ function stepHour(w: World): void {
     w.hour = 0;
     w.day++;
     // Daily settlement is ordered: industry/research/personnel, politics,
-    // air/naval/intelligence, then strategic decisions. New equipment can
-    // reinforce ground formations in this boundary hour, never before it.
+    // air/naval/intelligence, then strategic decisions. Newly produced equipment
+    // may be reserved for ground shipments at this boundary, but only actual
+    // delivery in a later hour reinforces the recipient.
     economyDay(w);
     politicsDay(w);
     operationsDay(w);

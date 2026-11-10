@@ -1,5 +1,6 @@
 import { GEOGRAPHY } from "./world";
-import { armyMapPosition, visibleFormations } from "./map3d-visuals";
+import { visibleFormations } from "./map3d-visuals";
+import { movementLegPath, remainingCorridor } from "./land-corridors";
 import type { Army, World } from "./types";
 
 export const MAX_MOVEMENT_ARROWS = 256;
@@ -69,7 +70,12 @@ export function movementRoutes(
         )
         .slice(0, MAX_ROUTE_WAYPOINTS);
       if (path.length < 2) continue;
-      const key = JSON.stringify([army.country, Boolean(army.move), path]);
+      const key = JSON.stringify([
+        army.country,
+        Boolean(army.move),
+        army.move?.kind,
+        path,
+      ]);
       const group = groups.get(key);
       if (group) {
         group.armies.push(army);
@@ -85,23 +91,38 @@ export function movementRoutes(
   const routes: MovementRoute[] = [];
   for (const [id, group] of groups) {
     const army = group.armies[0];
-    // A shared arrow represents the formation's average visible progress;
-    // different destinations or queued routes never merge into one order.
-    const start = group.armies.reduce(
-      (point, unit) => {
-        const position = armyMapPosition(unit);
-        point.x += position.x / group.armies.length;
-        point.y += position.y / group.armies.length;
-        return point;
-      },
-      { x: 0, y: 0 },
+    // Average progress along the corridor, not the average coordinates of units
+    // on opposite sides of a bend (which would put the arrow back in the sea).
+    const progress = group.armies.reduce(
+      (sum, unit) =>
+        sum +
+        (unit.move
+          ? Math.max(
+              0,
+              Math.min(
+                0.94,
+                unit.move.progress / Math.max(0.01, unit.move.days),
+              ),
+            )
+          : 0) /
+          group.armies.length,
+      0,
     );
-    const points = cleanPoints([
-      start,
-      ...group.path
-        .slice(1)
-        .map((id) => ({ x: GEOGRAPHY[id].x, y: GEOGRAPHY[id].y })),
-    ]);
+    const raw: MovementPoint[] = [];
+    let lastTo = army.province;
+    for (let index = 1; index < group.path.length; index++) {
+      const leg = movementLegPath(
+        group.path[index - 1],
+        group.path[index],
+        index === 1 && army.move?.kind === "paradrop",
+      );
+      if (!leg) break;
+      raw.push(
+        ...(index === 1 ? remainingCorridor(leg, progress) : leg.slice(1)),
+      );
+      lastTo = group.path[index];
+    }
+    const points = cleanPoints(raw);
     if (points.length < 2) continue;
     routes.push({
       id,
@@ -111,7 +132,7 @@ export function movementRoutes(
       selected: group.selected,
       kind: army.move ? "march" : "planned",
       from: army.province,
-      to: group.path.at(-1)!,
+      to: lastTo,
       points,
     });
   }

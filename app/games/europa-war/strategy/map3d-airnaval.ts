@@ -3,7 +3,11 @@ import { MAP } from "./world";
 import { mapDeltaX, mapWrapX } from "./geography-distance";
 import { formationSnapshotTransition } from "./map3d-unit-events";
 import { createAirNavalGeometry } from "./map3d-airnaval-models";
-import { navalPatrolPose } from "./map3d-naval-space";
+import {
+  navalFormationLayout,
+  navalPatrolPose,
+  type NavalFormationSlot,
+} from "./map3d-naval-space";
 import {
   airNavalPhase,
   airNavalUnits,
@@ -37,7 +41,12 @@ export interface AirNavalStats {
 const MODELS: AirNavalModel[] = [
   "fighter",
   "bomber",
+  "strategicBomber",
+  "transport",
+  "reconPlane",
   "ship",
+  "destroyer",
+  "battleship",
   "carrier",
   "submarine",
 ];
@@ -52,6 +61,7 @@ const LIMITS = {
 } as const;
 type Outcome = AirNavalOutcome & { began: number };
 type Pose = { x: number; y: number; z: number; angle: number; bank: number };
+type FormationSlot = NavalFormationSlot & { phase: number };
 
 /** Bounded instanced presentation. Neither frame animation nor model creation writes campaign state. */
 export function createAirNavalVisuals(
@@ -138,6 +148,7 @@ export function createAirNavalVisuals(
   let previous: World | null = null,
     units: AirNavalUnit[] = [],
     outcomes: Outcome[] = [];
+  const formations = new Map<string, FormationSlot>();
   let clock = 0,
     lastFrame: number | null = null,
     wasRunning = false,
@@ -157,8 +168,9 @@ export function createAirNavalVisuals(
   };
 
   function pose(unit: AirNavalUnit, engagement?: Outcome): Pose {
+    const slot = formations.get(unit.id)!;
     const phase =
-      unit.phase * Math.PI * 2 +
+      (unit.airborne && unit.active ? slot.phase : unit.phase) * Math.PI * 2 +
       (unit.active ? clock / (unit.airborne ? 4100 : 22000) : 0);
     let x: number,
       z: number,
@@ -187,21 +199,17 @@ export function createAirNavalVisuals(
           -dz * Math.sin(phase) - (dx / distance) * Math.cos(phase) * 18,
         );
       }
-      x = mapWrapX(x);
+      x = mapWrapX(x + slot.x);
+      z += slot.y;
       y = heightAt(x, z) + 29 + Math.sin(phase * 2) * 3 + unit.phase * 7;
       bank = Math.sin(phase) * 0.18;
     } else if (unit.airborne) {
-      x = unit.from.x + (unit.phase - 0.5) * 17;
-      z = unit.from.y + 9 + unit.phase * 7;
+      x = mapWrapX(unit.from.x + slot.x);
+      z = unit.from.y + 9 + slot.y;
       y = heightAt(x, z) + 1.6;
-      angle = unit.phase * 0.7;
+      angle = 0.2;
     } else {
-      const patrol = navalPatrolPose(
-        unit.seaZone!,
-        unit.phase,
-        airNavalPhase(unit.country),
-        phase,
-      );
+      const patrol = navalPatrolPose(unit.seaZone!, slot, phase, unit.active);
       x = patrol.x;
       z = patrol.y;
       y = -0.25;
@@ -234,6 +242,47 @@ export function createAirNavalVisuals(
         )
         .slice(-EFFECT_CAPACITY);
       units = airNavalUnits(world, outcomes);
+      formations.clear();
+      const cohorts = new Map<string, AirNavalUnit[]>();
+      for (const unit of units) {
+        const key = unit.airborne
+          ? `${unit.active ? "flight" : "park"}:${unit.target.x}:${unit.target.y}`
+          : `sea:${unit.seaZone}`;
+        const cohort = cohorts.get(key) ?? [];
+        cohort.push(unit);
+        cohorts.set(key, cohort);
+      }
+      for (const [key, cohort] of cohorts) {
+        // Stable identity order keeps commands/priority sorting from shuffling
+        // parking places. No collision search or layout allocation per frame.
+        cohort.sort((left, right) => left.id.localeCompare(right.id));
+        const naval = !cohort[0].airborne;
+        const slots = naval
+          ? navalFormationLayout(cohort[0].seaZone!, cohort.length)
+          : [];
+        const columns = Math.ceil(Math.sqrt(cohort.length)),
+          rows = Math.ceil(cohort.length / columns);
+        const spacing = cohort[0].active ? 11 : 9;
+        const scale = Math.min(1, 44 / (Math.max(columns, rows) * spacing));
+        const phase = airNavalPhase(key);
+        cohort.forEach((unit, index) =>
+          formations.set(
+            unit.id,
+            naval
+              ? { ...slots[index], phase }
+              : {
+                  x: ((index % columns) - (columns - 1) / 2) * spacing * scale,
+                  y:
+                    (Math.floor(index / columns) - (rows - 1) / 2) *
+                    spacing *
+                    scale,
+                  scale,
+                  patrolRadius: 0,
+                  phase,
+                },
+          ),
+        );
+      }
       previous = world;
     },
     animate(now: number, options: AirNavalOptions): boolean {
@@ -296,7 +345,10 @@ export function createAirNavalVisuals(
         const mesh = pools.get(unit.model)!,
           index = counts.get(unit.model)!;
         if (index >= CAPACITY) continue;
-        const scale = unit.scale * (unit.airborne && !unit.active ? 0.72 : 1);
+        const scale =
+          unit.scale *
+          formations.get(unit.id)!.scale *
+          (unit.airborne && !unit.active ? 0.72 : 1);
         dummy.position.set(position.x, position.y, position.z);
         dummy.rotation.set(0, position.angle, position.bank);
         dummy.scale.setScalar(scale);
@@ -431,6 +483,7 @@ export function createAirNavalVisuals(
       disposed = true;
       previous = null;
       units = [];
+      formations.clear();
       outcomes = [];
       scene.remove(group);
       for (const mesh of pools.values()) {

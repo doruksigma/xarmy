@@ -1,0 +1,211 @@
+.logistics {
+  min-width: 0;
+  margin: 16px 0;
+  padding: 12px;
+  border: 1px solid #61634c;
+  background: linear-gradient(130deg, #2e3529, #1c251f);
+  color: #e6e2ce;
+  font-variant-numeric: tabular-nums;
+}
+.header {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+}
+.header > svg {
+  flex-shrink: 0;
+}
+.header > div {
+  min-width: 0;
+}
+.logistics .header h3 {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.logistics .header p,
+.logistics .notice {
+  margin: 5px 0 0;
+  color: #bac2b1;
+  font-size: 11px;
+  line-height: 1.55;
+}
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  margin: 12px 0;
+}
+.metrics > div {
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid #48513f;
+  background: #19251e;
+}
+.metrics dt {
+  color: #bbc3ae;
+  font-size: 10px;
+  line-height: 1.4;
+}
+.metrics dd {
+  margin: 4px 0 0;
+  color: #ebdcac;
+  font-size: 15px;
+  line-height: 1.3;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.details {
+  margin-top: 10px;
+  border-top: 1px solid #4e5945;
+}
+.details > summary {
+  display: list-item;
+  min-height: 44px;
+  padding: 12px 2px;
+  color: #e2d6ac;
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.details > summary span {
+  display: inline-block;
+  margin-left: 10px;
+  color: #bbc3ae;
+  font-size: 10px;
+}
+.details > summary:focus-visible,
+.tableViewport:focus-visible {
+  outline: 2px solid #dfca8d;
+  outline-offset: 2px;
+}
+.shipments {
+  margin: 12px 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+}
+.shipment {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #465141;
+  border-left: 2px solid #aab982;
+  background: #18231c;
+  overflow-wrap: anywhere;
+}
+.shipment[data-status="returning"] {
+  border-left-color: #c9b87b;
+}
+.logistics .shipment h4 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: #e4dfc8;
+  font-size: 12px;
+}
+.shipment h4 svg {
+  flex-shrink: 0;
+}
+.logistics .status,
+.logistics .route {
+  margin: 6px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.logistics .status {
+  color: #bed29f;
+}
+.logistics .status[data-tone="warning"] {
+  color: #ecd49c;
+}
+.logistics .route {
+  color: #d0d3bf;
+}
+.cargo {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 10px;
+  margin: 8px 0;
+  padding: 0;
+  list-style: none;
+  color: #d8d2b7;
+  font-size: 10px;
+  line-height: 1.4;
+}
+.shipment small {
+  color: #a4ae99;
+  font-size: 9px;
+  line-height: 1.5;
+}
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 7px;
+  margin: 10px 0 14px;
+}
+.pagination span {
+  color: #ccd1bb;
+  font-size: 10px;
+  white-space: nowrap;
+}
+.logistics .pagination button {
+  min-height: 44px;
+  padding: 7px;
+  font-size: 10px;
+}
+.logistics .subheading {
+  margin: 16px 0 6px;
+  color: #ded5af;
+  font-size: 12px;
+}
+.totals {
+  margin-top: 8px;
+}
+.tableViewport {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  margin: 12px 0;
+}
+.table {
+  width: 100%;
+  min-width: 470px;
+  border-collapse: collapse;
+  color: #d5d8c5;
+  font-size: 10px;
+  line-height: 1.5;
+}
+.table caption {
+  padding: 8px 0;
+  text-align: left;
+  color: #e0d7b4;
+  font-size: 12px;
+  font-weight: 600;
+}
+.table th,
+.table td {
+  padding: 8px 6px;
+  border-bottom: 1px solid #3f4a39;
+  text-align: right;
+}
+.table th {
+  color: #bfc7ae;
+  font-weight: 500;
+}
+.table th:first-child {
+  text-align: left;
+}
+.table th svg {
+  vertical-align: middle;
+}
+.table thead {
+  background: #1a251d;
+}
+@media (max-width: 700px) {
+  .logistics {
+    padding: 10px;
+  }
+}

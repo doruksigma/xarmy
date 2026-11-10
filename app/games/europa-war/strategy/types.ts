@@ -1,5 +1,6 @@
 import type { CommandState } from "./command-types";
 import type { RandomStreams } from "./rng";
+import type { ReinforcementState } from "./reinforcement-types";
 
 export type Terrain =
   | "plains"
@@ -221,7 +222,7 @@ export interface Army {
     to: string;
     progress: number;
     days: number;
-    kind?: "paradrop";
+    kind?: "paradrop" | "transport";
   } | null;
   support: SupportType[];
 }
@@ -306,6 +307,8 @@ export interface World {
   battles: Battle[];
   /** Absent in legacy saves and before the first daily air/naval settlement. */
   airNavalReports?: AirNavalDailyReport[];
+  /** Paid ground replacements in transit; absent in saves predating logistics. */
+  reinforcements?: ReinforcementState;
   trades: Trade[];
   fronts: Front[];
   plans: OffensivePlan[];

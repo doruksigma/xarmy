@@ -1,5 +1,6 @@
 import { current, isDraft } from "immer";
 import { TERRAINS, UNITS } from "./catalog";
+import { corridorLength, movementLegPath } from "./land-corridors";
 import {
   clamp,
   friendly,
@@ -18,10 +19,9 @@ export function movementLegDays(
   sea: boolean,
 ): number {
   const unit = UNITS[army.type];
-  const distance = Math.hypot(
-    GEOGRAPHY[to].x - GEOGRAPHY[from].x,
-    GEOGRAPHY[to].y - GEOGRAPHY[from].y,
-  );
+  const path = movementLegPath(from, to);
+  if (!path) return Number.POSITIVE_INFINITY;
+  const distance = corridorLength(path);
   return (
     Math.max(2, distance / 18) /
     (unit.speed *

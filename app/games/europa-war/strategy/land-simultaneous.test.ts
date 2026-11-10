@@ -142,7 +142,8 @@ test("Birden fazla cephede savunan birlik bütün hasarı tek başlangıçtan al
       (Math.min(
         7,
         Math.max(0.15, (battle.attack / Math.max(1, battle.defense)) * 1.5),
-      ) * LAND_COMBAT_TEMPO) /
+      ) *
+        LAND_COMBAT_TEMPO) /
         24,
     0,
   );
@@ -150,7 +151,7 @@ test("Birden fazla cephede savunan birlik bütün hasarı tek başlangıçtan al
   assert.deepEqual(normalized(world), normalized(reversed));
 });
 
-test("Saatlik kara adımı hareket, yakıt, ikmal takviyesi ve dinlenme oranlarını günün 24'te biri uygular", () => {
+test("Saatlik kara adımı hareket, yakıt ve dinlenme oranlarını günün 24'te biri uygular", () => {
   const world = campaign();
   const army = addArmy(world, "germany", "germany-7", "lightTank");
   army.general = null;
@@ -158,6 +159,9 @@ test("Saatlik kara adımı hareket, yakıt, ikmal takviyesi ve dinlenme oranlar�
   army.organization = army.morale = 50;
   army.move = { to: "germany-5", progress: 0, days: 100 };
   world.countries.germany.stock.fuel = 1000;
+  // Timed replacement dispatch/delivery is covered through the actual engine
+  // clock in reinforcement-engine.test.ts; this isolates continuous land rates.
+  world.countries.germany.manpower = 0;
   for (const key of Object.keys(
     world.countries.germany.equipment,
   ) as (keyof typeof world.countries.germany.equipment)[])

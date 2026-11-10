@@ -52,10 +52,24 @@ test("Savunmasız düşman şehrine yürüyüş gerçek muharebe gibi takviyeyi 
   resolveLandDay(w);
 
   assert.equal(army.province, "germany-7", "Varış süresi yine tamamlanmalı");
-  assert.ok(army.strength > 70);
+  assert.equal(
+    army.strength,
+    70,
+    "Başkentten ayrılan yük anında güç eklememeli",
+  );
+  assert.ok(w.reinforcements?.shipments.some((s) => s.army === army.id));
   assert.ok(army.organization > 50);
   assert.ok(w.countries.germany.manpower < manpower);
   assert.equal(w.battles.length, 0);
+  for (let day = 0; day < 20 && army.strength === 70; day++) {
+    w.day++;
+    resolveLandDay(w);
+    assert.equal(w.battles.length, 0);
+  }
+  assert.ok(
+    army.strength > 70,
+    "Boş şehre yürüyen tümen gerçek yükü teslim almalı",
+  );
 });
 
 test("İkmalsiz ve yakıtsız tank yavaşlayarak güvenli arka şehre ulaşır", () => {

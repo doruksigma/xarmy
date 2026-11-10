@@ -1,6 +1,6 @@
 # Europa War — 2.000 satırlık şartnamenin kapsam ve aşama kaydı
 
-Son inceleme: 4 Kasım 2026. İlk aşamanın başlangıç sürümü: `4d9b8af`.
+Son inceleme: 10 Kasım 2026. İlk aşamanın başlangıç sürümü: `4d9b8af`.
 Bu belge yeni şartnamenin **100 bölümünü** aşağıdaki kesintisiz bölüm aralıklarıyla
 izler. Mevcut çalışan temeller ile istenen ayrıntıların tamamlanması farklı
 durumlardır; 100 bölümün tamamlandığı veya bütün kabul testlerinin geçtiği
@@ -22,6 +22,120 @@ iddia edilmez. Kod incelemesi, çalışma zamanı doğrulamasının yerini tutma
 - [55 bölümlük önceki denetim](europa-expansion-status.md), kendi başlangıç
   sürümünün tarihsel kaydıdır ve burada değiştirilmez. Sonradan eklenen 3D
   sistemler yeni değerlendirmeye dahildir.
+
+## Gerçek takviye yükü ve doğrudan harekât kontrolleri — 10 Kasım 2026
+
+Şartnamenin 04, 30, 41–43 ve 52–54 bölümlerindeki takviye muhasebesinin ilk
+çalışan dilimi eklendi. Kara tümenlerinin eksik personel ve ekipmanı artık
+depodan birliğe anında yazılmaz. Gün değişiminde uygun birlik için yük ayrılır;
+birliğin gücü ancak yük gerçekten vardığında artar.
+
+- `reinforcements.ts` başkentten, gerçek serbest personel ve ekipman stokunu
+  bir kez düşerek sevkiyat oluşturur. Bir tümenin aynı anda tek takviye yükü
+  olabilir. Tür ve destek bileşimi çıkışta sabitlenir; destek değiştirmek eski
+  yükten yeni ekipman yaratmaz. Günlük temel oran önceki %0,4 sınırını korur;
+  stok, eksik güç, ikmal, yol ve taşıma süresi fiilî teslimatı sınırlar.
+- Yükleme ve taşıma aynı fiziksel düğüm/hat bütçesini paylaşır. Altyapı,
+  demiryolu, ikmal merkezi ve hasar kapasiteyi etkiler. Ortak hattı kullanan
+  müttefik ve ters yönlü yükler ayrı ayrı tam kapasite alamaz. Kullanılan
+  oransal çözüm kapasiteyi aşmaz; kullanılmayan payı yeniden dağıtan tam akış
+  optimizasyonu değildir. Kapasiteler soyut yük birimi/saat cinsindedir.
+- Sevkiyat mevcut konumundan ilerler. Yol kesilince bekler veya geçerli
+  alternatif bulur; hedef hareket ederse yeni konumuna yönelir. Çatışma ya da
+  düşük ikmal teslimatı bekletir. Hedef kaybolur, taraf veya destek bileşimi
+  değişirse kalan yük başkente geri taşınır. Ele geçirilen yük ve teslim olan
+  ülkenin yükü kayıp hesabına geçer. Tam dolu depoya dönen yük için stok
+  taşmasıyla sessiz kayıp oluşmaz; boş kapasite beklenir.
+- `World.reinforcements` ülke başına ayrılan, teslim edilen, dönen ve kaybolan
+  toplamları tutar; kalan fark gerçek yoldaki yüktür. Bireysel tarihçe sınırsız
+  büyümez. Kayıtta yalnız sıradaki etap tutulur. Eski kayıtlarda alan eksik
+  kalabilir; yeni kayıtlar miktar, bileşim, kimlik, saat, coğrafya ve denklik
+  denetiminden geçer. Worker fark aktarımı bu durumu da taşır.
+- **Ordu → Takviye sevkiyatları** serbest stok, yoldaki personel/ekipman,
+  gerçek konum, hedef, etap ilerlemesi ve bekleme nedenini gösterir. Açılır
+  ayrıntıda teslim/dönüş/kayıp toplamları ve altışarlı sevkiyat listesi vardır.
+
+Bu aşama genel ikmal tüketiminin tamamı değildir. Günlük temel ikmal oranı,
+ticaret/yardım, eğitim ve destek değişimi kendi mevcut hesaplarını kullanır.
+Gerçek tren/kamyon/konvoy stok tahsisi, bütün yük türlerinin ortak kapasitesi,
+yerel yakıt rezervleri ve modüler tümen tasarımcısı sonraki işlerdir. Birlikler
+hâlâ güç yüzdesiyle temsil edildiğinden takviye ekipmanı kesirli olabilir.
+
+**Kontrol ve görsel değişiklikler:** Haritadaki kendi birliğine dokunmak hedef
+seçimini açar; sonraki şehir dokunuşu gerçek grup hareket emrini verir. Ordu
+menüsü ve “Birlik ayrıntıları” inceleme/eğitim için kalır. Hava/Donanma görevleri
+ayrı erişilebilir bölümlerde seçilen kuvvet, üs, görev ve hedefle tek emir
+olarak uygulanır. Harita üzerindeki hava/deniz emir düğmeleri ilgili bölümü
+açar. Uçak ve gemiler gerçek katalog türüne göre on ayrı özgün, örneklenmiş
+model kullanır; nakliye/keşif, taktik/stratejik bombardıman, muhrip/zırhlı
+siluetleri ayrılır. Bekleyen kuvvetler sahte çatışma üretmez.
+Gemiler ve aynı üssü kullanan uçaklar dünya güncellemesinde hesaplanan ayrı
+yerleşim noktaları kullanır; küçük denizlerde ölçek ve aralık mevcut güvenli
+su alanına göre sınırlandırılır. Kare başına çarpışma çözümü eklenmez; mevcut
+nesne/efekt sınırları ve örneklenmiş çizim yapısı korunur.
+
+- Kara rotaları kıyı ve gerçek ortak bölge sınırlarından önceden üretilen
+  koridorları izler. 1.974 aday kara bağlantısından 793'ü düz çizgi yerine
+  kıyıyı dolanan yol kullanır; 144 sahte kara bağlantısı ayıklanır. Geçerli
+  kara yolu varsa deniz kısayoluna tercih edilir. İstanbul–Çanakkale hareketi
+  İzmit–Bursa–Balıkesir üzerinden tamamlanır. Üçüncü ülke geçişinde askerî
+  erişim kuralları korunur; izin yokken sınırdan kestirme yapılmaz.
+- Hareket süresi, 2D/3D birlik konumu ve hareket oku aynı koridor uzunluğunu
+  kullanır. Coğrafi işlem oyun sırasında çalışmaz; küçük koridor tablosu ve
+  önbellek kullanılır. 76.865 baytlık tabloyu geliştirmede Shapely 2.1 veya
+  üzeriyle `python scripts/europa-war/build-land-corridors.py --check`
+  doğrular; oyun Python veya Shapely gerektirmez. Coğrafya haritanın mevcut
+  genelleştirilmiş sınırlarıdır;
+  gerçek yol ağının veya bütün tarihsel sınırların eksiksiz modeli değildir.
+- Eski imkânsız kara emirleri son hedefini koruyarak yeniden hesaplanır.
+  Bağlantısız liman çiftleri deniz taşımacılığına çevrilir; Stettin–Königsberg,
+  Kopenhag–Aarhus ve Liverpool–Belfast arasında ayrıca denetlenen deniz
+  bağlantıları vardır. Bu yollar donanma/boğaz erişimine bağlıdır. Deniz
+  intikalinin kayıtlı türü, yeniden yüklemede hareketin tekrar başlamasını önler.
+- Hava/deniz görevleri gerçek günlük çözümde yakıt tüketir, uygun düşmana ve
+  hedefe etki eder. Oyuncunun otomasyon tercihi korunur. Ele geçirilen ana
+  limanın yerine aynı deniz bölgesindeki başka limanı seçmek de gerçek emir
+  sayılır; “zaten aynı görev” denerek kilitlenmez.
+
+**Doğrulama:** Koridor üreticisinin `--check` denetimi ve son
+`npm run build` başarılı. Takviye için 29, manuel görev önizlemesi/gerçek
+komut eşleşmesi için 7 ve son model/yerleşim için 20 odaklı kontrol geçti.
+Genel turda **789 kontrolden 788'i** ilk çalıştırmada geçti. Kalan motor testi
+birlikleri komşu olmayan şehirlerden gelmiş gibi yerleştiriyordu; geçersiz
+rotanın artık onarılması bu eski varsayımı açığa çıkardı. Test gerçek
+Breslau–Poznań/Kraków sınır geçişleriyle düzeltildi; motor dosyasındaki
+**23 kısa kontrol yeniden çalıştırılıp 23/23 geçti**. Daha önce başarıyla
+tamamlanan bir yıllık ve **3.653 günlük (1936–1945) tarihsel simülasyonlar**
+test verisi değişikliği için tekrarlanmadı. Altı ülkenin 90 günlük savaş ve
+kayıt devamlılığı senaryoları da genel turda geçti.
+
+Üretim sunucusunda toplam **48/48** tarayıcı kabul kontrolü geçti: takviye
+9, hava/deniz ve kıyı hareketi 20, referans arayüz 17, son 3D yerleşim 2.
+JavaScript/konsol hatası kaydedilmedi. İki gerçek tümenin tek harita seçimiyle
+İzmit–Bursa–Balıkesir üzerinden Çanakkale'ye varışı, tarafsız geçiş reddi,
+AI kapalıyken elle verilen uçak/gemi görevleri, gerçek yakıt/tesis/gövde
+sonuçları, çevrimdışı kayıt/yükleme ve 2D/3D deniz komutası bağlantıları
+denendi. Masaüstü ve gerçek dokunma olayları kullanılan mobil emülasyonda
+panel taşması olmadı; 320×640 ve 667×375 düzenleri de kontrol edildi.
+Son masaüstü/mobil ekran görüntülerinde gemi ve uçak yığılması giderildi.
+Kontroller Chromium/SwiftShader ile yapıldı; fiziksel telefon testi değildir.
+
+Node/Linux yük denemesinde 3.680 tümen ve 3.680 ödenmiş sevkiyatın kaydı
+3.096.037 UTF-8 baytla 4 MiB sınırının altında kaldı; yeniden yükleme ve
+12 saatlik devam geçerliydi. İlk ayırma 32,13 ms, sonraki sevkiyat adımları
+2,25–11,27 ms ölçüldü. Bu tek ortam ölçümü telefon FPS garantisi değildir.
+
+Uzun sefer profili, kara bağlantısı anahtarlarının tekrar sıralanıp
+birleştirilmesini gereksiz maliyet olarak gösterdi. Geçerli ve eski hatalı
+bağlantılar başlangıçta `Map/Set` içine alındı. **826.281 bölge çiftinin** eski
+hesapla eşitliği ve ilgili 34 kontrol geçti. 1.996. gündeki 1.109 tümen/
+58 sevkiyat örneğinde, her sürüm için yedi dönüşümlü denemede toplam 168
+saatlik kara adımı ölçüldü: medyan **5,24 → 4,22 ms**, p95 **8,76 → 8,14 ms**.
+24 adım sonunda bütün dünya özeti birebir aynı ve kayıt geçerliydi. Ölçüm
+Node/Linux'ta başka bir uzun test çalışırken yapıldı; tüm oyun veya telefon
+FPS hızlanması olarak yorumlanmaz. Genel sefer turu önbellek öncesi aynı
+kurallar üzerinde çalışır; bu son değişiklik ayrıca tam bağlantı eşdeğerliği
+ve aynı sefer girdisiyle karşılaştırılmıştır.
 
 ## Referans ekrana göre stratejik harita ve komuta düzeni — 4 Kasım 2026
 
@@ -1074,10 +1188,10 @@ yerine kullanılamaz.
 | 31–34 Ticaret, yardım, pazar, sanayi kuruluşları | Kaynak anlaşmaları, rotaya bağlı ticaret sonucu ve tek seferlik yardım (`economy.ts`, `diplomacy.ts`, `military-assets.ts`). | Sevkiyatta rezervasyon/teslimat, üretim lisansı, düzenli yardım, silah pazarı sözleşmeleri ve MIO uzmanlık/deneyim sistemi yok. |
 | 35–36 Araştırma ve doktrin | Yuva/önkoşul/dönem cezası/ülke bonusu, araştırmayla model açılması; doktrin teknoloji olarak var (`politics.ts`, `catalog.ts`). | Deneyimle ilerleyen doktrin ustalığı, askerî gelenekler ve kurumlara bağlı ayrıntılı araştırma etkileri. |
 | 37–40 Tasarımcılar ve ekipman | Sabit tank/uçak/gemi katalogları ve üretim maliyetleri (`catalog.ts`, `advanced-catalog.ts`, `production.ts`). | Modüler tasarımcılar, uyumluluk kuralları, sürümler/refit; gerçek tren, zırhlı tren, demiryolu topu ve konvoy stokları. |
-| 41–43 Şablon, destek, eğitim | Sabit birlik türleri, gerçek ekipman tüketen destekler, eğitim kuyruğu ve ikmale bağlı takviye (`planning.ts`, `economy.ts`). | Tabur/alay şablonları, sürümler, bileşik istatistikler, erken konuşlanma ve gerçek sevkiyatlı eğitim/takviye. |
+| 41–43 Şablon, destek, eğitim | Sabit birlik türleri, gerçek ekipman tüketen destekler, eğitim kuyruğu; başkentten ayrılan ve fiziksel rotadan teslim edilen ücretli takviye yükleri (`planning.ts`, `economy.ts`, `reinforcements.ts`). | Tabur/alay şablonları, sürümler, bileşik istatistikler, erken konuşlanma ve sevkiyatlı eğitim. Takviye yükleri mevcut güç yüzdesi modeliyle çalışır. |
 | 44–46 Komuta, karargâh, kaptan | General beceri/tecrübesi, 12 birlik sınırı, otomatik yeni komutan ve hedef sınır ataması (`commanders.ts`, `commander-roster.ts`). | Ordu grubu/tiyatro, sahra karargâhı, emir gücü, tümen komutanları, gemi kaptanları ve madalyalar. |
 | 47–51 Hareket, cephe, savaş, kuşatma | Saatlik grup hareketi; arazi, mesafe ve mevcut ikmale göre maliyetli manuel/AI emir rotası, komutan sınır dağıtımı ve saldırı planı; hedef devlete özel saldır/savun, eşzamanlı hasar ve geri çekilme (`land.ts`, `land-movement-cost.ts`, `planning.ts`, `commanders.ts`). | Hava etkisi, stratejik demiryolu nakli, genişlik/rezerv/taktik/zırh/delme ve süreli geri çekilme. |
-| 52–54 İkmal ve taşıma | Başkent bağlantısı, liman/deniz erişimi, yerel altyapı/hasar/yığılma etkileri; oyuncuya ait bağlı ağda görsel trenler (`world.ts`, `map3d-rail-network.ts`). | Ortak tüketilen kenar/düğüm kapasitesi, gerçek tren/kamyon/konvoy tahsisi, sevkiyatlar, son kilometre ve yerel rezervler. Görsel trenler bu hesapların yerine geçmez. |
+| 52–54 İkmal ve taşıma | Başkent bağlantısı, liman/deniz erişimi, yerel altyapı/hasar/yığılma; gerçek takviye yükleri için ortak tüketilen düğüm/hat kapasitesi ve teslim/dönüş/kayıp muhasebesi (`world.ts`, `reinforcements.ts`). | Günlük ikmal/ticaret/yardım ile aynı taşıma bütçesi, gerçek tren/kamyon/konvoy tahsisi, son kilometre ve yerel rezervler. Görsel trenler bağımsız dekor katmanıdır; yük defterinin yerine geçmez. |
 | 55–58 Hava kuvvetleri | Stoktan kanat, üs yükü/menzil/hazırlık/yakıt, görevler, yakıtı ödenmiş kuvvetlerle eşzamanlı günlük kayıp/bombardıman ve paraşüt koşulları (`airnaval.ts`, `airnaval-resolution.ts`, `operations.ts`). | Pilot/tasarım sürümleri, tespit/temas/sorti evreleri, ayrıntılı görev bölgesi, bina bazlı hasar ve yükle paylaşılan nakliye kapasitesi. |
 | 59–64 Donanma ve çıkarma | Tekil gemi, görev, intikal, yakıt, eşzamanlı günlük hasar, sabit bütçeli onarım, eskort/baskın ve taşıyıcı uçağı stoku (`airnaval.ts`, `airnaval-resolution.ts`, `military-assets.ts`). | Görev kuvveti hiyerarşisi, fazlı deniz muharebesi, mayınlar/antlaşmalar, gerçek taşıyıcı kanatları ve hazırlık/konvoy/yük tabanlı çıkarma. |
 | 65–67 Diplomasi ve ittifak | Kabul hesabı, gerekçe, savaş, pakt, geçiş, yardım, ittifak ve barış (`diplomacy.ts`, `conference.ts`). | Süreçli teklifler, ittifak liderlik/kural/hedef/katkı varlığı, ortak tiyatrolar ve sahibi–denetleyicisi ayrı sefer kuvvetleri. |
@@ -1093,14 +1207,15 @@ yerine kullanılamaz.
 | 94 Performans ve paketleme | Dört kalite seviyesi, instancing/görünürlük sınırları, FPS/geometri/doku ölçümü; saatlik worker fark aktarımı ve ayrı hesaplama/paket süreleri; çevrimdışı paket, WebGL kaybında 2D dönüş (`simulation-state.ts`, `SimulationMetrics.tsx`, `map3d-renderer.ts`, `offline-assets.ts`). | Otomatik WebGL geri yükleme, bölgesel varlık yükleme ve 10 yıllık bellek/perf değerlendirmesi. Üç yükte aktarım deneyi fiziksel cihaz testi veya 60 FPS garantisi değildir. |
 | 95 Erişilebilirlik ve öğretici | Türkçe paneller, dokunma/klavye erişimi, sistem veya kullanıcı tercihli azaltılmış hareket (`WarMap3D.tsx`, `WarPanels.tsx`). | İngilizce/anahtarlı yerelleştirme, değiştirilebilir tuşlar, ayrıntılı UI ölçeği, ansiklopedi ve gerçek eylemlerle ilerleyen öğreticiler. |
 | 96 Raporlar ve kampanya sonu | Ekonomik geçmiş grafikleri, olay günlüğü ve gerçek günlük hava/deniz kayıp–yakıt–hasar özeti (`WarPanels.tsx`, `AirNavalReport.tsx`, `types.ts`). | Aylık muhasebe raporu, birim/gemi tarihçesi, ölçülen kampanya hedefleri/başarımlar, zaman çizelgesi ve rapor dışa aktarımı. |
-| 97–98 Değişmezler ve uçtan uca test | Motor, stok, savaş, AI, kayıt, worker ve harita regresyonları; çok ülkeyle 90 günlük ve 1936–1945 tarihsel kampanya testleri (`advanced.test.ts`, `campaign-scenarios.test.ts`, `engine.test.ts`, `simulation.test.ts`). | Saatlik kara ve kayıt regresyonları eklendi. Sevkiyat/kapasiteli ikmal/HQ/proje sistemleri henüz yok; bunların bütünleşik kabul testleri geçti denemez. Genel property testleri ve fiziksel cihazlarda uzun sefer bellek/FPS profili ayrı iştir. |
+| 97–98 Değişmezler ve uçtan uca test | Motor, stok, savaş, AI, kayıt, worker ve harita regresyonları; çok ülkeyle 90 günlük ve 1936–1945 tarihsel kampanya testleri (`advanced.test.ts`, `campaign-scenarios.test.ts`, `engine.test.ts`, `simulation.test.ts`). | Saatlik kara ve kayıt regresyonları eklendi. Takviye sevkiyatı için kapasite, korunma ve kayıt testleri eklendi; genel kapasiteli ikmal/HQ/proje sistemlerinin bütünleşik kabulü tamamlanmadı. Genel property testleri ve fiziksel cihazlarda uzun sefer bellek/FPS profili ayrı iştir. |
 | 99–100 Teslim ve referanslar | Bağımlılığa göre uygulama sırası bu belgede; özgün şartname değişmeden arşivlendi. | Sonraki modülleri ayrı kabul etme ve kaynakların bağımsız doğrulanması. Bütün özellikler tamamlandı veya canlıya dağıtıldı iddiası yok. |
 
 ## Sonraki bağımlılık sırası
 
-1. Personel/ekipman sürümü, rezervasyon, sevkiyat ve paylaşılan ikmal kapasitesini
-   ortak muhasebeye bağla. Tasarımcılar, HQ, hava/deniz harekâtı ve ülke paketleri
-   bu temeli atlayarak bağımsız ödül veya dekor olarak eklenmemeli.
+1. Takviye yüklerinin rezervasyon/teslim/dönüş/kayıp ve ortak hat kapasitesi
+   uygulandı. Sırada personel/ekipman sürümleri, eğitim/ticaret/yardım yükleri,
+   gerçek taşıt stokları ve günlük ikmali aynı muhasebeye bağlamak var.
+   Tasarımcılar ve HQ bu temeli atlayarak bağımsız ödül veya dekor olmamalı.
 2. Ödenmiş görev katılımını ve varlık bazlı gerçek kayıp/hasar olaylarını
    kayda bağla; anlık destek sorguları ve 3D efektler aynı defteri kullansın.
    Eşzamanlı günlük hava/deniz hesabı, ayrı kayıtlı RNG akışları, dönemsel dünya

@@ -38,6 +38,9 @@ try {
         process.execPath,
         [
           "--test",
+          // Each campaign suite holds the world atlas and long simulations.
+          // Bound parallel workers instead of exhausting shared CI memory.
+          "--test-concurrency=2",
           ...sources.map((s) => path.join(output, s.replace(/\.ts$/, ".js"))),
         ],
         { cwd: root, stdio: "inherit" },

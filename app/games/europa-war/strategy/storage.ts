@@ -19,9 +19,16 @@ import {
 import { GEOGRAPHY, MAP, event, uid } from "./world";
 import { COMMANDER_CAPACITY, MAX_COMMANDERS } from "./commander-roster";
 import { isValidCommandState } from "./command-types";
-import { HOURS_PER_DAY, hourLabel, worldHour } from "./time";
+import { HOURS_PER_DAY, MAX_CAMPAIGN_HOUR, hourLabel, worldHour } from "./time";
 import { isUint32, isValidRandomStreams } from "./rng";
 import { MAX_ARMIES } from "./campaign-limits";
+import { isTraversableLandEdge } from "./land-corridors";
+import {
+  MAX_REINFORCEMENT_FRACTION,
+  MAX_REINFORCEMENT_SHIPMENTS,
+  reinforcementRequirements,
+} from "./reinforcements";
+import type { ReinforcementCargo } from "./reinforcement-types";
 import legacyEurope from "./legacy-europe-map.json";
 import {
   extendEuropeanCampaign,
@@ -295,7 +302,7 @@ const worldFields: Record<string, Validator> = {
               to: province,
               progress: num(),
               days: num(1000, 0.01),
-              kind: one(["paradrop"]),
+              kind: one(["paradrop", "transport"]),
             })(x),
         ),
       },
@@ -385,10 +392,66 @@ const worldFields: Record<string, Validator> = {
   ),
   firedEvents: arr(str, 200),
 };
+const shipmentIdentity: Validator = (value) =>
+  typeof value === "string" && safeKey(value);
+const reinforcementCargo = shape({
+  manpower: num(1e12),
+  equipment: (value) =>
+    object(value) &&
+    Object.keys(value).length <= Object.keys(EQUIPMENT).length &&
+    Object.entries(value).every(
+      ([key, amount]) => Object.hasOwn(EQUIPMENT, key) && num(1e12)(amount),
+    ),
+});
+const reinforcementState = shape({
+  shipments: arr(
+    shape({
+      id: shipmentIdentity,
+      country: shipmentIdentity,
+      army: shipmentIdentity,
+      unit,
+      support: arr(one(Object.keys(SUPPORT)), 3),
+      origin: province,
+      province,
+      destination: province,
+      route: arr(province, 1),
+      leg: nullable(
+        shape({
+          to: province,
+          hours: num(10000, 0.01),
+          progress: num(10000),
+        }),
+      ),
+      loadingHours: num(1),
+      status: one(["outbound", "returning"]),
+      blocked: nullable(
+        one(["route", "combat", "capacity", "depot", "supply"]),
+      ),
+      cargo: reinforcementCargo,
+      createdHour: (value) =>
+        num(MAX_CAMPAIGN_HOUR)(value) && Number.isSafeInteger(value),
+    }),
+    MAX_REINFORCEMENT_SHIPMENTS,
+  ),
+  ledger: record(
+    shape({
+      dispatched: reinforcementCargo,
+      delivered: reinforcementCargo,
+      returned: reinforcementCargo,
+      lost: reinforcementCargo,
+    }),
+    MAX_COUNTRIES,
+  ),
+  lastDispatchHour: (value) =>
+    num(MAX_CAMPAIGN_HOUR)(value) &&
+    Number.isSafeInteger(value) &&
+    (value as number) % HOURS_PER_DAY === 0,
+});
 const schema = shapeWithOptionalFields(worldFields, {
   commandState: isValidCommandState,
   rng: isValidRandomStreams,
   mapVersion: one(["world-1936-v1"]),
+  reinforcements: reinforcementState,
   airNavalReports: arr(
     shape({
       country: str,
@@ -417,6 +480,115 @@ const schema = shapeWithOptionalFields(worldFields, {
     MAX_COUNTRIES,
   ),
 });
+
+/** In-flight cargo may outlive its target, but it must remain fully paid and
+ * geographically meaningful. Validate without repairing or settling the save. */
+function validReinforcementReferences(w: World): boolean {
+  const state = w.reinforcements;
+  if (!state) return true;
+  if (state.lastDispatchHour > worldHour(w)) return false;
+  const close = (left: number, right: number) =>
+    Math.abs(left - right) <=
+    1e-8 + Number.EPSILON * Math.max(1, left, right) * 1024;
+  const pending = new Map<string, ReinforcementCargo>();
+  const identities = new Set<string>();
+  const targets = new Set<string>();
+  for (const shipment of state.shipments) {
+    const target = `${shipment.country}:${shipment.army}`;
+    if (
+      identities.has(shipment.id) ||
+      targets.has(target) ||
+      !Object.hasOwn(w.countries, shipment.country) ||
+      !Object.hasOwn(state.ledger, shipment.country) ||
+      shipment.createdHour > state.lastDispatchHour ||
+      shipment.createdHour % HOURS_PER_DAY !== 0 ||
+      new Set(shipment.support).size !== shipment.support.length ||
+      shipment.support.some(
+        (support, i) => i > 0 && shipment.support[i - 1] > support,
+      )
+    )
+      return false;
+    identities.add(shipment.id);
+    targets.add(target);
+    const path = [shipment.province, ...shipment.route];
+    if (
+      [shipment.origin, shipment.destination, ...path].some(
+        (id) => !Object.hasOwn(w.provinces, id),
+      ) ||
+      new Set(path).size !== path.length ||
+      path.some(
+        (id, i) =>
+          i > 0 &&
+          !GEOGRAPHY[path[i - 1]].neighbors.some(
+            (edge) =>
+              edge.id === id &&
+              (edge.sea || isTraversableLandEdge(path[i - 1], id)),
+          ),
+      ) ||
+      (shipment.leg &&
+        (shipment.leg.to !== shipment.route[0] ||
+          shipment.leg.progress >= shipment.leg.hours ||
+          shipment.loadingHours > 0))
+    )
+      return false;
+    const fraction = shipment.cargo.manpower / UNITS[shipment.unit].men;
+    const needs = reinforcementRequirements(shipment.unit, shipment.support);
+    if (
+      fraction <= 0 ||
+      fraction > MAX_REINFORCEMENT_FRACTION + 1e-12 ||
+      Object.keys(shipment.cargo.equipment).length !==
+        Object.keys(needs).length ||
+      Object.entries(needs).some(
+        ([key, amount]) =>
+          !Object.hasOwn(shipment.cargo.equipment, key) ||
+          !close(
+            shipment.cargo.equipment[key as keyof typeof needs]!,
+            amount * fraction,
+          ),
+      )
+    )
+      return false;
+    const cargo = pending.get(shipment.country) ?? {
+      manpower: 0,
+      equipment: {},
+    };
+    cargo.manpower += shipment.cargo.manpower;
+    for (const [key, amount] of Object.entries(shipment.cargo.equipment)) {
+      const equipmentId = key as keyof typeof cargo.equipment;
+      cargo.equipment[equipmentId] =
+        (cargo.equipment[equipmentId] ?? 0) + amount;
+    }
+    pending.set(shipment.country, cargo);
+  }
+  for (const [country, ledger] of Object.entries(state.ledger)) {
+    if (!Object.hasOwn(w.countries, country)) return false;
+    const cargo = pending.get(country);
+    if (
+      !close(
+        ledger.dispatched.manpower,
+        ledger.delivered.manpower +
+          ledger.returned.manpower +
+          ledger.lost.manpower +
+          (cargo?.manpower ?? 0),
+      )
+    )
+      return false;
+    for (const key of Object.keys(EQUIPMENT)) {
+      const equipmentId = key as keyof typeof ledger.dispatched.equipment;
+      if (
+        !close(
+          ledger.dispatched.equipment[equipmentId] ?? 0,
+          (ledger.delivered.equipment[equipmentId] ?? 0) +
+            (ledger.returned.equipment[equipmentId] ?? 0) +
+            (ledger.lost.equipment[equipmentId] ?? 0) +
+            (cargo?.equipment[equipmentId] ?? 0),
+        )
+      )
+        return false;
+    }
+  }
+  return true;
+}
 function validateWithRegions(
   value: unknown,
   regionIds: readonly string[],
@@ -471,6 +643,12 @@ function validateWithRegions(
     Object.entries(w.provinces).some(
       ([id, p]) => id !== p.id || !has(p.owner) || !has(p.controller),
     )
+  )
+    return false;
+  if (
+    w.reinforcements &&
+    (regionIds.length !== MAP.provinces.length ||
+      !validReinforcementReferences(w))
   )
     return false;
   const armiesById = new Map(w.armies.map((army) => [army.id, army]));

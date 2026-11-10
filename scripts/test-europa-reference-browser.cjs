@@ -474,7 +474,7 @@ fs.mkdirSync(output, { recursive: true });
 
       await focus(country.capital);
       await click(page.locator(`[data-army="${reserve.id}"]`));
-      await click(page.getByRole("button", { name: /^Haritada hedef seç ·/ }));
+      await page.getByTestId("map-target-selection").waitFor();
       assert.equal(
         await page
           .getByRole("button", { name: "Yönetim panelini kapat", exact: true })

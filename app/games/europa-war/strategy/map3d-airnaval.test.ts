@@ -92,8 +92,8 @@ test("Uçak mini modelleri küçülür; kanadın gerçek gücü ve askerî özel
   const world = battle(),
     original = structuredClone(world);
   const units = airNavalUnits(world).filter((unit) => unit.airborne);
-  assert.equal(units.find((unit) => unit.id === "own-fighter")?.scale, 0.55);
-  assert.equal(units.find((unit) => unit.id === "own-bomber")?.scale, 0.62);
+  assert.equal(units.find((unit) => unit.id === "own-fighter")?.scale, 0.26);
+  assert.equal(units.find((unit) => unit.id === "own-bomber")?.scale, 0.3);
   assert.deepEqual(world, original);
 });
 
@@ -296,18 +296,101 @@ test("Özgün uçak ve gemi modelleri sonlu detaylı geometrilere sahiptir", () 
   for (const kind of [
     "fighter",
     "bomber",
+    "strategicBomber",
+    "transport",
+    "reconPlane",
     "ship",
+    "destroyer",
+    "battleship",
     "carrier",
     "submarine",
   ] as AirNavalModel[]) {
     const geometry = createAirNavalGeometry(kind);
     const positions = geometry.getAttribute("position");
     assert.ok(positions.count > 500, kind);
+    assert.ok(positions.count <= 22000, `${kind}: bounded merged geometry`);
     assert.equal(geometry.getAttribute("color").count, positions.count);
     assert.ok(Array.from(positions.array).every(Number.isFinite));
     assert.ok(geometry.boundingSphere!.radius > 8);
     geometry.dispose();
   }
+});
+
+test("Gerçek uçak ve gemi rolleri ayrı siluetlere bağlanır; nakliye uçağı bombardıman uçağı olmaz", () => {
+  const world = battle();
+  world.countries.turkey.air.wings = [
+    wing("tactical", "turkey-0", "bulgaria-2", "support", "bomber"),
+    wing("heavy", "turkey-0", "bulgaria-2", "strategic", "strategicBomber"),
+    wing("cargo", "turkey-0", "turkey-0", "idle", "transport"),
+    wing("camera", "turkey-0", "bulgaria-2", "recon", "reconPlane"),
+  ];
+  world.countries.turkey.navy.ships = [
+    { ...ship("escort", "turkey-1"), model: "destroyer" },
+    { ...ship("capital-ship", "turkey-1"), model: "battleship" },
+  ];
+  const original = structuredClone(world);
+  const units = airNavalUnits(world);
+  for (const [id, model] of [
+    ["tactical", "bomber"],
+    ["heavy", "strategicBomber"],
+    ["cargo", "transport"],
+    ["camera", "reconPlane"],
+    ["escort", "destroyer"],
+    ["capital-ship", "battleship"],
+  ])
+    assert.equal(units.find((unit) => unit.id === id)?.model, model);
+  const tactical = createAirNavalGeometry("bomber"),
+    heavy = createAirNavalGeometry("strategicBomber"),
+    transport = createAirNavalGeometry("transport"),
+    escort = createAirNavalGeometry("destroyer"),
+    capital = createAirNavalGeometry("battleship");
+  assert.ok(heavy.boundingBox!.max.x > tactical.boundingBox!.max.x);
+  assert.ok(capital.boundingBox!.max.z > escort.boundingBox!.max.z);
+  assert.notDeepEqual(
+    transport.getAttribute("position").array,
+    tactical.getAttribute("position").array,
+  );
+  [tactical, heavy, transport, escort, capital].forEach((geometry) =>
+    geometry.dispose(),
+  );
+  assert.deepEqual(world, original);
+});
+
+test("Bekleyen karma filo sabit kalır, iz veya hayalî ateş üretmez; model havuzları araç sayısıyla çoğalmaz", () => {
+  const world = battle();
+  for (const country of Object.values(world.countries)) {
+    for (const wing of country.air.wings) wing.mission = "idle";
+    for (const ship of country.navy.ships) {
+      ship.mission = "idle";
+      ship.transit = 0;
+    }
+  }
+  const scene = new THREE.Scene(),
+    visuals = createAirNavalVisuals(scene, () => 0);
+  visuals.update(world);
+  assert.equal(visuals.animate(0, { quality: "low" }), false);
+  const modelPools = scene
+    .getObjectByName("air-naval-missions")!
+    .children.filter((object) =>
+      object.name.startsWith("mission-"),
+    ) as THREE.InstancedMesh[];
+  assert.equal(modelPools.length, 10);
+  const matrices = modelPools.map((pool) =>
+    Array.from(pool.instanceMatrix.array),
+  );
+  visuals.animate(1000, { quality: "low" });
+  assert.equal(
+    visuals.stats().movingAircraft +
+      visuals.stats().movingShips +
+      visuals.stats().effects,
+    0,
+  );
+  assert.deepEqual(
+    modelPools.map((pool) => Array.from(pool.instanceMatrix.array)),
+    matrices,
+  );
+  visuals.dispose();
+  assert.equal(scene.children.length, 0);
 });
 
 test("Sahne duraklatılınca veya azaltılmış hareket seçilince araçlar ve isabetler donar; havuzlar temizlenir", () => {
@@ -406,4 +489,94 @@ test("Düşük kalite miniatur ve efekt havuzlarını sınırlar, oyuncunun ara�
   );
   visuals.dispose();
   assert.equal(GEOGRAPHY[first.target].country, "bulgaria");
+});
+
+test("Aynı üs ve denizdeki karma modeller ayrılır; uçuş ve devriyede ya da kayıt sırası değişince üst üste binmez", () => {
+  for (const active of [false, true]) {
+    const world = battle();
+    for (const country of Object.values(world.countries)) {
+      country.air.wings = [];
+      country.navy.ships = [];
+    }
+    world.provinces["turkey-0"].buildings.airfield = 5;
+    world.countries.turkey.air.wings = [
+      wing(
+        "plane-a",
+        "turkey-0",
+        "bulgaria-2",
+        active ? "superiority" : "idle",
+      ),
+      wing(
+        "plane-b",
+        "turkey-0",
+        "bulgaria-2",
+        active ? "support" : "idle",
+        "bomber",
+      ),
+      wing(
+        "plane-c",
+        "turkey-0",
+        "bulgaria-2",
+        active ? "strategic" : "idle",
+        "strategicBomber",
+      ),
+      wing(
+        "plane-d",
+        "turkey-0",
+        "bulgaria-2",
+        active ? "recon" : "idle",
+        "reconPlane",
+      ),
+    ];
+    world.countries.turkey.navy.ships = (
+      ["destroyer", "ship", "battleship", "carrier"] as const
+    ).map((model, index) => ({
+      ...ship(`hull-${index}`, "turkey-1"),
+      model,
+      mission: active ? "patrol" : "idle",
+    }));
+    const original = structuredClone(world);
+    const scene = new THREE.Scene(),
+      visuals = createAirNavalVisuals(scene, () => 0);
+    const pools = scene
+      .getObjectByName("air-naval-missions")!
+      .children.filter((object) =>
+        object.name.startsWith("mission-"),
+      ) as THREE.InstancedMesh[];
+    const matrix = new THREE.Matrix4();
+    visuals.update(world);
+    for (let frame = 0; frame < 24; frame++) {
+      visuals.animate(frame * 100, { quality: "low" });
+      assert.equal(visuals.stats().aircraft, 4);
+      assert.equal(visuals.stats().ships, 4);
+      const spheres: THREE.Sphere[] = [];
+      for (const pool of pools)
+        for (let index = 0; index < pool.count; index++) {
+          pool.getMatrixAt(index, matrix);
+          spheres.push(
+            pool.geometry.boundingSphere!.clone().applyMatrix4(matrix),
+          );
+        }
+      for (let i = 0; i < spheres.length; i++)
+        for (let j = 0; j < i; j++)
+          assert.ok(
+            spheres[i].center.distanceTo(spheres[j].center) >
+              spheres[i].radius + spheres[j].radius,
+            `${active ? "active" : "parked"}: frame ${frame}, ${i}/${j}`,
+          );
+    }
+    const rendered = pools.map((pool) => Array.from(pool.instanceMatrix.array));
+    const reversed = structuredClone(world);
+    reversed.countries.turkey.air.wings.reverse();
+    reversed.countries.turkey.navy.ships.reverse();
+    visuals.update(reversed);
+    visuals.animate(2300, { quality: "low" });
+    assert.deepEqual(
+      pools.map((pool) => Array.from(pool.instanceMatrix.array)),
+      rendered,
+      "Asset order must not shuffle formation slots",
+    );
+    assert.deepEqual(world, original);
+    visuals.dispose();
+  }
 });

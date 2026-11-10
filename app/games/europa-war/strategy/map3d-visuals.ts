@@ -1,4 +1,5 @@
 import { GEOGRAPHY } from "./world";
+import { movementLegPath, remainingCorridor } from "./land-corridors";
 import type { Army, World } from "./types";
 
 export type GraphicsQuality = "low" | "medium" | "high" | "ultra";
@@ -61,13 +62,15 @@ export function visibleFormations(world: World): Army[][] {
 export function armyMapPosition(army: Army) {
   const origin = GEOGRAPHY[army.province];
   if (!army.move) return { x: origin.x, y: origin.y };
-  const target = GEOGRAPHY[army.move.to];
+  const path = movementLegPath(
+    army.province,
+    army.move.to,
+    army.move.kind === "paradrop",
+  );
+  if (!path) return { x: origin.x, y: origin.y };
   const ratio = Math.max(
     0,
     Math.min(0.94, army.move.progress / Math.max(0.01, army.move.days)),
   );
-  return {
-    x: origin.x + (target.x - origin.x) * ratio,
-    y: origin.y + (target.y - origin.y) * ratio,
-  };
+  return remainingCorridor(path, ratio)[0];
 }

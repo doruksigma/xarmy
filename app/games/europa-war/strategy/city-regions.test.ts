@@ -92,7 +92,15 @@ test("Eski Avrupa'nın 447 şehrinin ayrı sınırları ve simetrik bağlantıla
     assert.ok(w.provinces[p.id]);
     assert.ok(GEOGRAPHY[p.legacyRegion]);
     assert.ok(p.neighbors.length > 0);
+    // The archival atlas remains intact; runtime adjacency corrects old
+    // across-water "land" edges, so check each graph against itself.
     for (const e of p.neighbors)
+      assert.ok(
+        MAP.provinces
+          .find((other) => other.id === e.id)!
+          .neighbors.some((back) => back.id === p.id && back.sea === e.sea),
+      );
+    for (const e of GEOGRAPHY[p.id].neighbors)
       assert.ok(
         GEOGRAPHY[e.id].neighbors.some(
           (back) => back.id === p.id && back.sea === e.sea,
