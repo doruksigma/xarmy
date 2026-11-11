@@ -23,6 +23,53 @@ iddia edilmez. Kod incelemesi, çalışma zamanı doğrulamasının yerini tutma
   sürümünün tarihsel kaydıdır ve burada değiştirilmez. Sonradan eklenen 3D
   sistemler yeni değerlendirmeye dahildir.
 
+## Görsel odak ağacı, üretim, araştırma ve komutan harekâtları — 11 Kasım 2026
+
+- Odaklar gerçek önkoşul bağlantılarıyla madalyon düğümlerinden oluşan bir
+  ağaçta gösterilir. Dal seçimi, arama, yakınlaştırma, sürükleme, dokunmatik
+  kaydırma ve klavye gezintisi vardır. Seçili düğüm gerçek maliyet, kilit
+  nedeni ve başlatma işlemini açar. Ekran dışındaki düğümler çizilmez;
+  mevcut ülke içerikleri, kart listesi ve olay arşivi korunmuştur.
+- Üretim ekranı fabrika kutuları, verim, stok, günlük çıktı, biriken üretim işi
+  ve ekipman kataloğuyla yenilendi. Atamalar gerçek kapasiteyi kullanır;
+  hattı duraklatmak fabrikaları serbest bırakır. Kara, hava ve deniz filtreleri
+  araştırma kilitlerini korur. Araştırma aktif/boş yuvalar, bağlantılı teknoloji
+  şeması ve ayrıntı paneliyle seçilir. Kalan süre tahmini simülasyonla aynı
+  bilim insanı/danışman/kabine katsayısını kullanır.
+- Komutan portresi seçimi ve haritada hedefe dokunma, bağlı tümenleri birlikte
+  hareket ettirir. Hareket, savunma hattı, taarruz planı ve dur emri komutanın
+  komut anındaki üyelerine uygulanır; en fazla 12 tümen ve erişilebilir rota
+  denetlenir. Ulaşılamayan hedef bütün emri reddeder; başka komutanlara
+  dokunulmaz. Çok aşamalı rota motoru, hazırlık eşiği, taarruz yaklaşımı,
+  başlat/duraklat/sil ve tek tümeni elle seçip götürme korunur.
+- Önceki genel savunma çiziminin ülkenin bütün ordularını alması düzeltildi;
+  elle çizilen hat seçili tümenleri kullanır. Dost birlik bulunan hedefe
+  dokunulduğunda hedefteki birliği seçmek yerine verilen hareket emri
+  uygulanır. 2D taarruz okunda tümen sayısı; 3D'de kayıtlı savunma hatları ve
+  ülke renginde grup taarruz okları görünür. Geometri ve rota bütçeleri korunur.
+- Başkentin tek savunmacıyla 12–14 tümeni durdurması gerçek savaşta tekrarlandı.
+  Sabit 3 tümenlik yerel ikmal kapasitesi bağlantılı orduları açlığa düşürüp
+  ilerlemeyi uzatıyordu; geri çekilen muhafız işgal tamamlanmadan dönebiliyordu.
+  Kapasite artık `3 + altyapı + demiryolu + 2 × ikmal merkezi` hesabını
+  kullanır. Hasar, kuşatma, aşırı yığılma, tahkimat ve arazi etkileri korunur.
+  Gerçek saatlik simülasyonda 12/14 tümen Varşova'yı, 14 tümen tahkimatlı
+  Viyana'yı alabildi; tek saldırgan aynı savunmacıya yenildi. Son toprak/başkent
+  kaybının teslimiyet ve barış konferansı oluşturduğu da doğrulandı.
+
+**Doğrulama:** Komutan, savaş, başkent, rota, AI muhafız ve ikmal paketinde
+**176/176** kontrol; grafik okları/ses paketinde **25/25**; odak grafiğinde
+**4/4**; araştırmada **3/3** kontrol geçti. Bu tur bir yıllık ve 1936–1945
+tam kampanya koşuları tekrar çalıştırılmadı. Masaüstü ve dokunmatik tarayıcıda
+odak başlatma, gerçek üretim/araştırma ilerlemesi, 12'li grup hareketi,
+savunma/taarruz, ayrı komutanın korunması ve tek tümen emri doğrulandı.
+`scripts/test-europa-reference-workflows-browser.cjs` ile 15 ana tarayıcı
+akışı geçti; son üretim derlemesinde sıkıştırılmış odak başlığı, gerçek odak
+başlatma, yakınlaştırma/arama, panel görünümleri ve 320 px yerleşim yeniden
+kontrol edildi. Mobilde odak ayrıntılarına normal dış panel kaydırmasıyla
+erişildiği gerçek dokunma olaylarıyla sınandı. Uygulama JavaScript hatası
+görülmedi. Son üretim derlemesi, TypeScript ve ESLint geçti. Mobil kontroller
+Chromium dokunmatik emülasyonudur; fiziksel telefon veya FPS garantisi değildir.
+
 ## Her ülkeye ulusal programlar, siyasi yollar ve ortak ayarlar — 11 Kasım 2026
 
 1936 atlasındaki **92 ülkenin her birinde 100 temel ulusal program** bulunur.

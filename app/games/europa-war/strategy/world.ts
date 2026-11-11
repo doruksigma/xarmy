@@ -137,6 +137,12 @@ export function localSupply(
   if (friendlyTroops === undefined)
     for (const a of w.armies)
       if (a.province === province && friendly(w, c, a.country)) troops++;
+  // Roads, rail and depots support a larger field army as well as improving
+  // supply quality. A fixed three-division capacity made a normal 12-division
+  // commander starve on connected, undamaged railways: the resulting slow march
+  // let a routed lone capital guard return before occupation, repeatedly.
+  const capacity =
+    3 + p.buildings.infra + p.buildings.rail + p.buildings.hub * 2;
   return clamp(
     ((0.4 +
       p.buildings.infra * 0.12 +
@@ -144,7 +150,7 @@ export function localSupply(
       p.buildings.hub * 0.16) *
       (1 - p.damage / 140) *
       (w.countries[c].tech.includes("logistics") ? 1.2 : 1)) /
-      Math.max(1, troops / 3),
+      Math.max(1, troops / capacity),
     0.08,
     1,
   );

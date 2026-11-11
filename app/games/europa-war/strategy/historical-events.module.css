@@ -536,6 +536,220 @@
   padding: 12px;
   margin-top: 14px;
 }
+.summaryRow {
+  display: flex;
+  align-items: center;
+  gap: 8px 16px;
+  flex-wrap: wrap;
+}
+.summaryRow .catalogSummary {
+  margin: 0;
+  padding: 0;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+}
+.summaryRow .balance {
+  display: flex;
+  justify-content: flex-start;
+  padding: 0;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+}
+.summaryRow .catalogSummary strong,
+.summaryRow .balance strong {
+  font-size: 16px;
+}
+.summaryRow .catalogSummary span,
+.summaryRow .balance small {
+  font-size: 10px;
+  line-height: 1.4;
+}
+.masthead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 14px;
+  flex-wrap: wrap;
+  padding-bottom: 9px;
+  border-bottom: 1px solid #777751;
+}
+.desk .masthead .compactTitle {
+  margin: 0;
+  font-size: 19px;
+  line-height: 1.3;
+}
+.navigationRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 8px 0;
+  flex-wrap: wrap;
+}
+.desk .navigationRow .tabs {
+  margin: 0;
+  display: flex;
+  gap: 5px;
+}
+.desk .navigationRow .tabs button {
+  min-height: 32px;
+  padding: 5px 12px;
+}
+.desk .navigationRow .presentationSwitch {
+  margin: 0;
+}
+.advancedFilters {
+  position: relative;
+  min-width: 0;
+  align-self: end;
+  margin: 0;
+  color: #bfc7b7;
+  font-size: 11px;
+}
+.advancedFilters summary {
+  cursor: pointer;
+  padding: 9px 8px;
+  min-height: 36px;
+  border: 1px solid #626c52;
+  background: #293426;
+  border-radius: 3px;
+}
+.advancedFilters[open] {
+  padding-bottom: 8px;
+}
+.desk .active {
+  margin: 7px 0;
+  padding: 7px 10px;
+}
+.activeTop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.activeTop .activeLink {
+  min-height: 26px;
+  margin: 0;
+  padding: 3px 6px;
+  font-size: 11px;
+  flex: 1;
+  text-align: left;
+}
+.activeTop > span {
+  white-space: nowrap;
+  font-size: 10px;
+}
+.desk .active progress {
+  height: 5px;
+  margin: 5px 0 0;
+}
+.presentationSwitch {
+  display: flex;
+  gap: 6px;
+  margin: 8px 0 12px;
+}
+.presentationSwitch button {
+  min-height: 34px;
+  padding: 5px 12px;
+  font-size: 11px;
+}
+.presentationSwitch button[aria-pressed="true"] {
+  background: #4a5137;
+  color: #eee4be;
+  border-color: #b8aa77;
+}
+.graphWorkspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 300px);
+  align-items: start;
+  gap: 14px;
+}
+.graphWorkspace .tree {
+  margin: 0;
+}
+.graphWorkspace .node {
+  display: block;
+  padding-bottom: 0;
+}
+.graphWorkspace .node::before,
+.graphWorkspace .nodeMark {
+  display: none;
+}
+.graphWorkspace .nodeBody {
+  padding: 15px;
+  border-color: #9d9267;
+  background: linear-gradient(150deg, #424531, #232e24);
+}
+.graphWorkspace .node h3 {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 20px;
+}
+.desk .results {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  padding: 4px 0 7px;
+  margin: 0;
+  border-top: 0;
+}
+.desk .results button {
+  min-height: 25px;
+  padding: 3px 6px;
+}
+.desk .filterGrid {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 155px;
+  align-items: start;
+  gap: 8px;
+}
+.desk .filterGrid .field {
+  margin: 0;
+  gap: 3px;
+  font-size: 10px;
+}
+.desk .filterGrid select,
+.desk .filterGrid input {
+  min-height: 36px;
+  padding: 7px;
+}
+.desk .filterGrid .advancedFilters .field {
+  margin-top: 8px;
+}
+.desk .tabs {
+  margin: 10px 0;
+}
+@media (max-width: 900px) {
+  .graphWorkspace {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 600px) {
+  .summaryRow {
+    gap: 4px 10px;
+  }
+  .desk .filterGrid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .desk .filterGrid > .advancedFilters {
+    grid-column: 1 / -1;
+  }
+  .advancedFilters summary {
+    padding: 4px 6px;
+    min-height: 26px;
+    border: 0;
+    background: transparent;
+  }
+  .desk .navigationRow .tabs button,
+  .desk .navigationRow .presentationSwitch button {
+    padding: 5px 8px;
+    font-size: 10px;
+  }
+  .desk .masthead .compactTitle {
+    font-size: 17px;
+  }
+}
 .catalogSummary strong {
   color: #e5dca6;
   font-size: 30px;

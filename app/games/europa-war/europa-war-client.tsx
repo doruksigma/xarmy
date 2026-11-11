@@ -233,6 +233,10 @@ export default function EuropaWarClient() {
     [attackStance, setAttackStance] =
       useState<OffensivePlan["stance"]>("balanced");
   const [frontPoints, setFrontPoints] = useState<string[]>([]);
+  const [selectedGeneralId, setSelectedGeneralId] = useState<string | null>(
+    null,
+  );
+  const [orderGeneralId, setOrderGeneralId] = useState<string | null>(null);
   const [directMove, setDirectMove] = useState(false);
   const [theaterRequest, setTheaterRequest] = useState<{
     kind: "air" | "naval";
@@ -300,11 +304,21 @@ export default function EuropaWarClient() {
     if (panelBodyRef.current) panelBodyRef.current.scrollTop = 0;
   }, [tab, campaignRevision, shown.player, panel]);
   const selectedArmies = useMemo(() => {
+    if (selectedGeneralId)
+      return shown.armies.filter(
+        (army) => army.country === c.id && army.general === selectedGeneralId,
+      );
     const own = new Map(
       shown.armies.filter((a) => a.country === c.id).map((a) => [a.id, a]),
     );
     return armyIds.map((id) => own.get(id)).filter((a) => a !== undefined);
-  }, [armyIds, shown.armies, c.id]);
+  }, [armyIds, selectedGeneralId, shown.armies, c.id]);
+  const selectedGeneral = c.generals.find(
+    (general) => general.id === selectedGeneralId,
+  );
+  const orderGeneral = c.generals.find(
+    (general) => general.id === orderGeneralId,
+  );
   const selectedArmyIds = useMemo(
     () => selectedArmies.map((a) => a.id),
     [selectedArmies],
@@ -323,6 +337,13 @@ export default function EuropaWarClient() {
     if (!armyId && (order === "move" || order === "paradrop")) setOrder(null);
     if (!armyId) setDirectMove(false);
   }, [armyId, order]);
+  useEffect(() => {
+    if (orderGeneralId && (!orderGeneral || !selectedArmyIds.length)) {
+      setOrder(null);
+      setOrderGeneralId(null);
+      setFrontPoints([]);
+    }
+  }, [orderGeneralId, orderGeneral, selectedArmyIds.length]);
   useEffect(() => {
     if (!world || world.day % 14 !== 0 || world.day === lastAuto.current)
       return;
@@ -365,6 +386,8 @@ export default function EuropaWarClient() {
       }
       if (e.key === "Escape") {
         setOrder(null);
+        setOrderGeneralId(null);
+        setFrontPoints([]);
         setDirectMove(false);
         setPaused(true);
       }
@@ -380,6 +403,8 @@ export default function EuropaWarClient() {
     setPaused(true);
     setSelected(w.countries[w.player].capital);
     setArmyIds([]);
+    setSelectedGeneralId(null);
+    setOrderGeneralId(null);
     setGuideGeneralId("");
     setOrder(null);
     setDirectMove(false);
@@ -453,7 +478,15 @@ export default function EuropaWarClient() {
       } else {
         if (result.world !== w) setWorld(result.world);
         if (result.status === "applied") soundForAction(a);
-        const count = "armies" in a ? new Set(a.armies).size : 1,
+        const count =
+            a.type === "commanderOrder"
+              ? w.armies.filter(
+                  (army) =>
+                    army.country === w.player && army.general === a.general,
+                ).length
+              : "armies" in a
+                ? new Set(a.armies).size
+                : 1,
           movementOrder =
             [
               "move",
@@ -463,23 +496,31 @@ export default function EuropaWarClient() {
               "commanderDeploy",
             ].includes(a.type) ||
             (a.type === "plan" && a.kind === "start") ||
+            (a.type === "commanderOrder" &&
+              (a.kind === "move" || a.kind === "front")) ||
             (a.type === "commanderStance" && a.stance === "attack"),
           feedback =
-            a.type === "commanderDeploy"
-              ? "Komutanın tümenleri seçtiğin ülkenin sınırına dengeli yerleşecek."
-              : a.type === "commanderStance"
-                ? a.stance === "attack"
-                  ? "Komutan yalnızca atandığı ülkeye karşı taarruza geçti."
-                  : "Komutan savunmaya geçti; düşman topraklarına ilerlemeyecek."
-                : a.type === "commanderRecall"
-                  ? "Komutanın sınır görevi kaldırıldı. Tümenleri yeni emir bekliyor."
-                  : a.type === "haltGroup"
-                    ? `${count} tümen için hareket durduruldu; savunma emri verildi.`
-                    : a.type === "moveGroup"
-                      ? `${count} tümen için hareket emri hazır.`
-                      : movementOrder
-                        ? "Emir hazır."
-                        : "Emir uygulandı.";
+            a.type === "commanderOrder"
+              ? a.kind === "offensive"
+                ? `${count} tümenlik harekât planı hazırlandı. Komutan panelinden hazırlığı izleyip başlatabilirsin.`
+                : a.kind === "halt"
+                  ? `${count} tümen durduruldu; komutanın yeni emrini bekliyor.`
+                  : `${count} tümen için ${a.kind === "front" ? "savunma hattı" : "hareket emri"} hazır.`
+              : a.type === "commanderDeploy"
+                ? "Komutanın tümenleri seçtiğin ülkenin sınırına dengeli yerleşecek."
+                : a.type === "commanderStance"
+                  ? a.stance === "attack"
+                    ? "Komutan yalnızca atandığı ülkeye karşı taarruza geçti."
+                    : "Komutan savunmaya geçti; düşman topraklarına ilerlemeyecek."
+                  : a.type === "commanderRecall"
+                    ? "Komutanın sınır görevi kaldırıldı. Tümenleri yeni emir bekliyor."
+                    : a.type === "haltGroup"
+                      ? `${count} tümen için hareket durduruldu; savunma emri verildi.`
+                      : a.type === "moveGroup"
+                        ? `${count} tümen için hareket emri hazır.`
+                        : movementOrder
+                          ? "Emir hazır."
+                          : "Emir uygulandı.";
         setMessage(
           feedback +
             (paused && movementOrder
@@ -501,6 +542,8 @@ export default function EuropaWarClient() {
       );
       const eligible = ids.filter((id) => ownIds.has(id));
       if (eligible.length) playSound("click");
+      setSelectedGeneralId(null);
+      setOrderGeneralId(null);
       setArmyIds((previous) => [
         ...new Set([
           ...(append ? previous.filter((id) => ownIds.has(id)) : []),
@@ -551,13 +594,20 @@ export default function EuropaWarClient() {
         return;
       }
       if ((order === "move" || order === "paradrop" || directMove) && armyId) {
+        const general =
+          orderGeneralId ?? (directMove ? selectedGeneralId : null);
         const accepted = command(
-          order !== "paradrop"
-            ? { type: "moveGroup", armies: selectedArmyIds, to: id, append }
-            : { type: "paradrop", army: armyId, to: id },
+          general && order !== "paradrop"
+            ? { type: "commanderOrder", general, kind: "move", provinces: [id] }
+            : order !== "paradrop"
+              ? { type: "moveGroup", armies: selectedArmyIds, to: id, append }
+              : { type: "paradrop", army: armyId, to: id },
         );
-        if (accepted) setOrder(null);
-        setDirectMove(false);
+        if (accepted) {
+          setOrder(null);
+          setOrderGeneralId(null);
+          setDirectMove(false);
+        }
         setSelected(id);
         return;
       }
@@ -575,6 +625,8 @@ export default function EuropaWarClient() {
       directMove,
       armyId,
       selectedArmyIds,
+      orderGeneralId,
+      selectedGeneralId,
       command,
       playSound,
     ],
@@ -590,13 +642,32 @@ export default function EuropaWarClient() {
         say("Önce kendi tümenlerini seç; ardından hedef bölgeye sağ tıkla.");
         return;
       }
-      if (command({ type: "moveGroup", armies: selectedArmyIds, to: id })) {
+      if (
+        command(
+          selectedGeneralId
+            ? {
+                type: "commanderOrder",
+                general: selectedGeneralId,
+                kind: "move",
+                provinces: [id],
+              }
+            : { type: "moveGroup", armies: selectedArmyIds, to: id },
+        )
+      ) {
         setSelected(id);
         setDirectMove(false);
         setPanel(false);
       }
     },
-    [setup, order, onProvince, selectedArmyIds, command, say],
+    [
+      setup,
+      order,
+      onProvince,
+      selectedArmyIds,
+      selectedGeneralId,
+      command,
+      say,
+    ],
   );
   const on3DUnavailable = useCallback(
     (reason: string) => {
@@ -605,9 +676,20 @@ export default function EuropaWarClient() {
     },
     [changeMapView, say],
   );
-  function beginOrder(value: "move" | "paradrop" | "front" | "offensive") {
-    if (value === "move" && !selectedArmyIds.length) {
-      say("Hareket emri vermek için kendi tümenlerini seç.");
+  function beginOrder(
+    value: "move" | "paradrop" | "front" | "offensive",
+    generalId: string | null = null,
+  ) {
+    const members = generalId
+      ? shown.armies
+          .filter((army) => army.country === c.id && army.general === generalId)
+          .map((army) => army.id)
+      : selectedArmyIds;
+    if (
+      (value === "move" || value === "front" || generalId) &&
+      !members.length
+    ) {
+      say("Emir vermek için kendi tümenlerini veya dolu bir komutanı seç.");
       return;
     }
     if (
@@ -618,6 +700,13 @@ export default function EuropaWarClient() {
       return;
     }
     setOrder(value);
+    setOrderGeneralId(generalId);
+    if (generalId) {
+      setSelectedGeneralId(generalId);
+      setArmyIds(members);
+      setAttackArmies(members);
+      setAttackStance("balanced");
+    }
     setDirectMove(false);
     setFrontPoints([]);
     // Floating windows cover the map on desktop too. Expose the target and
@@ -632,6 +721,8 @@ export default function EuropaWarClient() {
     setOrder(null);
     setDirectMove(false);
     setArmyIds([]);
+    setSelectedGeneralId(null);
+    setOrderGeneralId(null);
     setFrontPoints([]);
     setAttackArmies([]);
     const w = current.current;
@@ -897,7 +988,7 @@ export default function EuropaWarClient() {
                 mode={mode}
                 onSelect={onProvince}
                 onArmies={onMapArmies}
-                ordering={!!order}
+                ordering={!!order || directMove}
                 draft={frontPoints}
                 onOrder={onMapOrder}
                 onUnavailable={on3DUnavailable}
@@ -916,7 +1007,7 @@ export default function EuropaWarClient() {
               mode={mode}
               onSelect={onProvince}
               onArmies={onMapArmies}
-              ordering={!!order}
+              ordering={!!order || directMove}
               draft={frontPoints}
               onTheater={openTheater}
             />
@@ -926,15 +1017,22 @@ export default function EuropaWarClient() {
               className={styles.orderBanner}
               data-testid="map-target-selection"
             >
+              {(orderGeneral || (directMove && selectedGeneral)) && (
+                <strong data-testid="commander-map-selection">
+                  {(orderGeneral ?? selectedGeneral)!.name} ·{" "}
+                  {selectedArmyIds.length}/12 tümen
+                </strong>
+              )}
               {order === "front" || order === "offensive"
-                ? `${frontPoints.length} eyalet · ${order === "front" ? "Komşu savunma bölgelerini" : "Düşman hedeflerini"} sırayla seç.`
+                ? `${frontPoints.length} eyalet · ${order === "front" ? "Komşu savunma bölgelerini" : "Düşman hedeflerini"} sırayla seç. Emir ${order === "offensive" && !orderGeneralId ? attackArmies.length : selectedArmyIds.length} tümene uygulanır.`
                 : order === "move" || directMove
-                  ? `${selectedArmyIds.length} tümen için haritada hedef eyalete tıkla. Shift: rotaya hedef ekle.`
+                  ? `${selectedArmyIds.length} tümen için haritada hedef eyalete tıkla.${orderGeneralId || selectedGeneralId ? " Komutana bağlı birlikler birlikte gider." : " Shift: rotaya hedef ekle."}`
                   : "Seçili paraşütçü tümeni için haritada hedef eyalete tıkla."}
               {directMove && (
                 <button
                   onClick={() => {
                     setDirectMove(false);
+                    setTab("army");
                     setPanel(true);
                   }}
                 >
@@ -942,42 +1040,81 @@ export default function EuropaWarClient() {
                 </button>
               )}
               {(order === "front" || order === "offensive") && (
-                <button
-                  disabled={
-                    frontPoints.length < (order === "offensive" ? 1 : 2)
-                  }
-                  onClick={() => {
-                    const success = command(
-                      order === "offensive"
-                        ? {
-                            type: "offensive",
-                            armies: attackArmies,
-                            objectives: frontPoints,
-                            stance: attackStance,
-                          }
-                        : {
-                            type: "front",
-                            provinces: frontPoints,
-                            armies: shown.armies
-                              .filter((a) => a.country === c.id)
-                              .map((a) => a.id),
-                          },
-                    );
-                    if (success) {
-                      setOrder(null);
-                      setFrontPoints([]);
-                      setPanel(true);
+                <>
+                  {order === "offensive" && (
+                    <label>
+                      Harekât yaklaşımı
+                      <select
+                        aria-label="Harekât yaklaşımı"
+                        value={attackStance}
+                        onChange={(event) =>
+                          setAttackStance(
+                            event.target.value as OffensivePlan["stance"],
+                          )
+                        }
+                      >
+                        <option value="careful">Temkinli</option>
+                        <option value="balanced">Dengeli</option>
+                        <option value="aggressive">Atak</option>
+                      </select>
+                    </label>
+                  )}
+                  <button
+                    disabled={!frontPoints.length}
+                    onClick={() =>
+                      setFrontPoints((points) => points.slice(0, -1))
                     }
-                  }}
-                >
-                  {order === "offensive"
-                    ? "Taarruz planını hazırla"
-                    : "Hattı kaydet ve dağıt"}
-                </button>
+                  >
+                    Son noktayı geri al
+                  </button>
+                  <button
+                    data-testid="map-save-operation"
+                    disabled={
+                      frontPoints.length < (order === "offensive" ? 1 : 2)
+                    }
+                    onClick={() => {
+                      const success = command(
+                        orderGeneralId
+                          ? {
+                              type: "commanderOrder",
+                              general: orderGeneralId,
+                              kind: order,
+                              provinces: frontPoints,
+                              ...(order === "offensive"
+                                ? { stance: attackStance }
+                                : {}),
+                            }
+                          : order === "offensive"
+                            ? {
+                                type: "offensive",
+                                armies: attackArmies,
+                                objectives: frontPoints,
+                                stance: attackStance,
+                              }
+                            : {
+                                type: "front",
+                                provinces: frontPoints,
+                                armies: selectedArmyIds,
+                              },
+                      );
+                      if (success) {
+                        setOrder(null);
+                        setOrderGeneralId(null);
+                        setFrontPoints([]);
+                        setPanel(!orderGeneralId);
+                      }
+                    }}
+                  >
+                    {order === "offensive"
+                      ? "Taarruz planını hazırla"
+                      : "Hattı kaydet ve dağıt"}
+                  </button>
+                </>
               )}
               <button
                 onClick={() => {
                   setOrder(null);
+                  setOrderGeneralId(null);
                   setDirectMove(false);
                   setFrontPoints([]);
                 }}
@@ -1079,7 +1216,7 @@ export default function EuropaWarClient() {
               </button>
             </div>
             <div ref={panelBodyRef} className={styles.panelBody}>
-              {!setup && (
+              {!setup && tab === "command" && (
                 <EasyPlayMode
                   simple={simple}
                   onChange={(value) => {
@@ -1152,11 +1289,13 @@ export default function EuropaWarClient() {
                   onProvince={onProvince}
                   onArmy={onArmy}
                   onArmies={onArmies}
-                  onOrder={() => beginOrder("move")}
+                  onOrder={() => beginOrder("move", selectedGeneralId)}
                   onParadrop={() => beginOrder("paradrop")}
-                  onFront={() => beginOrder("front")}
+                  onFront={() => beginOrder("front", selectedGeneralId)}
                   onTab={setTab}
                   onOffensive={(armies, stance) => {
+                    setSelectedGeneralId(null);
+                    setArmyIds(armies);
                     setAttackArmies(armies);
                     setAttackStance(stance);
                     beginOrder("offensive");
@@ -1196,13 +1335,19 @@ export default function EuropaWarClient() {
           disabled={transition !== null}
           paused={paused}
           command={command}
-          onSelect={(ids) => {
+          selectedGeneralId={selectedGeneralId}
+          onOrder={(general, kind) => beginOrder(kind, general)}
+          onArmy={(id) => onMapArmies([id])}
+          onSelect={(ids, generalId) => {
             setArmyIds(ids);
-            const general = shown.armies.find((army) =>
-              ids.includes(army.id),
-            )?.general;
+            const general =
+              generalId ??
+              shown.armies.find((army) => ids.includes(army.id))?.general;
+            setSelectedGeneralId(general ?? null);
             if (general) setGuideGeneralId(general);
             setOrder(null);
+            setOrderGeneralId(null);
+            setDirectMove(ids.length > 0);
             setFrontPoints([]);
             setPanel(false);
           }}

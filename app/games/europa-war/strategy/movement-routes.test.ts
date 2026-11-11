@@ -22,6 +22,77 @@ function fixture() {
   return { world, army, from, to };
 }
 
+test("3D keeps a twelve-division operation and its defence line visible while stationary without disclosing enemy plans", () => {
+  const { world, army, from, to } = fixture();
+  army.move = null;
+  for (let i = 1; i < 12; i++) addArmy(world, world.player, from);
+  const armies = world.armies.map((unit) => unit.id);
+  world.fronts = [
+    { id: "test-front", country: world.player, armies, provinces: [from, to] },
+  ];
+  world.plans = [
+    {
+      id: "test-plan",
+      country: world.player,
+      armies,
+      objectives: [to],
+      name: "Grup harekâtı",
+      active: false,
+      preparation: 30,
+      stance: "balanced",
+    },
+  ];
+  world.plans.push({
+    ...world.plans[0],
+    id: "enemy-secret",
+    country: "germany",
+  });
+  const before = structuredClone(world);
+  assert.equal(
+    movementRoutes(world, armies).length,
+    0,
+    "2D's own labelled operation layer is not duplicated",
+  );
+  const routes = movementRoutes(world, armies, [], true);
+  assert.equal(routes.length, 2);
+  assert.ok(
+    routes.every(
+      (route) =>
+        route.count === 12 && route.selected && route.country === world.player,
+    ),
+  );
+  assert.deepEqual(
+    new Set(routes.map((route) => route.kind)),
+    new Set(["front", "offensive"]),
+  );
+  const scene = new THREE.Scene();
+  const renderer = createMovementArrows(scene, () => 0);
+  renderer.update(world, armies);
+  assert.equal(renderer.stats.routes, 2);
+  assert.equal(
+    renderer.stats.heads,
+    1,
+    "Defence line has no offensive arrowhead",
+  );
+  assert.ok(
+    renderer.stats.vertices > 0 &&
+      renderer.stats.vertices <= MAX_MOVEMENT_ARROW_VERTICES,
+  );
+  const rebuilds = renderer.stats.rebuilds;
+  renderer.update(world, armies);
+  assert.equal(renderer.stats.rebuilds, rebuilds);
+  assert.deepEqual(world, before);
+  world.fronts = [];
+  world.plans = [];
+  renderer.update(world, armies);
+  assert.equal(
+    renderer.stats.routes,
+    0,
+    "Deleting an operation removes its ribbon",
+  );
+  renderer.dispose();
+});
+
 test("Unselected marching divisions share a country-coloured progress arrow; campaign and RNG stay unchanged", () => {
   const { world, army, from, to } = fixture();
   for (let index = 1; index < 16; index++) {

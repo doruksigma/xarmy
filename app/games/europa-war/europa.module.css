@@ -982,6 +982,10 @@
   margin-left: 14px;
   font-size: 10px;
 }
+.orderBanner > strong {
+  display: block;
+  margin-bottom: 6px;
+}
 .orderBanner.mapNotice {
   top: auto;
   bottom: 52px;
@@ -2207,6 +2211,13 @@
 .commandView .panel[data-tab="army"] {
   width: min(680px, calc(100% - 28px));
 }
+.commandView .panel[data-tab="history"] {
+  width: min(1120px, calc(100% - 28px));
+}
+.commandView .panel[data-tab="economy"],
+.commandView .panel[data-tab="research"] {
+  width: min(860px, calc(100% - 28px));
+}
 .commandView .panelTop {
   height: 32px;
   min-height: 32px;
@@ -2464,6 +2475,9 @@
     height: 44px;
   }
   .commandView .panel,
+  .commandView .panel[data-tab="history"],
+  .commandView .panel[data-tab="economy"],
+  .commandView .panel[data-tab="research"],
   .commandView .panel[data-tab="army"] {
     left: 10px;
     right: 10px;

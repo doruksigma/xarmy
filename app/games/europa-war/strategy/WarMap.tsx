@@ -1241,7 +1241,13 @@ function WarMap({
             .map((point) => `${point.x},${point.y}`)
             .join(" ");
           return (
-            <g key={p.id} pointerEvents="none" opacity={p.active ? 0.95 : 0.6}>
+            <g
+              key={p.id}
+              data-operation={p.id}
+              data-division-count={p.armies.length}
+              pointerEvents="none"
+              opacity={p.active ? 0.95 : 0.6}
+            >
               <polyline
                 points={points}
                 stroke="#252b37"
@@ -1272,6 +1278,7 @@ function WarMap({
                 {p.active
                   ? "TAARRUZ"
                   : `HAZIRLIK %${Math.floor(p.preparation)}`}
+                {` · ${p.armies.length} TÜMEN`}
               </text>
             </g>
           );

@@ -384,6 +384,9 @@ function observeNativeAudio() {
       };
       const focusCard = async (id) => {
         await tab("Odak / Olaylar");
+        await click(
+          page.getByRole("button", { name: "Kart listesi", exact: true }),
+        );
         await page
           .getByLabel("Odak ara", { exact: true })
           .fill(historicalEvent(id).title);
@@ -537,6 +540,9 @@ function observeNativeAudio() {
       ) {
         await load(baseWorld);
         await tab("Odak / Olaylar");
+        await click(
+          page.getByRole("button", { name: "Kart listesi", exact: true }),
+        );
         assert.equal(
           await page
             .getByTestId("national-catalog-count")

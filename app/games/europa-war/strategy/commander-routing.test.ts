@@ -238,13 +238,16 @@ test("Equivalent commanders share searches only when their logistics movement pr
   )!;
   normal.trait = "defense";
   logistics.trait = "logistics";
-  world.provinces["turkey-city-23"].buildings.infra = 4;
+  // With infrastructure-scaled carrying capacity, use a mildly damaged
+  // corridor where logistics still changes the fastest real approach.
+  world.provinces["turkey-city-26"].buildings.infra = 6;
+  world.provinces["turkey-city-26"].damage = 10;
   const ordinaryRoute = routeTo(world, first[0], target, origin, first);
   const logisticsRoute = routeTo(world, second[0], target, origin, second);
   assert.notDeepEqual(
     ordinaryRoute,
     logisticsRoute,
-    "Logistics changes the viable shortcut at the low-supply threshold",
+    "Logistics changes the fastest route through the damaged corridor",
   );
   for (const general of [normal, logistics])
     general.front = { target: "germany", stance: "defend", assignments: {} };

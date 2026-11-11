@@ -10,6 +10,8 @@ import {
 } from "./historical-catalog";
 import { historicalFocusAvailability } from "./historical-events";
 import MilitaryIcon from "./MilitaryIcon";
+import FocusTree from "./FocusTree";
+import { focusGraphContext, type FocusNodeState } from "./focus-graph";
 import { dateLabel, MAP } from "./world";
 import type { Action, World } from "./types";
 import styles from "./historical-events.module.css";
@@ -219,7 +221,8 @@ export default function HistoricalEvents({
     [focuses],
   );
   const [view, setView] = useState<"tree" | "archive">("tree");
-  const [branch, setBranch] = useState(ownEvents.length ? HISTORY_BRANCH : ALL);
+  const [branch, setBranch] = useState(ALL);
+  const [presentation, setPresentation] = useState<"graph" | "list">("graph");
   const [focusEra, setFocusEra] = useState<EraFilter>(ALL);
   const [focusQuery, setFocusQuery] = useState("");
   const [focusPage, setFocusPage] = useState(0);
@@ -288,6 +291,14 @@ export default function HistoricalEvents({
       );
     });
   }, [sortedFocuses, branch, focusEra, focusQuery]);
+  const graphFocuses = useMemo(
+    () => focusGraphContext(filteredFocuses, focuses),
+    [filteredFocuses, focuses],
+  );
+  const matchIds = useMemo(
+    () => new Set(filteredFocuses.map((focus) => focus.id)),
+    [filteredFocuses],
+  );
   const filteredEvents = useMemo(() => {
     const q = normalize(query);
     return (scope === "country" ? relevantEvents : orderedEvents).filter(
@@ -346,11 +357,55 @@ export default function HistoricalEvents({
     [world.historical],
   );
 
+  const selectedFocus =
+    graphFocuses.find((focus) => focus.id === highlight) ??
+    filteredFocuses.find((focus) => focus.id === country.focus?.id) ??
+    filteredFocuses.find((focus) => !focusBlock(world, focus)) ??
+    filteredFocuses[0];
+  const renderedFocuses =
+    presentation === "graph"
+      ? selectedFocus
+        ? [selectedFocus]
+        : []
+      : visibleFocuses;
+  const graphStates = useMemo(
+    () =>
+      new Map(
+        graphFocuses.map((focus): [string, FocusNodeState] => {
+          const definition = eventForFocus(focus.id);
+          if (definition && decisions.pending.has(definition.id))
+            return [focus.id, "pending"];
+          if (
+            definition &&
+            decisions.resolved.get(definition.id)?.outcome === "declined"
+          )
+            return [focus.id, "declined"];
+          if (country.focuses.includes(focus.id))
+            return [focus.id, "completed"];
+          if (country.focus?.id === focus.id) return [focus.id, "active"];
+          const excluded =
+            (focus.excludes &&
+              (country.focuses.includes(focus.excludes) ||
+                country.focus?.id === focus.excludes)) ||
+            definition?.excludes?.some(
+              (id) =>
+                decisions.resolved.get(id)?.outcome === "accepted" ||
+                decisions.pending.has(id) ||
+                country.focus?.id === `history-${id}`,
+            );
+          if (excluded) return [focus.id, "excluded"];
+          return [focus.id, focusBlock(world, focus) ? "locked" : "available"];
+        }),
+      ),
+    [graphFocuses, country, decisions, world],
+  );
+
   function showFocus(id: string) {
     const focus = byId.get(id);
     if (!focus) return;
     setView("tree");
-    setBranch(ALL);
+    setPresentation("graph");
+    setBranch(focus.branch);
     setFocusEra(ALL);
     setFocusQuery("");
     setFocusPage(
@@ -391,83 +446,104 @@ export default function HistoricalEvents({
       aria-label="Ulusal odaklar ve tarihî olaylar"
       data-testid="historical-desk"
     >
-      <div className={styles.eyebrow}>DEVLET ARŞİVİ · {country.name}</div>
-      <h2>
-        <MilitaryIcon name="medal" size={25} /> Odaklar ve olaylar
-      </h2>
-      <div className={styles.balance}>
-        <span>
-          <MilitaryIcon name="diplomacy" size={18} /> Diplomasi bütçesi
-        </span>
-        <strong>
-          {Math.floor(country.political).toLocaleString("tr-TR")}{" "}
-          <small>siyasi güç</small>
-        </strong>
+      <div className={styles.masthead}>
+        <h2 className={styles.compactTitle}>
+          <MilitaryIcon name="medal" size={21} /> {country.name} odakları
+        </h2>
+        <div className={styles.summaryRow}>
+          <div className={styles.balance}>
+            <MilitaryIcon name="diplomacy" size={15} />
+            <strong>
+              {Math.floor(country.political).toLocaleString("tr-TR")}{" "}
+              <small>siyasi güç</small>
+            </strong>
+          </div>
+          <div
+            className={styles.catalogSummary}
+            data-testid="national-catalog-count"
+          >
+            <strong>{ownEvents.length}</strong>
+            <span>
+              olay / politika ·{" "}
+              {ownEvents.filter((event) => event.countrySpecific).length} özel ·{" "}
+              {focuses.length} odak
+            </span>
+          </div>
+        </div>
       </div>
-      <p className={styles.intro}>
-        Bir odak seç, hazırlığını tamamla ve gelen kararı imzala. Diplomasi
-        maliyeti siyasi gücünden bir kez düşer. Kabul sırasında gereken diğer
-        kaynaklar etkiler bölümünde gösterilir.
-      </p>
-      <div
-        className={styles.catalogSummary}
-        data-testid="national-catalog-count"
-      >
-        <strong>{ownEvents.length}</strong>
-        <span>
-          {country.name} için olay ve politika
-          <br />
-          {ownEvents.filter((event) => event.countrySpecific).length} ülkeye
-          özel yol · {focuses.length} toplam ulusal odak
-        </span>
-      </div>
-      <div
-        className={styles.tabs}
-        role="group"
-        aria-label="Devlet arşivi görünümü"
-      >
-        <button
-          type="button"
-          aria-pressed={view === "tree"}
-          onClick={() => setView("tree")}
+      <div className={styles.navigationRow}>
+        <div
+          className={styles.tabs}
+          role="group"
+          aria-label="Devlet arşivi görünümü"
         >
-          <MilitaryIcon name="medal" size={16} /> Odak ağacı
-        </button>
-        <button
-          type="button"
-          aria-pressed={view === "archive"}
-          onClick={() => setView("archive")}
-        >
-          <MilitaryIcon name="save" size={16} /> Tarihî olaylar
-        </button>
+          <button
+            type="button"
+            aria-pressed={view === "tree"}
+            onClick={() => setView("tree")}
+          >
+            <MilitaryIcon name="medal" size={16} /> Odak ağacı
+          </button>
+          <button
+            type="button"
+            aria-pressed={view === "archive"}
+            onClick={() => setView("archive")}
+          >
+            <MilitaryIcon name="save" size={16} /> Tarihî olaylar
+          </button>
+        </div>
+        {view === "tree" && (
+          <div
+            className={styles.presentationSwitch}
+            role="group"
+            aria-label="Odak sunumu"
+          >
+            <button
+              type="button"
+              aria-pressed={presentation === "graph"}
+              onClick={() => setPresentation("graph")}
+            >
+              Bağlantılı ağaç
+            </button>
+            <button
+              type="button"
+              aria-pressed={presentation === "list"}
+              onClick={() => setPresentation("list")}
+            >
+              Kart listesi
+            </button>
+          </div>
+        )}
       </div>
       {view === "tree" ? (
         <>
           {active && country.focus && (
             <div className={styles.active} data-testid="active-national-focus">
-              <small>HAZIRLIK SÜRÜYOR</small>
-              <h3>{active.name}</h3>
+              <div className={styles.activeTop}>
+                <small>HAZIRLIK</small>
+                <button
+                  type="button"
+                  className={styles.activeLink}
+                  aria-label="Etkin odağı göster →"
+                  onClick={() => showFocus(active.id)}
+                >
+                  {active.name} →
+                </button>
+                <span>
+                  {Math.ceil(
+                    Math.max(0, country.focus.total - country.focus.progress),
+                  )}{" "}
+                  gün · %
+                  {Math.floor(
+                    (country.focus.progress / country.focus.total) * 100,
+                  )}
+                </span>
+              </div>
               <progress
                 aria-label={`${active.name} ilerlemesi`}
                 value={country.focus.progress}
                 max={country.focus.total}
               />
-              <span>
-                {Math.ceil(
-                  Math.max(0, country.focus.total - country.focus.progress),
-                )}{" "}
-                oyun günü kaldı · %
-                {Math.floor(
-                  (country.focus.progress / country.focus.total) * 100,
-                )}
-              </span>
-              <button
-                type="button"
-                className={styles.activeLink}
-                onClick={() => showFocus(active.id)}
-              >
-                Etkin odağı göster →
-              </button>
             </div>
           )}
           <div className={styles.filterGrid}>
@@ -496,193 +572,219 @@ export default function HistoricalEvents({
               </select>
             </label>
             <label className={styles.field}>
-              İçerik türü
-              <select
-                aria-label="Odak türü"
-                value={focusEra}
+              Odak ara
+              <input
+                type="search"
+                aria-label="Odak ara"
+                placeholder="Anschluss, sanayi, tarafsızlık…"
+                value={focusQuery}
                 onChange={(e) => {
-                  setFocusEra(e.target.value as EraFilter);
+                  setFocusQuery(e.target.value);
                   setFocusPage(0);
+                  setHighlight(null);
                 }}
-              >
-                {typeOptions(true)}
-              </select>
+              />
             </label>
+            <details className={styles.advancedFilters}>
+              <summary>
+                Tür ve açıklamalar{focusEra !== ALL ? " · filtre etkin" : ""}
+              </summary>
+              <label className={styles.field}>
+                İçerik türü
+                <select
+                  aria-label="Odak türü"
+                  value={focusEra}
+                  onChange={(e) => {
+                    setFocusEra(e.target.value as EraFilter);
+                    setFocusPage(0);
+                  }}
+                >
+                  {typeOptions(true)}
+                </select>
+              </label>
+              <p className={styles.hint}>
+                Tarihî olaylar geçmişteki gelişmelere dayanır. Ulusal politika
+                ve alternatif tarih seçenekleri, seferinde seçebileceğin oyun
+                yollarıdır.
+              </p>
+            </details>
           </div>
-          <label className={styles.field}>
-            Odak ara
-            <input
-              type="search"
-              aria-label="Odak ara"
-              placeholder="Anschluss, sanayi, tarafsızlık…"
-              value={focusQuery}
-              onChange={(e) => {
-                setFocusQuery(e.target.value);
-                setFocusPage(0);
-                setHighlight(null);
-              }}
-            />
-          </label>
-          <p className={styles.hint}>
-            Tarihî olaylar geçmişteki gelişmelere dayanır. Ulusal politika ve
-            alternatif tarih seçenekleri, seferinde seçebileceğin oyun
-            yollarıdır.
-          </p>
           <div className={styles.results}>
             <span data-testid="focus-result-count">
-              {countLabel(focusCurrent, filteredFocuses.length)} odak
-              gösteriliyor · {focuses.length} toplam
+              {presentation === "graph"
+                ? `${filteredFocuses.length} eşleşen odak · ${graphFocuses.length} bağlantılı düğüm`
+                : `${countLabel(focusCurrent, filteredFocuses.length)} odak gösteriliyor`}{" "}
+              · {focuses.length} toplam
             </span>
             <button type="button" onClick={resetFocusFilters}>
               Filtreleri temizle
             </button>
           </div>
-          <p className={styles.hint}>
-            Seçili dal:{" "}
-            <strong>
-              {branch === ALL
-                ? "Bütün ulusal odaklar"
-                : branch === HISTORY_BRANCH
-                  ? "Olay ve politika odakları"
-                  : branch}
-            </strong>
-            . Önkoşul etiketleri seni ilgili odağın sayfasına götürür.
-          </p>
-          <Pagination
-            page={focusCurrent}
-            total={filteredFocuses.length}
-            onPage={setFocusPage}
-            label="Odak sayfaları"
-          />
-          <div className={styles.tree} aria-label="Ulusal odak ağacı">
-            {visibleFocuses.length === 0 && (
-              <p className={styles.empty}>
-                Bu filtrelerle odak bulunamadı. Filtreleri temizleyerek bütün
-                ulusal odakları görebilirsin.
-              </p>
+          {presentation === "list" && (
+            <Pagination
+              page={focusCurrent}
+              total={filteredFocuses.length}
+              onPage={setFocusPage}
+              label="Odak sayfaları"
+            />
+          )}
+          <div
+            className={
+              presentation === "graph" ? styles.graphWorkspace : undefined
+            }
+          >
+            {presentation === "graph" && (
+              <FocusTree
+                focuses={graphFocuses}
+                matches={matchIds}
+                states={graphStates}
+                selected={selectedFocus?.id ?? null}
+                onSelect={setHighlight}
+              />
             )}
-            {visibleFocuses.map((focus) => {
-              const done = country.focuses.includes(focus.id),
-                block = focusBlock(world, focus),
-                definition = eventForFocus(focus.id);
-              return (
-                <article
-                  key={focus.id}
-                  id={`focus-node-${focus.id}`}
-                  tabIndex={-1}
-                  className={`${styles.node} ${done ? styles.completed : ""} ${highlight === focus.id ? styles.highlight : ""}`}
-                  data-focus-id={focus.id}
-                  data-linked={focus.requires.length > 0}
-                  data-state={
-                    done
-                      ? "completed"
-                      : country.focus?.id === focus.id
-                        ? "active"
-                        : block
-                          ? "locked"
-                          : "available"
-                  }
-                >
-                  <div className={styles.nodeMark}>
-                    <MilitaryIcon name={done ? "check" : "medal"} size={19} />
-                  </div>
-                  <div className={styles.nodeBody}>
-                    <div className={styles.nodeHeading}>
-                      <small>
-                        {definition
-                          ? ERA_LABELS[eventEra(definition)]
-                          : focus.branch}
-                      </small>
-                      <span>
-                        {done
-                          ? "TAMAMLANDI"
-                          : country.focus?.id === focus.id
-                            ? "ETKİN"
-                            : `AŞAMA ${(depths.get(focus.id) ?? 0) + 1}`}
-                      </span>
-                    </div>
-                    {definition?.countrySpecific && (
-                      <p className={styles.countryBadge}>
-                        {country.name} için özel yol
-                      </p>
-                    )}
-                    {focus.requires.length > 0 && (
-                      <div
-                        className={styles.links}
-                        aria-label="Önkoşul bağlantıları"
-                      >
-                        <span aria-hidden="true">↳</span>
-                        {focus.requires.map((id) => (
-                          <button
-                            type="button"
-                            key={id}
-                            onClick={() => showFocus(id)}
-                            aria-label={`Önkoşula git: ${byId.get(id)?.name ?? id}`}
-                          >
-                            {country.focuses.includes(id) && (
-                              <MilitaryIcon name="check" size={11} />
-                            )}
-                            {byId.get(id)?.name ?? id}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                    <h3>{focus.name}</h3>
-                    <p>{focus.description}</p>
-                    <div className={styles.meta}>
-                      <span>{focus.days} gün</span>
-                      <span>
-                        {focus.cost
-                          ? `${focus.cost} siyasi güç`
-                          : "Puan maliyeti yok"}
-                      </span>
-                      <span>{focus.branch}</span>
-                    </div>
-                    {definition && (
-                      <>
-                        <p className={styles.hint}>
-                          Tarihsel mod eşiği: {historicalDate(definition.date)}.
-                          Alternatif tarihte daha erken hazırlanabilir. Hazırlık
-                          bitince son kararı sen verirsin.
-                        </p>
-                        <EffectDetails event={definition} />
-                      </>
-                    )}
-                    {focus.excludes && (
-                      <p className={styles.exclusions}>
-                        Birbirini dışlayan yol:{" "}
-                        {byId.get(focus.excludes)?.name ?? focus.excludes}
-                      </p>
-                    )}
-                    <button
-                      type="button"
-                      className={styles.start}
-                      disabled={!!block}
-                      aria-describedby={
-                        block && !done && country.focus?.id !== focus.id
-                          ? `focus-block-${focus.id}`
-                          : undefined
-                      }
-                      onClick={() => onAction({ type: "focus", id: focus.id })}
-                    >
-                      {done
-                        ? "Tamamlandı"
+            <div
+              className={styles.tree}
+              aria-label={
+                presentation === "graph"
+                  ? "Seçili odağın ayrıntıları"
+                  : "Ulusal odak listesi"
+              }
+              data-testid={
+                presentation === "graph" ? "focus-detail" : "focus-list"
+              }
+            >
+              {renderedFocuses.length === 0 && (
+                <p className={styles.empty}>
+                  Bu filtrelerle odak bulunamadı. Filtreleri temizleyerek bütün
+                  ulusal odakları görebilirsin.
+                </p>
+              )}
+              {renderedFocuses.map((focus) => {
+                const done = country.focuses.includes(focus.id),
+                  block = focusBlock(world, focus),
+                  definition = eventForFocus(focus.id);
+                return (
+                  <article
+                    key={focus.id}
+                    id={`focus-node-${focus.id}`}
+                    tabIndex={-1}
+                    className={`${styles.node} ${done ? styles.completed : ""} ${highlight === focus.id ? styles.highlight : ""}`}
+                    data-focus-id={focus.id}
+                    data-linked={focus.requires.length > 0}
+                    data-state={
+                      done
+                        ? "completed"
                         : country.focus?.id === focus.id
-                          ? "Hazırlanıyor"
-                          : `Odağı başlat${focus.cost ? ` · ${focus.cost} puan` : ""}`}
-                    </button>
-                    {block && !done && country.focus?.id !== focus.id && (
-                      <p
-                        id={`focus-block-${focus.id}`}
-                        className={styles.reason}
+                          ? "active"
+                          : block
+                            ? "locked"
+                            : "available"
+                    }
+                  >
+                    <div className={styles.nodeMark}>
+                      <MilitaryIcon name={done ? "check" : "medal"} size={19} />
+                    </div>
+                    <div className={styles.nodeBody}>
+                      <div className={styles.nodeHeading}>
+                        <small>
+                          {definition
+                            ? ERA_LABELS[eventEra(definition)]
+                            : focus.branch}
+                        </small>
+                        <span>
+                          {done
+                            ? "TAMAMLANDI"
+                            : country.focus?.id === focus.id
+                              ? "ETKİN"
+                              : `AŞAMA ${(depths.get(focus.id) ?? 0) + 1}`}
+                        </span>
+                      </div>
+                      {definition?.countrySpecific && (
+                        <p className={styles.countryBadge}>
+                          {country.name} için özel yol
+                        </p>
+                      )}
+                      {focus.requires.length > 0 && (
+                        <div
+                          className={styles.links}
+                          aria-label="Önkoşul bağlantıları"
+                        >
+                          <span aria-hidden="true">↳</span>
+                          {focus.requires.map((id) => (
+                            <button
+                              type="button"
+                              key={id}
+                              onClick={() => showFocus(id)}
+                              aria-label={`Önkoşula git: ${byId.get(id)?.name ?? id}`}
+                            >
+                              {country.focuses.includes(id) && (
+                                <MilitaryIcon name="check" size={11} />
+                              )}
+                              {byId.get(id)?.name ?? id}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      <h3>{focus.name}</h3>
+                      <p>{focus.description}</p>
+                      <div className={styles.meta}>
+                        <span>{focus.days} gün</span>
+                        <span>
+                          {focus.cost
+                            ? `${focus.cost} siyasi güç`
+                            : "Puan maliyeti yok"}
+                        </span>
+                        <span>{focus.branch}</span>
+                      </div>
+                      {definition && (
+                        <>
+                          <p className={styles.hint}>
+                            Tarihsel mod eşiği:{" "}
+                            {historicalDate(definition.date)}. Alternatif
+                            tarihte daha erken hazırlanabilir. Hazırlık bitince
+                            son kararı sen verirsin.
+                          </p>
+                          <EffectDetails event={definition} />
+                        </>
+                      )}
+                      {focus.excludes && (
+                        <p className={styles.exclusions}>
+                          Birbirini dışlayan yol:{" "}
+                          {byId.get(focus.excludes)?.name ?? focus.excludes}
+                        </p>
+                      )}
+                      <button
+                        type="button"
+                        className={styles.start}
+                        disabled={!!block}
+                        aria-describedby={
+                          block && !done && country.focus?.id !== focus.id
+                            ? `focus-block-${focus.id}`
+                            : undefined
+                        }
+                        onClick={() =>
+                          onAction({ type: "focus", id: focus.id })
+                        }
                       >
-                        {block}
-                      </p>
-                    )}
-                  </div>
-                </article>
-              );
-            })}
+                        {done
+                          ? "Tamamlandı"
+                          : country.focus?.id === focus.id
+                            ? "Hazırlanıyor"
+                            : `Odağı başlat${focus.cost ? ` · ${focus.cost} puan` : ""}`}
+                      </button>
+                      {block && !done && country.focus?.id !== focus.id && (
+                        <p
+                          id={`focus-block-${focus.id}`}
+                          className={styles.reason}
+                        >
+                          {block}
+                        </p>
+                      )}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
           </div>
         </>
       ) : (

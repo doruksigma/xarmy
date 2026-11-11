@@ -149,6 +149,16 @@ const actionValidators: Record<Action["type"], Validator> = {
   }),
   commanderRecall: actionShape({ general: safeId }),
   commanderCreate: actionShape(),
+  commanderOrder: (value) => {
+    if (!object(value)) return false;
+    const fields = { general: safeId, provinces: ids };
+    return value.kind === "offensive"
+      ? actionShape(
+          { ...fields, kind: one("offensive") },
+          { stance: one("careful", "balanced", "aggressive") },
+        )(value)
+      : actionShape({ ...fields, kind: one("move", "front", "halt") })(value);
+  },
   difficulty: actionShape({ value: one("easy", "normal", "hard") }),
   automation: actionShape({ area: areas, enabled: bool }),
   autoPlan: actionShape({ area: areas }),

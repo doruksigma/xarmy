@@ -9,6 +9,7 @@ import {
   resolveHistoricalAI,
 } from "./historical-events";
 import { decisionAction, nationalFocus } from "./decisions";
+import { researchDailyProgress } from "./research-presentation";
 import { focusTree, IDEOLOGIES, TECHNOLOGIES } from "./catalog";
 import { declareWar } from "./diplomacy";
 import {
@@ -274,18 +275,7 @@ export function politicsDay(w: World) {
   for (const c of Object.values(w.countries)) {
     if (c.capitulated) continue;
     for (const q of c.research) {
-      const branch = TECHNOLOGIES.find((t) => t.id === q.id)!.branch;
-      const bonus =
-        c.cabinet.science === "institute"
-          ? 0.1
-          : c.cabinet.science === "engineers" &&
-              ["Sanayi", "Zırh"].includes(branch)
-            ? 0.25
-            : c.cabinet.science === "doctrine" && branch === "Doktrin"
-              ? 0.3
-              : 0;
-      q.progress +=
-        1 + c.science + (c.advisor === "science" ? 0.15 : 0) + bonus;
+      q.progress += researchDailyProgress(c, q.id);
     }
     for (const q of c.research.filter((q) => q.progress >= q.total)) {
       c.tech.push(q.id);

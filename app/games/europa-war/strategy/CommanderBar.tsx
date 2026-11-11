@@ -1,5 +1,5 @@
 "use client";
-import MilitaryIcon from "./MilitaryIcon";
+import MilitaryIcon, { unitIcon } from "./MilitaryIcon";
 
 import { memo, useEffect, useId, useMemo, useRef, useState } from "react";
 import {
@@ -8,7 +8,8 @@ import {
   commanderBorders,
   commanderTargets,
 } from "./commanders";
-import { atWar } from "./world";
+import { atWar, GEOGRAPHY } from "./world";
+import { UNITS } from "./catalog";
 import type { Action, General, World } from "./types";
 import styles from "./commander-bar.module.css";
 
@@ -123,12 +124,18 @@ export default function CommanderBar({
   paused,
   command,
   onSelect,
+  onOrder,
+  onArmy,
+  selectedGeneralId,
 }: {
   world: World;
   disabled: boolean;
   paused: boolean;
   command: (action: Action) => boolean;
-  onSelect: (armies: string[]) => void;
+  onSelect: (armies: string[], generalId?: string) => void;
+  onOrder?: (generalId: string, kind: "move" | "front" | "offensive") => void;
+  onArmy?: (armyId: string) => void;
+  selectedGeneralId?: string | null;
 }) {
   const country = world.countries[world.player];
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -143,11 +150,82 @@ export default function CommanderBar({
         counts.set(army.general, (counts.get(army.general) ?? 0) + 1);
     return counts;
   }, [world.armies, country.id]);
+  const activity = useMemo(() => {
+    const status = new Map<string, string>();
+    const own = new Map(
+      world.armies
+        .filter((army) => army.country === country.id)
+        .map((army) => [army.id, army]),
+    );
+    for (const army of own.values()) {
+      if (army.general && (army.move || army.route.length))
+        status.set(army.general, "İntikal ediyor");
+    }
+    const generalFor = (ids: string[]) => {
+      const first = own.get(ids[0])?.general;
+      return first && ids.every((id) => own.get(id)?.general === first)
+        ? first
+        : null;
+    };
+    for (const front of world.fronts) {
+      const general =
+        front.country === country.id ? generalFor(front.armies) : null;
+      if (general) status.set(general, "Savunma hattı");
+    }
+    for (const plan of world.plans) {
+      const general =
+        plan.country === country.id ? generalFor(plan.armies) : null;
+      if (
+        general &&
+        (plan.active || status.get(general) !== "Taarruz ilerliyor")
+      )
+        status.set(
+          general,
+          plan.active ? "Taarruz ilerliyor" : "Plan hazırlanıyor",
+        );
+    }
+    return status;
+  }, [world.armies, world.fronts, world.plans, country.id]);
   const neighbors = useMemo(
     () => (choosingBorder ? commanderTargets(world, country.id) : []),
     [world, country.id, choosingBorder],
   );
   const count = selected ? (members.get(selected.id) ?? 0) : 0;
+  const selectedMembers = useMemo(
+    () =>
+      selectedId
+        ? world.armies.filter(
+            (army) =>
+              army.country === country.id && army.general === selectedId,
+          )
+        : [],
+    [world.armies, country.id, selectedId],
+  );
+  const memberIds = new Set(selectedMembers.map((army) => army.id));
+  // A mixed manual selection must never expose another commander's plan controls.
+  const operations = selectedMembers.length
+    ? world.plans.filter(
+        (plan) =>
+          plan.country === country.id &&
+          plan.armies.length > 0 &&
+          plan.armies.every((id) => memberIds.has(id)),
+      )
+    : [];
+  const fronts = selectedMembers.length
+    ? world.fronts.filter(
+        (front) =>
+          front.country === country.id &&
+          front.armies.length > 0 &&
+          front.armies.every((id) => memberIds.has(id)),
+      )
+    : [];
+  const average = (key: "strength" | "organization") =>
+    selectedMembers.length
+      ? Math.round(
+          selectedMembers.reduce((sum, army) => sum + army[key], 0) /
+            selectedMembers.length,
+        )
+      : 0;
   const target = selected?.front
     ? world.countries[selected.front.target]
     : undefined;
@@ -157,6 +235,16 @@ export default function CommanderBar({
   useEffect(() => {
     if (selectedId) panelRef.current?.focus({ preventScroll: true });
   }, [selectedId]);
+  useEffect(() => {
+    if (
+      selectedGeneralId !== undefined &&
+      selectedId &&
+      selectedGeneralId !== selectedId
+    ) {
+      setSelectedId(null);
+      setChoosingBorder(false);
+    }
+  }, [selectedGeneralId, selectedId]);
 
   function closePanel() {
     setSelectedId(null);
@@ -167,7 +255,16 @@ export default function CommanderBar({
   function choose(general: General) {
     setSelectedId((id) => (id === general.id ? null : general.id));
     setChoosingBorder(false);
-    onSelect(commanderArmies(world, country.id, general.id).map((a) => a.id));
+    onSelect(
+      commanderArmies(world, country.id, general.id).map((a) => a.id),
+      general.id,
+    );
+  }
+
+  function drawOrder(kind: "move" | "front" | "offensive") {
+    if (!selected || !onOrder || locked || !count) return;
+    onOrder(selected.id, kind);
+    closePanel();
   }
 
   return (
@@ -216,6 +313,232 @@ export default function CommanderBar({
                 style={{ marginInlineEnd: 0 }}
               />
             </button>
+          </div>
+          <div className={styles.readiness} aria-label="Komutanın tümen durumu">
+            <label>
+              <span>
+                Kuvvet <b>%{average("strength")}</b>
+              </span>
+              <progress value={average("strength")} max="100" />
+            </label>
+            <label>
+              <span>
+                Organizasyon <b>%{average("organization")}</b>
+              </span>
+              <progress value={average("organization")} max="100" />
+            </label>
+          </div>
+          {onOrder && (
+            <section
+              className={styles.operationOrders}
+              aria-label="Komutanın toplu harita emirleri"
+            >
+              <div className={styles.sectionHeading}>
+                <strong>HAREKÂT ÇİZİMİ</strong>
+                <span data-testid="commander-order-count">
+                  {count} tümenin tamamı
+                </span>
+              </div>
+              <div className={styles.mapOrders}>
+                <button
+                  type="button"
+                  data-testid="commander-move"
+                  disabled={locked || !count}
+                  onClick={() => drawOrder("move")}
+                >
+                  <MilitaryIcon name="operations" size={22} />
+                  <strong>Hedefe götür</strong>
+                  <small>Birlikte hareket</small>
+                </button>
+                <button
+                  type="button"
+                  data-testid="commander-front"
+                  disabled={locked || !count}
+                  onClick={() => drawOrder("front")}
+                >
+                  <MilitaryIcon name="defend" size={22} />
+                  <strong>Cephe çiz</strong>
+                  <small>Hatta dağıt</small>
+                </button>
+                <button
+                  type="button"
+                  data-testid="commander-offensive"
+                  disabled={locked || !count}
+                  onClick={() => drawOrder("offensive")}
+                >
+                  <MilitaryIcon name="attack" size={22} />
+                  <strong>Taarruz çiz</strong>
+                  <small>Hedefleri planla</small>
+                </button>
+              </div>
+              <p>
+                Emir seç, haritada hedefleri işaretle. Plan bu komutana bağlı en
+                fazla 12 tümeni kapsar.
+              </p>
+            </section>
+          )}
+          <button
+            type="button"
+            className={styles.halt}
+            data-testid="commander-halt"
+            disabled={locked || !count}
+            onClick={() =>
+              command({
+                type: "commanderOrder",
+                general: selected.id,
+                kind: "halt",
+                provinces: [],
+              })
+            }
+          >
+            <MilitaryIcon name="pause" size={14} />
+            Bütün tümenleri durdur
+          </button>
+          {(operations.length > 0 || fronts.length > 0) && (
+            <section
+              className={styles.operationList}
+              aria-label="Komutanın mevcut operasyonları"
+              data-testid="commander-operations"
+            >
+              <div className={styles.sectionHeading}>
+                <strong>MEVCUT OPERASYONLAR</strong>
+              </div>
+              {fronts.map((front) => (
+                <article key={front.id} data-front-id={front.id}>
+                  <strong>
+                    <MilitaryIcon name="defend" size={15} /> Savunma hattı
+                  </strong>
+                  <span>
+                    {front.armies.length} tümen ·{" "}
+                    {front.provinces
+                      .map((id) => GEOGRAPHY[id]?.name ?? id)
+                      .join(" → ")}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={locked}
+                    onClick={() =>
+                      command({ type: "deleteFront", id: front.id })
+                    }
+                  >
+                    Hattı kaldır
+                  </button>
+                </article>
+              ))}
+              {operations.map((plan) => (
+                <article key={plan.id} data-plan-id={plan.id}>
+                  <div className={styles.sectionHeading}>
+                    <strong>
+                      <MilitaryIcon name="attack" size={15} /> {plan.name}
+                    </strong>
+                    <span data-active={plan.active}>
+                      {plan.active ? "İlerliyor" : "Bekliyor"}
+                    </span>
+                  </div>
+                  <span>
+                    {plan.armies.length} tümen ·{" "}
+                    {plan.objectives
+                      .map((id) => GEOGRAPHY[id]?.name ?? id)
+                      .join(" → ")}
+                  </span>
+                  <label className={styles.preparation}>
+                    Hazırlık %{Math.floor(plan.preparation)}
+                    <progress max="100" value={plan.preparation} />
+                  </label>
+                  <div className={styles.planActions}>
+                    <button
+                      type="button"
+                      data-testid="commander-plan-start"
+                      disabled={locked || plan.active || plan.preparation < 30}
+                      title={
+                        plan.preparation < 30
+                          ? "Başlatmak için en az %30 hazırlık gerekir."
+                          : "Bu plana bağlı tüm tümenleri ilerlet."
+                      }
+                      onClick={() =>
+                        command({ type: "plan", id: plan.id, kind: "start" })
+                      }
+                    >
+                      <MilitaryIcon name="play" size={13} /> Başlat
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="commander-plan-pause"
+                      disabled={locked || !plan.active}
+                      onClick={() =>
+                        command({ type: "plan", id: plan.id, kind: "pause" })
+                      }
+                    >
+                      <MilitaryIcon name="pause" size={13} /> Duraklat
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="commander-plan-delete"
+                      disabled={locked}
+                      onClick={() =>
+                        command({ type: "plan", id: plan.id, kind: "delete" })
+                      }
+                    >
+                      Sil
+                    </button>
+                  </div>
+                  {!plan.active && plan.preparation < 30 && (
+                    <small>
+                      Başlatmak için en az %30 hazırlık gerekir. Zamanı
+                      ilerleterek hazırlığı artır.
+                    </small>
+                  )}
+                </article>
+              ))}
+            </section>
+          )}
+          {onArmy && selectedMembers.length > 0 && (
+            <details
+              className={styles.divisions}
+              data-testid="commander-divisions"
+            >
+              <summary>
+                Bağlı tümenler{" "}
+                <span>
+                  {count}/{COMMANDER_CAPACITY}
+                </span>
+              </summary>
+              <p>
+                Tek bir tümeni seçip haritada hedefe dokunarak ayrı emir
+                verebilirsin.
+              </p>
+              <div>
+                {selectedMembers.map((army) => (
+                  <button
+                    type="button"
+                    key={army.id}
+                    data-army-id={army.id}
+                    disabled={locked}
+                    aria-label={`${army.name} tümenini tek başına seç`}
+                    onClick={() => {
+                      onArmy(army.id);
+                      closePanel();
+                    }}
+                  >
+                    <MilitaryIcon name={unitIcon(army.type)} size={23} />
+                    <span>
+                      <strong>{army.name}</strong>
+                      <small>
+                        {UNITS[army.type].name} ·{" "}
+                        {GEOGRAPHY[army.province]?.name}
+                      </small>
+                    </span>
+                    <span className={styles.unitReadiness}>
+                      <b>%{Math.round(army.strength)}</b>
+                      <small>Org. %{Math.round(army.organization)}</small>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </details>
+          )}
+          <div className={styles.sectionHeading}>
+            <strong>SINIR GÖREVİ</strong>
           </div>
           <div className={styles.actions}>
             <button
@@ -363,8 +686,14 @@ export default function CommanderBar({
             </>
           ) : (
             <p>
-              Önce bir sınıra yerleştir. Bu komutan emir verilmeden başka
+              Sınır görevi için komşu ülke seçebilir veya haritada kendi
+              harekâtını çizebilirsin. Bu komutan emir verilmeden başka
               komutanın cephesine katılmaz.
+            </p>
+          )}
+          {paused && !selected.front && count > 0 && (
+            <p className={styles.notice}>
+              Zaman duraklatıldı. Birlikleri ilerletmek için ▶ düğmesine bas.
             </p>
           )}
         </section>
@@ -409,6 +738,9 @@ export default function CommanderBar({
             const size = members.get(general.id) ?? 0;
             const opponent =
               general.front && world.countries[general.front.target];
+            const status = opponent
+              ? `${opponent.name}: ${general.front!.stance === "attack" ? "Saldırıyor" : "Savunuyor"}`
+              : (activity.get(general.id) ?? "Emir bekliyor");
             return (
               <button
                 type="button"
@@ -416,11 +748,15 @@ export default function CommanderBar({
                 data-testid={`commander-card-${general.id}`}
                 data-general={general.id}
                 className={styles.card}
+                data-selected={
+                  selectedGeneralId === general.id ||
+                  selected?.id === general.id
+                }
                 data-stance={general.front?.stance ?? "idle"}
                 disabled={locked}
-                title={`${general.name} · ${size}/${COMMANDER_CAPACITY} tümen · ${opponent ? `${opponent.name}: ${general.front!.stance === "attack" ? "Saldırıyor" : "Savunuyor"}` : "Emir bekliyor"}`}
+                title={`${general.name} · ${size}/${COMMANDER_CAPACITY} tümen · ${status}`}
                 aria-expanded={selected?.id === general.id}
-                aria-label={`${general.name}, ${size}/${COMMANDER_CAPACITY} tümen${opponent ? `, ${opponent.name}, ${general.front!.stance === "attack" ? "Saldırıyor" : "Savunuyor"}` : ", Emir bekliyor"}`}
+                aria-label={`${general.name}, ${size}/${COMMANDER_CAPACITY} tümen, ${status}`}
                 onClick={(event) => {
                   activeCard.current = event.currentTarget;
                   choose(general);
@@ -435,11 +771,7 @@ export default function CommanderBar({
                     {size}/{COMMANDER_CAPACITY}
                     <span className={styles.srOnly}> tümen</span>
                   </span>
-                  <small>
-                    {opponent
-                      ? `${opponent.flag} ${general.front!.stance === "attack" ? "Saldırıyor" : "Savunuyor"}`
-                      : "Emir bekliyor"}
-                  </small>
+                  <small>{status}</small>
                 </span>
               </button>
             );

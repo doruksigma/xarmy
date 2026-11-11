@@ -4,15 +4,10 @@ import ArmyRecruitment from "./ArmyRecruitment";
 import ReinforcementLogistics from "./ReinforcementLogistics";
 import AirNavalControl from "./AirNavalControl";
 import AirNavalReport from "./AirNavalReport";
-import UnitResearchGuide from "./UnitResearchGuide";
+import ProductionPanel from "./ProductionPanel";
+import ResearchPanel from "./ResearchPanel";
 import HistoricalEvents from "./HistoricalEvents";
-import MilitaryIcon, {
-  unitIcon,
-  equipmentIcon,
-  buildingIcon,
-  resourceIcon,
-  type MilitaryIconName,
-} from "./MilitaryIcon";
+import MilitaryIcon, { unitIcon, type MilitaryIconName } from "./MilitaryIcon";
 import type { ReactNode } from "react";
 import ActionPreview from "./ActionPreview";
 import { ArmyTools, CabinetPanel, PeacePanel } from "./AdvancedPanels";
@@ -21,19 +16,15 @@ import type { OffensivePlan } from "./types";
 import { useMemo, useState } from "react";
 import {
   BUILDINGS,
-  EQUIPMENT,
   IDEOLOGIES,
   MISSIONS,
   RESOURCES,
-  TECHNOLOGIES,
   TERRAINS,
   UNITS,
 } from "./catalog";
-import { CONSCRIPTION, ECONOMIES } from "./economy";
-import { productionPlan } from "./production";
+import { CONSCRIPTION } from "./economy";
 import { diplomaticAcceptance } from "./diplomacy";
 import { airPower, intelChance } from "./operations";
-import { researchDays, researchSlots } from "./politics";
 import { armyMovementWarnings, armyStatus } from "./army-status";
 import { COMMANDER_CAPACITY } from "./commander-roster";
 import {
@@ -49,7 +40,6 @@ import type {
   Action,
   Building,
   Country,
-  Equipment,
   Ideology,
   Resource,
   World,
@@ -124,40 +114,6 @@ function Progress({ value, total }: { value: number; total: number }) {
     </div>
   );
 }
-function Chart({ values, label }: { values: number[]; label: string }) {
-  const max = Math.max(1, ...values),
-    min = Math.min(0, ...values);
-  return (
-    <div className={styles.chart}>
-      <small>{label}</small>
-      {values.length > 1 ? (
-        <svg
-          viewBox="0 0 300 66"
-          role="img"
-          aria-label={`${label}: ${number(values.at(-1) ?? 0)}`}
-        >
-          <path
-            d={`M0 64 ${values.map((v, i) => `L${(i / (values.length - 1)) * 300} ${60 - ((v - min) / (max - min)) * 52}`).join(" ")} L300 64Z`}
-            fill="#a2b69315"
-          />
-          <polyline
-            points={values
-              .map(
-                (v, i) =>
-                  `${(i / (values.length - 1)) * 300},${60 - ((v - min) / (max - min)) * 52}`,
-              )
-              .join(" ")}
-            fill="none"
-            stroke="#b9c59b"
-            strokeWidth="2"
-          />
-        </svg>
-      ) : (
-        <p>Haftalık veriler zaman ilerledikçe birikecek.</p>
-      )}
-    </div>
-  );
-}
 interface Props {
   simple?: boolean;
   requestedTheater?: { kind: "air" | "naval"; revision: number };
@@ -210,22 +166,11 @@ export default function WarPanels({
     t = w.countries[target] ?? w.countries.germany;
   const [building, setBuilding] = useState<Building>("civil"),
     [tradeResource, setTradeResource] = useState<Resource>("oil"),
-    [branch, setBranch] = useState("Tümü"),
     [armySearch, setArmySearch] = useState(""),
     [armyPage, setArmyPage] = useState(0);
   const own = useMemo(
     () => w.armies.filter((a) => a.country === c.id),
     [w.armies, c.id],
-  );
-  const productionPreview = useMemo(
-    () =>
-      new Map(
-        (tab === "economy" ? productionPlan(w, c) : []).map((step) => [
-          step.equipment,
-          step,
-        ]),
-      ),
-    [w, c, tab],
   );
   const selection = useMemo(() => new Set(armyIds), [armyIds]);
   const commanderCounts = useMemo(() => {
@@ -812,189 +757,11 @@ export default function WarPanels({
     );
   if (tab === "economy")
     return (
-      <>
-        <div className={styles.eyebrow}>SANAYİ VE TEDARİK</div>
-        <h2>
-          <MilitaryIcon name="factory" size={26} />
-          Ekonomi
-        </h2>
-        <div className={styles.statsGrid}>
-          <Stat
-            label="Sivil kapasite"
-            value={capacity(w, c.id, "civil").toFixed(1)}
-          />
-          <Stat
-            label="Askerî / tersane"
-            value={`${Math.floor(capacity(w, c.id, "military"))} / ${Math.floor(capacity(w, c.id, "dock"))}`}
-          />
-        </div>
-        <label className={styles.field}>
-          Ekonomi kanunu · değişiklik 50 siyasi güç
-          <select
-            value={c.economy}
-            onChange={(e) =>
-              command({
-                type: "economy",
-                law: e.target.value as Country["economy"],
-              })
-            }
-          >
-            {Object.entries(ECONOMIES).map(([id, d]) => (
-              <option key={id} value={id}>
-                {d.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <p>
-          Savaş ekonomisi üretimi artırır; sivil inşaatı ve vergi gelirini
-          azaltır.
-        </p>
-        <Chart
-          label="Haftalık hazine"
-          values={c.history.map((h) => h.treasury)}
-        />
-        <Chart
-          label="Haftalık fabrika kapasitesi"
-          values={c.history.map((h) => h.factories)}
-        />
-        <h3>Stratejik stoklar</h3>
-        <div className={styles.resourceGrid}>
-          {Object.entries(RESOURCES).map(([id, name]) => (
-            <Stat
-              key={id}
-              label={name}
-              icon={resourceIcon(id as Resource)}
-              value={number(c.stock[id as Resource])}
-            />
-          ))}
-        </div>
-        <h3>Üretim hatları</h3>
-        <p>
-          ± ile fabrika ayır. Kaynak yoksa üretim yavaşlar. Aynı hat çalıştıkça
-          verimlilik artar. Yalnızca tamamlanan tam adetler depoya girer; kalan
-          üretim puanı ve harcanan malzeme hatta korunur. Fabrikayı sıfıra
-          indirmek devam eden işi duraklatır.
-        </p>
-        {Object.entries(EQUIPMENT).map(([id, d]) => {
-          const line = c.production.find((p) => p.equipment === id),
-            locked = d.tech && !c.tech.includes(d.tech),
-            preview = productionPreview.get(id as Equipment);
-          return (
-            <div
-              className={styles.production}
-              key={id}
-              data-testid={`production-${id}`}
-            >
-              <div>
-                <strong>
-                  <MilitaryIcon name={equipmentIcon(id as Equipment)} />
-                  {d.name}
-                </strong>
-                <small>
-                  Depo: {number(c.equipment[id as Equipment])} ·{" "}
-                  {locked
-                    ? "Araştırma gerekli"
-                    : line
-                      ? `Verim %${Math.round(line.efficiency * 100)}`
-                      : d.naval
-                        ? "Tersane"
-                        : "Askerî fabrika"}
-                </small>
-                {line && preview && (
-                  <small data-testid={`production-progress-${id}`}>
-                    Etkin{" "}
-                    {preview.activeFactories.toLocaleString("tr-TR", {
-                      maximumFractionDigits: 1,
-                    })}
-                    /{line.factories} {d.naval ? "tersane" : "fabrika"} ·
-                    Biriken{" "}
-                    {(line.progress ?? 0).toLocaleString("tr-TR", {
-                      maximumFractionDigits: 2,
-                    })}
-                    /{d.cost} puan
-                    <br />
-                    {preview.blocked
-                      ? {
-                          paused: "Hat duraklatıldı; biriken iş korunuyor.",
-                          capacity: "Etkin üretim kapasitesi yok.",
-                          resources: "Gerekli kaynak bulunmuyor.",
-                          storage: "Depoda tam bir ekipman için yer yok.",
-                        }[preview.blocked]
-                      : `Mevcut stokla tahmin: ${preview.completed} adet/gün · ${preview.work.toLocaleString("tr-TR", { maximumFractionDigits: 2 })} puan/gün`}
-                  </small>
-                )}
-              </div>
-              <div className={styles.stepper}>
-                <button
-                  aria-label={`${d.name} fabrika azalt`}
-                  disabled={!line || line.factories <= 0}
-                  onClick={() =>
-                    command({
-                      type: "production",
-                      equipment: id as Equipment,
-                      factories: (line?.factories ?? 0) - 1,
-                    })
-                  }
-                >
-                  <MilitaryIcon
-                    name="minus"
-                    size={13}
-                    style={{ marginInlineEnd: 0 }}
-                  />
-                </button>
-                <b>{line?.factories ?? 0}</b>
-                <button
-                  aria-label={`${d.name} fabrika artır`}
-                  disabled={!!locked}
-                  onClick={() =>
-                    command({
-                      type: "production",
-                      equipment: id as Equipment,
-                      factories: (line?.factories ?? 0) + 1,
-                    })
-                  }
-                >
-                  <MilitaryIcon
-                    name="plus"
-                    size={13}
-                    style={{ marginInlineEnd: 0 }}
-                  />
-                </button>
-              </div>
-            </div>
-          );
-        })}
-        <h3>İnşaat kuyruğu</h3>
-        <p>
-          İnşaatlar sırayla tamamlanır. Eyalet panelinden yeni yapı
-          ekleyebilirsin.
-        </p>
-        {c.construction.length === 0 && (
-          <p className={styles.muted}>Kuyruk boş.</p>
-        )}
-        {c.construction.map((q, i) => (
-          <div key={q.id} className={styles.card}>
-            <h4>
-              {i + 1}. <MilitaryIcon name={buildingIcon(q.building)} />
-              {BUILDINGS[q.building].name}
-            </h4>
-            <p>
-              {GEOGRAPHY[q.province].name}
-              {w.provinces[q.province].controller !== c.id
-                ? " · işgal nedeniyle durdu"
-                : ""}
-            </p>
-            <Progress value={q.progress} total={q.total} />
-            <button
-              className={styles.textButton}
-              onClick={() => command({ type: "cancelBuild", id: q.id })}
-            >
-              İptal et · kullanılmayan bütçenin %75’i iade
-            </button>
-          </div>
-        ))}
-      </>
+      <ProductionPanel
+        world={w}
+        command={command}
+        onResearch={() => onTab("research")}
+      />
     );
   if (tab === "diplomacy")
     return (
@@ -1190,113 +957,7 @@ export default function WarPanels({
       </>
     );
   if (tab === "research")
-    return (
-      <>
-        <div className={styles.eyebrow}>BİLİM VE DOKTRİNLER</div>
-        <h2>
-          <MilitaryIcon name="research" size={26} />
-          Araştırma
-        </h2>
-        <p className={styles.subtitle}>
-          {c.research.length} / {researchSlots(c)} yuva · Hız bonusu %
-          {Math.round((c.science + (c.advisor === "science" ? 0.15 : 0)) * 100)}
-        </p>
-        <UnitResearchGuide
-          country={c}
-          onResearch={(id) => command({ type: "research", id })}
-        />
-        {c.research.map((q) => (
-          <div key={q.id} className={styles.card}>
-            <h3>{TECHNOLOGIES.find((t) => t.id === q.id)?.name}</h3>
-            <Progress value={q.progress} total={q.total} />
-            <p>
-              Yaklaşık{" "}
-              {Math.ceil(
-                (q.total - q.progress) /
-                  (1 + c.science + (c.advisor === "science" ? 0.15 : 0)),
-              )}{" "}
-              gün kaldı.
-            </p>
-          </div>
-        ))}
-        <details
-          className={styles.fold}
-          open={!simple}
-          key={simple ? "research-simple" : "research-full"}
-        >
-          <summary>Tüm araştırmalar ve doktrinler</summary>
-          <label className={styles.field}>
-            Araştırma dalı
-            <select value={branch} onChange={(e) => setBranch(e.target.value)}>
-              {["Tümü", ...new Set(TECHNOLOGIES.map((t) => t.branch))].map(
-                (b) => (
-                  <option key={b}>{b}</option>
-                ),
-              )}
-            </select>
-          </label>
-          <p>
-            Zamanından önce araştırma daha uzun sürer. Çizgiler, önce
-            tamamlanması gereken teknolojileri gösterir.
-          </p>
-          <div className={styles.tree}>
-            {TECHNOLOGIES.filter(
-              (t) => branch === "Tümü" || t.branch === branch,
-            ).map((t) => {
-              const done = c.tech.includes(t.id),
-                working = c.research.some((r) => r.id === t.id),
-                locked = t.requires.some((id) => !c.tech.includes(id));
-              return (
-                <div
-                  className={`${styles.treeNode} ${done ? styles.completed : ""}`}
-                  key={t.id}
-                >
-                  <small>
-                    {t.branch} · {t.year}
-                  </small>
-                  <h3>
-                    {done ? (
-                      <MilitaryIcon name="check" size={16} />
-                    ) : (
-                      <MilitaryIcon name="research" size={16} />
-                    )}
-                    {t.name}
-                  </h3>
-                  <p>{t.description}</p>
-                  {t.requires.length > 0 && (
-                    <small className={styles.prereq}>
-                      ↳{" "}
-                      {t.requires
-                        .map(
-                          (id) => TECHNOLOGIES.find((t) => t.id === id)?.name,
-                        )
-                        .join(" + ")}
-                    </small>
-                  )}
-                  <button
-                    disabled={
-                      done ||
-                      working ||
-                      locked ||
-                      c.research.length >= researchSlots(c)
-                    }
-                    onClick={() => command({ type: "research", id: t.id })}
-                  >
-                    {done
-                      ? "Tamamlandı"
-                      : working
-                        ? "Araştırılıyor"
-                        : locked
-                          ? "Önkoşul bekleniyor"
-                          : `Araştır · ${researchDays(w, c, t.id)} temel gün`}
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        </details>
-      </>
-    );
+    return <ResearchPanel world={w} command={command} simple={simple} />;
   if (tab === "politics")
     return (
       <>

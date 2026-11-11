@@ -15,7 +15,7 @@ export interface MovementRoute {
   color: string;
   count: number;
   selected: boolean;
-  kind: "march" | "planned" | "draft";
+  kind: "march" | "planned" | "draft" | "front" | "offensive";
   from: string;
   to: string;
   points: MovementPoint[];
@@ -42,6 +42,7 @@ export function movementRoutes(
   world: World,
   selectedIds: readonly string[] = [],
   draft: readonly string[] = [],
+  includeOperations = false,
 ): MovementRoute[] {
   const selected = new Set(selectedIds);
   const groups = new Map<
@@ -135,6 +136,56 @@ export function movementRoutes(
       to: lastTo,
       points,
     });
+  }
+  // The 2D map has its own labelled operation layer. The 3D ribbon batch also
+  // needs saved plans/fronts, even while their divisions are stationary.
+  if (includeOperations) {
+    const own = new Map(
+      world.armies
+        .filter((army) => army.country === world.player && army.strength > 0)
+        .map((army) => [army.id, army]),
+    );
+    for (const operation of [
+      ...world.fronts
+        .filter((front) => front.country === world.player)
+        .map((front) => ({
+          ...front,
+          kind: "front" as const,
+          path: front.provinces,
+        })),
+      ...world.plans
+        .filter((plan) => plan.country === world.player)
+        .map((plan) => ({
+          ...plan,
+          kind: "offensive" as const,
+          path: plan.objectives,
+        })),
+    ]) {
+      const members = [...new Set(operation.armies)]
+        .map((id) => own.get(id))
+        .filter((army) => army !== undefined);
+      if (!members.length) continue;
+      const path = (
+        operation.kind === "offensive"
+          ? [members[0].province, ...operation.path]
+          : operation.path
+      ).filter((id) => Boolean(GEOGRAPHY[id]));
+      const points = cleanPoints(
+        path.map((id) => ({ x: GEOGRAPHY[id].x, y: GEOGRAPHY[id].y })),
+      );
+      if (points.length < 2) continue;
+      routes.push({
+        id: `operation-${operation.id}`,
+        country: world.player,
+        color: countryTint(world.countries[world.player].color),
+        count: members.length,
+        selected: members.some((army) => selected.has(army.id)),
+        kind: operation.kind,
+        from: path[0],
+        to: path.at(-1)!,
+        points,
+      });
+    }
   }
   routes.sort(
     (a, b) =>

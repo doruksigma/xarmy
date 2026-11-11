@@ -1,0 +1,310 @@
+.board {
+  min-width: 0;
+  border: 1px solid #79755b;
+  background: #181d19;
+  box-shadow:
+    inset 0 0 0 3px #30342a,
+    0 5px 16px #0006;
+}
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 9px 12px;
+  border-bottom: 1px solid #625f49;
+  background: linear-gradient(#3e4235, #252c24);
+}
+.toolbar > span {
+  color: #d7ceb0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.8px;
+}
+.toolbar > div {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.toolbar button,
+.panControls button {
+  min-height: 34px;
+  min-width: 34px;
+  padding: 4px 9px;
+  font-size: 17px;
+  line-height: 1;
+}
+.toolbar output {
+  min-width: 42px;
+  text-align: center;
+  font-size: 11px;
+  color: #d6ccb1;
+  font-variant-numeric: tabular-nums;
+}
+.viewport {
+  position: relative;
+  height: clamp(330px, 53vh, 590px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-x pan-y;
+  cursor: grab;
+  scrollbar-color: #777a5e #17201a;
+  background:
+    radial-gradient(ellipse at 40% 20%, #35382b88, transparent 70%),
+    repeating-linear-gradient(
+      90deg,
+      transparent 0 193px,
+      #a59d6705 193px 194px
+    ),
+    #171c18;
+}
+.viewport:active {
+  cursor: grabbing;
+}
+.viewport:focus-visible {
+  outline: 2px solid #dbcf91;
+  outline-offset: -3px;
+}
+.extent {
+  position: relative;
+}
+.canvas {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: top left;
+}
+.connections {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: visible;
+}
+.connections path {
+  fill: none;
+  stroke: #66767a;
+  stroke-width: 2;
+  opacity: 0.85;
+}
+.connections path[data-complete="true"] {
+  stroke: #b5c48b;
+  stroke-width: 3;
+}
+.branch {
+  position: absolute;
+  top: 15px;
+  height: 26px;
+  color: #c9c5aa;
+  text-align: center;
+  font:
+    10px/1.3 Georgia,
+    serif;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  border-bottom: 1px solid #70725b66;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.board .node {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 0;
+  border: none;
+  background: none;
+  box-shadow: none;
+  border-radius: 0;
+  cursor: pointer;
+  color: #c8c6ab;
+  user-select: none;
+}
+.medallion {
+  position: relative;
+  width: 65px;
+  height: 65px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 4px double #a39a6f;
+  border-radius: 50%;
+  color: #e0d4a5;
+  background: radial-gradient(circle at 35% 25%, #68715b, #303c30 55%, #111b17);
+  box-shadow:
+    0 4px 8px #0008,
+    inset 0 0 0 3px #141c18,
+    0 0 0 3px #2e352a;
+}
+.medallion::before,
+.medallion::after {
+  content: "";
+  position: absolute;
+  top: 16px;
+  width: 9px;
+  height: 36px;
+  border: 3px solid #93875b;
+  border-top-color: transparent;
+  border-bottom-color: transparent;
+  border-radius: 50%;
+}
+.medallion::before {
+  left: -13px;
+  transform: rotate(-25deg);
+  border-right: none;
+}
+.medallion::after {
+  right: -13px;
+  transform: rotate(25deg);
+  border-left: none;
+}
+.medallion svg {
+  margin: 0;
+  filter: drop-shadow(1px 2px #0008);
+}
+.rank {
+  position: absolute;
+  bottom: -6px;
+  left: 24px;
+  font-size: 11px;
+  color: #dac28b;
+}
+.name {
+  width: 100%;
+  min-height: 34px;
+  max-height: 39px;
+  margin-top: 7px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 4px 5px;
+  color: #eee6ce;
+  background: linear-gradient(#404335, #252d24);
+  border: 1px solid #8b815c;
+  border-radius: 3px;
+  box-shadow: 0 3px 5px #0007;
+  font:
+    600 11px/1.22 Georgia,
+    "Times New Roman",
+    serif;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.state {
+  font-size: 9px;
+  line-height: 1.6;
+  color: #b8c9a2;
+  padding-top: 2px;
+}
+.node[data-state="locked"] .medallion {
+  color: #949b8c;
+  border-color: #676e5e;
+  filter: saturate(0.35);
+}
+.node[data-state="locked"] .name {
+  border-color: #555e4f;
+  color: #b7bdae;
+}
+.node[data-state="active"] .medallion {
+  border-color: #d7ba6a;
+  color: #fff0bc;
+  box-shadow:
+    0 0 16px #be964b55,
+    inset 0 0 0 3px #3e3824;
+}
+.node[data-state="active"] .name {
+  background: linear-gradient(#625f37, #373d27);
+  border-color: #cfbb73;
+}
+.node[data-state="completed"] .medallion {
+  border-color: #a3bb78;
+  color: #e0edbe;
+  background: radial-gradient(circle at 30% 25%, #6a7c4e, #2e472a);
+}
+.node[data-state="completed"] .name {
+  border-color: #829965;
+}
+.node[data-state="pending"] .medallion {
+  border-color: #e0c56b;
+}
+.node[data-state="excluded"] .medallion,
+.node[data-state="declined"] .medallion {
+  border-color: #795d55;
+  color: #ad8175;
+}
+.node[data-state="excluded"] .name,
+.node[data-state="declined"] .name {
+  border-color: #77554c;
+  color: #c49b8c;
+}
+.node[data-context="true"] {
+  opacity: 0.65;
+}
+.board .node[aria-pressed="true"] .name,
+.board .node:focus-visible .name {
+  outline: 2px solid #f1d28f;
+  outline-offset: 3px;
+}
+.board .node[aria-pressed="true"] .medallion {
+  box-shadow:
+    0 0 0 4px #dec58c44,
+    0 0 20px #cda45244;
+}
+.board .node:focus-visible {
+  outline: none;
+}
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  border-top: 1px solid #5a604c;
+  padding: 9px 12px;
+  color: #babfa9;
+  font-size: 9px;
+}
+.legend [data-tone="available"] {
+  color: #d3ca99;
+}
+.legend [data-tone="active"] {
+  color: #e1c56d;
+}
+.legend [data-tone="completed"] {
+  color: #abc788;
+}
+.legend [data-tone="locked"] {
+  color: #929b8b;
+}
+.legend small {
+  display: block;
+  flex-basis: 100%;
+  font-size: 9px;
+  line-height: 1.5;
+  color: #929f8c;
+}
+.panControls {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 10px 10px;
+}
+@media (max-width: 600px) {
+  .viewport {
+    height: 390px;
+  }
+  .toolbar {
+    padding: 8px;
+    gap: 5px;
+  }
+  .toolbar > span {
+    font-size: 9px;
+    letter-spacing: 1px;
+  }
+  .toolbar button,
+  .panControls button {
+    min-height: 38px;
+    min-width: 38px;
+  }
+}

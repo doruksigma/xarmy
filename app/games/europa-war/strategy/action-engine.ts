@@ -3,6 +3,8 @@ import {
   assignCommander,
   cleanupCommanders,
   commanderAction,
+  commanderArmies,
+  COMMANDER_CAPACITY,
 } from "./commanders";
 import { managementAction } from "./management";
 import { detachArmy, planningAction } from "./planning";
@@ -46,6 +48,101 @@ export function dispatchCountryAction(
       "Geçerli zorluk seç.",
     );
     w.difficulty = action.value;
+  } else if (action.type === "commanderOrder") {
+    const general = c.generals.find((g) => g.id === action.general);
+    requireRule(general, "Kendi komutanlarından birini seç.");
+    // Resolve the live roster at the transaction boundary. The UI's selected
+    // division list may be stale after recruitment, casualties or reassignment.
+    const members = commanderArmies(w, c.id, general.id);
+    requireRule(members.length > 0, "Önce bu komutana tümen ata.");
+    requireRule(
+      members.length <= COMMANDER_CAPACITY,
+      "Bir komutan en fazla 12 tümene emir verebilir.",
+    );
+    const maximum = action.kind === "offensive" ? 12 : 20;
+    const minimum = action.kind === "front" ? 2 : 1;
+    requireRule(
+      action.kind === "halt"
+        ? action.provinces.length === 0
+        : action.provinces.length >= minimum &&
+            action.provinces.length <= maximum &&
+            new Set(action.provinces).size === action.provinces.length &&
+            action.provinces.every((id) => Object.hasOwn(w.provinces, id)),
+      action.kind === "halt"
+        ? "Dur emrinde hedef seçilmez."
+        : `${minimum}–${maximum} farklı hedef eyalet seç.`,
+    );
+    const armies = members.map((army) => army.id);
+    // Manual operations supersede this commander's automated border. Clear it
+    // before the shared handlers detach old plans, so the roster is preserved.
+    // The enclosing transaction rolls this back if any member cannot comply.
+    delete general.front;
+    const dispatch = (nested: Action) =>
+      dispatchCountryAction(w, issuerCountryId, nested);
+    if (action.kind === "halt") {
+      dispatch({ type: "haltGroup", armies });
+    } else if (action.kind === "move") {
+      for (let index = 0; index < action.provinces.length; index++)
+        dispatch({
+          type: "moveGroup",
+          armies,
+          to: action.provinces[index],
+          append: index > 0,
+        });
+    } else {
+      // A displayed group plan must be reachable by every assigned division.
+      // Reuse formation-aware route searches for units sharing an origin.
+      const formations = new Map<string, Army[]>();
+      for (const army of members) {
+        const formation = formations.get(army.province) ?? [];
+        formation.push(army);
+        formations.set(army.province, formation);
+      }
+      const routes = new Map<string, string[] | null>();
+      for (let index = 0; index < members.length; index++) {
+        const army = members[index];
+        const targets =
+          action.kind === "front"
+            ? [action.provinces[index % action.provinces.length]]
+            : action.provinces;
+        let start = army.province;
+        for (const target of targets) {
+          const key = `${start}:${target}`;
+          if (!routes.has(key))
+            routes.set(
+              key,
+              routeTo(w, army, target, start, formations.get(army.province)),
+            );
+          const route = routes.get(key);
+          requireRule(
+            route &&
+              (action.kind !== "front" ||
+                route.every((id) =>
+                  friendly(w, c.id, w.provinces[id].controller),
+                )),
+            `${army.name}: Operasyon hedefine uygun rota yok. Tüm tümenler erişebilmelidir.`,
+          );
+          start = target;
+        }
+      }
+      if (action.kind === "front") {
+        dispatch({ type: "front", armies, provinces: action.provinces });
+        for (const army of members) army.stance = "hold";
+      } else {
+        dispatch({
+          type: "offensive",
+          armies,
+          objectives: action.provinces,
+          stance: action.stance ?? "balanced",
+        });
+      }
+    }
+    w.fronts = w.fronts.filter((front) => front.armies.length > 0);
+    w.plans = w.plans.filter((plan) => plan.armies.length > 0);
+    requireRule(
+      w.fronts.length <= 80 && w.plans.length <= 80,
+      "Harekât sınırına ulaşıldı; kullanılmayan bir cepheyi veya planı kaldır.",
+    );
   } else if (action.type === "front") {
     requireRule(
       action.provinces.length >= 2 &&

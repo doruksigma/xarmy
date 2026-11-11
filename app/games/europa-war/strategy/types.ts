@@ -414,6 +414,13 @@ export type Action =
   | { type: "commanderStance"; general: string; stance: "defend" | "attack" }
   | { type: "commanderRecall"; general: string }
   | { type: "commanderCreate" }
+  | {
+      type: "commanderOrder";
+      general: string;
+      kind: "move" | "front" | "offensive" | "halt";
+      provinces: string[];
+      stance?: OffensivePlan["stance"];
+    }
   | { type: "difficulty"; value: World["difficulty"] }
   | { type: "automation"; area: keyof Country["automation"]; enabled: boolean }
   | { type: "autoPlan"; area: keyof Country["automation"] }

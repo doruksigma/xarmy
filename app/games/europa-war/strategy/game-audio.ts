@@ -173,6 +173,12 @@ export class SoundGate {
 
 export function actionSound(action: Action): GameSound {
   switch (action.type) {
+    case "commanderOrder":
+      return action.kind === "halt"
+        ? "halt"
+        : action.kind === "move"
+          ? "order"
+          : "plan";
     case "move":
     case "moveGroup":
     case "commanderDeploy":

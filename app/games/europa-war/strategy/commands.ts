@@ -56,6 +56,7 @@ const labels: Record<Action["type"], string> = {
   commanderStance: "Komutan görevi",
   commanderRecall: "Komutanı geri çağırma",
   commanderCreate: "Yeni komutan",
+  commanderOrder: "Komutan operasyon emri",
   difficulty: "Zorluk ayarı",
   automation: "Yardımcı yönetim ayarı",
   autoPlan: "Yardımcı yönetim planı",
@@ -150,6 +151,19 @@ function describeAction(world: World, issuer: string, action: Action): string {
     case "commanderRecall":
       detail = commander(action.general);
       break;
+    case "commanderOrder": {
+      const count = world.armies.filter(
+        (army) => army.country === issuer && army.general === action.general,
+      ).length;
+      const operation = {
+        move: "İntikal",
+        front: "Savunma hattı",
+        offensive: "Taarruz planı",
+        halt: "Dur",
+      }[action.kind];
+      detail = `${commander(action.general)} · ${count} tümen · ${operation}${action.provinces.length ? ` → ${province(action.provinces.at(-1)!)}` : ""}`;
+      break;
+    }
   }
   const summary = detail
     ? `${labels[action.type]} · ${detail}`

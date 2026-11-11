@@ -58,7 +58,7 @@ export function createMovementArrows(
       draft: readonly string[] = [],
     ) {
       if (disposed) return;
-      const routes = movementRoutes(world, selectedIds, draft);
+      const routes = movementRoutes(world, selectedIds, draft, true);
       const next = JSON.stringify(routes);
       if (next === signature) return;
       signature = next;
@@ -90,7 +90,12 @@ export function createMovementArrows(
               ny = (dx / length) * width;
             const steps = Math.min(48, Math.max(1, Math.ceil(length / 7)));
             for (let step = 0; step < steps; step++) {
-              if (route.kind !== "march" && step % 3 === 2) continue;
+              if (
+                route.kind !== "march" &&
+                route.kind !== "front" &&
+                step % 3 === 2
+              )
+                continue;
               const t = step / steps,
                 u = (step + 1) / steps;
               const points = [
@@ -103,19 +108,27 @@ export function createMovementArrows(
             }
           }
         };
-        const width = route.selected ? 1.35 : 0.95;
-        const headSize = route.selected ? 8 : 6.5;
+        const operation = route.kind === "front" || route.kind === "offensive";
+        const width = operation
+          ? route.selected
+            ? 2.5
+            : 1.8
+          : route.selected
+            ? 1.35
+            : 0.95;
+        const headSize = operation ? 13 : route.selected ? 8 : 6.5;
         const head = movementArrowHead(route.points, headSize);
-        if (head.length < 3) continue;
+        if (route.kind !== "front" && head.length < 3) continue;
         // This batch does not write depth. Draw the complete outline first so
         // the longer outline head cannot paint a crossbar over the shaft.
         ribbon(width + 0.65, 1.15, route.selected ? "#d8dfdf" : "#080e19");
         tint.set(route.selected ? "#d8dfdf" : "#080e19");
-        for (const point of movementArrowHead(route.points, headSize + 1.5))
-          add(point, 1.25);
+        if (route.kind !== "front")
+          for (const point of movementArrowHead(route.points, headSize + 1.5))
+            add(point, 1.25);
         ribbon(width, 1.23, route.color);
         tint.set(route.color);
-        for (const point of head) add(point, 1.33);
+        if (route.kind !== "front") for (const point of head) add(point, 1.33);
         if (
           (positions.length + ownPositions.length) / 3 >
           MAX_MOVEMENT_ARROW_VERTICES
@@ -123,7 +136,7 @@ export function createMovementArrows(
           continue;
         positions.push(...ownPositions);
         colors.push(...ownColors);
-        stats.heads++;
+        if (route.kind !== "front") stats.heads++;
         stats.arrows.push({
           country: route.country,
           color: route.color,
