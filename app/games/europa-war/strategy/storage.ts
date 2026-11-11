@@ -1,4 +1,9 @@
 import {
+  HISTORICAL_EVENTS,
+  historicalEvent,
+  historicalFocusId,
+} from "./historical-catalog";
+import {
   AIRCRAFT,
   SHIPS,
   SUPPORT,
@@ -447,7 +452,35 @@ const reinforcementState = shape({
     Number.isSafeInteger(value) &&
     (value as number) % HOURS_PER_DAY === 0,
 });
+const historicalEventId = one(
+  HISTORICAL_EVENTS.map((definition) => definition.id),
+);
+const historicalDay: Validator = (value) =>
+  num(36500)(value) && Number.isSafeInteger(value);
+const historicalState = shape({
+  pending: arr(
+    shape({
+      id: shipmentIdentity,
+      eventId: historicalEventId,
+      initiator: shipmentIdentity,
+      recipient: shipmentIdentity,
+      stage: one(["initiate", "respond"]),
+      createdDay: historicalDay,
+    }),
+    HISTORICAL_EVENTS.length,
+  ),
+  resolved: arr(
+    shape({
+      eventId: historicalEventId,
+      day: historicalDay,
+      outcome: one(["accepted", "declined", "unavailable"]),
+      by: shipmentIdentity,
+    }),
+    HISTORICAL_EVENTS.length,
+  ),
+});
 const schema = shapeWithOptionalFields(worldFields, {
+  historical: historicalState,
   commandState: isValidCommandState,
   rng: isValidRandomStreams,
   mapVersion: one(["world-1936-v1"]),
@@ -602,6 +635,46 @@ function validateWithRegions(
     ids = Object.keys(w.countries),
     has = (id: string) => ids.includes(id);
   if (w.rng && w.rng.intelligence !== w.seed) return false;
+  if (w.historical) {
+    const all = [...w.historical.pending, ...w.historical.resolved];
+    if (new Set(all.map((item) => item.eventId)).size !== all.length)
+      return false;
+    if (
+      w.historical.pending.some((item) => {
+        const definition = historicalEvent(item.eventId)!;
+        return (
+          item.id !== historicalFocusId(definition.id) ||
+          item.initiator !== definition.country ||
+          !has(item.initiator) ||
+          !has(item.recipient) ||
+          item.createdDay > w.day ||
+          !w.countries[item.initiator].focuses.includes(
+            historicalFocusId(item.eventId),
+          ) ||
+          (item.stage === "initiate"
+            ? item.recipient !== item.initiator
+            : item.recipient !== definition.target ||
+              ["war", "aid", "defense"].includes(definition.kind))
+        );
+      })
+    )
+      return false;
+    if (
+      w.historical.resolved.some((item) => {
+        const definition = historicalEvent(item.eventId)!;
+        return (
+          !has(item.by) ||
+          item.day > w.day ||
+          !w.countries[definition.country]?.focuses.includes(
+            historicalFocusId(item.eventId),
+          ) ||
+          (item.by !== definition.country && item.by !== definition.target)
+        );
+      })
+    )
+      return false;
+  }
+
   if (
     w.airNavalReports &&
     (new Set(w.airNavalReports.map((report) => report.country)).size !==

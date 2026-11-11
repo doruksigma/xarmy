@@ -1,3 +1,4 @@
+import { historicalFocusAvailability } from "./historical-events";
 import { manage } from "./management";
 import { createCommand, executeCommandInPlace } from "./commands";
 import { focusTree, TECHNOLOGIES } from "./catalog";
@@ -65,12 +66,22 @@ export function aiDay(w: World) {
       if (options[0]) submit({ type: "research", id: options[0].id });
     }
     if (!c.focus) {
-      const focus = focusTree(c.id).find(
+      const available = focusTree(c.id).filter(
         (f) =>
+          c.political >= (f.cost ?? 0) &&
+          (f.effect !== "historical" ||
+            !historicalFocusAvailability(w, c, f.id.slice(8))) &&
           !c.focuses.includes(f.id) &&
           f.requires.every((id) => c.focuses.includes(id)) &&
           (!f.excludes || !c.focuses.includes(f.excludes)),
       );
+      // Historical diplomacy gets the next free focus slot once its date,
+      // prerequisites and paid resources are valid. Existing work is never
+      // cancelled; alternative mode retains its general development priority.
+      const focus =
+        (w.mode === "historical"
+          ? available.find((candidate) => candidate.effect === "historical")
+          : undefined) ?? available[0];
       if (focus) submit({ type: "focus", id: focus.id });
     }
     if (c.construction.length === 0 && c.treasury > 250) {

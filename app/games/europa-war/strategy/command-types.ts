@@ -224,6 +224,10 @@ const actionValidators: Record<Action["type"], Validator> = {
   production: actionShape({ equipment, factories: integer }),
   research: actionShape({ id: safeId }),
   focus: actionShape({ id: safeId }),
+  historicalChoice: actionShape({
+    id: safeId,
+    choice: one("accept", "decline"),
+  }),
   economy: actionShape({ law: one("civilian", "partial", "war") }),
   conscription: actionShape({ law: one("volunteer", "limited", "extensive") }),
   advisor: actionShape({ advisor: one("industry", "science", "army") }),

@@ -5,6 +5,7 @@ import ReinforcementLogistics from "./ReinforcementLogistics";
 import AirNavalControl from "./AirNavalControl";
 import AirNavalReport from "./AirNavalReport";
 import UnitResearchGuide from "./UnitResearchGuide";
+import HistoricalEvents from "./HistoricalEvents";
 import MilitaryIcon, {
   unitIcon,
   equipmentIcon,
@@ -21,7 +22,6 @@ import { useMemo, useState } from "react";
 import {
   BUILDINGS,
   EQUIPMENT,
-  focusTree,
   IDEOLOGIES,
   MISSIONS,
   RESOURCES,
@@ -63,6 +63,7 @@ export const TABS = [
   ["economy", "factory", "Sanayi"],
   ["diplomacy", "diplomacy", "Diplomasi"],
   ["research", "research", "Araştırma"],
+  ["history", "medal", "Odak / Olaylar"],
   ["politics", "politics", "Siyaset"],
   ["operations", "operations", "Hava / Deniz"],
   ["saves", "save", "Kayıtlar"],
@@ -271,6 +272,8 @@ export default function WarPanels({
   );
   if (tab === "command")
     return <CommandCenter world={w} command={command} onTab={onTab} />;
+  if (tab === "history")
+    return <HistoricalEvents key={c.id} world={w} onAction={command} />;
   if (tab === "province")
     return (
       <>
@@ -1361,64 +1364,10 @@ export default function WarPanels({
             </div>
           ))}
         </details>
-        <h3>
-          <MilitaryIcon name="medal" />
-          Ulusal odak ağacı
-        </h3>
-        {c.focus && (
-          <div className={styles.card}>
-            <h4>{focusTree(c.id).find((f) => f.id === c.focus?.id)?.name}</h4>
-            <Progress value={c.focus.progress} total={c.focus.total} />
-            <p>{Math.ceil(c.focus.total - c.focus.progress)} gün kaldı.</p>
-          </div>
-        )}
-        <div className={styles.tree}>
-          {focusTree(c.id).map((f) => {
-            const done = c.focuses.includes(f.id),
-              locked =
-                f.requires.some((id) => !c.focuses.includes(id)) ||
-                !!(f.excludes && c.focuses.includes(f.excludes));
-            return (
-              <div
-                key={f.id}
-                className={`${styles.treeNode} ${done ? styles.completed : ""}`}
-              >
-                <small>{f.branch}</small>
-                <h3>
-                  {done ? (
-                    <MilitaryIcon name="check" size={16} />
-                  ) : (
-                    <MilitaryIcon name="medal" size={16} />
-                  )}
-                  {f.name}
-                </h3>
-                <p>{f.description}</p>
-                {f.requires.length > 0 && (
-                  <small className={styles.prereq}>
-                    ↳{" "}
-                    {f.requires
-                      .map(
-                        (id) => focusTree(c.id).find((f) => f.id === id)?.name,
-                      )
-                      .join(" + ")}
-                  </small>
-                )}
-                <button
-                  disabled={done || locked || !!c.focus}
-                  onClick={() => command({ type: "focus", id: f.id })}
-                >
-                  {done
-                    ? "Tamamlandı"
-                    : locked
-                      ? "Önceki yol gerekli"
-                      : c.focus?.id === f.id
-                        ? "Sürüyor"
-                        : `Odağı seç · ${f.days} gün`}
-                </button>
-              </div>
-            );
-          })}
-        </div>
+        <button onClick={() => onTab("history")}>
+          <MilitaryIcon name="medal" size={16} />
+          Ulusal odaklar ve tarihî olaylar
+        </button>
       </>
     );
   if (tab === "operations")

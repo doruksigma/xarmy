@@ -1,3 +1,4 @@
+import type { HistoricalState } from "./historical-types";
 import type { CommandState } from "./command-types";
 import type { RandomStreams } from "./rng";
 import type { ReinforcementState } from "./reinforcement-types";
@@ -287,6 +288,7 @@ export interface AirNavalDailyReport {
 export interface World {
   /** Recorded only after a protocol command succeeds. */
   commandState?: CommandState;
+  historical?: HistoricalState;
   version: 3;
   /** Missing only on saves created before the global scenario. */
   mapVersion?: "world-1936-v1";
@@ -470,6 +472,7 @@ export type Action =
   | { type: "production"; equipment: Equipment; factories: number }
   | { type: "research"; id: string }
   | { type: "focus"; id: string }
+  | { type: "historicalChoice"; id: string; choice: "accept" | "decline" }
   | { type: "economy"; law: Country["economy"] }
   | { type: "conscription"; law: Country["conscription"] }
   | { type: "advisor"; advisor: Country["advisor"] }

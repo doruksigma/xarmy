@@ -86,6 +86,7 @@ const labels: Record<Action["type"], string> = {
   production: "Üretim tahsisi",
   research: "Araştırma başlatma",
   focus: "Ulusal odak başlatma",
+  historicalChoice: "Tarihî olay kararı",
   economy: "Ekonomi yasası",
   conscription: "Askerlik yasası",
   advisor: "Danışman ataması",

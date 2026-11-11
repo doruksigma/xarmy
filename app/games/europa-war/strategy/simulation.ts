@@ -10,6 +10,16 @@ import {
 /** At 1× one game hour per 150 ms, always waiting for worker completion. */
 export const SIMULATION_HOUR_MS = 150;
 
+/** Read only the tiny decision queue; do not load political rules into the scheduler. */
+export function hasPendingPlayerDecision(world: World | null): boolean {
+  // A country may capitulate in the same hour that politics opens a proposal.
+  // It can no longer issue commands; the politics cleanup closes that stale item.
+  if (world?.countries?.[world.player]?.capitulated) return false;
+  return !!world?.historical?.pending.some(
+    (decision) => decision.recipient === world.player,
+  );
+}
+
 export type SimulationRequest = {
   type: "advance";
   protocol: typeof SIMULATION_PROTOCOL;
@@ -66,6 +76,8 @@ type Options = {
   createWorker: () => SimulationWorker;
   onWorld: (world: World) => void;
   onError: (message: string) => void;
+  /** A pending human decision is a normal pause, not a worker failure. */
+  onPause?: () => void;
   onAssets?: (assets: string[]) => void;
   onDiagnostics?: (diagnostics: SimulationDiagnostics) => void;
   canRun?: () => boolean;
@@ -180,6 +192,9 @@ export class SimulationController {
         }
         this.world = next;
         this.workerRevision = pending.revision;
+        // Stop synchronously before publishing. React may render the event
+        // dialog later, but even at 5× another worker hour cannot be queued.
+        this.pauseForDecision();
         this.options.onWorld(next);
         this.options.onDiagnostics?.({
           ...data.metrics,
@@ -214,11 +229,19 @@ export class SimulationController {
     this.world = world;
     this.revision++;
     this.clearScheduled();
+    this.pauseForDecision();
     this.schedule();
   }
 
   setRunning(running: boolean) {
-    if (this.disposed || this.running === running) return;
+    if (this.disposed) return;
+    if (running && hasPendingPlayerDecision(this.world)) {
+      const alreadyPaused = !this.running;
+      this.pauseForDecision();
+      if (alreadyPaused) this.options.onPause?.();
+      return;
+    }
+    if (this.running === running) return;
     this.running = running;
     this.revision++;
     this.clearScheduled();
@@ -269,6 +292,17 @@ export class SimulationController {
     this.options.onError(message);
   }
 
+  private pauseForDecision(): boolean {
+    if (!hasPendingPlayerDecision(this.world)) return false;
+    if (this.running) {
+      this.running = false;
+      this.revision++;
+      this.clearScheduled();
+      this.options.onPause?.();
+    }
+    return true;
+  }
+
   private schedule() {
     if (
       this.disposed ||
@@ -278,6 +312,7 @@ export class SimulationController {
       this.scheduled !== null
     )
       return;
+    if (this.pauseForDecision()) return;
     this.scheduled = this.setTimer(() => {
       this.scheduled = null;
       this.advance();
@@ -286,6 +321,7 @@ export class SimulationController {
 
   private advance() {
     if (this.disposed || !this.running || !this.world || this.pending) return;
+    if (this.pauseForDecision()) return;
     if (worldHour(this.world) >= MAX_CAMPAIGN_HOUR) {
       this.fail(
         "Seferin desteklenen tarih sınırına ulaşıldı. Zaman duraklatıldı; seferini kaydedebilir veya yeni sefer başlatabilirsin.",

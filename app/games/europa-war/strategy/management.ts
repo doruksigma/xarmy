@@ -95,6 +95,8 @@ export function manage(
       // Political ideology changes always remain a human decision.
       const f = focusTree(c.id).find(
         (f) =>
+          f.effect !== "historical" &&
+          c.political >= (f.cost ?? 0) &&
           ![
             "democracy",
             "republic",

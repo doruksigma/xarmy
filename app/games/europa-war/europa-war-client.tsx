@@ -30,6 +30,10 @@ import { useSimulation } from "./strategy/useSimulation";
 import { SIMULATION_HOUR_MS } from "./strategy/simulation";
 import SimulationMetrics from "./strategy/SimulationMetrics";
 import { useSaveSlots } from "./strategy/useSaveSlots";
+import { useGameAudio } from "./strategy/useGameAudio";
+import SoundSettings from "./strategy/SoundSettings";
+import HistoricalEventDialog from "./strategy/HistoricalEventDialog";
+import { pendingHistoricalDecision } from "./strategy/historical-events";
 import type { Action, OffensivePlan, World } from "./strategy/types";
 import styles from "./europa.module.css";
 
@@ -49,11 +53,13 @@ function Saves({
   onLoadSaved,
   onImport,
   onMessage,
+  onSaved,
 }: {
   world: World;
   onLoadSaved: (slot: SaveSlot) => Promise<void>;
   onImport: (file: File) => Promise<void>;
   onMessage: (s: string) => void;
+  onSaved: () => void;
 }) {
   const slots = useSaveSlots(),
     input = useRef<HTMLInputElement>(null);
@@ -62,6 +68,7 @@ function Saves({
   function save(slot: SaveSlot) {
     try {
       saveLocal(slot, world);
+      onSaved();
       onMessage("Sefer bu cihaza kaydedildi.");
     } catch (e) {
       onMessage((e as Error).message);
@@ -85,6 +92,7 @@ function Saves({
     a.href = url;
     a.download = `xarmy-${world.player}-${world.day}-${world.hour}.json`;
     a.click();
+    onSaved();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
   return (
@@ -247,15 +255,27 @@ export default function EuropaWarClient() {
     setSpeed,
     diagnostics,
   } = useSimulation(say);
+  const audio = useGameAudio(setup ? null : world, {
+    paused,
+    campaignRevision,
+  });
+  const playSound = audio.play;
+  const soundForAction = audio.onAction;
   const setPaused = useCallback(
     (next: boolean | ((paused: boolean) => boolean)) => {
       // A save/restore owns the campaign snapshot until it finishes. Pausing
       // remains allowed, but neither a keyboard toggle nor a map control can
       // restart simulation while an exit is waiting for its transaction.
       if (transitionPending.current && next !== true) return;
+      if (
+        next !== true &&
+        current.current &&
+        pendingHistoricalDecision(current.current)
+      )
+        return;
       setSimulationPaused(next);
     },
-    [setSimulationPaused],
+    [current, setSimulationPaused],
   );
   const offline = useOfflinePack(load3DMap);
   const lastAuto = useRef(-1),
@@ -365,6 +385,7 @@ export default function EuropaWarClient() {
   }
   function start() {
     if (transitionPending.current) return;
+    playSound("start");
     restore(
       createWorld(
         choice,
@@ -384,6 +405,7 @@ export default function EuropaWarClient() {
     setPaused(true);
     try {
       restore(await loadBrowserSave(slot));
+      playSound("load");
       say("Kayıt yüklendi. Zaman duraklatıldı.");
     } catch (e) {
       say((e as Error).message);
@@ -401,6 +423,7 @@ export default function EuropaWarClient() {
       if (file.size > 4 * 1024 * 1024)
         throw new Error("Dosya en fazla 4 MB olabilir.");
       restore(decodeSave(await file.text()));
+      playSound("load");
       say("Dosya doğrulandı ve sefer yüklendi.");
     } catch (e) {
       say((e as Error).message);
@@ -416,11 +439,13 @@ export default function EuropaWarClient() {
       if (!w) return false;
       const result = executeCommand(w, createCommand(w, a), w.player);
       if (result.status === "rejected") {
+        playSound("error");
         say(result.message);
         setPanel(true);
         return false;
       } else {
         if (result.world !== w) setWorld(result.world);
+        if (result.status === "applied") soundForAction(a);
         const count = "armies" in a ? new Set(a.armies).size : 1,
           movementOrder =
             [
@@ -457,7 +482,7 @@ export default function EuropaWarClient() {
         return true;
       }
     },
-    [current, setWorld, paused, say],
+    [current, setWorld, paused, say, playSound, soundForAction],
   );
   function onArmy(id: string) {
     onArmies([id]);
@@ -468,6 +493,7 @@ export default function EuropaWarClient() {
         shown.armies.filter((a) => a.country === shown.player).map((a) => a.id),
       );
       const eligible = ids.filter((id) => ownIds.has(id));
+      if (eligible.length) playSound("click");
       setArmyIds((previous) => [
         ...new Set([
           ...(append ? previous.filter((id) => ownIds.has(id)) : []),
@@ -481,7 +507,7 @@ export default function EuropaWarClient() {
       const a = shown.armies.find((a) => a.id === eligible[0]);
       if (a) setSelected(a.province);
     },
-    [shown],
+    [shown, playSound],
   );
   // Map selection is a two-tap command: select your formation, then its target.
   // Panel/list selection retains the inspection workflow and never issues orders.
@@ -531,10 +557,20 @@ export default function EuropaWarClient() {
       setSelected(id);
       setTab("province");
       setPanel(true);
+      playSound("click");
       const country = shown.provinces[id].controller;
       if (country !== shown.player) setTarget(country);
     },
-    [setup, shown, order, directMove, armyId, selectedArmyIds, command],
+    [
+      setup,
+      shown,
+      order,
+      directMove,
+      armyId,
+      selectedArmyIds,
+      command,
+      playSound,
+    ],
   );
   const onMapOrder = useCallback(
     (id: string) => {
@@ -725,7 +761,10 @@ export default function EuropaWarClient() {
           <div>
             <button
               disabled={setup || transition !== null}
-              onClick={() => setPaused((p) => !p)}
+              onClick={() => {
+                playSound("click");
+                setPaused((p) => !p);
+              }}
               aria-label={paused ? "Zamanı başlat" : "Zamanı duraklat"}
               title="Boşluk: duraklat / devam et"
             >
@@ -739,7 +778,10 @@ export default function EuropaWarClient() {
                 aria-label={`${s} kat hız`}
                 aria-pressed={speed === s}
                 title={`${s}×: saniyede en fazla ${((s * 1000) / SIMULATION_HOUR_MS).toLocaleString("tr-TR", { maximumFractionDigits: 1 })} oyun saati; hesaplama tamamlanınca ilerler`}
-                onClick={() => setSpeed(s)}
+                onClick={() => {
+                  playSound("click");
+                  setSpeed(s);
+                }}
               >
                 {s}×
               </button>
@@ -756,6 +798,7 @@ export default function EuropaWarClient() {
                 className={tab === id && panel ? styles.active : ""}
                 aria-pressed={tab === id && panel}
                 onClick={() => {
+                  playSound("click");
                   setTab(id);
                   setPanel(true);
                   setDirectMove(false);
@@ -1066,6 +1109,7 @@ export default function EuropaWarClient() {
                   onLoadSaved={restoreSaved}
                   onImport={importSaved}
                   onMessage={say}
+                  onSaved={() => playSound("save")}
                 />
               ) : (
                 <WarPanels
@@ -1101,6 +1145,7 @@ export default function EuropaWarClient() {
               )}
               {!setup && (
                 <div className={styles.campaignNote}>
+                  <SoundSettings audio={audio} />
                   <Meter
                     label="Ülkenin teslimiyet riski"
                     value={surrender(shown, c.id)}
@@ -1139,6 +1184,13 @@ export default function EuropaWarClient() {
           }}
         />
       )}
+      {!setup && world && (
+        <HistoricalEventDialog
+          world={world}
+          onAction={command}
+          onType={() => playSound("typewriter")}
+        />
+      )}
       {setup && (
         <div className={styles.setupShade}>
           <section
@@ -1157,6 +1209,7 @@ export default function EuropaWarClient() {
               Sanayini kur, diplomasiyi şekillendir, cephelerini savun.
             </p>
             <EasyPlayMode simple={simple} onChange={changePresentation} />
+            <SoundSettings audio={audio} />
             <p className={styles.hint}>
               {simple
                 ? "Tümen eğit, yapı kur, teknoloji seç; komutanını sınırına yerleştir. Her önemli seçimi sen yaparsın."

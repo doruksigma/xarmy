@@ -1,3 +1,10 @@
+import {
+  completeHistoricalFocus,
+  historicalAction,
+  historicalEventHandled,
+  historicalFocusAvailability,
+  resolveHistoricalAI,
+} from "./historical-events";
 import { decisionAction, nationalFocus } from "./decisions";
 import { focusTree, IDEOLOGIES, TECHNOLOGIES } from "./catalog";
 import { declareWar } from "./diplomacy";
@@ -35,6 +42,7 @@ function setIdeology(c: Country, ideology: Ideology) {
   c.leader = `${IDEOLOGIES[ideology]} hükûmeti`;
 }
 export function politicsAction(w: World, c: Country, a: Action): boolean {
+  if (historicalAction(w, c, a)) return true;
   if (decisionAction(w, c, a)) return true;
   if (a.type === "research") {
     const t = TECHNOLOGIES.find((t) => t.id === a.id);
@@ -67,6 +75,18 @@ export function politicsAction(w: World, c: Country, a: Action): boolean {
       !f.excludes || !c.focuses.includes(f.excludes),
       "Bu siyasi yol diğer tercihin nedeniyle kapandı.",
     );
+    if (f.effect === "historical") {
+      const unavailable = historicalFocusAvailability(w, c, f.id.slice(8));
+      requireRule(
+        !unavailable,
+        unavailable ?? "Bu tarihî odak kullanılamıyor.",
+      );
+    }
+    requireRule(
+      c.political >= (f.cost ?? 0),
+      `${f.cost ?? 0} siyasi güç diplomasi maliyeti gerekir.`,
+    );
+    c.political -= f.cost ?? 0;
     c.focus = { id: f.id, progress: 0, total: f.days };
     return true;
   }
@@ -301,6 +321,7 @@ function focusComplete(w: World, c: Country) {
     w.tension = clamp(w.tension - 2);
   }
   if (f.effect === "national") nationalFocus(w, c, f.id);
+  if (f.effect === "historical") completeHistoricalFocus(w, c, f.id);
   if (f.effect in IDEOLOGIES) setIdeology(c, f.effect as Ideology);
   if (c.id === w.player)
     event(w, `${f.name} tamamlandı. ${f.description}`, "politics");
@@ -340,7 +361,7 @@ function history(w: World) {
   });
   once("austria-pressure", "1938-03-12", () => {
     const g = w.countries.germany;
-    if (!g.capitulated) {
+    if (!g.capitulated && !historicalEventHandled(w, "anschluss")) {
       g.claims.push("austria");
       event(
         w,
@@ -359,6 +380,17 @@ function history(w: World) {
   ];
   for (const [on, from, to] of wars)
     once(`${from}-${to}`, on, () => {
+      const historicalId =
+        to === "poland"
+          ? "danzig"
+          : to === "finland"
+            ? "winter-war"
+            : to === "denmark"
+              ? "weserubung"
+              : to === "ussr"
+                ? "barbarossa"
+                : null;
+      if (historicalId && historicalEventHandled(w, historicalId)) return;
       const a = w.countries[from],
         b = w.countries[to];
       if (!a.claims.includes(to)) a.claims.push(to);
@@ -483,5 +515,6 @@ export function politicsDay(w: World) {
         );
       }
     }
+  resolveHistoricalAI(w);
   history(w);
 }

@@ -90,10 +90,11 @@ mkdirSync(output, { recursive: true });
       .getByRole("button", { name: "Araştır · 70 temel gün" })
       .first()
       .click();
-    await page.locator('button[title="Siyaset"]').click();
+    await page.locator('button[title="Odak / Olaylar"]').click();
+    await page.getByLabel("Odak dalı", { exact: true }).selectOption("all");
     await page
-      .getByRole("button", { name: "Odağı seç · 56 gün" })
-      .first()
+      .locator('[data-focus-id="industry"]')
+      .getByRole("button", { name: "Odağı başlat", exact: true })
       .click();
     await page.locator('button[title="Ordu"]').click();
     const firstArmy = initial.armies.find((army) => army.country === "turkey");

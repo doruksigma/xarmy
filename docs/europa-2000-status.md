@@ -1,6 +1,6 @@
 # Europa War — 2.000 satırlık şartnamenin kapsam ve aşama kaydı
 
-Son inceleme: 10 Kasım 2026. İlk aşamanın başlangıç sürümü: `4d9b8af`.
+Son inceleme: 11 Kasım 2026. İlk aşamanın başlangıç sürümü: `4d9b8af`.
 Bu belge yeni şartnamenin **100 bölümünü** aşağıdaki kesintisiz bölüm aralıklarıyla
 izler. Mevcut çalışan temeller ile istenen ayrıntıların tamamlanması farklı
 durumlardır; 100 bölümün tamamlandığı veya bütün kabul testlerinin geçtiği
@@ -22,6 +22,79 @@ iddia edilmez. Kod incelemesi, çalışma zamanı doğrulamasının yerini tutma
 - [55 bölümlük önceki denetim](europa-expansion-status.md), kendi başlangıç
   sürümünün tarihsel kaydıdır ve burada değiştirilmez. Sonradan eklenen 3D
   sistemler yeni değerlendirmeye dahildir.
+
+## Ulusal odak kararları, tarihî olay arşivi ve sesler — 11 Kasım 2026
+
+Kolay ve ayrıntılı yönetimde görünen **Odak / Olaylar** paneli ulusal odak
+ağacını ve ayrı tarihî olay arşivini birleştirir. Diplomasi hazırlığının maliyeti
+mevcut siyasi güç havuzundan yalnız bir kez düşer. Önkoşul, hazırlık süresi,
+kilitlenme nedeni ve gerçek sonuçlar arayüzde gösterilir. Mevcut sanayi,
+ordu ve siyaset odakları korunmuştur.
+
+- 1936–1945 döneminden **16 oynanabilir olay**: Ren bölgesi, Anschluss,
+  Münih, Molotov–Ribbentrop Paktı, Polonya krizi, Danimarka harekâtı,
+  Barbarossa, Kış Savaşı, Montrö, Sadabat, Arnavutluk ültimatomu,
+  Polonya'nın güvenliği, Atlantik Bildirisi, Ödünç Verme ve Kiralama,
+  Tahran ve Yalta. Tarihsel modda belirtilen tarihten itibaren odak
+  hazırlanabilir; alternatif modda tarih şartı kaldırılır. Diğer şartlar kalır.
+- Odak bitince karar sahibi oyuncuya daktilo efektli telgraf açılır.
+  Kabul/vazgeç seçenekleri metnin bitmesini beklemez. Teklifin hedefi oyuncuysa
+  kabul/ret yanıtını kendisi verir. Örneğin Almanya'nın Anschluss talebi
+  Avusturya'nın kabulü olmadan ilhak uygulamaz; ret kendiliğinden savaş açmaz.
+  Yapay zekâ kendi cevaplarında güncel güç, istikrar ve ilişkileri kullanır.
+- Kararlar mülkiyeti, mevcut orduları/depoları, tahkimatı, paktı, ittifakı,
+  savaş durumunu, ekipman yardımını veya istikrar/ilişki değerlerini gerçekten
+  değiştirir. Aynı olay iki defa uygulanamaz; karar anında güncel koşullar
+  tekrar doğrulanır. Bekleyen ve sonuçlanan kararlar eski kayıtlarla uyumlu
+  isteğe bağlı `World.historical` alanında saklanır.
+- Tarihsel yapay zekâ boş odak yuvasında tarihi gelmiş ve maliyeti karşılanan
+  tarihî girişimlere öncelik verir; süren odağı iptal etmez. Alternatif mod
+  normal gelişim önceliğini korur. Açık barış konferansında taraf olan ülkeye
+  ilhak uygulanmaz; eski konferans ödüllerinin dağıtılmış devlete yeniden
+  toprak vermesi engellenir.
+- Simülasyon denetleyicisi oyuncu kararı geldiği anda, sonraki saat isteğinden
+  önce durur. 5× hız, içe aktarılan kayıt veya eski worker cevabı bu durmayı
+  aşamaz. Karardan sonra zaman oyuncunun devam komutunu bekler.
+- Özgün Web Audio sesleri cihazda üretilir; haricî ses dosyası veya bağlantı
+  gerekmez. Başlangıç, komut, hareket, tüfek/top/tank çatışması, hava/deniz
+  muharebesi, inşaat/eğitim, araştırma/odak tamamlanması, diplomasi, kayıt,
+  zafer/yenilgi ve daktilo için ayrı motifler vardır. Ses açma, düzey ve
+  arayüz/muharebe kanalları cihazda saklanır. İlk kullanıcı hareketinden önce
+  ses başlamaz; gizli sekmede bütün sesler, duraklatmada savaş/yürüyüş susar.
+  Gerçek zaman aralıkları ve 18 ses kaynağı sınırı hızlandırmada yığılmayı önler.
+- Telgraf klavye odağını içeride tutar; metnin tamamını gösterme, Escape ile
+  yazıyı tamamlama ve azaltılmış hareket tercihi desteklenir.
+
+**Doğrulama:** Üretim derlemesi, TypeScript ve ESLint geçti. Bir yıllık ve
+1936–1945 tam kampanya koşuları bu tur tekrar çalıştırılmadan kalan genel
+pakette 836 kontrol geçti; altı ülkenin 90 günlük senaryo/kayıt kontrolleri
+bu pakete dahildir. Son ses önceliği, tarihsel AI ve konferans düzeltmelerinin
+ardından ilgili paketler ayrıca çalıştırıldı: tarihî motor 33/33, ses 11/11;
+worker/delta/kayıt izi grubu 51/51 (yeni karar duraklaması için 7 kontrol).
+Gerçekten depodan ayrılmış Avusturya takviyesinin ilhak, kayıt yükleme ve
+sonraki saatte kayıp muhasebesiyle etkileşimi de ayrıca 1/1 geçti: kaynak
+çoğalması veya tümenin bedelsiz iyileşmesi oluşmadı.
+Bu sayılar örtüşen paketlerdir; toplam benzersiz kontrol sayısı olarak
+toplanmamalıdır. On yıllık tam kampanyanın bu sürümde yeniden geçtiği
+iddia edilmez.
+
+Masaüstü ve dokunmatik mobil tarayıcı benzetiminde 25 kabul kontrolü ve bir
+kayıt senaryosu doğrulaması geçti. Odak maliyeti, gerçek worker tamamlanması,
+otomatik duraklama, iki tarafın kabul/ret kararları, ilhakın kayıttan dönüşü,
+araştırma/daktilo/yenilgi seslerinin Web Audio çıktıları ve ses tercihlerinin
+kalıcılığı doğrulandı. Mobil ses panelinin üst menünün altında kalması
+düzeltildi; etkilenen kontroller son üretim derlemesinde tekrar geçti.
+320 piksel genişlikte olay metni ve iki karar kaydırılarak erişilebilir.
+Bu tarayıcı koşularında uygulama JavaScript hatası görülmedi. Fiziksel telefon
+ve hoparlörden ses kalitesini dinleme testi yapılmadı.
+
+Kapsam sınırı: Bu katalog bütün tarihî olayların eksiksiz modeli değildir.
+Münih mevcut atlasın Liberec bölgesini kullanır; Sadabat ve konferanslar
+tanımlı iki ülke arasındaki somut oyun sonuçlarıyla temsil edilir. Hatay ayrı
+bir bölge olarak bulunmadığı için başka ülkenin tamamını ilhak eden sahte bir
+Hatay kararı eklenmemiştir. İlhak edilen devletin devam eden eğitim/inşaat
+kuyrukları sona erer; tamamlanmış birlik ve stoklar aktarılır. Genel 2.000
+satırlık şartnamenin kalan işleri aşağıdaki kapsam kaydında devam eder.
 
 ## Gerçek takviye yükü ve doğrudan harekât kontrolleri — 10 Kasım 2026
 

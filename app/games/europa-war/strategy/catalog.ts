@@ -1,3 +1,4 @@
+import { HISTORICAL_EVENTS, historicalFocusId } from "./historical-catalog";
 import type {
   Building,
   Equipment,
@@ -681,6 +682,7 @@ export const TECHNOLOGIES: Technology[] = [
   description,
 })) as Technology[];
 export interface Focus {
+  cost?: number;
   id: string;
   name: string;
   branch: string;
@@ -696,6 +698,7 @@ export interface Focus {
     | "stability"
     | "fuel"
     | "national"
+    | "historical"
     | Ideology;
   description: string;
 }
@@ -1031,6 +1034,18 @@ export function focusTree(country: string): Focus[] {
   };
   return [
     ...common,
+    ...HISTORICAL_EVENTS.filter((event) => event.country === country).map(
+      (event): Focus => ({
+        id: historicalFocusId(event.id),
+        name: event.title,
+        branch: "Tarihî Diplomasi",
+        days: event.days,
+        cost: event.cost,
+        requires: [...event.requires],
+        effect: "historical",
+        description: `${event.effectText} Hazırlık bitince karar verilir.`,
+      }),
+    ),
     ...(national[country] ?? []).map(
       ([id, name, branch, prerequisite, description]): Focus => ({
         id,

@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   SimulationController,
+  hasPendingPlayerDecision,
   type SimulationWorker,
   type SimulationDiagnostics,
 } from "./simulation";
@@ -43,6 +44,10 @@ export function useSimulation(onError: (message: string) => void) {
         current.current = next;
         setWorldState(next);
       },
+      onPause: () => {
+        pausedRef.current = true;
+        setPausedState(true);
+      },
       onError: (message) => {
         pausedRef.current = true;
         setPausedState(true);
@@ -69,6 +74,11 @@ export function useSimulation(onError: (message: string) => void) {
 
   const setWorld = useCallback((next: World) => {
     current.current = next;
+    if (hasPendingPlayerDecision(next)) {
+      pausedRef.current = true;
+      setPausedState(true);
+      controller.current?.setRunning(false);
+    }
     controller.current?.setWorld(next);
     setWorldState(next);
     // A manual command or loaded campaign invalidates the previous checkpoint.
@@ -77,8 +87,9 @@ export function useSimulation(onError: (message: string) => void) {
 
   const setPaused = useCallback(
     (value: boolean | ((paused: boolean) => boolean)) => {
-      const next =
+      const requested =
         typeof value === "function" ? value(pausedRef.current) : value;
+      const next = requested || hasPendingPlayerDecision(current.current);
       pausedRef.current = next;
       controller.current?.setRunning(!next);
       setPausedState(next);
