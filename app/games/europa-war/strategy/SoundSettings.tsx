@@ -55,6 +55,32 @@ export default function SoundSettings({ audio }: { audio: GameAudioControls }) {
           />{" "}
           Çatışma ve birlik hareketi
         </label>
+        <label>
+          <input
+            type="checkbox"
+            checked={settings.voice}
+            disabled={!audio.voiceStatus.available && !settings.voice}
+            onChange={(e) =>
+              setSettings({ ...settings, voice: e.target.checked })
+            }
+          />
+          Konuşmalı bildirimler
+        </label>
+        <p role="status">{audio.voiceStatus.reason}</p>
+        <button
+          type="button"
+          disabled={
+            !settings.enabled ||
+            !settings.voice ||
+            !audio.voiceStatus.available ||
+            settings.volume === 0
+          }
+          onClick={() =>
+            audio.speak("Komutanım, birlikleriniz emirlerinizi bekliyor.")
+          }
+        >
+          Konuşmayı dene
+        </button>
         <button
           type="button"
           disabled={

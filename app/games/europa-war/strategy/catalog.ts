@@ -1,4 +1,4 @@
-import { HISTORICAL_EVENTS, historicalFocusId } from "./historical-catalog";
+import { countryEvents, historicalFocusId } from "./historical-catalog";
 import type {
   Building,
   Equipment,
@@ -702,7 +702,10 @@ export interface Focus {
     | Ideology;
   description: string;
 }
+const focusTreeCache = new Map<string, Focus[]>();
 export function focusTree(country: string): Focus[] {
+  const cached = focusTreeCache.get(country);
+  if (cached) return cached;
   const titles: Record<string, [string, string, string]> = {
     turkey: ["Birinci Sanayi Planı", "Ordu Modernizasyonu", "Yurtta Sulh"],
     germany: ["Dört Yıllık Plan", "Zırhlı Birlikler", "Avrupa Diplomasisi"],
@@ -1032,13 +1035,13 @@ export function focusTree(country: string): Focus[] {
       ],
     ],
   };
-  return [
+  const result: Focus[] = [
     ...common,
-    ...HISTORICAL_EVENTS.filter((event) => event.country === country).map(
+    ...countryEvents(country).map(
       (event): Focus => ({
         id: historicalFocusId(event.id),
         name: event.title,
-        branch: "Tarihî Diplomasi",
+        branch: event.branch ?? "Tarihî Diplomasi",
         days: event.days,
         cost: event.cost,
         requires: [...event.requires],
@@ -1058,6 +1061,8 @@ export function focusTree(country: string): Focus[] {
       }),
     ),
   ];
+  focusTreeCache.set(country, result);
+  return result;
 }
 export const MISSIONS: Record<
   MissionType,

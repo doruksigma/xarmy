@@ -1,4 +1,8 @@
 import {
+  applyNationalProgramme,
+  nationalProgrammeProblem,
+} from "./national-event-effects";
+import {
   historicalEvent,
   historicalFocusId,
   type HistoricalEventDefinition,
@@ -50,10 +54,38 @@ function currentConditions(
 ): string | null {
   const c = w.countries[definition.country],
     t = definition.target ? w.countries[definition.target] : undefined;
-  if (!c || c.capitulated || c.subjectOf)
+  if (!c || c.capitulated || (c.subjectOf && definition.kind !== "domestic"))
     return "Girişimi bağımsız ve teslim olmamış bir ülke yönetmeli.";
   if (w.provinces[c.capital]?.controller !== c.id)
     return "Önce başkentinin kontrolünü geri almalısın.";
+  for (const excluded of definition.excludes ?? []) {
+    if (
+      w.historical?.resolved.some(
+        (item) => item.eventId === excluded && item.outcome === "accepted",
+      ) ||
+      w.historical?.pending.some((item) => item.eventId === excluded) ||
+      c.focus?.id === historicalFocusId(excluded)
+    )
+      return "Bu yol daha önce seçtiğin veya hazırladığın siyasi seçenekle bağdaşmıyor.";
+  }
+  for (const required of definition.requires) {
+    if (
+      required.startsWith("history-") &&
+      !w.historical?.resolved.some(
+        (item) =>
+          item.eventId === required.slice(8) && item.outcome === "accepted",
+      )
+    )
+      return "Önceki tarihî girişimi kabul ederek tamamlamalısın.";
+    if (!required.startsWith("history-") && !c.focuses.includes(required))
+      return "Önce bağlantılı ulusal odağı tamamlamalısın.";
+  }
+  if (definition.kind === "domestic") {
+    if (!definition.domestic)
+      return "Bu ulusal programın uygulama tanımı eksik.";
+    return nationalProgrammeProblem(w, c, definition.domestic);
+  }
+
   if (definition.target && (!t || t.capitulated))
     return "Hedef ülke bağımsız yönetimiyle sahada olmalı; teslim olmuş ülkeye bu olay uygulanamaz.";
   if (t && atWar(w, c.id, t.id))
@@ -157,15 +189,6 @@ export function historicalFocusAvailability(
     dateOf(w.day).toISOString().slice(0, 10) < definition.date
   )
     return `Tarihsel modda ${definition.date} tarihinden itibaren hazırlanabilir.`;
-  for (const required of definition.requires) {
-    const previous = required.slice(8);
-    if (
-      !w.historical?.resolved.some(
-        (item) => item.eventId === previous && item.outcome === "accepted",
-      )
-    )
-      return "Önceki tarihî girişimi kabul ederek tamamlamalısın.";
-  }
   return currentConditions(w, definition);
 }
 export function historicalDecisionView(w: World, decision: HistoricalDecision) {
@@ -302,6 +325,10 @@ function annex(w: World, c: Country, target: Country) {
 function effect(w: World, definition: HistoricalEventDefinition) {
   const c = w.countries[definition.country],
     t = definition.target ? w.countries[definition.target] : undefined;
+  if (definition.kind === "domestic") {
+    applyNationalProgramme(w, c, definition.domestic!);
+    return;
+  }
   if (definition.kind === "annex") annex(w, c, t!);
   if (definition.kind === "territory") {
     const p = w.provinces["czechoslovakia-city-1"];

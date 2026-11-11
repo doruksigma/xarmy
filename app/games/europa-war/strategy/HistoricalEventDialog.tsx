@@ -15,10 +15,12 @@ export default function HistoricalEventDialog({
   world,
   onAction,
   onType,
+  animations = true,
 }: {
   world: World;
   onAction: (action: Action) => boolean | void;
   onType?: () => void;
+  animations?: boolean;
 }) {
   const decision = pendingHistoricalDecision(world);
   return decision ? (
@@ -28,6 +30,7 @@ export default function HistoricalEventDialog({
       decision={decision}
       onAction={onAction}
       onType={onType}
+      animations={animations}
     />
   ) : null;
 }
@@ -37,23 +40,27 @@ function DecisionDialog({
   decision,
   onAction,
   onType,
+  animations,
 }: {
   world: World;
   decision: NonNullable<ReturnType<typeof pendingHistoricalDecision>>;
   onAction: (action: Action) => boolean | void;
   onType?: () => void;
+  animations: boolean;
 }) {
   const view = historicalDecisionView(world, decision);
   const dialog = useRef<HTMLDialogElement>(null);
   const typingSound = useRef(onType);
   const typingStopped = useRef(false);
   const submitting = useRef(false);
-  const [visible, setVisible] = useState(0);
+  const [visible, setVisible] = useState(
+    animations ? 0 : view.description.length,
+  );
   const [sending, setSending] = useState(false);
   const titleId = useId(),
     bodyId = useId();
   const text = view.description;
-  const complete = visible >= text.length;
+  const complete = !animations || visible >= text.length;
 
   useEffect(() => {
     typingSound.current = onType;
@@ -69,7 +76,8 @@ function DecisionDialog({
   }, []);
   useEffect(() => {
     const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
-    if (motion.matches) {
+    if (!animations || motion.matches || typingStopped.current) {
+      typingStopped.current = true;
       setVisible(text.length);
       return;
     }
@@ -95,7 +103,7 @@ function DecisionDialog({
       window.clearInterval(timer);
       motion.removeEventListener("change", reduce);
     };
-  }, [text]);
+  }, [text, animations]);
 
   function reveal() {
     typingStopped.current = true;
@@ -148,7 +156,7 @@ function DecisionDialog({
         <h2 id={titleId}>{view.title}</h2>
         <div className={styles.typewriter}>
           <p aria-hidden="true">
-            {text.slice(0, visible)}
+            {animations ? text.slice(0, visible) : text}
             {!complete && <span className={styles.caret}>▌</span>}
           </p>
           <p id={bodyId} className={styles.srOnly}>

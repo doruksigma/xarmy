@@ -1,5 +1,5 @@
 import {
-  HISTORICAL_EVENTS,
+  allCountryEvents,
   historicalEvent,
   historicalFocusId,
 } from "./historical-catalog";
@@ -109,7 +109,14 @@ const province = one(Object.keys(GEOGRAPHY)),
   building = one(Object.keys(BUILDINGS));
 const ideology = one(Object.keys(IDEOLOGIES)),
   tech = one(TECHNOLOGIES.map((t) => t.id)),
-  focus = one(MAP.countries.flatMap((c) => focusTree(c.id).map((f) => f.id)));
+  focusIds = new Set(
+    MAP.countries.flatMap((c) => focusTree(c.id).map((f) => f.id)),
+  ),
+  focus: Validator = (value) =>
+    typeof value === "string" && focusIds.has(value);
+const MAX_COUNTRY_FOCUSES = Math.max(
+  ...MAP.countries.map((country) => focusTree(country.id).length),
+);
 const MAX_COUNTRIES = Math.max(60, MAP.countries.length * 2);
 const countries = arr(str, MAX_COUNTRIES),
   values = (keys: string[], max = 1e9) =>
@@ -152,7 +159,7 @@ export const countrySchema: Record<
   recruitment: arr(shape({ ...project, province, type: unit }), 6),
   tech: arr(tech, 40),
   research: arr(shape({ ...project, id: tech }), 3),
-  focuses: arr(focus, 40),
+  focuses: arr(focus, MAX_COUNTRY_FOCUSES),
   focus: nullable(shape({ ...project, id: focus })),
   relations: record(num(100, -100), MAX_COUNTRIES),
   wars: countries,
@@ -452,9 +459,8 @@ const reinforcementState = shape({
     Number.isSafeInteger(value) &&
     (value as number) % HOURS_PER_DAY === 0,
 });
-const historicalEventId = one(
-  HISTORICAL_EVENTS.map((definition) => definition.id),
-);
+const historicalEventId: Validator = (value) =>
+  typeof value === "string" && !!historicalEvent(value);
 const historicalDay: Validator = (value) =>
   num(36500)(value) && Number.isSafeInteger(value);
 const historicalState = shape({
@@ -467,7 +473,7 @@ const historicalState = shape({
       stage: one(["initiate", "respond"]),
       createdDay: historicalDay,
     }),
-    HISTORICAL_EVENTS.length,
+    allCountryEvents().length,
   ),
   resolved: arr(
     shape({
@@ -476,7 +482,7 @@ const historicalState = shape({
       outcome: one(["accepted", "declined", "unavailable"]),
       by: shipmentIdentity,
     }),
-    HISTORICAL_EVENTS.length,
+    allCountryEvents().length,
   ),
 });
 const schema = shapeWithOptionalFields(worldFields, {
@@ -1289,10 +1295,21 @@ function migrateDailyWorld(value: unknown): unknown {
   }
   return { ...structuredClone(value), version: 3, hour: 0 };
 }
-const MAX_SAVE_LENGTH = 4 * 1024 * 1024;
+/** Shared byte budget for uploaded files and local/IndexedDB save decoding.
+ * Extended national history plus the supported military ceiling exceeds 4 MiB. */
+export const MAX_SAVE_BYTES = 8 * 1024 * 1024;
+function saveSizeAllowed(text: string) {
+  if (text.length > MAX_SAVE_BYTES) return false;
+  // UTF-8 needs at most three bytes per UTF-16 code unit. Most ordinary saves
+  // fit this cheap upper bound; larger saves get one exact bounded allocation.
+  return (
+    text.length * 3 <= MAX_SAVE_BYTES ||
+    new TextEncoder().encode(text).byteLength <= MAX_SAVE_BYTES
+  );
+}
 export function decodeSave(text: string): World {
-  if (text.length > MAX_SAVE_LENGTH)
-    throw new Error("Kayıt dosyası 4 MB sınırını aşıyor.");
+  if (!saveSizeAllowed(text))
+    throw new Error("Kayıt dosyası 8 MiB sınırını aşıyor.");
   let data: unknown;
   try {
     data = JSON.parse(text);
@@ -1390,7 +1407,7 @@ export function listSaves(): SaveSummary[] {
         summary = { slot, label: "Okunamayan kayıt", valid: false };
       }
     }
-    if (raw === null || raw.length <= MAX_SAVE_LENGTH)
+    if (raw === null || saveSizeAllowed(raw))
       summaryCache.set(slot, { raw, summary });
     else summaryCache.delete(slot); // Never retain arbitrarily large bad input.
     return { ...summary };

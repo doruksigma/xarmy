@@ -7,6 +7,7 @@ import {
   listBrowserSaves,
   loadBrowserSave,
   saveAutomatic,
+  saveBrowserSlot,
   SAVE_CHANNEL,
 } from "./storage-browser";
 
@@ -67,7 +68,7 @@ class ControlledDatabase {
   }
 }
 
-test("Otomatik kayıt kuyruğu tamamlanmayı, hata sonrası toparlanmayı ve eski kayıt sınırlarını korur", async (t) => {
+test("Cihaz kayıt kuyruğu tamamlanmayı, hata sonrası toparlanmayı ve eski kayıt sınırlarını korur", async (t) => {
   const globals = ["indexedDB", "localStorage", "window", "BroadcastChannel"];
   const originals = globals.map((key) =>
     Object.getOwnPropertyDescriptor(globalThis, key),
@@ -94,7 +95,7 @@ test("Otomatik kayıt kuyruğu tamamlanmayı, hata sonrası toparlanmayı ve esk
   });
   const storage = {
     getItem: (key: string) => local.get(key) ?? null,
-    setItem: () => assert.fail("Automatic saves must not write localStorage"),
+    setItem: () => assert.fail("Device saves must not write localStorage"),
   };
   install("localStorage", storage);
   install("window", events);
@@ -204,8 +205,147 @@ test("Otomatik kayıt kuyruğu tamamlanmayı, hata sonrası toparlanmayı ve esk
       },
     );
     await t.test(
-      "Veritabanı erişimi reddedilince eski otomatik kayıt gösterilmez ve elle kayıtlar korunur",
+      "Elle kayıtlar IndexedDB'de tamamlanır; aynı yuvaya son çağrı kazanır ve diğer yuvalar ayrıdır",
       async () => {
+        const original = createWorld("turkey");
+        const first = saveBrowserSlot("slot-1", {
+          ...original,
+          day: 15,
+          hour: 2,
+        });
+        const other = saveBrowserSlot("slot-2", {
+          ...original,
+          day: 20,
+          hour: 6,
+        });
+        const last = saveBrowserSlot("slot-1", {
+          ...original,
+          day: 30,
+          hour: 11,
+        });
+        let loaded = false;
+        const read = loadBrowserSave("slot-1").then((world) => {
+          loaded = true;
+          return world;
+        });
+        await setImmediate();
+        assert.equal(db.pending.length, 1);
+        assert.equal(db.pending[0].slot, "slot-1");
+        db.finish();
+        await first;
+        await setImmediate();
+        assert.equal(db.pending[0].slot, "slot-2");
+        assert.equal(loaded, false);
+        db.finish();
+        await other;
+        await setImmediate();
+        assert.equal(db.pending[0].slot, "slot-1");
+        assert.equal(loaded, false);
+        db.finish();
+        await last;
+        const latest = await read;
+        assert.equal(latest.day, 30);
+        assert.equal(latest.hour, 11);
+        assert.equal((await loadBrowserSave("slot-2")).day, 20);
+        assert.equal(
+          (await listBrowserSaves()).find((save) => save.slot === "slot-1")
+            ?.label,
+          `${original.countries.turkey.name} · 30. gün · 11:00`,
+        );
+        assert.deepEqual(broadcasts.slice(-6), [
+          "slot-1",
+          "closed",
+          "slot-2",
+          "closed",
+          "slot-1",
+          "closed",
+        ]);
+      },
+    );
+    await t.test(
+      "Elle kayıt JSON üretmeden yazılır; localStorage erişimi veya kotası gerektirmez",
+      async () => {
+        const original = createWorld("turkey");
+        const get = mock.method(storage, "getItem", () => {
+          throw new Error("Local storage quota or permission denied");
+        });
+        const stringify = mock.method(JSON, "stringify");
+        try {
+          const saved = saveBrowserSlot("slot-3", {
+            ...original,
+            day: 45,
+            hour: 16,
+          });
+          await setImmediate();
+          db.finish();
+          await saved;
+          assert.equal(
+            stringify.mock.callCount(),
+            0,
+            "Manual IndexedDB writes must not serialize the world",
+          );
+          stringify.mock.restore();
+          assert.equal((await loadBrowserSave("slot-3")).day, 45);
+          const slots = await listBrowserSaves();
+          assert.ok(
+            slots
+              .filter((slot) => slot.slot.startsWith("slot-"))
+              .every((slot) => slot.valid),
+          );
+          assert.equal(
+            get.mock.callCount(),
+            0,
+            "All five existing IndexedDB records must bypass legacy storage",
+          );
+        } finally {
+          stringify.mock.restore();
+          get.mock.restore();
+        }
+      },
+    );
+    await t.test(
+      "Bozuk elle kayıt eski yerel kayıtla gizlenmez; yalnız gerçekten eksik yuva eski kayda döner",
+      async () => {
+        local.set(key("slot-2"), encodeSave(createWorld("turkey")));
+        db.records.set("slot-2", undefined);
+        await assert.rejects(loadBrowserSave("slot-2"));
+        assert.deepEqual(
+          (await listBrowserSaves()).find((slot) => slot.slot === "slot-2"),
+          { slot: "slot-2", label: "Okunamayan kayıt", valid: false },
+        );
+        db.records.delete("slot-2");
+        assert.equal((await loadBrowserSave("slot-2")).day, 0);
+        assert.equal(
+          (await listBrowserSaves()).find((slot) => slot.slot === "slot-2")
+            ?.valid,
+          true,
+        );
+      },
+    );
+    await t.test(
+      "Başarısız elle kayıt önceki tamamlanmış yuvayı korur ve sonraki yazmayı engellemez",
+      async () => {
+        const before = notifications;
+        const original = createWorld("turkey");
+        const bad = saveBrowserSlot("slot-1", { ...original, day: 50 });
+        const rejected = assert.rejects(bad, /Cihaz kaydı yapılamadı/);
+        await setImmediate();
+        db.finish(false);
+        await rejected;
+        assert.equal(notifications, before);
+        assert.equal((await loadBrowserSave("slot-1")).day, 30);
+        const good = saveBrowserSlot("slot-1", { ...original, day: 60 });
+        await setImmediate();
+        db.finish();
+        await good;
+        assert.equal((await loadBrowserSave("slot-1")).day, 60);
+        assert.equal(notifications, before + 1);
+      },
+    );
+    await t.test(
+      "Veritabanı erişimi reddedilince hiçbir eski kayıt güncelmiş gibi gösterilmez",
+      async () => {
+        const before = notifications;
         db.denied = true;
         await assert.rejects(
           saveAutomatic("auto-2", createWorld("turkey")),
@@ -213,16 +353,17 @@ test("Otomatik kayıt kuyruğu tamamlanmayı, hata sonrası toparlanmayı ve esk
         );
         await assert.rejects(
           loadBrowserSave("auto-2"),
-          /Otomatik kayıt okunamadı/,
+          /Cihaz kaydı okunamadı/,
+        );
+        await assert.rejects(
+          loadBrowserSave("slot-1"),
+          /Cihaz kaydı okunamadı/,
         );
         const slots = await listBrowserSaves();
-        assert.equal(slots[0].valid, true);
         assert.ok(
-          slots
-            .slice(3)
-            .every((s) => !s.valid && s.label === "Okunamayan kayıt"),
+          slots.every((s) => !s.valid && s.label === "Okunamayan kayıt"),
         );
-        assert.equal(notifications, 2);
+        assert.equal(notifications, before);
       },
     );
   } finally {

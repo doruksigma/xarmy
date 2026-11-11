@@ -7,8 +7,11 @@ import {
   type TransferMetrics,
 } from "./simulation-state";
 
-/** At 1× one game hour per 150 ms, always waiting for worker completion. */
-export const SIMULATION_HOUR_MS = 150;
+/** Idle delay after each accepted hour: 3.75× faster than the old 150 ms pace.
+ * At 1× the delays total 0.96 s per day; actual worker/transfer time is additional.
+ * Even at 5× each hour yields for 8 ms and waits for the previous result, so
+ * slower devices never accumulate a catch-up queue or skip a decision hour. */
+export const SIMULATION_HOUR_MS = 40;
 
 /** Read only the tiny decision queue; do not load political rules into the scheduler. */
 export function hasPendingPlayerDecision(world: World | null): boolean {

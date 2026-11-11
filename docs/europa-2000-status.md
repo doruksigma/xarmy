@@ -23,7 +23,86 @@ iddia edilmez. Kod incelemesi, çalışma zamanı doğrulamasının yerini tutma
   sürümünün tarihsel kaydıdır ve burada değiştirilmez. Sonradan eklenen 3D
   sistemler yeni değerlendirmeye dahildir.
 
-## Ulusal odak kararları, tarihî olay arşivi ve sesler — 11 Kasım 2026
+## Her ülkeye ulusal programlar, siyasi yollar ve ortak ayarlar — 11 Kasım 2026
+
+1936 atlasındaki **92 ülkenin her birinde 100 temel ulusal program** bulunur.
+Almanya dışındaki ülkeler ayrıca 10 alternatif siyasi karar alır. Almanya'da
+100 ortak program, 50 ülkeye özel karar ve önceki 7 tarihî girişim ile
+**157 olay/karar** vardır. Önceki 16 diplomatik olay korunmuştur; katalog
+toplamı **10.176** girdidir. Ortak programların her ülkeye uyarlanmış
+kopyaları toplam sayıya dahildir; bu sayı birbirinden farklı 10.176 tarihsel
+vaka anlamına gelmez. Arayüz tarihî olayları, ulusal politikaları ve
+alternatif tarih yollarını ayrı etiketler.
+
+- Sanayi, kaynak, ulaşım, kara, hava, bilim, sivil dayanıklılık, yönetim,
+  güvenlik ve denizcilik dalları gerçek maliyet ve önkoşullarla ilerler.
+  Denizsiz ülkeler denizcilik yerine iç bölge ulaşımı dalını alır. Bağlı
+  bölgeler kendi ekonomik programlarını kullanabilir; bağımsızlık gerektiren
+  siyasi yollar ayrıca denetlenir. İsyanla oluşan geçici taraflar mevcut
+  genel odak ağacını kullanır; 100 program garantisi atlasın 92 ülkesine aittir.
+- Almanya'nın imparatorluk yolu muhalefet hazırlığı, subay mutabakatı,
+  hanedan bildirisi, gerçek monarşist iç savaş ve zafer sonrası restorasyon
+  üzerinden ilerler. Oyuncu aynı ülke kimliğiyle monarşist tarafı yönetir;
+  isyancı taraf kendi toprak, ordu ve bütçesine sahiptir. Ateşkes veya yabancı
+  ülkenin zaferi imparatorluğu açmaz. Anayasal ve hanedan yolları birbirini
+  kapatır. Diğer ülkelerde de alternatif siyasi geçişler vardır; üçten az
+  bölgesi olan ülkelerde bölünme yerine barışçıl geçiş koşulları kullanılır.
+- Siyasi güç hazırlık başında; açıklanan hazine, kaynak ve ekipman maliyetleri
+  yalnız kabulde harcanır. Yapı kapasitesi, araştırma yuvası, stoklar ve siyasi
+  koşullar karar anında tekrar kontrol edilir. Önceden öğrenilmiş veya hazırlık
+  sırasında tamamlanmış teknoloji için açıkça belirtilen bilim katsayısı
+  bonusu uygulanır; araştırılmış teknoloji sonraki dalı kilitlemez.
+- Her iki katalog görünümünde en fazla **12 kart** gösterilir. Ülke, dal,
+  içerik türü, ülkeye özel içerik ve metin filtreleri; sayfalama ve önkoşula
+  gitme vardır. Ülke listeleri ve olay kimlikleri önbelleklidir. Tarihsel AI
+  gerçek tarihî girişimlere öncelik verir; ortak odaklar ile ihtiyaca göre
+  seçilen programları sırayla kullanır. Oyuncunun yönetim yardımcısı ücretli
+  siyasi kararları kendiliğinden satın almaz.
+- **Ayarlar** penceresi 2D/3D haritayı, 3D kaliteyi, kamerayı, animasyonları ve
+  sesleri birlikte yönetir. Tercihler eski cihaz ayarlarıyla uyumludur; 3D
+  sahneye yeniden sefer açmadan uygulanır. Hareket azaltma CSS efektlerini,
+  model animasyonlarını ve olay daktilosunu da kapsar; gerçek savaş ve konum
+  hesabı devam eder.
+- Özgün sentezlenmiş ses sayısı **56** oldu. Diplomasi, komutan tutumları,
+  hava/deniz emirleri, istihbarat, üretim, politikalar ve gerçek tamamlanmalar
+  ayrı seslerle bağlandı. İsteğe bağlı konuşmalı bildirimler yalnız cihazda
+  yüklü Türkçe sesle çalışır; uzaktan konuşma servisi kullanılmaz. Varsayılan
+  kapalıdır; uygun ses yoksa nedeni gösterilir. Mesajlar birikmez; sessize
+  alma, arka plana geçme ve kayıt yükleme konuşmayı iptal eder.
+- Saat adımları arasındaki bekleme **150 ms'den 40 ms'ye** indi (bekleme
+  bölümünde 3,75 kat hızlanma). 1×–5× korunur. Gerçek süre cihazın hesaplama
+  yükünü de içerir; tek worker isteği sınırı ve karar geldiğinde aynı saatte
+  duraklama korunur. Birikmiş zaman adımı kuyruğu oluşturulmaz.
+- Yeni olay geçmişiyle büyük kampanyaları korumak için yükleme sınırı **8 MiB**
+  UTF-8 olarak denetlenir. Manuel ve otomatik kayıtlar sıralı, tamamlanması
+  beklenen IndexedDB işlemleri kullanır. Eski yerel kayıtlar yeni veritabanında
+  ilgili yuva gerçekten boşsa okunur; bozuk yeni kayıt eski kayıtla gizlenmez.
+  3.680 tümen, 3.680 ücretli ikmal sevkiyatı ve 10.176 sonuç içeren
+  **4.393.645 baytlık** kayıt yüklendi ve sonraki lojistik adımı doğrulandı.
+
+**Doğrulama:** Genel regresyonda **874/874** kontrol geçti; bir yıllık ve
+1936–1945 tam kampanya koşuları bu tur tekrar çalıştırılmadı. Son bilim sınırı
+ve kayıt kapasitesi düzeltmelerinden sonra ilgili motor paketi **66/66**,
+IndexedDB kayıt paketi **8/8** geçti. Katalog **8/8**, AI seçimi **6/6**,
+ses/konuşma **17/17**, hız ve worker **38/38**, görüntü tercihleri **2/2**
+kontrolü geçti. Paketler örtüşür; sayılar benzersiz test toplamı olarak
+toplanmamalıdır. Üretim derlemesi, TypeScript ve ESLint kontrolleri geçti.
+
+**Tarayıcı doğrulaması:** `scripts/test-europa-settings-browser.cjs` ile
+masaüstünde 10, dokunmatik mobil görünümde 10 akış ve 2 başlangıç verisi
+kontrolü, ayrı koşuların toplamında **22 benzersiz kontrol** olarak geçti.
+Gerçek 3D sahnede kalite/kamera/animasyon değişimi, 2D'ye dönüş, tercihlerin
+korunması, katalog filtreleri ve sayfalama, ücretli fabrika kararının worker
+üzerinde tamamlanması, kabul/ret, gerçek iç savaş/restorasyon ve IndexedDB
+kayıt yükleme doğrulandı. 390 px karar penceresi ve 320 px ses ayarları
+yatay taşma olmadan incelendi. Uygulama JavaScript hatası görülmedi.
+İlk karma cihaz koşusundaki SwiftShader/yerel seçim zaman aşımı, normal
+kaydırmayla temiz mobil tarayıcıda tekrarlanmadı; test artık her cihaz için
+ayrı tarayıcı açar. Bunlar fiziksel telefon veya FPS ölçümü değildir.
+Yerel Türkçe sesi bulunmayan cihazda açıklama ve kapalı seçenek doğrulandı;
+gerçek konuşma/ses kalitesi dinlenerek sınanmadı.
+
+## Ulusal odak kararları, tarihî olay arşivi ve sesler — 11 Kasım 2026, ilk sürüm
 
 Kolay ve ayrıntılı yönetimde görünen **Odak / Olaylar** paneli ulusal odak
 ağacını ve ayrı tarihî olay arşivini birleştirir. Diplomasi hazırlığının maliyeti

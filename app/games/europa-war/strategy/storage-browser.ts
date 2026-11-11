@@ -3,6 +3,7 @@ import {
   listSaves,
   loadLocal,
   SAVE_CHANGE_EVENT,
+  SAVE_SLOTS,
   type SaveSlot,
   type SaveSummary,
 } from "./storage";
@@ -12,12 +13,11 @@ import { hourLabel, worldHour } from "./time";
 export const SAVE_CHANNEL = "xarmy-europa-auto-change";
 const DATABASE = "xarmy-europa-auto-v1";
 const STORE = "saves";
-const AUTOMATIC_SLOTS = ["auto-1", "auto-2"] as const;
-type AutomaticSlot = (typeof AUTOMATIC_SLOTS)[number];
+type AutomaticSlot = Extract<SaveSlot, "auto-1" | "auto-2">;
 const WRITE_ERROR =
   "Cihaz kaydı yapılamadı. Depolama iznini/boş alanı kontrol et veya JSON dosyası indir.";
 const READ_ERROR =
-  "Otomatik kayıt okunamadı. Cihaz depolama iznini kontrol et.";
+  "Cihaz kaydı okunamadı. Depolama iznini kontrol et.";
 
 let connection: Promise<IDBDatabase> | undefined;
 let writes: Promise<void> = Promise.resolve();
@@ -64,7 +64,7 @@ function database(): Promise<IDBDatabase> {
 
 function committedSave(
   db: IDBDatabase,
-  slot: AutomaticSlot,
+  slot: SaveSlot,
   world: World,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -86,7 +86,7 @@ function committedSave(
   });
 }
 
-function announceSave(slot: AutomaticSlot) {
+function announceSave(slot: SaveSlot) {
   if (typeof window !== "undefined")
     window.dispatchEvent(new Event(SAVE_CHANGE_EVENT));
   // Same-origin tabs do not receive native storage events for IndexedDB. A
@@ -103,8 +103,10 @@ function announceSave(slot: AutomaticSlot) {
   }
 }
 
-export function saveAutomatic(
-  slot: AutomaticSlot,
+/** Manual and automatic slots share atomic IndexedDB commits. Large campaigns
+ * never depend on the much smaller synchronous localStorage quota. */
+export function saveBrowserSlot(
+  slot: SaveSlot,
   world: World,
 ): Promise<void> {
   const operation = writes.then(async () => {
@@ -121,8 +123,15 @@ export function saveAutomatic(
   return operation;
 }
 
+export function saveAutomatic(
+  slot: AutomaticSlot,
+  world: World,
+): Promise<void> {
+  return saveBrowserSlot(slot, world);
+}
+
 type StoredSave = { present: false } | { present: true; value: unknown };
-async function readAutomatic(slot: AutomaticSlot): Promise<StoredSave> {
+async function readSlot(slot: SaveSlot): Promise<StoredSave> {
   let db: IDBDatabase;
   try {
     db = await database();
@@ -156,19 +165,21 @@ function validatedWorld(value: unknown): World {
 
 export async function loadBrowserSave(slot: SaveSlot): Promise<World> {
   await writes;
-  if (slot !== "auto-1" && slot !== "auto-2") return loadLocal(slot);
-  const stored = await readAutomatic(slot);
+  const stored = await readSlot(slot);
   return stored.present ? validatedWorld(stored.value) : loadLocal(slot);
 }
 
 export async function listBrowserSaves(): Promise<SaveSummary[]> {
   await writes;
-  const legacy = listSaves();
-  const automatic = await Promise.all(
-    AUTOMATIC_SLOTS.map(async (slot): Promise<SaveSummary> => {
+  let legacy: SaveSummary[] | undefined;
+  return Promise.all(
+    SAVE_SLOTS.map(async (slot): Promise<SaveSummary> => {
       try {
-        const stored = await readAutomatic(slot);
-        if (!stored.present) return legacy.find((s) => s.slot === slot)!;
+        const stored = await readSlot(slot);
+        if (!stored.present) {
+          legacy ??= listSaves();
+          return legacy.find((s) => s.slot === slot)!;
+        }
         const world = validatedWorld(stored.value);
         return {
           slot,
@@ -177,12 +188,9 @@ export async function listBrowserSaves(): Promise<SaveSummary[]> {
         };
       } catch {
         // Denied access or a corrupt IndexedDB entry must not expose an older
-        // localStorage snapshot as though it were the current automatic save.
+        // localStorage snapshot as though it were the current committed save.
         return { slot, label: "Okunamayan kayıt", valid: false };
       }
     }),
-  );
-  return legacy.map(
-    (summary) => automatic.find((s) => s.slot === summary.slot) ?? summary,
   );
 }

@@ -25,12 +25,45 @@ export type GameSound =
   | "footstep"
   | "engine"
   | "aircraft"
-  | "naval";
+  | "naval"
+  | "warDeclaration"
+  | "alliance"
+  | "pact"
+  | "trade"
+  | "embargo"
+  | "aid"
+  | "peace"
+  | "liberation"
+  | "commander"
+  | "defend"
+  | "assault"
+  | "plan"
+  | "airOrder"
+  | "navalOrder"
+  | "commission"
+  | "wingReady"
+  | "intelligence"
+  | "agentReady"
+  | "counterIntel"
+  | "sabotage"
+  | "railBuild"
+  | "production"
+  | "policy"
+  | "cancel"
+  | "focusComplete"
+  | "buildComplete"
+  | "recruitComplete"
+  | "historicalAccept"
+  | "historicalDecline"
+  | "bombing"
+  | "support";
 export interface GameAudioSettings {
   enabled: boolean;
   volume: number;
   effects: boolean;
   battle: boolean;
+  /** Opt-in, on-device Turkish speech only. Absent in older stored preferences. */
+  voice: boolean;
 }
 export const GAME_AUDIO_KEY = "xarmy-europa-audio-v1";
 export const DEFAULT_AUDIO: GameAudioSettings = {
@@ -38,6 +71,7 @@ export const DEFAULT_AUDIO: GameAudioSettings = {
   volume: 0.42,
   effects: true,
   battle: true,
+  voice: false,
 };
 const battlefield = new Set<GameSound>([
   "rifle",
@@ -47,6 +81,7 @@ const battlefield = new Set<GameSound>([
   "engine",
   "aircraft",
   "naval",
+  "bombing",
 ]);
 export function isBattleSound(cue: GameSound) {
   return battlefield.has(cue);
@@ -71,11 +106,15 @@ export function audioSettings(value: unknown): GameAudioSettings {
         : DEFAULT_AUDIO.effects,
     battle:
       typeof input.battle === "boolean" ? input.battle : DEFAULT_AUDIO.battle,
+    voice: typeof input.voice === "boolean" ? input.voice : false,
   };
 }
 
 const criticalSound = (cue: GameSound) => cue === "defeat" || cue === "victory";
-const noticeSound = (cue: GameSound) => cue === "complete" || cue === "focus";
+const noticeSound = (cue: GameSound) =>
+  ["complete", "focusComplete", "buildComplete", "recruitComplete"].includes(
+    cue,
+  );
 
 /** Wall-clock gate: accelerating the campaign never accelerates sound playback. */
 export class SoundGate {
@@ -133,19 +172,33 @@ export class SoundGate {
 }
 
 export function actionSound(action: Action): GameSound {
-  if ((action.type as string) === "historicalChoice") return "decision";
   switch (action.type) {
     case "move":
     case "moveGroup":
+    case "commanderDeploy":
+      return "order";
     case "front":
     case "offensive":
-    case "commanderDeploy":
+      return "plan";
+    case "plan":
+      return action.kind === "start"
+        ? "assault"
+        : action.kind === "pause"
+          ? "halt"
+          : "cancel";
+    case "commanderStance":
+      return action.stance === "attack" ? "assault" : "defend";
+    case "commanderCreate":
+    case "general":
+      return "commander";
     case "paradrop":
     case "wing":
-    case "ship":
     case "air":
+      return "airOrder";
+    case "ship":
     case "navy":
-      return "order";
+    case "carrierAircraft":
+      return "navalOrder";
     case "halt":
     case "haltGroup":
     case "commanderRecall":
@@ -154,18 +207,69 @@ export function actionSound(action: Action): GameSound {
       return "research";
     case "focus":
       return "focus";
+    case "historicalChoice":
+      return action.choice === "accept"
+        ? "historicalAccept"
+        : "historicalDecline";
     case "build":
+      return ["rail", "hub", "infra"].includes(action.building)
+        ? "railBuild"
+        : "build";
     case "production":
-      return "build";
+      return "production";
     case "recruit":
-    case "createWing":
-    case "commission":
       return "recruit";
-    case "diplomacy":
+    case "createWing":
+      return "wingReady";
+    case "commission":
+      return "commission";
+    case "cancelBuild":
+    case "cancelTrade":
+    case "deleteFront":
+    case "disbandWing":
+      return "cancel";
     case "trade":
+      return "trade";
+    case "diplomacy":
+      switch (action.kind) {
+        case "war":
+          return "warDeclaration";
+        case "alliance":
+          return "alliance";
+        case "pact":
+          return "pact";
+        case "embargo":
+          return "embargo";
+        case "aid":
+          return "aid";
+        case "peace":
+          return "peace";
+        case "liberate":
+          return "liberation";
+        default:
+          return "diplomacy";
+      }
     case "peaceClaim":
     case "peacePass":
-      return "diplomacy";
+      return "peace";
+    case "release":
+      return "liberation";
+    case "agency":
+      return "intelligence";
+    case "trainAgent":
+      return "agentReady";
+    case "counterIntel":
+      return "counterIntel";
+    case "mission":
+      return action.mission === "sabotage" ? "sabotage" : "intelligence";
+    case "support":
+      return "support";
+    case "economy":
+    case "conscription":
+    case "advisor":
+    case "cabinet":
+    case "occupation":
+      return "policy";
     case "decision":
     case "reform":
       return "decision";
@@ -189,10 +293,6 @@ export function worldSounds(previous: World | null, next: World): GameSound[] {
   if (!before.capitulated && after.capitulated) return ["defeat"];
   if (after.capitulated) return [];
   const sounds: GameSound[] = [];
-  if (after.tech.some((id) => !before.tech.includes(id)))
-    sounds.push("complete");
-  if (after.focuses.some((id) => !before.focuses.includes(id)))
-    sounds.push("focus");
   if (
     before.wars.some(
       (id) =>
@@ -200,6 +300,12 @@ export function worldSounds(previous: World | null, next: World): GameSound[] {
     )
   )
     sounds.push("victory");
+  if (after.tech.some((id) => !before.tech.includes(id)))
+    sounds.push("complete");
+  if (after.focuses.some((id) => !before.focuses.includes(id)))
+    sounds.push("focusComplete");
+  if (after.wars.some((id) => !before.wars.includes(id)))
+    sounds.push("warDeclaration");
   if (
     Object.values(next.provinces).some(
       (p) =>
@@ -220,25 +326,23 @@ export function worldSounds(previous: World | null, next: World): GameSound[] {
       );
     })
   )
-    sounds.push("build");
-  const oldArmies = new Set(
-    previous.armies.filter((a) => a.country === next.player).map((a) => a.id),
-  );
-  if (
-    before.recruitment.length &&
-    next.armies.some((a) => a.country === next.player && !oldArmies.has(a.id))
-  )
-    sounds.push("recruit");
+    sounds.push("buildComplete");
+  if (before.recruitment.length) {
+    const oldArmies = new Set(
+      previous.armies.filter((a) => a.country === next.player).map((a) => a.id),
+    );
+    if (
+      next.armies.some((a) => a.country === next.player && !oldArmies.has(a.id))
+    )
+      sounds.push("recruitComplete");
+  }
   const report = next.airNavalReports?.find((r) => r.country === next.player);
   const oldReport = previous.airNavalReports?.find(
     (r) => r.country === next.player,
   );
   if (report && report.day !== oldReport?.day) {
-    if (
-      report.air.engagements > 0 ||
-      report.air.bombingDamage > 0 ||
-      report.air.navalDamage > 0
-    )
+    if (report.air.bombingDamage > 0) sounds.push("bombing");
+    else if (report.air.engagements > 0 || report.air.navalDamage > 0)
       sounds.push("aircraft");
     if (report.navy.engagements > 0) sounds.push("naval");
   }
@@ -304,6 +408,124 @@ const chime = (notes: number[], gain = 0.11): Part[] =>
 /** Original synthesized motifs, including mechanical keys and distant weapons. */
 export function soundPattern(cue: GameSound): readonly Part[] {
   switch (cue) {
+    case "warDeclaration":
+      return [
+        tone(210, 95, 0.5, 0.13, 0, "sawtooth"),
+        noise(750, 0.3, 0.07, 0.1),
+      ];
+    case "alliance":
+      return chime([330, 415, 494, 660], 0.09);
+    case "pact":
+      return [noise(900, 0.08, 0.08), ...chime([294, 440], 0.08)];
+    case "trade":
+      return [
+        tone(1300, 1300, 0.1, 0.045),
+        tone(1700, 1700, 0.12, 0.04, 0.08),
+        noise(1800, 0.06, 0.04, 0.19),
+      ];
+    case "embargo":
+      return [
+        tone(370, 185, 0.24, 0.08, 0, "triangle"),
+        noise(550, 0.08, 0.075, 0.15),
+      ];
+    case "aid":
+      return chime([392, 494, 587], 0.08);
+    case "peace":
+      return chime([262, 392, 523, 784], 0.075);
+    case "liberation":
+      return chime([294, 370, 440, 587], 0.085);
+    case "commander":
+      return [noise(1900, 0.045, 0.06), ...chime([196, 294, 392], 0.085)];
+    case "defend":
+      return [tone(280, 280, 0.12, 0.075), tone(210, 210, 0.2, 0.075, 0.17)];
+    case "assault":
+      return [
+        tone(294, 392, 0.15, 0.095, 0, "triangle"),
+        tone(440, 587, 0.19, 0.085, 0.17, "triangle"),
+      ];
+    case "plan":
+      return [
+        noise(2100, 0.09, 0.045),
+        noise(1300, 0.1, 0.04, 0.13),
+        tone(520, 520, 0.1, 0.055, 0.24),
+      ];
+    case "airOrder":
+      return [tone(720, 1050, 0.16, 0.06), tone(850, 650, 0.13, 0.045, 0.2)];
+    case "navalOrder":
+      return [
+        tone(140, 140, 0.3, 0.085, 0, "triangle"),
+        tone(210, 210, 0.18, 0.06, 0.33),
+      ];
+    case "commission":
+      return [
+        tone(110, 165, 0.45, 0.09, 0, "triangle"),
+        ...chime([330, 440], 0.07),
+      ];
+    case "wingReady":
+      return [
+        tone(120, 240, 0.3, 0.045, 0, "sawtooth"),
+        ...chime([523, 784], 0.07),
+      ];
+    case "intelligence":
+      return [
+        tone(850, 850, 0.055, 0.055),
+        tone(850, 850, 0.055, 0.055, 0.12),
+        tone(850, 850, 0.17, 0.055, 0.24),
+      ];
+    case "agentReady":
+      return [noise(1800, 0.05, 0.035), ...chime([247, 370], 0.06)];
+    case "counterIntel":
+      return [tone(740, 370, 0.12, 0.07), tone(740, 370, 0.12, 0.07, 0.18)];
+    case "sabotage":
+      return [
+        noise(2700, 0.08, 0.075),
+        tone(150, 40, 0.25, 0.08),
+        noise(400, 0.25, 0.055, 0.1),
+      ];
+    case "railBuild":
+      return [
+        noise(2800, 0.06, 0.06),
+        tone(520, 350, 0.1, 0.045),
+        noise(2400, 0.06, 0.06, 0.2),
+        tone(520, 350, 0.1, 0.045, 0.2),
+      ];
+    case "production":
+      return [
+        tone(80, 110, 0.3, 0.055, 0, "triangle"),
+        noise(1400, 0.045, 0.04, 0.03),
+        noise(1700, 0.045, 0.04, 0.18),
+      ];
+    case "policy":
+      return [noise(1000, 0.13, 0.05), tone(260, 130, 0.13, 0.055, 0.14)];
+    case "cancel":
+      return [tone(500, 300, 0.1, 0.06), noise(1000, 0.04, 0.035, 0.11)];
+    case "focusComplete":
+      return [noise(800, 0.09, 0.07), ...chime([330, 440, 554, 660], 0.08)];
+    case "buildComplete":
+      return [noise(2100, 0.07, 0.07), ...chime([349, 440, 523], 0.075)];
+    case "recruitComplete":
+      return chime([196, 262, 330, 392], 0.085);
+    case "historicalAccept":
+      return [
+        noise(700, 0.1, 0.085),
+        tone(170, 85, 0.15, 0.075),
+        ...chime([392, 523], 0.065),
+      ];
+    case "historicalDecline":
+      return [noise(1500, 0.14, 0.055), tone(330, 220, 0.18, 0.065, 0.12)];
+    case "bombing":
+      return [
+        noise(950, 0.18, 0.11),
+        tone(80, 26, 0.65, 0.12),
+        noise(290, 0.65, 0.09, 0.08),
+        noise(1100, 0.13, 0.07, 0.36),
+      ];
+    case "support":
+      return [
+        noise(2300, 0.05, 0.05),
+        noise(1900, 0.07, 0.06, 0.12),
+        tone(310, 420, 0.13, 0.055, 0.2),
+      ];
     case "typewriter":
       return [noise(2600, 0.025, 0.09), tone(650, 210, 0.035, 0.025)];
     case "click":
@@ -563,6 +785,192 @@ export function createGameAudio(createContext?: () => AudioContext) {
       context = null;
       master = null;
       noiseBuffer = null;
+    },
+  };
+}
+
+export interface VoiceStatus {
+  available: boolean;
+  reason: string;
+}
+/** A browser's remote voices are deliberately excluded, even if they are default. */
+export function localTurkishVoice(voices: readonly SpeechSynthesisVoice[]) {
+  const local = voices.filter(
+    (voice) => voice.localService === true && /^tr(?:[-_]|$)/i.test(voice.lang),
+  );
+  return local.find((voice) => voice.default) ?? local[0] ?? null;
+}
+export function spokenAction(action: Action, world: World | null): string {
+  const target =
+    "target" in action && typeof action.target === "string"
+      ? world?.countries[action.target]?.name
+      : undefined;
+  const messages: Partial<Record<GameSound, string>> = {
+    order: "Birliklere hareket emri verildi.",
+    halt: "Birliklere dur emri verildi.",
+    research: "Yeni araştırma başlatıldı.",
+    focus: "Ulusal odak hazırlığı başladı.",
+    warDeclaration: target
+      ? `${target} ile savaş başladı.`
+      : "Savaş ilan edildi.",
+    alliance: "İttifak anlaşması kuruldu.",
+    pact: "Saldırmazlık paktı imzalandı.",
+    trade: "Kaynak ticareti başlatıldı.",
+    embargo: "Ambargo kararı uygulandı.",
+    aid: "Yardım emri uygulandı.",
+    peace: "Barış görüşmesi kararı uygulandı.",
+    liberation: "Bağımsızlık kararı uygulandı.",
+    commander: "Komutan ataması tamamlandı.",
+    defend: "Komutan savunmaya geçti.",
+    assault: "Taarruz emri verildi.",
+    plan: "Harekât planı hazırlandı.",
+    airOrder: "Hava kuvvetleri emri uygulandı.",
+    navalOrder: "Donanma emri uygulandı.",
+    commission: "Gemi hizmete alındı.",
+    wingReady: "Hava kanadı göreve hazır.",
+    intelligence: "İstihbarat emri uygulandı.",
+    agentReady: "Ajan eğitimi başlatıldı.",
+    counterIntel: "Karşı istihbarat ayarı değiştirildi.",
+    sabotage: "Sabotaj operasyonu başlatıldı.",
+    railBuild: "Ulaştırma inşaatı sıraya alındı.",
+    production: "Üretim hattı güncellendi.",
+    policy: "Yönetim kararı uygulandı.",
+    cancel: "İşlem iptal edildi.",
+    build: "İnşaat sıraya alındı.",
+    recruit: "Tümen eğitimi başladı.",
+    historicalAccept: "Tarihî olay kararı onaylandı.",
+    historicalDecline: "Tarihî olay önerisi reddedildi.",
+    support: "Tümen destek bölüğü güncellendi.",
+    diplomacy: "Diplomatik işlem uygulandı.",
+    decision: "Ulusal karar uygulandı.",
+  };
+  return messages[actionSound(action)] ?? "";
+}
+export function spokenNotification(cue: GameSound): string {
+  const messages: Partial<Record<GameSound, string>> = {
+    complete: "Araştırma tamamlandı. Yeni teknoloji kullanıma hazır.",
+    focusComplete: "Ulusal odak tamamlandı.",
+    buildComplete: "İnşaat tamamlandı.",
+    recruitComplete: "Yeni tümen göreve hazır.",
+    capture: "Yeni bir bölge ele geçirildi.",
+    defeat: "Ülken teslim oldu. Sefer sona erdi.",
+    victory: "Düşman ülke teslim oldu.",
+    warDeclaration: "Ülken yeni bir savaşa girdi.",
+  };
+  return messages[cue] ?? "";
+}
+
+/** Optional, opt-in speech. Nothing is queued; hidden/muted/load states cancel immediately. */
+export function createLocalSpeech(dependencies: {
+  synthesis: SpeechSynthesis | null;
+  utterance: (text: string) => SpeechSynthesisUtterance;
+}) {
+  const synthesis = dependencies.synthesis;
+  let settings = { ...DEFAULT_AUDIO },
+    visible = true,
+    unlocked = false,
+    disposed = false;
+  let lastAt = -Infinity,
+    lastText = "",
+    lastTextAt = -Infinity;
+  let active: SpeechSynthesisUtterance | null = null;
+  function stop() {
+    if (active) {
+      active.onend = null;
+      active.onerror = null;
+      synthesis?.cancel();
+      active = null;
+    }
+  }
+  return {
+    status(): VoiceStatus {
+      if (!synthesis)
+        return {
+          available: false,
+          reason: "Bu tarayıcı konuşmalı bildirimleri desteklemiyor.",
+        };
+      const voice = localTurkishVoice(synthesis.getVoices());
+      return voice
+        ? {
+            available: true,
+            reason: `Cihazındaki Türkçe ses: ${voice.name}. İnternet gerekmez.`,
+          }
+        : {
+            available: false,
+            reason:
+              "Cihazında çevrimdışı Türkçe ses bulunamadı. Türkçe ses paketi eklediğinde bu seçenek açılır.",
+          };
+    },
+    unlock() {
+      if (!disposed) unlocked = true;
+    },
+    setSettings(next: GameAudioSettings) {
+      settings = audioSettings(next);
+      if (!settings.enabled || !settings.voice || settings.volume <= 0) stop();
+    },
+    setVisible(next: boolean) {
+      visible = next;
+      if (!visible) stop();
+    },
+    speak(
+      message: string,
+      now = typeof performance !== "undefined" ? performance.now() : Date.now(),
+      urgent = false,
+    ) {
+      if (
+        disposed ||
+        !unlocked ||
+        !visible ||
+        !settings.enabled ||
+        !settings.voice ||
+        settings.volume <= 0 ||
+        !synthesis
+      )
+        return false;
+      const text = message.replace(/\s+/g, " ").trim().slice(0, 200);
+      const voice = localTurkishVoice(synthesis.getVoices());
+      if (
+        !text ||
+        !voice ||
+        (!urgent && now - lastAt < 1600) ||
+        (text === lastText && now - lastTextAt < 15000)
+      )
+        return false;
+      if (urgent) stop();
+      // Do not overlap or append to another message (including another site's widget).
+      if (active || synthesis.speaking || synthesis.pending) return false;
+      const utterance = dependencies.utterance(text);
+      utterance.voice = voice;
+      utterance.lang = voice.lang;
+      utterance.volume = settings.volume;
+      utterance.rate = 1.04;
+      utterance.pitch = 0.95;
+      const finish = () => {
+        if (active === utterance) active = null;
+      };
+      utterance.onend = finish;
+      utterance.onerror = finish;
+      active = utterance;
+      lastAt = now;
+      lastText = text;
+      lastTextAt = now;
+      try {
+        synthesis.speak(utterance);
+        return true;
+      } catch {
+        active = null;
+        return false;
+      }
+    },
+    reset() {
+      stop();
+      lastAt = -Infinity;
+      lastText = "";
+      lastTextAt = -Infinity;
+    },
+    dispose() {
+      stop();
+      disposed = true;
     },
   };
 }

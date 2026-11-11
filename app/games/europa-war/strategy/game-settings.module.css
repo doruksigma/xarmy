@@ -1,0 +1,98 @@
+.dialog {
+  width: min(540px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  padding: 0;
+  border: 1px solid #a49b6a;
+  border-radius: 5px;
+  color: #e2dfc9;
+  background: #18251f;
+  box-shadow: 0 20px 70px #000a;
+}
+.dialog::backdrop {
+  background: #050a10b8;
+}
+.dialog header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px;
+  background: #333c2c;
+}
+.dialog h2 {
+  margin: 4px 0 0;
+  font-size: 24px;
+}
+.dialog small {
+  color: #c9bf84;
+  letter-spacing: 0.12em;
+  font-size: 10px;
+}
+.dialog button,
+.dialog select {
+  min-height: 42px;
+  border: 1px solid #7d805e;
+  border-radius: 3px;
+  background: #394735;
+  color: #fff9df;
+  font: inherit;
+  padding: 8px 12px;
+}
+.dialog header button {
+  font-size: 24px;
+}
+.dialog button {
+  cursor: pointer;
+}
+.dialog :focus-visible {
+  outline: 2px solid #d9cb80;
+  outline-offset: 3px;
+}
+.body {
+  padding: 16px 18px;
+}
+.body fieldset {
+  display: grid;
+  gap: 14px;
+  margin: 0 0 20px;
+  padding: 16px 12px;
+  border: 1px solid #566348;
+}
+.body legend {
+  color: #ded6ad;
+  padding: 0 6px;
+  font-weight: 700;
+}
+.body label {
+  display: grid;
+  gap: 6px;
+  font-size: 14px;
+}
+.body select {
+  width: 100%;
+  min-width: 0;
+}
+.body p {
+  margin: 0;
+  color: #b3bbaa;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.body > p {
+  margin-top: 16px;
+}
+.dialog footer {
+  padding: 0 18px 18px;
+}
+.dialog footer button {
+  width: 100%;
+}
+@media (max-width: 420px) {
+  .dialog header,
+  .body {
+    padding: 12px;
+  }
+  .body fieldset {
+    padding: 12px 8px;
+  }
+}

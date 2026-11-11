@@ -325,8 +325,8 @@ test("Simulation creates its worker lazily and never advances a paused campaign"
   f.controller.dispose();
 });
 
-test("Normal pace waits 150 ms per hour and 1–5× retain their relative intervals", () => {
-  assert.equal(SIMULATION_HOUR_MS, 150);
+test("Faster campaign pace waits 40 ms per hour and 1–5× retain their relative intervals", () => {
+  assert.equal(SIMULATION_HOUR_MS, 40);
   for (const speed of [1, 2, 3, 4, 5]) {
     const interval = SIMULATION_HOUR_MS / speed;
     const f = fixture();
@@ -348,6 +348,40 @@ test("Normal pace waits 150 ms per hour and 1–5× retain their relative interv
     assert.equal(worker.requests.length, 2);
     assert.deepEqual(f.published.map(worldHour), [1]);
     f.controller.dispose();
+  }
+});
+
+test("Faster multi-day play preserves every hour and applies backpressure on slow midnights at every speed", () => {
+  for (const speed of [1, 2, 3, 4, 5]) {
+    const f = fixture();
+    const interval = SIMULATION_HOUR_MS / speed;
+    f.controller.setSpeed(speed);
+    f.controller.setRunning(true);
+    let elapsed = 0;
+    for (let tick = 0; tick < 72; tick++) {
+      f.clock.advance(interval);
+      elapsed += interval;
+      const worker = f.workers[0];
+      assert.equal(worker.requests.length, tick + 1);
+      const request = worker.requests[tick];
+      assert.equal(request.baseTick, tick, "Every game hour must be computed");
+      // Daily economy/AI work can be much slower than ordinary movement hours.
+      const computeMs = tick % 24 === 23 ? 2500 : 5;
+      f.clock.advance(computeMs);
+      elapsed += computeMs;
+      assert.equal(worker.requests.length, tick + 1, "No requests pile up");
+      worker.finish(request);
+      assert.equal(f.clock.timers.size, 1, "Only one next-hour timer remains");
+    }
+    assert.deepEqual(
+      f.published.map(worldHour),
+      Array.from({ length: 72 }, (_, index) => index + 1),
+    );
+    assert.ok(Math.abs(f.clock.now - elapsed) < 0.001);
+    assert.ok(Math.abs(elapsed - (72 * interval + 69 * 5 + 3 * 2500)) < 0.001);
+    assert.equal(f.errors.length, 0);
+    f.controller.dispose();
+    assert.equal(f.clock.timers.size, 0);
   }
 });
 

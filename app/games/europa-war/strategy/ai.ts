@@ -1,13 +1,180 @@
 import { historicalFocusAvailability } from "./historical-events";
+import {
+  historicalEvent,
+  type HistoricalEventDefinition,
+} from "./historical-catalog";
 import { manage } from "./management";
 import { createCommand, executeCommandInPlace } from "./commands";
-import { focusTree, TECHNOLOGIES } from "./catalog";
+import { focusTree, IDEOLOGIES, TECHNOLOGIES, type Focus } from "./catalog";
 import { diplomaticAcceptance } from "./diplomacy";
 import { researchSlots } from "./politics";
 import { atWar, controlled, GEOGRAPHY, militaryPower } from "./world";
 import { runCountryTactics } from "./ai-tactics";
 import { worldHour } from "./time";
-import type { Action, World } from "./types";
+import type { Action, Country, World } from "./types";
+
+/** Political alternatives remain deliberate choices; routine AI investment uses
+ * each country's needs and never mistakes the policy catalogue for a timeline. */
+export function chooseAIFocus(w: World, c: Country): Focus | undefined {
+  const completed = new Set(c.focuses);
+  const resolved = new Set(w.historical?.resolved.map((item) => item.eventId));
+  const pending = new Set(w.historical?.pending.map((item) => item.eventId));
+  const accepted = new Set(
+    w.historical?.resolved
+      .filter((item) => item.outcome === "accepted")
+      .map((item) => item.eventId),
+  );
+  const available = focusTree(c.id).filter((focus) => {
+    if (
+      completed.has(focus.id) ||
+      c.political < (focus.cost ?? 0) ||
+      !focus.requires.every((id) => completed.has(id)) ||
+      (focus.excludes && completed.has(focus.excludes))
+    )
+      return false;
+    if (focus.effect in IDEOLOGIES && focus.effect !== c.ideology) return false;
+    if (focus.effect !== "historical") return true;
+    const definition = historicalEvent(focus.id.slice(8));
+    if (
+      !definition ||
+      resolved.has(definition.id) ||
+      pending.has(definition.id)
+    )
+      return false;
+    if (w.mode === "historical" && definition.era === "alternative")
+      return false;
+    if (
+      !definition.requires.every((id) =>
+        id.startsWith("history-")
+          ? accepted.has(id.slice(8))
+          : completed.has(id),
+      )
+    )
+      return false;
+    // A generic development assistant must not spend a country's reserves on
+    // its own civil war or unexpectedly replace its government.
+    if (
+      definition.domestic?.effects.some(
+        (effect) =>
+          ["uprising", "restoration", "government"].includes(effect.kind) ||
+          (effect.kind === "party" && effect.ideology !== c.ideology),
+      )
+    )
+      return false;
+    return !historicalFocusAvailability(w, c, definition.id);
+  });
+  const realHistory = available.filter(
+    (focus) =>
+      focus.effect === "historical" &&
+      historicalEvent(focus.id.slice(8))?.kind !== "domestic",
+  );
+  if (w.mode === "historical" && realHistory.length) return realHistory[0];
+  const common = available.find((focus) => focus.effect !== "historical");
+  const programmes = available.filter(
+    (focus) =>
+      focus.effect === "historical" &&
+      historicalEvent(focus.id.slice(8))?.kind === "domestic",
+  );
+  // Complete one general focus between policies while both paths are available.
+  // An ever-growing policy list cannot starve research/industry/army foundations.
+  const previous = c.focuses.at(-1);
+  const previousPolicy =
+    previous?.startsWith("history-") &&
+    historicalEvent(previous.slice(8))?.kind === "domestic";
+  if (common && (!previous || previousPolicy || !programmes.length))
+    return common;
+  if (programmes.length) {
+    const troops = w.armies.filter((army) => army.country === c.id);
+    const lowSupply = troops.some((army) => army.supply < 0.7);
+    const atWarNow = c.wars.length > 0;
+    const score = (definition: HistoricalEventDefinition): number =>
+      (definition.domestic?.effects ?? []).reduce((total, effect) => {
+        let value = 0;
+        switch (effect.kind) {
+          case "building":
+            value = ["rail", "hub", "infra"].includes(effect.building)
+              ? lowSupply
+                ? 100
+                : 28
+              : effect.building === "military"
+                ? atWarNow
+                  ? 75
+                  : 40
+                : effect.building === "civil"
+                  ? atWarNow
+                    ? 35
+                    : 65
+                  : effect.building === "fort" || effect.building === "antiAir"
+                    ? atWarNow
+                      ? 65
+                      : 20
+                    : 25;
+            break;
+          case "equipment": {
+            const desired =
+              effect.equipment === "rifle"
+                ? Math.max(200, troops.length * 40)
+                : effect.equipment === "truck"
+                  ? Math.max(50, troops.length * 5)
+                  : 50;
+            value =
+              Math.max(0, 1 - c.equipment[effect.equipment] / desired) *
+              (atWarNow ? 90 : 60);
+            break;
+          }
+          case "stock":
+            value =
+              Math.max(0, 1 - c.stock[effect.resource] / 150) *
+              (effect.resource === "fuel" && atWarNow ? 100 : 65);
+            break;
+          case "stability":
+            value = effect.amount > 0 ? Math.max(0, 80 - c.stability) * 2 : -10;
+            break;
+          case "exhaustion":
+            value = effect.amount < 0 ? c.exhaustion * 2 : -10;
+            break;
+          case "warSupport":
+            value =
+              effect.amount > 0
+                ? Math.max(0, 70 - c.warSupport) * (atWarNow ? 2 : 0.5)
+                : 0;
+            break;
+          case "treasury":
+            value =
+              effect.amount > 0 ? Math.max(0, 1 - c.treasury / 500) * 80 : 0;
+            break;
+          case "science":
+            value = effect.amount > 0 ? 55 : 0;
+            break;
+          case "research":
+            value = c.tech.includes(effect.technology)
+              ? effect.ifKnown
+                ? 45
+                : 0
+              : 45;
+            break;
+          case "training":
+            value = troops.length ? (atWarNow ? 50 : 35) : 0;
+            break;
+          case "political":
+            value = Math.max(0, 1 - c.political / 150) * 35;
+            break;
+          case "party":
+            value = Math.max(0, 60 - c.parties[c.ideology]);
+            break;
+        }
+        return total + value;
+      }, 0) /
+      (1 + definition.days / 120);
+    return programmes.reduce((best, focus) =>
+      score(historicalEvent(focus.id.slice(8))!) >
+      score(historicalEvent(best.id.slice(8))!)
+        ? focus
+        : best,
+    );
+  }
+  return common ?? realHistory[0];
+}
 
 /** AI decisions use stocks, local force ratios, supply, diplomatic threats and
  * research prerequisites. No hidden resources or random auto-capture. */
@@ -66,22 +233,7 @@ export function aiDay(w: World) {
       if (options[0]) submit({ type: "research", id: options[0].id });
     }
     if (!c.focus) {
-      const available = focusTree(c.id).filter(
-        (f) =>
-          c.political >= (f.cost ?? 0) &&
-          (f.effect !== "historical" ||
-            !historicalFocusAvailability(w, c, f.id.slice(8))) &&
-          !c.focuses.includes(f.id) &&
-          f.requires.every((id) => c.focuses.includes(id)) &&
-          (!f.excludes || !c.focuses.includes(f.excludes)),
-      );
-      // Historical diplomacy gets the next free focus slot once its date,
-      // prerequisites and paid resources are valid. Existing work is never
-      // cancelled; alternative mode retains its general development priority.
-      const focus =
-        (w.mode === "historical"
-          ? available.find((candidate) => candidate.effect === "historical")
-          : undefined) ?? available[0];
+      const focus = chooseAIFocus(w, c);
       if (focus) submit({ type: "focus", id: focus.id });
     }
     if (c.construction.length === 0 && c.treasury > 250) {

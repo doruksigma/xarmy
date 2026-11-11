@@ -5,6 +5,10 @@ import {
   audioSettings,
   battlefieldSound,
   createGameAudio,
+  createLocalSpeech,
+  spokenAction,
+  spokenNotification,
+  type VoiceStatus,
   DEFAULT_AUDIO,
   GAME_AUDIO_KEY,
   worldSounds,
@@ -21,6 +25,11 @@ export function useGameAudio(
     ...DEFAULT_AUDIO,
   });
   const [unlocked, setUnlocked] = useState(false);
+  const [voiceStatus, setVoiceStatus] = useState<VoiceStatus>({
+    available: false,
+    reason: "Cihaz sesleri kontrol ediliyor…",
+  });
+  const speech = useRef<ReturnType<typeof createLocalSpeech> | null>(null);
   const engine = useRef<ReturnType<typeof createGameAudio> | null>(null);
   const current = useRef(world),
     previous = useRef<World | null>(null);
@@ -30,6 +39,19 @@ export function useGameAudio(
   useEffect(() => {
     const sound = createGameAudio();
     engine.current = sound;
+    const synthesis =
+      typeof window.speechSynthesis !== "undefined" &&
+      typeof window.SpeechSynthesisUtterance !== "undefined"
+        ? window.speechSynthesis
+        : null;
+    const voice = createLocalSpeech({
+      synthesis,
+      utterance: (text) => new SpeechSynthesisUtterance(text),
+    });
+    speech.current = voice;
+    const refreshVoices = () => setVoiceStatus(voice.status());
+    refreshVoices();
+    synthesis?.addEventListener("voiceschanged", refreshVoices);
     try {
       const stored = localStorage.getItem(GAME_AUDIO_KEY);
       if (stored) settingsRef.current = audioSettings(JSON.parse(stored));
@@ -38,13 +60,18 @@ export function useGameAudio(
     }
     storeSettings(settingsRef.current);
     sound.setSettings(settingsRef.current);
+    voice.setSettings(settingsRef.current);
+    voice.setVisible(!document.hidden);
     sound.setActivity(!document.hidden, paused.current);
     const unlock = (event: Event) => {
       if (!event.isTrusted) return;
+      voice.unlock();
       if (sound.unlock()) setUnlocked(true);
     };
-    const visibility = () =>
+    const visibility = () => {
       sound.setActivity(!document.hidden, paused.current);
+      voice.setVisible(!document.hidden);
+    };
     window.addEventListener("pointerdown", unlock, { capture: true });
     window.addEventListener("keydown", unlock, { capture: true });
     document.addEventListener("visibilitychange", visibility);
@@ -60,6 +87,9 @@ export function useGameAudio(
       window.removeEventListener("keydown", unlock, { capture: true });
       document.removeEventListener("visibilitychange", visibility);
       sound.dispose();
+      voice.dispose();
+      synthesis?.removeEventListener("voiceschanged", refreshVoices);
+      if (speech.current === voice) speech.current = null;
       if (engine.current === sound) engine.current = null;
     };
   }, []);
@@ -71,10 +101,20 @@ export function useGameAudio(
     current.current = world;
     const changedCampaign = revision.current !== options.campaignRevision;
     revision.current = options.campaignRevision;
-    if (changedCampaign || !world) engine.current?.reset();
-    else
-      for (const cue of worldSounds(previous.current, world))
-        engine.current?.play(cue);
+    if (changedCampaign || !world) {
+      engine.current?.reset();
+      speech.current?.reset();
+    } else {
+      const cues = worldSounds(previous.current, world);
+      for (const cue of cues) engine.current?.play(cue);
+      const notification = cues.map(spokenNotification).find(Boolean);
+      if (notification)
+        speech.current?.speak(
+          notification,
+          undefined,
+          cues.includes("defeat") || cues.includes("victory"),
+        );
+    }
     previous.current = world;
   }, [world, options.campaignRevision]);
   const setSettings = useCallback((next: GameAudioSettings) => {
@@ -82,6 +122,7 @@ export function useGameAudio(
     settingsRef.current = checked;
     storeSettings(checked);
     engine.current?.setSettings(checked);
+    speech.current?.setSettings(checked);
     // Enabling the checkbox is itself a user gesture, including keyboard activation.
     if (checked.enabled && engine.current?.unlock()) setUnlocked(true);
     try {
@@ -96,7 +137,21 @@ export function useGameAudio(
   );
   const onAction = useCallback((action: Action) => {
     engine.current?.play(actionSound(action));
+    const message = spokenAction(action, current.current);
+    if (message) speech.current?.speak(message);
   }, []);
-  return { settings, setSettings, play, onAction, unlocked };
+  const speak = useCallback(
+    (message: string) => speech.current?.speak(message) ?? false,
+    [],
+  );
+  return {
+    settings,
+    setSettings,
+    play,
+    onAction,
+    unlocked,
+    voiceStatus,
+    speak,
+  };
 }
 export type GameAudioControls = ReturnType<typeof useGameAudio>;

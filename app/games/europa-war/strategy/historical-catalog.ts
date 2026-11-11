@@ -1,3 +1,11 @@
+import {
+  alternatePolicies,
+  nationalPolicies,
+  SCENARIO_COUNTRY_IDS,
+} from "./national-event-catalog";
+import { germanProgrammes } from "./germany-event-catalog";
+import type { NationalProgramme } from "./national-event-types";
+
 /** Curated, playable diplomatic decisions; dates describe the historical reference.
  * The campaign's choices can produce different outcomes. No external art/assets. */
 export interface HistoricalEventDefinition {
@@ -18,7 +26,14 @@ export interface HistoricalEventDefinition {
     | "alliance"
     | "defense"
     | "aid"
-    | "conference";
+    | "conference"
+    | "domestic";
+  branch?: string;
+  era?: "historical" | "policy" | "alternative";
+  countrySpecific?: boolean;
+  /** Event IDs, unlike requires which contains history-prefixed focus IDs. */
+  excludes?: string[];
+  domestic?: NationalProgramme;
   acceptLabel: string;
   declineLabel: string;
   effectText: string;
@@ -32,7 +47,7 @@ const entry = (
   declineText:
     "Bu olay kapatılır; diplomasi hazırlığı için harcanan siyasi güç geri verilmez. Toprak veya savaş durumu değişmez.",
 });
-export const HISTORICAL_EVENTS: readonly HistoricalEventDefinition[] = [
+const CURATED_EVENTS: readonly HistoricalEventDefinition[] = [
   entry({
     id: "rhineland",
     country: "germany",
@@ -288,6 +303,49 @@ export const HISTORICAL_EVENTS: readonly HistoricalEventDefinition[] = [
       "Kabul edilirse iki ülkeye +8 istikrar, −10 savaş yorgunluğu ve +25 ilişki; dünya gerilimi −5. Hiçbir ülke otomatik bölünmez.",
   }),
 ];
-export const historicalEvent = (id: string) =>
-  HISTORICAL_EVENTS.find((event) => event.id === id);
+export const HISTORICAL_EVENTS: readonly HistoricalEventDefinition[] =
+  CURATED_EVENTS.map((event) => ({
+    ...event,
+    branch: "Tarihî Diplomasi",
+    era: "historical",
+    countrySpecific: true,
+  }));
+const countries = new Map<string, readonly HistoricalEventDefinition[]>();
+const eventIndex = new Map(HISTORICAL_EVENTS.map((event) => [event.id, event]));
+/** Stable per-country arrays: daily AI/focus checks never scan the world catalog. */
+export function countryEvents(
+  country: string,
+): readonly HistoricalEventDefinition[] {
+  const cached = countries.get(country);
+  if (cached) return cached;
+  const definitions = [
+    ...HISTORICAL_EVENTS.filter((event) => event.country === country),
+    ...nationalPolicies(country),
+    ...alternatePolicies(country),
+    ...(country === "germany" ? germanProgrammes() : []),
+  ];
+  countries.set(country, definitions);
+  for (const definition of definitions)
+    eventIndex.set(definition.id, definition);
+  return definitions;
+}
+let allEvents: readonly HistoricalEventDefinition[] | undefined;
+export function allCountryEvents(): readonly HistoricalEventDefinition[] {
+  return (allEvents ??= SCENARIO_COUNTRY_IDS.flatMap((country) =>
+    countryEvents(country),
+  ));
+}
+export function historicalEvent(
+  id: string,
+): HistoricalEventDefinition | undefined {
+  const found = eventIndex.get(id);
+  if (found) return found;
+  if (!id.startsWith("national-")) return undefined;
+  // Scenario IDs are simple lowercase tokens. Unknown/rebel countries keep
+  // existing generic focuses and cannot forge another country's event IDs.
+  const country = id.slice(9).split("-")[0];
+  if (!SCENARIO_COUNTRY_IDS.includes(country)) return undefined;
+  countryEvents(country);
+  return eventIndex.get(id);
+}
 export const historicalFocusId = (id: string) => `history-${id}`;

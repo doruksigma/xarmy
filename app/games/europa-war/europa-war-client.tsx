@@ -20,11 +20,15 @@ import { dateLabel, MAP, surrender } from "./strategy/world";
 import { hourLabel, worldHour } from "./strategy/time";
 import {
   decodeSave,
+  MAX_SAVE_BYTES,
   encodeSave,
-  saveLocal,
   type SaveSlot,
 } from "./strategy/storage";
-import { loadBrowserSave, saveAutomatic } from "./strategy/storage-browser";
+import {
+  loadBrowserSave,
+  saveAutomatic,
+  saveBrowserSlot,
+} from "./strategy/storage-browser";
 import { useOfflinePack } from "./strategy/useOfflinePack";
 import { useSimulation } from "./strategy/useSimulation";
 import { SIMULATION_HOUR_MS } from "./strategy/simulation";
@@ -32,6 +36,8 @@ import SimulationMetrics from "./strategy/SimulationMetrics";
 import { useSaveSlots } from "./strategy/useSaveSlots";
 import { useGameAudio } from "./strategy/useGameAudio";
 import SoundSettings from "./strategy/SoundSettings";
+import GameSettings from "./strategy/GameSettings";
+import { usePresentationSettings } from "./strategy/usePresentationSettings";
 import HistoricalEventDialog from "./strategy/HistoricalEventDialog";
 import { pendingHistoricalDecision } from "./strategy/historical-events";
 import type { Action, OffensivePlan, World } from "./strategy/types";
@@ -46,7 +52,6 @@ const WarMap3D = dynamic(load3DMap, {
     </div>
   ),
 });
-const MAP_VIEW_KEY = "xarmy-europa-map-view-v1";
 
 function Saves({
   world,
@@ -65,13 +70,19 @@ function Saves({
     input = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
   const loadPending = useRef(false);
-  function save(slot: SaveSlot) {
+  async function save(slot: SaveSlot) {
+    if (loadPending.current) return;
+    loadPending.current = true;
+    setLoading(true);
     try {
-      saveLocal(slot, world);
+      await saveBrowserSlot(slot, world);
       onSaved();
       onMessage("Sefer bu cihaza kaydedildi.");
     } catch (e) {
       onMessage((e as Error).message);
+    } finally {
+      loadPending.current = false;
+      setLoading(false);
     }
   }
   async function load(slot: SaveSlot) {
@@ -175,14 +186,18 @@ export default function EuropaWarClient() {
   );
   const [campaignRevision, setCampaignRevision] = useState(0);
   const [recruitProvince, setRecruitProvince] = useState<string | null>(null);
-  const [mapView, setMapView] = useState<"3d" | "2d">("2d");
+  const presentation = usePresentationSettings();
+  const mapView = presentation.settings.map;
+  const changePresentationSettings = presentation.change;
+  const changeMapView = useCallback(
+    (map: "3d" | "2d") => changePresentationSettings({ map }),
+    [changePresentationSettings],
+  );
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [simple, setSimple] = useState(true);
   const [guideGeneralId, setGuideGeneralId] = useState("");
   useEffect(() => {
     try {
-      const savedMapView = localStorage.getItem(MAP_VIEW_KEY);
-      if (savedMapView === "3d" || savedMapView === "2d")
-        setMapView(savedMapView);
       setSimple(
         easyPresentationPreference(localStorage.getItem(EASY_PLAY_PREFERENCE)),
       );
@@ -196,14 +211,6 @@ export default function EuropaWarClient() {
       localStorage.setItem(EASY_PLAY_PREFERENCE, value ? "easy" : "advanced");
     } catch {
       /* The guide also works without storing a preference. */
-    }
-  }, []);
-  const changeMapView = useCallback((view: "3d" | "2d") => {
-    setMapView(view);
-    try {
-      localStorage.setItem(MAP_VIEW_KEY, view);
-    } catch {
-      /* Optional preference. */
     }
   }, []);
   const [setup, setSetup] = useState(true),
@@ -348,7 +355,7 @@ export default function EuropaWarClient() {
     const key = (e: KeyboardEvent) => {
       if (
         (e.target as HTMLElement).closest(
-          "input,select,textarea,button,a,summary,[contenteditable='true']",
+          "input,select,textarea,button,a,summary,dialog,[contenteditable='true']",
         )
       )
         return;
@@ -420,8 +427,8 @@ export default function EuropaWarClient() {
     setTransition("loading");
     setPaused(true);
     try {
-      if (file.size > 4 * 1024 * 1024)
-        throw new Error("Dosya en fazla 4 MB olabilir.");
+      if (file.size > MAX_SAVE_BYTES)
+        throw new Error("Dosya en fazla 8 MiB olabilir.");
       restore(decodeSave(await file.text()));
       playSound("load");
       say("Dosya doğrulandı ve sefer yüklendi.");
@@ -646,6 +653,7 @@ export default function EuropaWarClient() {
       className={`${styles.app} ${styles.commandView}${simple ? ` ${styles.simpleView}` : ""}`}
       data-testid="command-map-shell"
       data-setup={setup}
+      data-reduced-motion={presentation.reduced}
     >
       <header className={styles.topbar}>
         <Link
@@ -820,6 +828,20 @@ export default function EuropaWarClient() {
             </span>
             <small>Yeni sefer</small>
           </button>
+          <button
+            type="button"
+            onClick={() => {
+              playSound("click");
+              setSettingsOpen(true);
+            }}
+            title="Oyun ayarları"
+            aria-label="Oyun ayarları"
+          >
+            <span className={styles.militaryEmblem}>
+              <MilitaryIcon name="operations" size={23} />
+            </span>
+            <small>Ayarlar</small>
+          </button>
         </nav>
         <main className={styles.theater}>
           <div className={styles.mapTop}>
@@ -881,6 +903,8 @@ export default function EuropaWarClient() {
                 onUnavailable={on3DUnavailable}
                 paused={paused || setup}
                 onTheater={openTheater}
+                presentation={presentation.settings}
+                onSettings={() => setSettingsOpen(true)}
               />
             </MapPresentationBoundary>
           ) : (
@@ -1189,6 +1213,7 @@ export default function EuropaWarClient() {
           world={world}
           onAction={command}
           onType={() => playSound("typewriter")}
+          animations={!presentation.reduced}
         />
       )}
       {setup && (
@@ -1210,6 +1235,9 @@ export default function EuropaWarClient() {
             </p>
             <EasyPlayMode simple={simple} onChange={changePresentation} />
             <SoundSettings audio={audio} />
+            <button type="button" onClick={() => setSettingsOpen(true)}>
+              Görüntü ve oyun ayarları
+            </button>
             <p className={styles.hint}>
               {simple
                 ? "Tümen eğit, yapı kur, teknoloji seç; komutanını sınırına yerleştir. Her önemli seçimi sen yaparsın."
@@ -1342,6 +1370,14 @@ export default function EuropaWarClient() {
             </Link>
           </section>
         </div>
+      )}
+      {settingsOpen && (
+        <GameSettings
+          audio={audio}
+          settings={presentation.settings}
+          onChange={presentation.change}
+          onClose={() => setSettingsOpen(false)}
+        />
       )}
     </div>
   );

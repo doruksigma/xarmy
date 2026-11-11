@@ -2586,3 +2586,12 @@
     max-height: calc(100% - 112px);
   }
 }
+
+/* The in-game preference applies to SVG/CSS effects as well as the 3D scene. */
+.app[data-reduced-motion="true"] *,
+.app[data-reduced-motion="true"] *::before,
+.app[data-reduced-motion="true"] *::after {
+  animation: none !important;
+  transition: none !important;
+  scroll-behavior: auto !important;
+}

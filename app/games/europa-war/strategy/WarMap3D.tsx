@@ -10,6 +10,7 @@ import {
 import { GRAPHICS_QUALITY, type GraphicsQuality } from "./map3d-visuals";
 import { GEOGRAPHY, MAP } from "./world";
 import { TERRAINS } from "./catalog";
+import type { PresentationSettings } from "./presentation-settings";
 import styles from "./map3d.module.css";
 
 const QUALITY_KEY = "xarmy-europa-3d-quality-v1";
@@ -52,18 +53,25 @@ const initialQuality = (): GraphicsQuality => {
     : "medium";
 };
 function WarMap3D(
-  props: Map3DState & { onUnavailable?: (message: string) => void },
+  props: Map3DState & {
+    onUnavailable?: (message: string) => void;
+    presentation?: PresentationSettings;
+    onSettings?: () => void;
+  },
 ) {
   const canvas = useRef<HTMLCanvasElement>(null),
     labels = useRef<HTMLDivElement>(null),
     renderer = useRef<Map3DRenderer | null>(null);
   const live = useRef(props);
   live.current = props;
-  const [quality, setQuality] = useState<GraphicsQuality>(initialQuality);
-  const [viewpoint, setViewpoint] = useState<MapViewpoint>(initialViewpoint);
-  const [motionPreference, setMotionPreference] = useState<MotionPreference>(
-    initialMotionPreference,
-  );
+  const [localQuality, setQuality] = useState<GraphicsQuality>(initialQuality);
+  const [localViewpoint, setViewpoint] =
+    useState<MapViewpoint>(initialViewpoint);
+  const [localMotionPreference, setMotionPreference] =
+    useState<MotionPreference>(initialMotionPreference);
+  const quality = props.presentation?.quality ?? localQuality;
+  const viewpoint = props.presentation?.viewpoint ?? localViewpoint;
+  const motionPreference = props.presentation?.motion ?? localMotionPreference;
   const [systemReducedMotion, setSystemReducedMotion] = useState(
     () => window.matchMedia("(prefers-reduced-motion: reduce)").matches,
   );
@@ -231,72 +239,80 @@ function WarMap3D(
           </div>
         )}
       </div>
-      <details
-        className={styles.quality}
-        data-testid="map3d-settings"
-        open={!compactControls || settingsExpanded}
-        onToggle={(event) => {
-          if (compactControls) setSettingsExpanded(event.currentTarget.open);
-        }}
-      >
-        <summary data-testid="map3d-settings-toggle">
-          Görünüm ayarları
-          <MilitaryIcon
-            name={settingsExpanded ? "minus" : "plus"}
-            size={14}
-            style={{ marginInlineEnd: 0 }}
-          />
-        </summary>
-        <div className={styles.qualityFields}>
-          <label>
-            BAKIŞ
-            <select
-              aria-label="Harita bakışı"
-              value={viewpoint}
-              onChange={(e) => setViewpoint(e.target.value as MapViewpoint)}
-            >
-              <option value="strategic">Stratejik</option>
-              <option value="perspective">Yakın görünüm</option>
-            </select>
-          </label>
-          <label>
-            GRAFİK{" "}
-            <select
-              aria-label="Grafik kalitesi"
-              value={quality}
-              onChange={(e) => setQuality(e.target.value as GraphicsQuality)}
-            >
-              {Object.entries(GRAPHICS_QUALITY).map(([id, preset]) => (
-                <option key={id} value={id}>
-                  {preset.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            ANİMASYONLAR
-            <select
-              aria-label="Animasyonlar"
-              value={motionPreference}
-              title="Otomatik, cihazının hareket azaltma tercihini izler. Açık, hareket ve çatışma animasyonlarını oynatır."
-              onChange={(e) =>
-                setMotionPreference(e.target.value as MotionPreference)
-              }
-            >
-              <option value="system">Otomatik</option>
-              <option value="full">Açık</option>
-              <option value="reduced">Azaltılmış</option>
-            </select>
-            {reducedMotion && (
-              <small className={styles.motionNote}>
-                {motionPreference === "system"
-                  ? "Cihaz tercihi: azaltılmış"
-                  : "Hareketler azaltıldı"}
-              </small>
-            )}
-          </label>
+      {props.presentation ? (
+        <div className={styles.quality}>
+          <button type="button" onClick={props.onSettings}>
+            Görüntü ve ses ayarları
+          </button>
         </div>
-      </details>
+      ) : (
+        <details
+          className={styles.quality}
+          data-testid="map3d-settings"
+          open={!compactControls || settingsExpanded}
+          onToggle={(event) => {
+            if (compactControls) setSettingsExpanded(event.currentTarget.open);
+          }}
+        >
+          <summary data-testid="map3d-settings-toggle">
+            Görünüm ayarları
+            <MilitaryIcon
+              name={settingsExpanded ? "minus" : "plus"}
+              size={14}
+              style={{ marginInlineEnd: 0 }}
+            />
+          </summary>
+          <div className={styles.qualityFields}>
+            <label>
+              BAKIŞ
+              <select
+                aria-label="Harita bakışı"
+                value={viewpoint}
+                onChange={(e) => setViewpoint(e.target.value as MapViewpoint)}
+              >
+                <option value="strategic">Stratejik</option>
+                <option value="perspective">Yakın görünüm</option>
+              </select>
+            </label>
+            <label>
+              GRAFİK{" "}
+              <select
+                aria-label="Grafik kalitesi"
+                value={quality}
+                onChange={(e) => setQuality(e.target.value as GraphicsQuality)}
+              >
+                {Object.entries(GRAPHICS_QUALITY).map(([id, preset]) => (
+                  <option key={id} value={id}>
+                    {preset.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              ANİMASYONLAR
+              <select
+                aria-label="Animasyonlar"
+                value={motionPreference}
+                title="Otomatik, cihazının hareket azaltma tercihini izler. Açık, hareket ve çatışma animasyonlarını oynatır."
+                onChange={(e) =>
+                  setMotionPreference(e.target.value as MotionPreference)
+                }
+              >
+                <option value="system">Otomatik</option>
+                <option value="full">Açık</option>
+                <option value="reduced">Azaltılmış</option>
+              </select>
+              {reducedMotion && (
+                <small className={styles.motionNote}>
+                  {motionPreference === "system"
+                    ? "Cihaz tercihi: azaltılmış"
+                    : "Hareketler azaltıldı"}
+                </small>
+              )}
+            </label>
+          </div>
+        </details>
+      )}
       <div
         className={styles.controls}
         role="group"
