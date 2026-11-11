@@ -86,6 +86,22 @@ export default function ProductionPanel({
   const [selected, setSelected] = useState<Equipment>("rifle");
   const [query, setQuery] = useState("");
   const [showLocked, setShowLocked] = useState(true);
+  const [buildProvince, setBuildProvince] = useState(country.capital);
+  const buildSites = useMemo(
+    () =>
+      Object.values(world.provinces)
+        .filter((province) => province.controller === country.id)
+        .sort(
+          (a, b) =>
+            Number(b.id === country.capital) -
+              Number(a.id === country.capital) ||
+            GEOGRAPHY[a.id].name.localeCompare(GEOGRAPHY[b.id].name, "tr"),
+        ),
+    [world.provinces, country.id, country.capital],
+  );
+  const constructionSite =
+    buildSites.find((province) => province.id === buildProvince) ??
+    buildSites[0];
   const steps = useMemo(
     () =>
       new Map(
@@ -143,6 +159,84 @@ export default function ProductionPanel({
           </div>
           <span>{country.flag}</span>
         </header>
+        <section
+          className={styles.factoryBuild}
+          aria-label="Fabrika inşaatı"
+          data-testid="factory-construction"
+        >
+          <h3>Fabrika inşa et</h3>
+          <label className={styles.search}>
+            İnşaat bölgesi
+            <select
+              aria-label="Fabrika inşaat bölgesi"
+              value={constructionSite?.id ?? ""}
+              disabled={!buildSites.length}
+              onChange={(event) => setBuildProvince(event.target.value)}
+            >
+              {!buildSites.length && (
+                <option value="">Kontrol edilen bölge yok</option>
+              )}
+              {buildSites.map((province) => (
+                <option key={province.id} value={province.id}>
+                  {GEOGRAPHY[province.id].name}
+                  {province.id === country.capital ? " · Başkent" : ""}
+                  {GEOGRAPHY[province.id].port ? " · Liman" : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className={styles.factoryBuildButtons}>
+            {(["civil", "military", "dock"] as const).map((building) => {
+              const definition = BUILDINGS[building];
+              const queued = country.construction.filter(
+                (project) =>
+                  project.province === constructionSite?.id &&
+                  project.building === building,
+              ).length;
+              const reason = country.capitulated
+                ? "Ülke teslim oldu."
+                : !constructionSite
+                  ? "Kontrol ettiğin bir bölge gerekli."
+                  : building === "dock" && !GEOGRAPHY[constructionSite.id].port
+                    ? "Tersane için liman bölgesi seç."
+                    : constructionSite.buildings[building] + queued >=
+                        definition.max
+                      ? "Bölgedeki yapı sınırı dolu; başka bölge seç."
+                      : country.construction.length >= 8
+                        ? "İnşaat kuyruğu dolu (8/8)."
+                        : country.treasury < definition.cost
+                          ? `${definition.cost} hazine gerekli.`
+                          : "";
+              return (
+                <div key={building}>
+                  <button
+                    type="button"
+                    data-testid={`build-factory-${building}`}
+                    disabled={!!reason}
+                    onClick={() =>
+                      constructionSite &&
+                      command({
+                        type: "build",
+                        province: constructionSite.id,
+                        building,
+                      })
+                    }
+                  >
+                    <MilitaryIcon name={buildingIcon(building)} size={18} />
+                    {definition.name} inşa et
+                    <small>{definition.cost} hazine</small>
+                  </button>
+                  {reason && <small className={styles.warning}>{reason}</small>}
+                </div>
+              );
+            })}
+          </div>
+          <p>
+            Hazine: {format(country.treasury)} · İnşaat kuyruğu:{" "}
+            {country.construction.length}/8. Yapılar zaman ilerledikçe
+            tamamlanır.
+          </p>
+        </section>
         <div className={styles.capacity}>
           <div data-testid="production-military-capacity">
             <MilitaryIcon name="factory" />
@@ -604,8 +698,8 @@ export default function ProductionPanel({
             İnşaat kuyruğu · {country.construction.length} proje
           </summary>
           <p>
-            İnşaatlar sırayla tamamlanır. Bölge panelinden yeni yapı
-            ekleyebilirsin.
+            İnşaatlar sırayla tamamlanır. Yukarıdan fabrika ve tersane; Bölge
+            panelinden diğer yapıları ekleyebilirsin.
           </p>
           {!country.construction.length && <p>Kuyruk boş.</p>}
           {country.construction.map((entry, index) => (

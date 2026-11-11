@@ -6,6 +6,37 @@
   color: #dedac4;
   min-width: 0;
 }
+.factoryBuild {
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid #797456;
+  background: #293323;
+}
+.factoryBuild h3 {
+  margin: 0 0 10px;
+}
+.factoryBuildButtons {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(170px, 100%), 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+.factoryBuildButtons button {
+  width: 100%;
+  min-height: 48px;
+  padding: 8px;
+  border: 1px solid #9d976e;
+  color: #f0e6be;
+  background: #414b32;
+}
+.factoryBuildButtons small {
+  display: block;
+  margin-top: 4px;
+}
+.factoryBuild p {
+  margin: 10px 0 0;
+  font-size: 12px;
+}
 .panel button,
 .panel input,
 .panel select {
