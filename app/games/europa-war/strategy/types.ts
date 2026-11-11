@@ -476,6 +476,7 @@ export type Action =
   | { type: "recruit"; unit: UnitType; province: string }
   | { type: "build"; building: Building; province: string }
   | { type: "cancelBuild"; id: string }
+  | { type: "prioritizeBuild"; id: string; direction: "up" | "down" }
   | { type: "production"; equipment: Equipment; factories: number }
   | { type: "research"; id: string }
   | { type: "focus"; id: string }

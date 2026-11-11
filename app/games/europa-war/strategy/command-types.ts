@@ -231,6 +231,7 @@ const actionValidators: Record<Action["type"], Validator> = {
   recruit: actionShape({ unit: units, province: safeId }),
   build: actionShape({ building: buildings, province: safeId }),
   cancelBuild: actionShape({ id: safeId }),
+  prioritizeBuild: actionShape({ id: safeId, direction: one("up", "down") }),
   production: actionShape({ equipment, factories: integer }),
   research: actionShape({ id: safeId }),
   focus: actionShape({ id: safeId }),

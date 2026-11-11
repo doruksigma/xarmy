@@ -84,6 +84,7 @@ const labels: Record<Action["type"], string> = {
   recruit: "Tümen eğitimi",
   build: "İnşaat emri",
   cancelBuild: "İnşaat iptali",
+  prioritizeBuild: "İnşaat önceliği",
   production: "Üretim tahsisi",
   research: "Araştırma başlatma",
   focus: "Ulusal odak başlatma",
@@ -122,6 +123,15 @@ function describeAction(world: World, issuer: string, action: Action): string {
     case "build":
       detail = `${BUILDINGS[action.building].name} · ${province(action.province)}`;
       break;
+    case "prioritizeBuild": {
+      const project = world.countries[issuer].construction.find(
+        (entry) => entry.id === action.id,
+      );
+      detail = project
+        ? `${BUILDINGS[project.building].name} · ${province(project.province)} · ${action.direction === "up" ? "öne al" : "geriye al"}`
+        : action.id;
+      break;
+    }
     case "recruit":
       detail = `${UNITS[action.unit].name} · ${province(action.province)}`;
       break;

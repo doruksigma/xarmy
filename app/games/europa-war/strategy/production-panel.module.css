@@ -667,9 +667,23 @@
   font-size: 10px !important;
 }
 .construction {
+  scroll-margin-top: 12px;
   margin: 9px;
   padding: 10px;
   border: 1px solid #5a6649;
+}
+.queuePriority {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0;
+}
+.panel .queuePriority button {
+  flex: 1;
+  min-height: 44px;
+}
+.construction[data-state="active"] {
+  border-color: #8a9d65;
 }
 .construction h4 {
   display: flex;

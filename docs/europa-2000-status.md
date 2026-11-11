@@ -23,6 +23,33 @@ iddia edilmez. Kod incelemesi, çalışma zamanı doğrulamasının yerini tutma
   sürümünün tarihsel kaydıdır ve burada değiştirilmez. Sonradan eklenen 3D
   sistemler yeni değerlendirmeye dahildir.
 
+## İnşaat erişimi ve kuyruk önceliği — 11 Kasım 2026
+
+- Sanayi panelinde doğrudan bölge seçip sivil fabrika, askerî fabrika ve
+  tersane kurulabilir. Başkent varsayılandır; liman, bütçe, yapı sınırı ve
+  kuyruk sınırı gerçek komut kurallarıyla denetlenir, engel nedeni gösterilir.
+- Şartnamenin 26. bölümündeki öncelik yönetimi için **Öne al / Geriye al**
+  eklendi. Emir yalnız kendi ülkesinin projelerini sıralar; ödenmiş maliyeti
+  ve birikmiş işi korur. Emir geçmişi, kayıt/yükleme ve yinelenen emir koruması
+  aynı komut yolunu kullanır; yeni kayıt şeması gerekmez.
+- İşgal altındaki proje ilerlemez; ilk erişilebilir projeye geçilir. Bölge
+  geri alındığında proje eski ilerlemesinden sürer. Tamamlanan gerçek proje
+  kaldırılır, kuyruğun başındaki bekleyen başka proje silinmez.
+- Etkin, sırada ve işgal nedeniyle bekleyen durumları görünür. Tahmini
+  tamamlanma süresi ekonomi yasası, danışman ve kabineyle motorun ortak
+  günlük iş hesabını kullanır; sıra beklemesi dahildir. Tahmin mevcut
+  kapasiteyi sabit varsayar, gelecekteki fabrika/hasar değişikliklerini öngörmez.
+
+**Doğrulama:** Yeni kuyruk, komut ve saat testleri **26/26**; mevcut ücretli
+inşaat/işgal/iptal kontrolleri **14/14** geçti. Üretim derlemesi, TypeScript ve
+ESLint geçti. 1280 px masaüstü ve 320 px dokunmatik Chromium emülasyonunda
+fabrika kurma, sıra değiştirme, uç düğmelerin engellenmesi, durum/süre gösterimi,
+ücret/ilerleme korunması ve sıranın kayıt dosyasında saklanması doğrulandı.
+Yatay taşma veya uygulama JavaScript hatası görülmedi.
+
+**Kapsam sınırı:** Aynı anda tek erişilebilir proje çalışır. Paralel proje
+başına fabrika tahsisi ve ayrı onarım kuyruğu henüz uygulanmadı.
+
 ## Görsel odak ağacı, üretim, araştırma ve komutan harekâtları — 11 Kasım 2026
 
 - Odaklar gerçek önkoşul bağlantılarıyla madalyon düğümlerinden oluşan bir

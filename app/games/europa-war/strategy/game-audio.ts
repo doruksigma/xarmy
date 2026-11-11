@@ -222,6 +222,7 @@ export function actionSound(action: Action): GameSound {
         ? "railBuild"
         : "build";
     case "production":
+    case "prioritizeBuild":
       return "production";
     case "recruit":
       return "recruit";

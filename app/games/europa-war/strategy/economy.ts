@@ -2,6 +2,7 @@ import { tradeRoute } from "./trade-routes";
 import { BUILDINGS, EQUIPMENT, UNITS } from "./catalog";
 import { ECONOMIES, PRODUCTION_BALANCE } from "./economy-balance";
 import { applyProduction } from "./production";
+import { constructionWorkPerDay } from "./construction";
 import { hasArmyCapacity, MAX_ARMIES } from "./campaign-limits";
 export { ECONOMIES } from "./economy-balance";
 import {
@@ -59,6 +60,24 @@ export function economyAction(w: World, c: Country, a: Action): boolean {
       progress: 0,
       total: def.work,
     });
+    return true;
+  }
+  if (a.type === "prioritizeBuild") {
+    const index = c.construction.findIndex((entry) => entry.id === a.id);
+    requireRule(index >= 0, "İnşaat bulunamadı.");
+    requireRule(
+      a.direction === "up" || a.direction === "down",
+      "Geçersiz öncelik yönü.",
+    );
+    const target = index + (a.direction === "up" ? -1 : 1);
+    requireRule(
+      target >= 0 && target < c.construction.length,
+      "İnşaat zaten kuyruğun bu ucunda.",
+    );
+    [c.construction[index], c.construction[target]] = [
+      c.construction[target],
+      c.construction[index],
+    ];
     return true;
   }
   if (a.type === "cancelBuild") {
@@ -284,22 +303,21 @@ export function economyDay(w: World) {
       500 + provinces.reduce((n, p) => n + p.buildings.refinery * 300, 0),
     );
     applyProduction(w, c);
-    const build = c.construction[0];
-    if (build && w.provinces[build.province].controller === c.id) {
-      build.progress += Math.max(
-        0.1,
-        civil *
-          law.construction *
-          (c.advisor === "industry" ? 1.15 : 1) *
-          (c.cabinet.economy === "builder" ? 1.15 : 1),
-      );
+    // Keep occupied projects and their paid progress, but let accessible work continue.
+    const build = c.construction.find(
+      (entry) => w.provinces[entry.province].controller === c.id,
+    );
+    if (build) {
+      build.progress += constructionWorkPerDay(c, civil);
       if (build.progress >= build.total) {
         const p = w.provinces[build.province];
         p.buildings[build.building] = Math.min(
           BUILDINGS[build.building].max,
           p.buildings[build.building] + 1,
         );
-        c.construction.shift();
+        c.construction = c.construction.filter(
+          (entry) => entry.id !== build.id,
+        );
         if (c.id === w.player)
           event(
             w,

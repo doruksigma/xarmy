@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BUILDINGS, EQUIPMENT, RESOURCES, TECHNOLOGIES } from "./catalog";
 import { ECONOMIES } from "./economy";
+import { constructionSchedule } from "./construction";
 import { productionPlan } from "./production";
 import { capacity, GEOGRAPHY } from "./world";
 import MilitaryIcon, {
@@ -80,6 +81,7 @@ export default function ProductionPanel({
   const [filter, setFilter] = useState<Filter>("all");
   const [catalogOpen, setCatalogOpen] = useState(false);
   const catalog = useRef<HTMLElement>(null);
+  const constructionQueue = useRef<HTMLDetailsElement>(null);
   useEffect(() => {
     if (catalogOpen) catalog.current?.scrollIntoView({ block: "nearest" });
   }, [catalogOpen]);
@@ -102,6 +104,7 @@ export default function ProductionPanel({
   const constructionSite =
     buildSites.find((province) => province.id === buildProvince) ??
     buildSites[0];
+  const schedule = constructionSchedule(world, country);
   const steps = useMemo(
     () =>
       new Map(
@@ -236,6 +239,16 @@ export default function ProductionPanel({
             {country.construction.length}/8. Yapılar zaman ilerledikçe
             tamamlanır.
           </p>
+          {schedule.length > 0 && (
+            <button
+              type="button"
+              onClick={() =>
+                constructionQueue.current?.scrollIntoView({ block: "start" })
+              }
+            >
+              İnşaat kuyruğunu yönet
+            </button>
+          )}
         </section>
         <div className={styles.capacity}>
           <div data-testid="production-military-capacity">
@@ -691,6 +704,8 @@ export default function ProductionPanel({
           />
         </details>
         <details
+          ref={constructionQueue}
+          data-testid="construction-queue"
           className={styles.management}
           open={country.construction.length > 0}
         >
@@ -698,12 +713,19 @@ export default function ProductionPanel({
             İnşaat kuyruğu · {country.construction.length} proje
           </summary>
           <p>
-            İnşaatlar sırayla tamamlanır. Yukarıdan fabrika ve tersane; Bölge
-            panelinden diğer yapıları ekleyebilirsin.
+            Önceliği değiştirerek önce hangi yapının tamamlanacağını seç. İşgal
+            edilen bölgelerdeki projeler bekler; diğer inşaatlar devam eder.
+            Süreler mevcut kapasiteye göre tahminidir, kapasite değişince
+            güncellenir.
           </p>
           {!country.construction.length && <p>Kuyruk boş.</p>}
-          {country.construction.map((entry, index) => (
-            <article className={styles.construction} key={entry.id}>
+          {schedule.map(({ entry, state, days }, index) => (
+            <article
+              className={styles.construction}
+              key={entry.id}
+              data-testid={`construction-${entry.id}`}
+              data-state={state}
+            >
               <h4>
                 {index + 1}.{" "}
                 <MilitaryIcon name={buildingIcon(entry.building)} size={16} />
@@ -711,10 +733,13 @@ export default function ProductionPanel({
               </h4>
               <p>
                 {GEOGRAPHY[entry.province].name}
-                {world.provinces[entry.province].controller !== country.id
+                {state === "occupied"
                   ? " · işgal nedeniyle durdu"
-                  : ""}
+                  : state === "active"
+                    ? " · Şimdi inşa ediliyor"
+                    : " · Sırasını bekliyor"}
               </p>
+              {days !== null && <p>Tahmini tamamlanma: {days} oyun günü</p>}
               <div className={styles.progress}>
                 <span>
                   Tamamlanma{" "}
@@ -729,6 +754,36 @@ export default function ProductionPanel({
                     }}
                   />
                 </i>
+              </div>
+              <div className={styles.queuePriority}>
+                <button
+                  type="button"
+                  aria-label={`${GEOGRAPHY[entry.province].name} ${BUILDINGS[entry.building].name} öne al`}
+                  disabled={index === 0}
+                  onClick={() =>
+                    command({
+                      type: "prioritizeBuild",
+                      id: entry.id,
+                      direction: "up",
+                    })
+                  }
+                >
+                  ↑ Öne al
+                </button>
+                <button
+                  type="button"
+                  aria-label={`${GEOGRAPHY[entry.province].name} ${BUILDINGS[entry.building].name} geriye al`}
+                  disabled={index === schedule.length - 1}
+                  onClick={() =>
+                    command({
+                      type: "prioritizeBuild",
+                      id: entry.id,
+                      direction: "down",
+                    })
+                  }
+                >
+                  ↓ Geriye al
+                </button>
               </div>
               <button
                 type="button"
