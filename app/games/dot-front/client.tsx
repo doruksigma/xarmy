@@ -1,0 +1,262 @@
+"use client";
+
+import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
+import { recovery, startBattle, summary, timeLabel } from "./battle";
+import type { Summary } from "./battle";
+import { copy } from "./copy";
+import { units } from "./config";
+import type { Difficulty } from "./config";
+import { createMatch } from "./engine";
+import type { Match } from "./engine";
+import { defaults, emptyStats, loadMatch, readSettings, readStats, recordResult, saveMatch, saveSettings, validMatch } from "./storage";
+import type { Settings } from "./storage";
+import styles from "./game.module.css";
+
+type Panel = "how" | "stats" | "settings";
+type Game = ReturnType<typeof startBattle>;
+const options: Difficulty[] = ["easy", "normal", "hard"];
+
+export default function DotFront() {
+  const [settings, setSettings] = useState(defaults);
+  const [match, setMatch] = useState<Match | null>(null);
+  const [saved, setSaved] = useState<Match | null>(null);
+  const [stats, setStats] = useState(emptyStats);
+  const [panel, setPanel] = useState<Panel | null>(null);
+  const [status, setStatus] = useState("");
+  const [loaded, setLoaded] = useState(false);
+  const [hud, setHud] = useState<Summary | null>(null);
+  const [paused, setPaused] = useState(false);
+  const [speed, setSpeed] = useState(1);
+  const [multi, setMulti] = useState(false);
+  const [rally, setRally] = useState(false);
+  const [wide, setWide] = useState(false);
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const mini = useRef<HTMLCanvasElement>(null);
+  const arena = useRef<HTMLElement>(null);
+  const battle = useRef<Game | null>(null);
+  const saveQueue = useRef<Promise<unknown>>(Promise.resolve());
+
+  function persist(value: Match) {
+    const snapshot = structuredClone(value);
+    setSaved(snapshot.result ? null : snapshot);
+    saveQueue.current = saveQueue.current.catch(() => {}).then(async () => {
+      if (snapshot.result) await recordResult(snapshot);
+      await saveMatch(snapshot);
+    }).catch(() => setStatus(copy.noSave));
+  }
+
+  useEffect(() => {
+    let alive = true;
+    try { setSettings(readSettings()); } catch { setStatus(copy.noSave); }
+    void loadMatch().then((value) => {
+      if (!alive || value === undefined) return;
+      if (!validMatch(value)) setStatus(copy.badSave);
+      else if (!value.result) setSaved(value);
+    }).catch(() => { if (alive) setStatus(copy.noSave); })
+      .finally(() => { if (alive) setLoaded(true); });
+    return () => { alive = false; };
+  }, []);
+
+  useEffect(() => {
+    if (panel !== "stats") return;
+    let alive = true;
+    void saveQueue.current.then(readStats).then((value) => {
+      if (alive) setStats(value);
+    }).catch(() => { if (alive) setStatus(copy.noSave); });
+    return () => { alive = false; };
+  }, [panel]);
+
+  useEffect(() => {
+    if (!match || !canvas.current || !mini.current) return;
+    const game = startBattle(match, canvas.current, mini.current, setHud,
+      () => {
+        game.pause(true);
+        setPaused(true);
+      },
+      () => persist(match), () => persist(match));
+    battle.current = game;
+    game.focus();
+    return () => {
+      game.dispose();
+      battle.current = null;
+    };
+  }, [match]);
+
+  useEffect(() => { battle.current?.sound(settings.sound); }, [settings.sound, match]);
+  useEffect(() => { battle.current?.speed(speed); }, [speed, match]);
+  useEffect(() => { battle.current?.multi(multi); }, [multi, match]);
+
+  function updateSettings(value: Settings) {
+    setSettings(value);
+    try { saveSettings(value); } catch { setStatus(copy.noSave); }
+  }
+  function start(value: Match) {
+    const fresh = structuredClone(value);
+    setHud(summary(fresh, new Set(), null));
+    setMatch(fresh);
+    setPaused(document.hidden);
+    setMulti(false);
+    setRally(false);
+    setSpeed(1);
+    setPanel(null);
+    persist(fresh);
+  }
+  function newMatch(tutorial = false, level = settings.difficulty) {
+    const id = crypto.randomUUID?.() ?? Array.from(crypto.getRandomValues(new Uint32Array(4))).join("-");
+    start(createMatch(level, id, tutorial));
+  }
+  function pause(value: boolean) {
+    battle.current?.pause(value);
+    setPaused(value);
+    if (!value) battle.current?.focus();
+  }
+  function toMenu() {
+    if (match) persist(match);
+    if (document.fullscreenElement === arena.current) void document.exitFullscreen().catch(() => {});
+    setWide(false);
+    setMatch(null);
+    setPanel(null);
+  }
+  async function fullscreen() {
+    const element = arena.current;
+    if (!element) return;
+    if (document.fullscreenElement === element) {
+      await document.exitFullscreen().catch(() => {});
+    } else if (wide) {
+      setWide(false);
+    } else {
+      try {
+        if (!element.requestFullscreen) throw new Error();
+        await element.requestFullscreen();
+      } catch { setWide(true); }
+    }
+  }
+
+  const difficultyPicker = (
+    <label className={styles.field}>{copy.difficulty}
+      <select value={settings.difficulty} onChange={(event) =>
+        updateSettings({ ...settings, difficulty: event.target.value as Difficulty })}>
+        {options.map((level) => <option key={level} value={level}>{copy[level]}</option>)}
+      </select>
+    </label>
+  );
+
+  if (!match || !hud) return (
+    <section className={styles.shell} aria-labelledby="dot-front-title">
+      <Link className={styles.back} href="/#oyunlar">{copy.back}</Link>
+      <div className={styles.landing}>
+        <div>
+          <p className={styles.mapName}>{copy.map}</p>
+          <h1 id="dot-front-title">{copy.title}</h1>
+          <p className={styles.lead}>{copy.description}</p>
+        </div>
+        <div className={styles.menu}>
+          {difficultyPicker}
+          <button className={styles.primary} onClick={() => newMatch()}>{copy.quick}</button>
+          <button disabled={!loaded || !saved} onClick={() => { if (saved) start(saved); }}>{copy.resume}</button>
+          <button onClick={() => setPanel(panel === "how" ? null : "how")}>{copy.how}</button>
+          <button onClick={() => setPanel(panel === "stats" ? null : "stats")}>{copy.stats}</button>
+          <button onClick={() => setPanel(panel === "settings" ? null : "settings")}>{copy.settings}</button>
+        </div>
+      </div>
+      {panel === "how" && <div className={styles.details}>
+        <h2>{copy.how}</h2><p>{copy.goal}</p><p>{copy.controls}</p><p>{copy.touch}</p>
+        <button onClick={() => newMatch(true)}>{copy.tutorial}</button>
+      </div>}
+      {panel === "stats" && <div className={styles.details}>
+        <h2>{copy.stats}</h2>
+        <p>{copy.won} {stats.won} · {copy.lost} {stats.lost} · {copy.draw} {stats.draw}</p>
+      </div>}
+      {panel === "settings" && <div className={styles.details}><h2>{copy.settings}</h2>
+        <label><input type="checkbox" checked={settings.sound} onChange={(event) =>
+          updateSettings({ ...settings, sound: event.target.checked })} /> {copy.sound}</label>
+      </div>}
+      <p className={styles.note} role="status">{status || (loaded ? copy.saved : copy.loading)}</p>
+    </section>
+  );
+
+  const city = hud.city;
+  const canCommand = !paused && !hud.result;
+  const hasSelection = hud.light + hud.heavy > 0;
+  return (
+    <section className={styles.shell} aria-labelledby="dot-front-title">
+      <Link className={styles.back} href="/#oyunlar">{copy.back}</Link>
+      <h1 className={styles.heading} id="dot-front-title">{copy.title}</h1>
+      <section ref={arena} className={wide ? styles.wide : styles.arena} aria-label={copy.title}>
+        <header className={styles.hud}>
+          <span className={styles.blue}>{copy.player} <b>{hud.blueCities}</b> {copy.cities} · <b>{hud.blue}</b> {copy.soldiers}</span>
+          <span className={styles.red}>{copy.enemy} <b>{hud.redCities}</b> {copy.cities} · <b>{hud.red}</b> {copy.soldiers}</span>
+          <span>{copy.supply} <b>{hud.logistics.used}/{hud.logistics.capacity}</b></span>
+          <time>{timeLabel(hud.time)}</time>
+        </header>
+        {hud.shortage > 0 && <p className={styles.warning} role="status">
+          {copy.supplyWarning} · {recovery(hud.shortage) ? recovery(hud.shortage) + " sn" : copy.attrition}
+        </p>}
+        {hud.tutorial !== null && <p className={styles.tutorial} role="status">{copy.steps[hud.tutorial]}</p>}
+        <div className={styles.stage}>
+          <canvas className={styles.canvas} ref={canvas} tabIndex={0} aria-label={copy.map}
+            onPointerUp={() => setRally(false)} />
+          <canvas ref={mini} className={styles.minimap} width={192} height={120} aria-label={copy.map}
+            onPointerDown={(event) => {
+              const rect = event.currentTarget.getBoundingClientRect();
+              battle.current?.pan({ x: (event.clientX - rect.left) / rect.width, y: (event.clientY - rect.top) / rect.height });
+            }} />
+          {(paused || hud.result) && <div className={styles.shade}>
+            <div className={styles.dialog} role="dialog" aria-modal="true" aria-labelledby="battle-dialog">
+              <h2 id="battle-dialog">{hud.result ? copy[hud.result] : copy.paused}</h2>
+              {hud.result ? <>
+                <p>{copy.time} {timeLabel(hud.time)} · {copy.captured} {hud.report.captured}</p>
+                <p>{copy.fallen} {hud.report.fallen} · {copy.killed} {hud.report.killed}</p>
+                <button className={styles.primary} onClick={() => newMatch(match.tutorial !== null, match.difficulty)}>{copy.replay}</button>
+              </> : <>
+                <button className={styles.primary} onClick={() => pause(false)}>{copy.resume}</button>
+                <button onClick={() => { battle.current?.surrender(); setPaused(false); }}>{copy.surrender}</button>
+              </>}
+              <button onClick={toMenu}>{copy.menu}</button>
+            </div>
+          </div>}
+        </div>
+        <div className={styles.toolbar}>
+          <button disabled={!canCommand} onClick={() => battle.current?.selectAll()}>{copy.selectAll}</button>
+          <button disabled={!canCommand || (!hasSelection && !city)} onClick={() => { battle.current?.deselect(); setRally(false); }}>{copy.deselect}</button>
+          <button disabled={!canCommand || !hasSelection} onClick={() => battle.current?.hold()}>{copy.hold}</button>
+          <button disabled={!canCommand} aria-pressed={multi} onClick={() => setMulti(!multi)}>{copy.multi}</button>
+          <button disabled={!canCommand} onClick={() => pause(true)}>{copy.pause}</button>
+          <button aria-label={copy.speed} aria-pressed={speed === 2} onClick={() => setSpeed(speed === 1 ? 2 : 1)}>{speed}×</button>
+          <button aria-pressed={settings.sound} onClick={() => {
+            battle.current?.sound(!settings.sound);
+            updateSettings({ ...settings, sound: !settings.sound });
+          }}>{copy.sound}</button>
+          <button onClick={() => void fullscreen()}>{copy.full}</button>
+        </div>
+        <div className={styles.inspector}>
+          <span>{copy.light} <b>{hud.light}</b> · {copy.heavy} <b>{hud.heavy}</b></span>
+          <span className={styles.note}>{copy.legend}</span>
+          {city && <>
+            <strong>{copy.placeNames[city.id]} · {city.owner ? copy[city.owner === 1 ? "player" : "enemy"] : copy.neutral}</strong>
+            <button disabled={!canCommand || !hasSelection} onClick={() => battle.current?.sendToCity()}>{copy.send}</button>
+            {city.owner === 1 && <>
+              {city.build ? <>
+                <label className={styles.field}>{copy[city.build.kind]}
+                  <progress value={city.build.elapsed} max={units[city.build.kind].build} />
+                </label>
+                <button disabled={!canCommand} onClick={() => battle.current?.cancel()}>{copy.cancel}</button>
+                {hud.blocked && <span className={styles.warning}>{copy.supplyWarning}</span>}
+              </> : <>
+                <button disabled={!canCommand} onClick={() => battle.current?.build("light")}>{copy.light} · {units.light.build} sn</button>
+                <button disabled={!canCommand} onClick={() => battle.current?.build("heavy")}>{copy.heavy} · {units.heavy.build} sn</button>
+              </>}
+              <label className={styles.field}><input type="checkbox" checked={city.repeat} disabled={!canCommand}
+                onChange={(event) => battle.current?.repeat(event.target.checked)} /> {copy.repeat}</label>
+              <button disabled={!canCommand} onClick={() => setRally(battle.current?.rally() ?? false)}>{copy.rally}</button>
+              {rally && <span>{copy.rallyHint}</span>}
+            </>}
+          </>}
+        </div>
+        {status && <p className={styles.note} role="status">{status}</p>}
+      </section>
+      <p className={styles.note}>{copy.touch}</p>
+    </section>
+  );
+}

@@ -1,10 +1,16 @@
 import Link from "next/link";
 import styles from "./home.module.css";
 
-type ArtworkKind = "battle" | "chess" | "europa" | "hide" | "dots";
+type ArtworkKind = "battle" | "chess" | "europa" | "hide" | "dots" | "front";
 
 // Original, lightweight vector artwork; playable renderers load on game routes.
 function Artwork({ kind }: { kind: ArtworkKind }) {
+  if (kind === "front")
+    return (
+      <div className={styles.frontArtwork} aria-hidden="true">
+        <span /><span /><span /><span /><span /><span /><span />
+      </div>
+    );
   if (kind === "dots")
     return (
       <div className={styles.dotsArtwork} aria-hidden="true">
@@ -327,6 +333,16 @@ const games = [
     tags: ["3 tahta boyutu", "Bilgisayara karşı"],
     action: "Tahtayı aç",
   },
+  {
+    id: "front" as const,
+    href: "/games/dot-front",
+    eyebrow: "STRATEJİ · TEK OYUNCULU",
+    name: "Dot Front",
+    description:
+      "Birliklerini gerçek zamanlı yönet. Köprüleri aş, şehirleri ele geçir ve ikmal hattını koru.",
+    tags: ["Gerçek zamanlı strateji", "Bilgisayara karşı", "Yerel kayıt"],
+    action: "Cepheye git",
+  },
 ];
 
 export default function HomePage() {
@@ -356,7 +372,7 @@ export default function HomePage() {
             X
           </span>
           <span>
-            Beş farklı deneyim.
+            Altı farklı deneyim.
             <br />
             <strong>Tek bir arena.</strong>
           </span>
@@ -369,12 +385,12 @@ export default function HomePage() {
       >
         <div className={styles.collectionHeading}>
           <h2 id="collection-title">Oyunlar</h2>
-          <span>01 — 05</span>
+          <span>01 — 06</span>
         </div>
         <div className={styles.grid}>
           {games.map((game) => (
             <Link
-              prefetch={game.id === "dots" ? false : undefined}
+              prefetch={game.id === "dots" || game.id === "front" ? false : undefined}
               key={game.id}
               href={game.href}
               className={`${styles.card} ${styles[game.id]}`}

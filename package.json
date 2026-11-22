@@ -18,7 +18,8 @@
     "test:europa": "node scripts/test-europa.cjs",
     "color-hide:build": "tsc -p server/color-hide/tsconfig.json",
     "color-hide:server": "npm run color-hide:build && node node_modules/.color-hide-server/server/color-hide/index.js",
-    "test:color-hide": "node scripts/test-color-hide.cjs"
+    "test:color-hide": "node scripts/test-color-hide.cjs",
+    "test:dot-front": "node scripts/test-dot-front.cjs"
   },
   "dependencies": {
     "chess.js": "^1.4.0",

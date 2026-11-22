@@ -1,0 +1,82 @@
+.shell {
+  --paper: #ecf0e8;
+  --muted: #abb9b6;
+  --line: #36494d;
+  --accent: #e7cf90;
+  color: var(--paper);
+  font-family: system-ui, sans-serif;
+}
+
+.back { display: inline-block; color: var(--muted); margin-bottom: 0.7rem; }
+.back:hover { color: var(--paper); }
+.landing, .arena, .wide, .details {
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: #17252d;
+}
+
+.landing {
+  display: grid;
+  gap: 2rem;
+  grid-template-columns: minmax(0, 1fr) minmax(190px, 260px);
+  align-items: center;
+  min-height: 370px;
+  padding: clamp(1rem, 5vw, 3rem);
+  background:
+    radial-gradient(ellipse at 34% 95%, #435748 0%, transparent 60%),
+    repeating-linear-gradient(135deg, transparent 0 32px, #b0c8b519 33px 34px, transparent 35px 54px),
+    #15252c;
+}
+
+.landing h1 { font-size: clamp(2.75rem, 9vw, 6rem); font-weight: 850; line-height: 0.95; letter-spacing: -0.075em; margin: 0.24em 0; }
+.heading { font-size: clamp(1.5rem, 4vw, 2.4rem); font-weight: 800; margin-bottom: 0.55rem; }
+.mapName { color: var(--accent); letter-spacing: 0.14em; text-transform: uppercase; font-size: 0.8rem; font-weight: 750; }
+.lead { color: #d8e3da; max-width: 35ch; }
+.menu { display: grid; gap: 0.5rem; }
+.shell button, .shell select {
+  min-height: 42px;
+  max-width: 100%;
+  background: #202f37;
+  border: 1px solid #4d6267;
+  border-radius: 0.5rem;
+  color: var(--paper);
+  padding: 0.4rem 0.75rem;
+  font: inherit;
+  cursor: pointer;
+}
+.shell button:hover:not(:disabled), .shell button[aria-pressed="true"] { background: #324a55; border-color: #90b7c4; }
+.shell button:disabled { opacity: 0.5; cursor: default; }
+.shell button.primary { color: #1c2428; background: var(--accent); border-color: var(--accent); font-weight: 750; }
+.shell button.primary:hover { background: #ffe6a6; color: #1c2428; }
+.shell :focus-visible { outline: 2px solid #f7e5aa; outline-offset: -2px; }
+.details { padding: 1rem; margin-top: 0.7rem; }
+.details h2, .dialog h2 { font-size: 1.4rem; font-weight: 750; margin-bottom: 0.5rem; }
+.details p, .details button { margin-bottom: 0.55rem; }
+.arena, .wide { overflow: hidden; }
+.wide { position: fixed; inset: 0; overflow: auto; z-index: 100; border-radius: 0; }
+.arena:fullscreen { border-radius: 0; overflow: auto; }
+.hud, .toolbar, .inspector { display: flex; align-items: center; flex-wrap: wrap; gap: 0.45rem 0.8rem; padding: 0.55rem; }
+.hud { justify-content: space-between; font-size: 0.94rem; font-variant-numeric: tabular-nums; }
+.blue { color: #79d1ff; }
+.red { color: #ffa192; }
+.stage { position: relative; background: #101a20; }
+.canvas { display: block; width: 100%; height: clamp(270px, 53vw, 575px); touch-action: none; cursor: crosshair; }
+.wide .canvas, .arena:fullscreen .canvas { height: max(220px, calc(100dvh - 168px)); }
+.minimap { position: absolute; bottom: 0.4rem; right: 0.4rem; width: clamp(73px, 15vw, 135px); aspect-ratio: 8 / 5; border: 1px solid #afc2af; cursor: crosshair; touch-action: none; }
+.toolbar { border-top: 1px solid var(--line); }
+.toolbar button, .inspector button { font-size: 0.85rem; }
+.inspector { border-top: 1px solid var(--line); }
+.field { display: inline-flex; align-items: center; gap: 0.45rem; }
+.field progress { width: min(120px, 25vw); accent-color: #69c7ff; }
+.note { color: var(--muted); font-size: 0.88rem; margin-top: 0.55rem; }
+.arena > .note, .wide > .note { padding: 0 0.55rem 0.55rem; }
+.warning, .tutorial { padding: 0.3rem 0.55rem; color: #ffda99; background: #3c3024; font-size: 0.88rem; }
+.tutorial { color: #bde8fc; background: #20394a; }
+.shade { position: absolute; inset: 0; z-index: 2; display: grid; place-items: center; background: #0b161edb; }
+.dialog { display: grid; gap: 0.38rem; text-align: center; width: min(320px, 90%); padding: 0.65rem; background: #1b2b33; border: 1px solid var(--line); border-radius: 0.8rem; }
+@media (max-width: 560px) {
+  .landing { grid-template-columns: 1fr; gap: 1rem; }
+  .hud { justify-content: flex-start; font-size: 0.8rem; gap: 0.35rem 0.6rem; }
+  .toolbar { gap: 0.35rem; }
+  .toolbar button, .inspector button { font-size: 0.77rem; padding-inline: 0.45rem; }
+}
