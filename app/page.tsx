@@ -1,10 +1,16 @@
 import Link from "next/link";
 import styles from "./home.module.css";
 
-type ArtworkKind = "battle" | "chess" | "europa" | "hide";
+type ArtworkKind = "battle" | "chess" | "europa" | "hide" | "dots";
 
 // Original, lightweight vector artwork; playable renderers load on game routes.
 function Artwork({ kind }: { kind: ArtworkKind }) {
+  if (kind === "dots")
+    return (
+      <div className={styles.dotsArtwork} aria-hidden="true">
+        <div /><div /><div />
+      </div>
+    );
   if (kind === "battle")
     return (
       <svg viewBox="0 0 560 240" aria-hidden="true" focusable="false">
@@ -311,6 +317,16 @@ const games = [
     tags: ["Oda koduyla oyna", "Yapay zekâ eğitmeni", "Maç analizi"],
     action: "Tahtaya geç",
   },
+  {
+    id: "dots" as const,
+    href: "/dots-of-war.html",
+    eyebrow: "TAKTİK · TEK OYUNCULU",
+    name: "Nokta Cephesi",
+    description:
+      "Noktaları birleştir, kareleri kapat ve bilgisayardan daha fazla alan kazan.",
+    tags: ["3 tahta boyutu", "Bilgisayara karşı"],
+    action: "Tahtayı aç",
+  },
 ];
 
 export default function HomePage() {
@@ -340,7 +356,7 @@ export default function HomePage() {
             X
           </span>
           <span>
-            Dört farklı deneyim.
+            Beş farklı deneyim.
             <br />
             <strong>Tek bir arena.</strong>
           </span>
@@ -353,11 +369,12 @@ export default function HomePage() {
       >
         <div className={styles.collectionHeading}>
           <h2 id="collection-title">Oyunlar</h2>
-          <span>01 — 04</span>
+          <span>01 — 05</span>
         </div>
         <div className={styles.grid}>
           {games.map((game) => (
             <Link
+              prefetch={game.id === "dots" ? false : undefined}
               key={game.id}
               href={game.href}
               className={`${styles.card} ${styles[game.id]}`}

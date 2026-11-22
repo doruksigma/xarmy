@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="tr">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#101b23">
+<title>Nokta Cephesi · Xarmy</title>
+<style>
+:root { color-scheme: dark; font-family: system-ui, sans-serif; background: #101b23; color: #edf5f3; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { width: min(100% - 28px, 650px); margin: 24px auto; }
+a { color: #9df0cc; }
+h1 { margin: 12px 0 4px; font-size: clamp(2rem, 8vw, 3rem); }
+p { color: #bed0d2; margin: 0 0 16px; }
+.controls, .scores { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 14px 0; }
+select, .reset { font: inherit; color: inherit; background: #20333e; border: 1px solid #68818a; border-radius: 8px; padding: 8px 12px; }
+.reset { cursor: pointer; }
+.scores span { flex: 1; min-width: 120px; padding: 9px 12px; border-radius: 8px; background: #20333e; }
+.player { color: #9df0cc; }
+.bot { color: #ffa68b; }
+#status { min-height: 1.5em; font-weight: 650; color: #edf5f3; }
+#board { width: min(100%, 490px); aspect-ratio: 1; margin-inline: auto; position: relative;
+  overflow: hidden; background: #182832; border: 1px solid #47606b; border-radius: 16px; }
+.dot, .box, .edge { position: absolute; }
+.dot { width: 9px; height: 9px; border-radius: 50%; background: #c8dadc; transform: translate(-50%, -50%); pointer-events: none; }
+.box { display: grid; place-items: center; font-size: clamp(1rem, 5vw, 2rem); font-weight: 800; }
+.box.player { background: #254b44; }
+.box.bot { background: #503c3c; }
+.edge { display: grid; place-items: center; padding: 0; border: 0; background: transparent; color: #67848e; cursor: pointer; }
+.edge::before { content: ""; background: currentColor; border-radius: 4px; width: 100%; height: 3px; }
+.edge.vertical::before { width: 3px; height: 100%; }
+.edge.player { color: #9df0cc; }
+.edge.bot { color: #ffa68b; }
+.edge:disabled { cursor: default; }
+.edge:not(:disabled):hover { color: #edf5f3; }
+.edge:focus-visible, .reset:focus-visible, select:focus-visible { outline: 2px solid #fff; outline-offset: 2px; z-index: 1; }
+</style>
+<main>
+  <a href="/#oyunlar">← Xarmy oyunları</a>
+  <h1>Nokta Cephesi</h1>
+  <p>Bir çizgi seçerek iki noktayı birleştir. Karenin son kenarını çizersen bir puan ve bir hamle daha kazanırsın.</p>
+  <div class="controls">
+    <label for="size">Tahta boyutu</label>
+    <select id="size"><option value="3">3 × 3</option><option value="4" selected>4 × 4</option><option value="5">5 × 5</option></select>
+    <button class="reset" type="button">Yeni oyun</button>
+  </div>
+  <div class="scores">
+    <span class="player">Sen (S) · <strong id="player-score">0</strong></span>
+    <span class="bot">Bilgisayar (B) · <strong id="bot-score">0</strong></span>
+  </div>
+  <p id="status" role="status"></p>
+  <div id="board" role="group" aria-label="Oyun tahtası" tabindex="-1"></div>
+</main>
+<script>
+"use strict";
+
+const board = document.querySelector("#board");
+const size = document.querySelector("#size");
+const status = document.querySelector("#status");
+const playerScore = document.querySelector("#player-score");
+const botScore = document.querySelector("#bot-score");
+let edges, boxes, turn, scores, timer;
+
+function newGame() {
+  clearTimeout(timer);
+  board.replaceChildren();
+  edges = new Map();
+  boxes = [];
+  turn = "player";
+  scores = { player: 0, bot: 0 };
+  const cells = Number(size.value);
+  const step = 84 / cells;
+  const position = (index) => 8 + index * step;
+
+  function addEdge(direction, row, column) {
+    const vertical = direction === "v";
+    const button = document.createElement("button");
+    const key = `${direction}:${row}:${column}`;
+    button.type = "button";
+    button.className = vertical ? "edge vertical" : "edge";
+    button.setAttribute("aria-label", `${row + 1}. satır, ${column + 1}. sütun, ${vertical ? "dikey" : "yatay"} kenar`);
+    Object.assign(button.style, {
+      left: `${position(column) + (vertical ? -3.5 : 1.5)}%`,
+      top: `${position(row) + (vertical ? 1.5 : -3.5)}%`,
+      width: vertical ? "7%" : `${step - 3}%`,
+      height: vertical ? `${step - 3}%` : "7%",
+    });
+    button.addEventListener("click", () => {
+      if (turn === "player") move(edges.get(key));
+    });
+    edges.set(key, { button, neighbors: [], owner: null });
+    board.append(button);
+  }
+
+  for (let row = 0; row < cells; row++) {
+    for (let column = 0; column < cells; column++) {
+      const element = document.createElement("div");
+      element.className = "box";
+      element.setAttribute("aria-hidden", "true");
+      Object.assign(element.style, {
+        left: `${position(column)}%`, top: `${position(row)}%`,
+        width: `${step}%`, height: `${step}%`,
+      });
+      board.append(element);
+      boxes.push({ element, row, column, sides: 0 });
+    }
+  }
+  for (let row = 0; row <= cells; row++) {
+    for (let column = 0; column <= cells; column++) {
+      if (column < cells) addEdge("h", row, column);
+      if (row < cells) addEdge("v", row, column);
+      const dot = document.createElement("span");
+      dot.className = "dot";
+      dot.style.left = `${position(column)}%`;
+      dot.style.top = `${position(row)}%`;
+      board.append(dot);
+    }
+  }
+  for (const box of boxes) {
+    const { row, column } = box;
+    for (const key of [`h:${row}:${column}`, `h:${row + 1}:${column}`,
+      `v:${row}:${column}`, `v:${row}:${column + 1}`]) {
+      edges.get(key).neighbors.push(box);
+    }
+  }
+  render();
+}
+
+function render() {
+  playerScore.textContent = scores.player;
+  botScore.textContent = scores.bot;
+  for (const edge of edges.values()) {
+    edge.button.disabled = Boolean(edge.owner) || turn === "finished";
+    edge.button.setAttribute("aria-disabled", String(edge.button.disabled || turn === "bot"));
+  }
+  if (turn === "finished") {
+    status.textContent = scores.player === scores.bot ? "Berabere!" :
+      scores.player > scores.bot ? "Kazandın!" : "Bilgisayar kazandı.";
+  } else {
+    status.textContent = turn === "player" ? "Sıra sende." : "Bilgisayar oynuyor…";
+  }
+}
+
+function move(edge) {
+  if (!edge || edge.owner || turn === "finished") return;
+  const restoreFocus = document.activeElement === edge.button;
+  edge.owner = turn;
+  edge.button.classList.add(turn);
+  let claimed = 0;
+  for (const box of edge.neighbors) {
+    box.sides++;
+    if (box.sides === 4) {
+      box.element.classList.add(turn);
+      box.element.textContent = turn === "player" ? "S" : "B";
+      claimed++;
+    }
+  }
+  scores[turn] += claimed;
+  if (scores.player + scores.bot === boxes.length) turn = "finished";
+  else if (!claimed) turn = turn === "player" ? "bot" : "player";
+  render();
+  if (restoreFocus) {
+    const next = [...edges.values()].find((candidate) => !candidate.owner);
+    (next?.button ?? board).focus({ preventScroll: true });
+  }
+  if (turn === "bot") timer = setTimeout(playBot, 330);
+}
+
+function playBot() {
+  const options = [...edges.values()].filter((edge) => !edge.owner);
+  const value = (edge) => edge.neighbors.reduce((total, box) =>
+    total + (box.sides === 3 ? 10 : box.sides === 2 ? -1 : 0), 0);
+  const best = Math.max(...options.map(value));
+  const choices = options.filter((edge) => value(edge) === best);
+  move(choices[Math.floor(Math.random() * choices.length)]);
+}
+
+document.querySelector(".reset").addEventListener("click", newGame);
+size.addEventListener("change", newGame);
+newGame();
+</script>
+</html>

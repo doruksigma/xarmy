@@ -308,3 +308,27 @@
     transform: none;
   }
 }
+
+.dots {
+  --accent: #9df0cc;
+}
+.dotsArtwork {
+  display: grid;
+  grid-template-columns: repeat(3, min(16%, 78px));
+  place-content: center;
+  height: 100%;
+  background: radial-gradient(circle at 50% 50%, #224447, #121f29);
+}
+.dotsArtwork div {
+  aspect-ratio: 1;
+  border: 2px solid #6e9298;
+  transform: rotate(-12deg) skewX(8deg);
+}
+.dotsArtwork div:first-child {
+  border-color: #9df0cc;
+  background: #346857;
+}
+.dotsArtwork div:last-child {
+  border-color: #ffa68b;
+  background: #673f3d;
+}
