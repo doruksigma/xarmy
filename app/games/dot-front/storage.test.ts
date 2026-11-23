@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { TestContext } from "node:test";
-import { HEIGHT, WIDTH } from "./config";
-import { createMatch } from "./engine";
+import { CITY_PRODUCTION, HEIGHT, STEP, WIDTH } from "./config";
+import { createMatch, step } from "./engine";
 import {
   defaults, loadMatch, readSettings, readStats, recordResult, saveMatch, saveSettings, validMatch,
 } from "./storage";
@@ -74,7 +74,7 @@ function memoryDatabase(stallTransactions = false) {
   return { entries, names, database, factory, get closed() { return closed; }, get aborted() { return aborted; } };
 }
 
-test("all six maps retain full match snapshots in the existing IndexedDB namespace", async (context) => {
+test("all six large maps retain version-two match and commander snapshots in the existing namespace", async (context) => {
   const db = memoryDatabase();
   replaceGlobal(context, "indexedDB", db.factory);
   assert.deepEqual(mapIds, ["plains", "forest", "valley", "passes", "fronts", "center"]);
@@ -86,23 +86,39 @@ test("all six maps retain full match snapshots in the existing IndexedDB namespa
     state.units[0].hp -= 4;
     state.units[0].cooldown = 0.3;
     state.units[0].replan = 13;
+    state.commanders[0].autoFront = true;
+    state.commanders[0].nextOrder = 14;
+    state.commanders[0].order = { mode: "move", point: { x: state.cities[1].x, y: state.cities[1].y } };
     state.cities[0].build = { kind: "heavy", elapsed: 5 };
     state.cities[0].repeat = true;
     state.cities[0].rally = { x: state.cities[1].x, y: state.cities[1].y };
-    state.cities[4].capturing = 1;
+    state.cities[4].capturing = state.cities[4].owner === 1 ? 2 : 1;
     state.cities[4].progress = 4;
     assert.ok(validMatch(state), map);
+    assert.equal(state.version, 2);
+    assert.equal(state.cities.length, 50);
+    assert.equal(state.units.length, 50);
     await saveMatch(state);
     const restored = await loadMatch();
     assert.ok(validMatch(restored), map);
     assert.deepEqual(restored, state, `${map} preserves exact state`);
+    const jsonRoundTrip: unknown = JSON.parse(JSON.stringify(restored));
+    assert.ok(validMatch(jsonRoundTrip));
+    assert.deepEqual(jsonRoundTrip, state, `${map} survives a JSON round-trip`);
+    // A saved decision deadline and commander membership must drive the same
+    // future state, not just look correct immediately after loading.
+    for (let tick = 0; tick < 12; tick++) {
+      step(state, STEP, [], () => {});
+      step(jsonRoundTrip, STEP, [], () => {});
+    }
+    assert.deepEqual(jsonRoundTrip, state, `${map} continues deterministically`);
   }
   assert.ok(db.names.every(name => name === "xarmy:dot-front:matches"));
   assert.equal(db.entries.size, 1);
   assert.ok(db.entries.has("current"));
 });
 
-test("unknown map IDs and layouts from another map are rejected rather than silently mapped to Valley", () => {
+test("unknown map IDs and altered city layouts are rejected rather than silently mapped to Valley", () => {
   const state = createMatch("normal", "strict-map", false, "valley");
   for (const map of ["river", "unknown", "__proto__", "", 3, null, undefined]) {
     assert.equal(validMatch({ ...state, map }), false, String(map));
@@ -112,10 +128,9 @@ test("unknown map IDs and layouts from another map are rejected rather than sile
     saved.cities.at(-1)!.x += 1;
     assert.equal(validMatch(saved), false, `${map} requires its exact city layout`);
   }
-  const center = createMatch("normal", "center-layout", false, "center");
-  assert.notDeepEqual(getMap("center").cities, getMap("valley").cities);
-  center.cities = structuredClone(state.cities);
-  assert.equal(validMatch(center), false);
+  const incomplete = createMatch("normal", "center-layout", false, "center");
+  incomplete.cities = incomplete.cities.slice(0, 10);
+  assert.equal(validMatch(incomplete), false, "the old ten-city shape cannot be used in a large map");
 });
 
 test("saved unit positions, paths, orders and rallies are validated against their selected terrain", () => {
@@ -151,19 +166,22 @@ test("saved unit positions, paths, orders and rallies are validated against thei
   assert.ok(differentTerrainChecked >= 3, "multiple new maps differ from the old global Valley terrain");
 });
 
-test("legacy Valley version-one saves and settings retain their old layout and preference", async (context) => {
+test("version-one matches are rejected without deleting old statistics or settings", async (context) => {
   const db = memoryDatabase();
   replaceGlobal(context, "indexedDB", db.factory);
-  const legacy = createMatch("normal", "existing-valley-match", false);
-  assert.equal(legacy.map, "valley");
-  assert.deepEqual(legacy.cities.map(({ x, y }) => [x, y]), [
-    [4.5, 13.5], [9.5, 6.5], [43.5, 16.5], [38.5, 23.5], [10.5, 19.5],
-    [37.5, 10.5], [20.5, 8.5], [27.5, 21.5], [18.5, 23.5], [29.5, 6.5],
-  ]);
+  const legacy = { ...createMatch("normal", "existing-valley-match", false), version: 1 };
   db.entries.set("current", JSON.parse(JSON.stringify(legacy)));
+  db.entries.set("result:won:completed-before-v2", 1);
   const loaded = await loadMatch();
-  assert.ok(validMatch(loaded));
+  assert.equal(validMatch(loaded), false);
   assert.deepEqual(loaded, legacy);
+  assert.deepEqual(db.entries.get("current"), legacy, "validation does not erase the previous save");
+  assert.deepEqual(await readStats(), { won: 1, lost: 0, draw: 0 });
+  await assert.rejects(saveMatch(legacy as never), /Invalid Dot Front match/);
+  const current = createMatch("normal", "new-v2-match", false);
+  await saveMatch(current);
+  assert.deepEqual(await loadMatch(), current);
+  assert.deepEqual(await readStats(), { won: 1, lost: 0, draw: 0 });
 
   const settings = memorySettings([["xarmy:dot-front:settings", JSON.stringify({ sound: true, difficulty: "hard" })]]);
   replaceGlobal(context, "localStorage", settings);
@@ -171,6 +189,65 @@ test("legacy Valley version-one saves and settings retain their old layout and p
   saveSettings({ ...readSettings(), map: "forest" });
   assert.deepEqual(readSettings(), { sound: true, difficulty: "hard", map: "forest" });
   assert.equal(settings.entries.size, 1);
+});
+
+test("commander save validation rejects orphans, mixed teams, oversized groups and invalid leaders", () => {
+  const mutations: Array<(state: ReturnType<typeof createMatch>) => void> = [
+    state => { state.units[0].commanderId = state.nextCommanderId++; },
+    state => { state.commanders[0].leaderId = state.nextId; },
+    state => { state.commanders[0].leaderId = state.units.find(unit => unit.team === 2)!.id; },
+    state => { state.commanders[0].team = 2; },
+    state => { state.commanders[1].id = state.commanders[0].id; },
+    state => { state.commanders.pop(); },
+    state => { state.nextCommanderId = state.commanders.at(-1)!.id; },
+    state => { state.commanders[0].nextOrder = Infinity; },
+    state => { state.commanders[0].nextOrder = state.elapsed + 1e6; },
+    state => { state.commanders[0].autoFront = "yes" as never; },
+    state => { state.commanders[0].order = { mode: "attack", target: state.nextId }; },
+    state => {
+      const first = state.commanders[0];
+      const extra = state.units.find(unit => unit.team === first.team && unit.commanderId !== first.id)!;
+      extra.commanderId = first.id;
+    },
+    state => {
+      state.commanders.push({ ...state.commanders[0], id: state.nextCommanderId++ });
+    },
+  ];
+  for (const mutate of mutations) {
+    const state = createMatch("normal", "commander-validation", false, "plains");
+    assert.ok(validMatch(state));
+    mutate(state);
+    assert.equal(validMatch(state), false, mutate.toString());
+  }
+});
+
+test("dead attack targets can be restored for engine cleanup, while unit and commander identities stay valid", () => {
+  const state = createMatch("normal", "dead-target", false, "plains");
+  const removedId = state.nextId++;
+  state.units[0].order = { mode: "attack", target: removedId };
+  state.commanders[0].order = { mode: "attack", target: removedId };
+  assert.ok(validMatch(state));
+  state.cities[0].build = { kind: "light", elapsed: CITY_PRODUCTION + 0.1 };
+  assert.equal(validMatch(state), false, "production cannot exceed the ten-second slot");
+});
+
+test("save limits support enlarged armies without accepting unbounded or duplicate unit records", () => {
+  const state = createMatch("normal", "large-army", false, "plains");
+  const template = state.units[0];
+  for (let group = 0; group < 25; group++) {
+    const commanderId = state.nextCommanderId++;
+    const leaderId = state.nextId;
+    state.commanders.push({ id: commanderId, team: 1, leaderId, order: { mode: "hold" }, autoFront: false, nextOrder: 0 });
+    for (let member = 0; member < 10; member++) state.units.push({
+      ...structuredClone(template), id: state.nextId++, commanderId,
+    });
+  }
+  assert.equal(state.units.length, 300);
+  assert.ok(validMatch(state));
+  const overLimit = { ...state, units: Array.from({ length: 601 }, () => template) };
+  assert.equal(validMatch(overLimit), false);
+  state.units[1].id = state.units[0].id;
+  assert.equal(validMatch(state), false);
 });
 
 test("new settings default to Plains and invalid stored map data safely falls back", (context) => {

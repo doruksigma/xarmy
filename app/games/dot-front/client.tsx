@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { recovery, startBattle, summary, timeLabel } from "./battle";
 import type { Summary } from "./battle";
 import { copy } from "./copy";
-import { units } from "./config";
+import { CITY_PRODUCTION, COMMANDER_LIMIT } from "./config";
 import type { Difficulty } from "./config";
 import { createMatch } from "./engine";
 import type { Match } from "./engine";
@@ -44,7 +44,6 @@ export default function DotFront() {
   const [paused, setPaused] = useState(false);
   const [speed, setSpeed] = useState(1);
   const [multi, setMulti] = useState(false);
-  const [rally, setRally] = useState(false);
   const [wide, setWide] = useState(false);
   const canvas = useRef<HTMLCanvasElement>(null);
   const mini = useRef<HTMLCanvasElement>(null);
@@ -112,11 +111,11 @@ export default function DotFront() {
   }
   function start(value: Match) {
     const fresh = structuredClone(value);
+    setStatus("");
     setHud(summary(fresh, new Set(), null));
     setMatch(fresh);
     setPaused(document.hidden);
     setMulti(false);
-    setRally(false);
     setSpeed(1);
     setPanel(null);
     persist(fresh);
@@ -169,6 +168,10 @@ export default function DotFront() {
           <p className={styles.mapName}>{copy.mapCount}</p>
           <h1 id="dot-front-title">{copy.title}</h1>
           <p className={styles.lead}>{copy.description}</p>
+          <div className={styles.briefing}>
+            <span>{copy.openingCities}</span><span>{copy.openingArmy}</span>
+            <span>{copy.automaticRecruitment}</span><span>{copy.openingFront}</span>
+          </div>
           <p className={styles.selectedMap}><strong>{copy.maps[settings.map].name}</strong>{copy.maps[settings.map].detail}</p>
         </div>
         <div className={styles.menu}>
@@ -192,7 +195,7 @@ export default function DotFront() {
       </fieldset>
       {saved && <p className={styles.note}>{copy.saveMap}: {copy.maps[saved.map].name} · {copy[saved.difficulty]} · {timeLabel(Math.floor(saved.elapsed))}</p>}
       {panel === "how" && <div className={styles.details}>
-        <h2>{copy.how}</h2><p>{copy.goal}</p><p>{copy.logistics}</p><p>{copy.terrainRules}</p><p>{copy.controls}</p><p>{copy.touch}</p>
+        <h2>{copy.how}</h2><p>{copy.goal}</p><p>{copy.logistics}</p><p>{copy.commanderRules}</p><p>{copy.terrainRules}</p><p>{copy.controls}</p><p>{copy.touch}</p>
         <p className={styles.note}>{copy.tutorialMap}</p>
         <button onClick={() => newMatch(true)}>{copy.tutorial}</button>
       </div>}
@@ -211,14 +214,16 @@ export default function DotFront() {
   const city = hud.city;
   const canCommand = !paused && !hud.result;
   const hasSelection = hud.light + hud.heavy > 0;
+  const selectedCommanders = hud.commanders.filter((commander) => commander.selected);
+  const allOnFront = selectedCommanders.length > 0 && selectedCommanders.every((commander) => commander.autoFront);
   return (
     <section className={styles.shell} aria-labelledby="dot-front-title">
       <Link className={styles.back} href="/#oyunlar">{copy.back}</Link>
       <h1 className={styles.heading} id="dot-front-title">{copy.title} <span className={styles.matchMap}>{copy.maps[match.map].name}</span></h1>
       <section ref={arena} className={wide ? styles.wide : styles.arena} aria-label={copy.title}>
         <header className={styles.hud}>
-          <span className={styles.blue}>{copy.player} <b>{hud.blueCities}</b> {copy.cities} · <b>{hud.blue}</b> {copy.soldiers}</span>
-          <span className={styles.red}>{copy.enemy} <b>{hud.redCities}</b> {copy.cities} · <b>{hud.red}</b> {copy.soldiers}</span>
+          <span className={styles.blue}>{copy.player} <b>{hud.blueCities}</b> {copy.cities} · <b>{hud.blue}</b> {copy.soldiers} · <b>{hud.blueCommanders}</b> {copy.commander}</span>
+          <span className={styles.red}>{copy.enemy} <b>{hud.redCities}</b> {copy.cities} · <b>{hud.red}</b> {copy.soldiers} · <b>{hud.redCommanders}</b> {copy.commander}</span>
           <span>{copy.supply} <b>{hud.logistics.used}/{hud.logistics.capacity}</b></span>
           <time>{timeLabel(hud.time)}</time>
         </header>
@@ -226,9 +231,21 @@ export default function DotFront() {
           {copy.supplyWarning} · {recovery(hud.shortage) ? recovery(hud.shortage) + " sn" : copy.attrition}
         </p>}
         {hud.tutorial !== null && <p className={styles.tutorial} role="status">{copy.steps[hud.tutorial]}</p>}
+        <div className={styles.commandDeck} aria-label={copy.commanders}>
+          <div className={styles.commandTitle}><strong>{copy.commanders}</strong><span>{copy.commanderHint}</span></div>
+          <div className={styles.commandCards}>
+            {hud.commanders.map((commander) => <button key={commander.id} disabled={!canCommand}
+              className={styles.commandCard} aria-pressed={commander.selected}
+              onClick={() => battle.current?.selectCommander(commander.id)}>
+              <span className={styles.commandBadge} aria-hidden="true">★</span>
+              <span><strong>{copy.commander} {commander.id}</strong>
+                <small>{commander.autoFront ? copy.autoFront : commander.order.mode === "attack" ? copy.attacking : commander.order.mode === "move" ? copy.marching : copy.holding}</small></span>
+              <b>{commander.count}<small>/{COMMANDER_LIMIT}</small></b>
+            </button>)}
+          </div>
+        </div>
         <div className={styles.stage}>
-          <canvas className={styles.canvas} ref={canvas} tabIndex={0} aria-label={copy.maps[match.map].name}
-            onPointerUp={() => setRally(battle.current?.rallyPending() ?? false)} />
+          <canvas className={styles.canvas} ref={canvas} tabIndex={0} aria-label={copy.maps[match.map].name} />
           <canvas ref={mini} className={styles.minimap} width={192} height={120} aria-label={copy.maps[match.map].name}
             onPointerDown={(event) => {
               const rect = event.currentTarget.getBoundingClientRect();
@@ -263,8 +280,11 @@ export default function DotFront() {
         </div>
         <div className={styles.toolbar}>
           <button disabled={!canCommand} onClick={() => battle.current?.selectAll()}>{copy.selectAll}</button>
-          <button disabled={!canCommand || (!hasSelection && !city)} onClick={() => { battle.current?.deselect(); setRally(false); }}>{copy.deselect}</button>
+          <button disabled={!canCommand || (!hasSelection && !city)} onClick={() => battle.current?.deselect()}>{copy.deselect}</button>
           <button disabled={!canCommand || !hasSelection} onClick={() => battle.current?.hold()}>{copy.hold}</button>
+          <button className={styles.frontButton} disabled={!canCommand || !selectedCommanders.length}
+            aria-pressed={allOnFront} title={copy.autoFrontHint}
+            onClick={() => battle.current?.autoFront(!allOnFront)}>{copy.autoFront}</button>
           <button disabled={!canCommand} aria-pressed={multi} onClick={() => setMulti(!multi)}>{copy.multi}</button>
           <button disabled={!canCommand} onClick={() => pause(true)}>{copy.pause}</button>
           <button aria-label={copy.speed} aria-pressed={speed === 2} onClick={() => setSpeed(speed === 1 ? 2 : 1)}>{speed}×</button>
@@ -275,26 +295,22 @@ export default function DotFront() {
           <button onClick={() => void fullscreen()}>{copy.full}</button>
         </div>
         <div className={styles.inspector}>
+          <span>{copy.selectedSquads} <b>{selectedCommanders.length}</b></span>
           <span>{copy.light} <b>{hud.light}</b> · {copy.heavy} <b>{hud.heavy}</b></span>
           <span className={styles.note}>{copy.legend}</span>
           {city && <>
             <strong>{copy.placeNames[city.id]} · {city.owner ? copy[city.owner === 1 ? "player" : "enemy"] : copy.neutral}</strong>
             <button disabled={!canCommand || !hasSelection} onClick={() => battle.current?.sendToCity()}>{copy.send}</button>
             {city.owner === 1 && <>
-              {city.build ? <>
-                <label className={styles.field}>{copy[city.build.kind]}
-                  <progress value={city.build.elapsed} max={units[city.build.kind].build} />
-                </label>
-                <button disabled={!canCommand} onClick={() => battle.current?.cancel()}>{copy.cancel}</button>
-                {hud.blocked && <span className={styles.warning}>{copy.supplyWarning}</span>}
-              </> : <>
-                <button disabled={!canCommand} onClick={() => battle.current?.build("light")}>{copy.light} · {units.light.build} sn</button>
-                <button disabled={!canCommand} onClick={() => battle.current?.build("heavy")}>{copy.heavy} · {units.heavy.build} sn</button>
-              </>}
-              <label className={styles.field}><input type="checkbox" checked={city.repeat} disabled={!canCommand}
-                onChange={(event) => battle.current?.repeat(event.target.checked)} /> {copy.repeat}</label>
-              <button disabled={!canCommand} onClick={() => setRally(battle.current?.rally() ?? false)}>{copy.rally}</button>
-              {rally && <span>{copy.rallyHint}</span>}
+              <label className={styles.field}>{copy.production} · {copy[city.build?.kind ?? "light"]}
+                <progress aria-label={copy.production} value={city.build?.elapsed ?? 0} max={CITY_PRODUCTION} />
+              </label>
+              <span className={styles.note}>{copy.productionEvery} · {copy.recruited}</span>
+              <button disabled={!canCommand} aria-pressed={city.build?.kind === "light"}
+                onClick={() => battle.current?.build("light")}>{copy.chooseLight}</button>
+              <button disabled={!canCommand} aria-pressed={city.build?.kind === "heavy"}
+                onClick={() => battle.current?.build("heavy")}>{copy.chooseHeavy}</button>
+              {hud.blocked && <span className={styles.warning}>{copy.supplyWarning}</span>}
             </>}
           </>}
         </div>

@@ -3,6 +3,8 @@ import type { Point } from "./config";
 import { toWorld } from "./render";
 import type { Box, Camera, View } from "./render";
 
+export const MAX_ZOOM = 20;
+
 export interface Inputs {
   view(): View;
   camera: Camera;
@@ -59,7 +61,7 @@ export function bindInput(canvas: HTMLCanvasElement, handler: Inputs) {
   }
   function zoomAt(point: Point, factor: number) {
     const before = toWorld(handler.view(), point);
-    handler.camera.zoom = Math.max(1, Math.min(4, handler.camera.zoom * factor));
+    handler.camera.zoom = Math.max(1, Math.min(MAX_ZOOM, handler.camera.zoom * factor));
     const after = toWorld(handler.view(), point);
     handler.camera.x += before.x - after.x;
     handler.camera.y += before.y - after.y;
@@ -172,7 +174,7 @@ export function bindInput(canvas: HTMLCanvasElement, handler: Inputs) {
       if (!active() || document.activeElement !== canvas) { keys.clear(); return; }
       const dx = Number(keys.has("d") || keys.has("arrowright")) - Number(keys.has("a") || keys.has("arrowleft"));
       const dy = Number(keys.has("s") || keys.has("arrowdown")) - Number(keys.has("w") || keys.has("arrowup"));
-      const delta = 15 * Math.max(0, Math.min(dt, 0.15)) / handler.camera.zoom / Math.max(1, Math.hypot(dx, dy));
+      const delta = 420 * Math.max(0, Math.min(dt, 0.15)) / handler.view().scale / Math.max(1, Math.hypot(dx, dy));
       handler.camera.x += dx * delta;
       handler.camera.y += dy * delta;
       clampCamera(handler.camera, handler.view());

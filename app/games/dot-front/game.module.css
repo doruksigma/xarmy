@@ -32,6 +32,8 @@
 .heading { font-size: clamp(1.5rem, 4vw, 2.4rem); font-weight: 800; margin-bottom: 0.55rem; }
 .mapName { color: var(--accent); letter-spacing: 0.14em; text-transform: uppercase; font-size: 0.8rem; font-weight: 750; }
 .lead { color: #d8e3da; max-width: 35ch; }
+.briefing { display: grid; gap: 0.35rem; margin-top: 1.3rem; color: #c7d7ce; font-size: 0.85rem; }
+.briefing span::before { content: ""; display: inline-block; width: 5px; height: 5px; margin: 0 0.55rem 0.12rem 0; background: #e7cf90; }
 .menu { display: grid; gap: 0.5rem; }
 .selectedMap { display: grid; gap: 0.4rem; color: var(--muted); max-width: 48ch; font-size: 0.95rem; line-height: 1.6; margin-top: 1.25rem; }
 .selectedMap strong { color: var(--accent); font-size: 1rem; }
@@ -69,16 +71,30 @@
 .arena:fullscreen { border-radius: 0; overflow: auto; }
 .hud, .toolbar, .inspector { display: flex; align-items: center; flex-wrap: wrap; gap: 0.45rem 0.8rem; padding: 0.55rem; }
 .hud { justify-content: space-between; font-size: 0.94rem; font-variant-numeric: tabular-nums; }
+.commandDeck { padding: 0.7rem; border-block: 1px solid var(--line); background: #122129; min-width: 0; }
+.commandTitle { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.3rem 0.8rem; margin-bottom: 0.55rem; }
+.commandTitle strong { color: var(--accent); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; }
+.commandTitle > span { color: var(--muted); font-size: 0.77rem; }
+.commandCards { display: flex; gap: 0.5rem; overflow-x: auto; padding-bottom: 0.25rem; scrollbar-color: #5e7778 #14242b; }
+.shell button.commandCard { display: flex; flex: 0 0 auto; align-items: center; gap: 0.7rem; padding: 0.55rem 0.7rem; text-align: left; background: #1a303c; border-color: #385262; }
+.shell button.commandCard[aria-pressed="true"] { border-color: #e7cf90; box-shadow: inset 0 -2px #e7cf90; background: #283f48; }
+.commandBadge { color: var(--accent); font-size: 1.3rem; }
+.commandCard > span:nth-child(2) { display: grid; gap: 0.15rem; }
+.commandCard strong { font-size: 0.82rem; }
+.commandCard small { font-size: 0.7rem; font-weight: 400; color: #b2cad4; }
+.commandCard > b { font-size: 1.15rem; color: #e9f3f2; min-width: 2.5rem; text-align: right; }
+.frontButton[aria-pressed="true"] { color: #d6eec1; border-color: #93b983 !important; }
 .blue { color: #79d1ff; }
 .red { color: #ffa192; }
 .stage { position: relative; background: #101a20; }
 .canvas { display: block; width: 100%; height: clamp(270px, 53vw, 575px); touch-action: none; cursor: crosshair; }
-.wide .canvas, .arena:fullscreen .canvas { height: max(220px, calc(100dvh - 168px)); }
-.minimap { position: absolute; bottom: 0.4rem; right: 0.4rem; width: clamp(73px, 15vw, 135px); aspect-ratio: 8 / 5; border: 1px solid #afc2af; cursor: crosshair; touch-action: none; }
+.wide .canvas, .arena:fullscreen .canvas { height: max(220px, calc(100dvh - 270px)); }
+.minimap { position: absolute; bottom: 0.4rem; right: 0.4rem; width: clamp(100px, 20vw, 190px); aspect-ratio: 8 / 5; border: 1px solid #afc2af; cursor: crosshair; touch-action: none; }
 .toolbar { border-top: 1px solid var(--line); }
 .toolbar button, .inspector button { font-size: 0.85rem; }
 .inspector { border-top: 1px solid var(--line); }
 .field { display: inline-flex; align-items: center; gap: 0.45rem; }
+.inspector .field { flex-wrap: wrap; }
 .field progress { width: min(120px, 25vw); accent-color: #69c7ff; }
 .note { color: var(--muted); font-size: 0.88rem; margin-top: 0.55rem; }
 .arena > .note, .wide > .note { padding: 0 0.55rem 0.55rem; }
@@ -93,4 +109,7 @@
   .hud { justify-content: flex-start; font-size: 0.8rem; gap: 0.35rem 0.6rem; }
   .toolbar { gap: 0.35rem; }
   .toolbar button, .inspector button { font-size: 0.77rem; padding-inline: 0.45rem; }
+  .commandDeck { padding: 0.5rem; }
+  .commandTitle > span { display: none; }
+  .shell button.commandCard { gap: 0.4rem; padding: 0.4rem 0.5rem; }
 }

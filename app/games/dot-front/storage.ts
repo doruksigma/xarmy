@@ -1,6 +1,6 @@
-import { HEIGHT, WIDTH, difficulty, units } from "./config";
+import { CAPTURE, CITY_PRODUCTION, COMMANDER_LIMIT, HEIGHT, WIDTH, difficulty, units } from "./config";
 import type { Point } from "./config";
-import type { Match, Result } from "./engine";
+import type { Match, Order, Result } from "./engine";
 import { getMap, mapIds, passable } from "./terrain";
 import type { MapId } from "./terrain";
 
@@ -17,31 +17,55 @@ const result = (value: unknown) => value === "won" || value === "lost" || value 
 export function validMatch(value: unknown): value is Match {
   try {
     const m = value as Match;
-    if (!m || m.version !== 1 || !isMapId(m.map) || typeof m.id !== "string" || !m.id ||
+    // Version one used different dimensions, city layouts and army structure.
+    // Returning false lets the client explain the upgrade without erasing it.
+    if (!m || m.version !== 2 || !isMapId(m.map) || typeof m.id !== "string" || !m.id ||
       !Object.hasOwn(difficulty, m.difficulty) || !numeric(m.elapsed) || !integer(m.nextId) || m.nextId < 1 ||
       (m.result !== null && !result(m.result)) || !(m.tutorial === null || (integer(m.tutorial) && m.tutorial <= 5)) ||
       !numeric(m.nextAi) || !Array.isArray(m.shortage) || m.shortage.length !== 2 || !m.shortage.every(numeric) ||
       !m.report || ![m.report.captured, m.report.killed, m.report.fallen].every(integer) ||
-      !Array.isArray(m.cities) || !Array.isArray(m.units) || m.units.length > 220) return false;
+      !Array.isArray(m.cities) || !Array.isArray(m.units) || m.units.length > 600 ||
+      !Array.isArray(m.commanders) || m.commanders.length > 600 ||
+      !integer(m.nextCommanderId) || m.nextCommanderId < 1) return false;
     const layout = getMap(m.map).cities;
     if (m.cities.length !== layout.length) return false;
     const validPoint = (value: Point | null | undefined) => point(value, m.map);
+    const validOrder = (order: Order | null | undefined) => Boolean(order && (
+      order.mode === "hold" || (order.mode === "move" && validPoint(order.point)) ||
+      (order.mode === "attack" && integer(order.target) && order.target >= 1 && order.target < m.nextId)
+    ));
     const ids = new Set<number>();
+    const membership = new Map<number, typeof m.units>();
     for (const u of m.units) {
       if (!validPoint(u) || !integer(u.id) || u.id < 1 || u.id >= m.nextId || ids.has(u.id) || (u.team !== 1 && u.team !== 2) ||
         !kind(u.kind) || !numeric(u.hp) || u.hp <= 0 || u.hp > units[u.kind].hp ||
         !numeric(u.cooldown) || !numeric(u.replan) || typeof u.marked !== "boolean" ||
         !Array.isArray(u.path) || u.path.length > WIDTH * HEIGHT || !u.path.every(validPoint) ||
-        !integer(u.waypoint) || u.waypoint > u.path.length || !u.order) return false;
+        !integer(u.waypoint) || u.waypoint > u.path.length || !validOrder(u.order) ||
+        !integer(u.commanderId) || u.commanderId < 1 || u.commanderId >= m.nextCommanderId) return false;
       ids.add(u.id);
-      if (u.order.mode !== "hold" && !(u.order.mode === "move" && validPoint(u.order.point)) &&
-          !(u.order.mode === "attack" && integer(u.order.target) && u.order.target >= 1)) return false;
+      const members = membership.get(u.commanderId) ?? [];
+      members.push(u);
+      if (members.length > COMMANDER_LIMIT) return false;
+      membership.set(u.commanderId, members);
     }
+    const commanderIds = new Set<number>();
+    for (const commander of m.commanders) {
+      if (!commander || !integer(commander.id) || commander.id < 1 || commander.id >= m.nextCommanderId ||
+        commanderIds.has(commander.id) || (commander.team !== 1 && commander.team !== 2) ||
+        !integer(commander.leaderId) || !validOrder(commander.order) || typeof commander.autoFront !== "boolean" ||
+        !numeric(commander.nextOrder) || commander.nextOrder > m.elapsed + 60) return false;
+      const members = membership.get(commander.id);
+      if (!members?.length || !members.every(unit => unit.team === commander.team) ||
+        !members.some(unit => unit.id === commander.leaderId)) return false;
+      commanderIds.add(commander.id);
+    }
+    if (commanderIds.size !== membership.size || [...membership.keys()].some(id => !commanderIds.has(id))) return false;
     return m.cities.every((c, i) => c.id === i && c.x === layout[i].x && c.y === layout[i].y &&
-      owner(c.owner) && owner(c.capturing) && numeric(c.progress) && c.progress <= 8 &&
+      owner(c.owner) && owner(c.capturing) && numeric(c.progress) && c.progress <= CAPTURE &&
       typeof c.repeat === "boolean" && (c.rally === null || validPoint(c.rally)) &&
       (c.build === null || (c.owner !== 0 && kind(c.build.kind) && numeric(c.build.elapsed) &&
-        c.build.elapsed <= units[c.build.kind].build)));
+        c.build.elapsed <= CITY_PRODUCTION)));
   } catch {
     return false;
   }

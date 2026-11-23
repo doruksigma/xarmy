@@ -3,12 +3,15 @@ export const CAPTURE = 8;
 export const SUPPLY = 5;
 export const GRACE = 15;
 export const RADIUS = 1.45;
-export const WIDTH = 48;
-export const HEIGHT = 30;
+export const WIDTH = 144;
+export const HEIGHT = 90;
+export const CITY_PRODUCTION = 10;
+export const COMMANDER_LIMIT = 10;
+export const FRONT_INTERVAL = 4;
 
 export const units = {
-  light: { hp: 48, damage: 6, range: 2.3, speed: 2.2, cooldown: 0.75, build: 6, supply: 1, forest: 0.8 },
-  heavy: { hp: 110, damage: 16, range: 3.1, speed: 1.3, cooldown: 1.2, build: 14, supply: 2, forest: 0.49 },
+  light: { hp: 48, damage: 6, range: 2.3, speed: 2.2, cooldown: 0.75, build: CITY_PRODUCTION, supply: 1, forest: 0.8 },
+  heavy: { hp: 110, damage: 16, range: 3.1, speed: 1.3, cooldown: 1.2, build: CITY_PRODUCTION, supply: 2, forest: 0.49 },
 };
 export type Kind = keyof typeof units;
 export type Point = { x: number; y: number };

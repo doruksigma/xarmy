@@ -1,4 +1,4 @@
-import { CAPTURE, GRACE, RADIUS, SUPPLY, dist, units } from "./config";
+import { CAPTURE, CITY_PRODUCTION, COMMANDER_LIMIT, FRONT_INTERVAL, GRACE, HEIGHT, RADIUS, SUPPLY, WIDTH, dist, units } from "./config";
 import type { Difficulty, Kind, Owner, Point, Team } from "./config";
 import { clearShot, getMap, nearestOpen, passable, route, tileAt } from "./terrain";
 import type { MapId } from "./terrain";
@@ -9,17 +9,20 @@ export type Order =
   | { mode: "attack"; target: number };
 
 export type Unit = Point & {
-  id: number; team: Team; kind: Kind; hp: number; cooldown: number;
+  id: number; team: Team; kind: Kind; hp: number; cooldown: number; commanderId: number;
   order: Order; path: Point[]; waypoint: number; replan: number; marked: boolean;
 };
 export type City = Point & {
   id: number; owner: Owner; capturing: Owner; progress: number; rally: Point | null;
   build: { kind: Kind; elapsed: number } | null; repeat: boolean;
 };
+export type Commander = {
+  id: number; team: Team; leaderId: number; order: Order; autoFront: boolean; nextOrder: number;
+};
 export type Result = "won" | "lost" | "draw";
 export type Match = {
-  version: 1; id: string; difficulty: Difficulty; map: MapId; elapsed: number; nextId: number;
-  units: Unit[]; cities: City[]; shortage: [number, number]; nextAi: number;
+  version: 2; id: string; difficulty: Difficulty; map: MapId; elapsed: number; nextId: number;
+  units: Unit[]; cities: City[]; commanders: Commander[]; nextCommanderId: number; shortage: [number, number]; nextAi: number;
   result: Result | null; report: { captured: number; killed: number; fallen: number };
   tutorial: number | null;
 };
@@ -27,18 +30,28 @@ export type Flash = { from: Point; to: Point; team: Team; expires: number };
 
 export function createMatch(difficulty: Difficulty, id: string, tutorial: boolean, map: MapId = "valley"): Match {
   const match: Match = {
-    version: 1, id, difficulty, map, elapsed: 0, nextId: 1,
-    units: [], cities: getMap(map).cities.map((city, id) => ({
-      ...city, id, capturing: 0, progress: 0, rally: null, build: null, repeat: false,
+    version: 2, id, difficulty, map, elapsed: 0, nextId: 1, nextCommanderId: 1,
+    units: [], commanders: [], cities: getMap(map).cities.map((city, id) => ({
+      ...city, id, capturing: 0, progress: 0, rally: null,
+      build: city.owner ? { kind: "light", elapsed: 0 } : null, repeat: !!city.owner,
     })),
     shortage: [0, 0], nextAi: tutorial ? 45 : 2, result: null,
     report: { captured: 0, killed: 0, fallen: 0 }, tutorial: tutorial ? 0 : null,
   };
-  for (const city of [match.cities[0], match.cities[2]]) {
-    spawn(match, city, "light");
-    spawn(match, city, "light");
-    spawn(match, city, "light");
-    spawn(match, city, "heavy");
+  for (const team of [1, 2] as const) {
+    for (const [lane, count] of [[18, 10], [45, 10], [72, 5]] as const) {
+      const origin = { x: WIDTH / 2 + (team === 1 ? -5 : 5), y: team === 1 ? lane : HEIGHT - lane };
+      const front = nearestOpen(origin, match.map);
+      const group = makeCommander(match, team);
+      for (let i = 0; i < count; i++) {
+        const candidate = { x: front.x + (i % 5 - 2), y: front.y + (Math.floor(i / 5) - (count > 5 ? 0.5 : 0)) };
+        const point = openSpawn(match, candidate);
+        const unit = makeUnit(match, team, "light", point, group.id);
+        if (!group.leaderId) group.leaderId = unit.id;
+      }
+      // Armies begin at the border, outside one another's firing range.
+      group.nextOrder = FRONT_INTERVAL;
+    }
   }
   return match;
 }
@@ -50,26 +63,163 @@ export function supply(match: Match, team: Team) {
   };
 }
 
-function spawn(match: Match, city: City, kind: Kind) {
-  if (!city.owner) return;
-  const spots = [
-    { x: city.x - 1, y: city.y }, { x: city.x, y: city.y + 1 },
-    { x: city.x + 1, y: city.y }, { x: city.x, y: city.y - 1 },
-    { x: city.x - 0.65, y: city.y + 0.65 }, { x: city.x + 0.65, y: city.y + 0.65 },
-    { x: city.x + 0.65, y: city.y - 0.65 }, { x: city.x - 0.65, y: city.y - 0.65 },
-  ];
-  const point = spots.find((spot) => passable(spot, match.map) && match.units.every((unit) => dist(unit, spot) > 0.35))
-    ?? nearestOpen(city, match.map);
+function makeCommander(match: Match, team: Team): Commander {
+  const commander: Commander = {
+    id: match.nextCommanderId++, team, leaderId: 0, order: { mode: "hold" },
+    autoFront: true, nextOrder: match.elapsed,
+  };
+  match.commanders.push(commander);
+  return commander;
+}
+
+function makeUnit(match: Match, team: Team, kind: Kind, point: Point, commanderId: number): Unit {
   const unit: Unit = {
-    ...point, id: match.nextId++, team: city.owner, kind, hp: units[kind].hp, cooldown: 0,
+    ...point, id: match.nextId++, team, kind, hp: units[kind].hp, cooldown: 0, commanderId,
     order: { mode: "hold" }, path: [], waypoint: 0, replan: 0, marked: false,
   };
   match.units.push(unit);
+  return unit;
+}
+
+function openSpawn(match: Match, origin: Point): Point {
+  const center = nearestOpen(origin, match.map);
+  for (let ring = 0; ring <= 8; ring++) for (let y = -ring; y <= ring; y++) for (let x = -ring; x <= ring; x++) {
+    if (Math.max(Math.abs(x), Math.abs(y)) !== ring) continue;
+    const point = { x: center.x + x, y: center.y + y };
+    if (passable(point, match.map) && match.units.every((unit) => dist(unit, point) > 0.5)) return point;
+  }
+  return center;
+}
+
+export function commanderMembers(match: Match, id: number): Unit[] {
+  return match.units.filter((unit) => unit.commanderId === id);
+}
+
+export function commanderLeader(match: Match, id: number): Unit | undefined {
+  const commander = match.commanders.find((item) => item.id === id);
+  return commander ? match.units.find((unit) => unit.id === commander.leaderId && unit.commanderId === id) : undefined;
+}
+
+function recruitCommander(match: Match, unit: Unit): Commander {
+  const available = match.commanders.filter((commander) => commander.team === unit.team && commanderMembers(match, commander.id).length < COMMANDER_LIMIT);
+  available.sort((a, b) => dist(commanderLeader(match, a.id) ?? unit, unit) - dist(commanderLeader(match, b.id) ?? unit, unit) || a.id - b.id);
+  const commander = available[0] ?? makeCommander(match, unit.team);
+  unit.commanderId = commander.id;
+  if (!commander.leaderId) commander.leaderId = unit.id;
+  return commander;
+}
+
+function followRecruit(match: Match, unit: Unit, commander: Commander) {
+  const leader = commanderLeader(match, commander.id);
+  const order = commander.order;
+  if (order.mode === "attack" && match.units.some((target) => target.id === order.target && target.team !== unit.team)) {
+    orderUnit(unit, order, match.map);
+  } else if (order.mode === "move") {
+    orderUnit(unit, { mode: "move", point: order.point }, match.map);
+  } else if (leader && leader.id !== unit.id && dist(leader, unit) > 0.7) {
+    orderUnit(unit, { mode: "move", point: { x: leader.x, y: leader.y } }, match.map);
+  }
+}
+
+function spawn(match: Match, city: City, kind: Kind): Unit | undefined {
+  if (!city.owner) return;
+  const point = openSpawn(match, city);
+  const unit = makeUnit(match, city.owner, kind, point, 0);
+  const commander = recruitCommander(match, unit);
+  followRecruit(match, unit, commander);
   if (city.rally) orderUnit(unit, { mode: "move", point: city.rally }, match.map);
+  return unit;
+}
+
+/** Promote a surviving member without adding a soldier or changing combat stats. */
+export function maintainCommanders(match: Match) {
+  for (const commander of match.commanders) {
+    const members = commanderMembers(match, commander.id).filter((unit) => unit.team === commander.team).sort((a, b) => a.id - b.id);
+    if (!members.some((unit) => unit.id === commander.leaderId)) commander.leaderId = members[0]?.id ?? 0;
+    // A malformed external command cannot leave a permanently invalid attack.
+    const order = commander.order;
+    if (order.mode === "attack" && !match.units.some((unit) => unit.id === order.target && unit.team !== commander.team)) commander.order = { mode: "hold" };
+  }
+  match.commanders = match.commanders.filter((commander) => commander.leaderId !== 0);
+  for (const unit of match.units) {
+    const commander = match.commanders.find((item) => item.id === unit.commanderId && item.team === unit.team);
+    if (!commander) recruitCommander(match, unit);
+  }
+}
+
+/** The nearest city-border midpoint, held five cells back on the friendly side. */
+export function frontlinePoint(match: Match, team: Team, origin: Point): Point {
+  const home = match.cities.filter((city) => city.owner === team);
+  const enemy = match.cities.filter((city) => city.owner && city.owner !== team);
+  if (!home.length) {
+    const target = [...match.cities].sort((a, b) => dist(origin, a) - dist(origin, b) || a.id - b.id)[0];
+    return nearestOpen(target ?? origin, match.map);
+  }
+  if (!enemy.length) {
+    const target = match.units.filter((unit) => unit.team !== team).sort((a, b) => dist(origin, a) - dist(origin, b) || a.id - b.id)[0];
+    return nearestOpen(target ?? home.reduce((a, b) => dist(origin, a) < dist(origin, b) ? a : b), match.map);
+  }
+  const borderCities = home.filter((city) => {
+    const target = enemy.reduce((a, b) => dist(city, a) < dist(city, b) ? a : b);
+    return !home.some((other) => dist(other, target) < dist(city, target) - 1e-6);
+  });
+  const candidates = (borderCities.length ? borderCities : home).map((city) => {
+    const target = enemy.reduce((a, b) => dist(city, a) < dist(city, b) ? a : b);
+    const length = dist(city, target) || 1;
+    const back = Math.min(5, length * 0.35);
+    const point = { x: (city.x + target.x) / 2 + (city.x - target.x) / length * back,
+      y: (city.y + target.y) / 2 + (city.y - target.y) / length * back };
+    return { point, score: dist(point, origin) + length * 0.25, id: city.id };
+  }).sort((a, b) => a.score - b.score || a.id - b.id);
+  return nearestOpen(candidates[0].point, match.map);
+}
+
+function dispatchCommander(match: Match, commander: Commander, order: Order) {
+  commander.order = order.mode === "move" ? { mode: "move", point: nearestOpen(order.point, match.map) } : { ...order };
+  const members = commanderMembers(match, commander.id);
+  if (commander.order.mode === "move") send(members, commander.order.point, match.map);
+  else for (const unit of members) orderUnit(unit, commander.order, match.map);
+}
+
+export function commandCommander(match: Match, id: number, order: Order): void {
+  if (match.result) return;
+  const commander = match.commanders.find((item) => item.id === id);
+  if (!commander) return;
+  if (order.mode === "attack" && !match.units.some((unit) => unit.id === order.target && unit.team !== commander.team)) return;
+  commander.autoFront = false;
+  commander.nextOrder = match.elapsed + FRONT_INTERVAL;
+  dispatchCommander(match, commander, order);
+}
+
+export function setCommanderAutoFront(match: Match, id: number, enabled: boolean): void {
+  const commander = match.commanders.find((item) => item.id === id);
+  if (!commander || match.result) return;
+  commander.autoFront = enabled;
+  commander.nextOrder = match.elapsed;
+  if (enabled) {
+    const leader = commanderLeader(match, id);
+    if (leader) dispatchCommander(match, commander, { mode: "move", point: frontlinePoint(match, commander.team, leader) });
+    commander.nextOrder = match.elapsed + FRONT_INTERVAL;
+  }
+}
+
+function autoFront(match: Match) {
+  // During the interactive lesson, player commands remain under explicit control.
+  if (match.tutorial !== null && match.tutorial < 5) return;
+  for (const commander of match.commanders) {
+    if (!commander.autoFront || match.elapsed + 1e-6 < commander.nextOrder) continue;
+    commander.nextOrder = match.elapsed + FRONT_INTERVAL;
+    const leader = commanderLeader(match, commander.id);
+    if (!leader) continue;
+    const point = frontlinePoint(match, commander.team, leader);
+    const changed = commander.order.mode !== "move" || dist(commander.order.point, point) > 1;
+    const stragglers = commanderMembers(match, commander.id).some((unit) => unit.order.mode === "hold" && dist(unit, point) > 3);
+    if ((changed && dist(leader, point) > 1.5) || stragglers) dispatchCommander(match, commander, { mode: "move", point });
+  }
 }
 
 export function orderUnit(unit: Unit, order: Order, map: MapId = "valley") {
-  unit.order = order;
+  unit.order = order.mode === "move" ? { mode: "move", point: { x: order.point.x, y: order.point.y } } : { ...order };
   unit.waypoint = 0;
   unit.replan = 0;
   unit.path = order.mode === "move" ? route(unit, order.point, unit.kind, map) : [];
@@ -269,6 +419,7 @@ function fight(match: Match, index: UnitIndex, dt: number, flashes: Flash[]) {
 }
 
 function takeCities(match: Match, index: UnitIndex, dt: number) {
+  const captured = new Set<number>();
   for (const city of match.cities) {
     let blue = false;
     let red = false;
@@ -290,17 +441,19 @@ function takeCities(match: Match, index: UnitIndex, dt: number) {
     city.owner = contender;
     city.progress = 0;
     city.capturing = 0;
-    city.build = null;
-    city.repeat = false;
+    city.build = { kind: "light", elapsed: 0 };
+    city.repeat = true;
     city.rally = null;
+    captured.add(city.id);
     if (contender === 1) {
       match.report.captured++;
       if (match.tutorial === 2) match.tutorial = 3;
     }
   }
+  return captured;
 }
 
-function supplyAndBuild(match: Match, dt: number) {
+function supplyAndBuild(match: Match, dt: number, captured: ReadonlySet<number>) {
   for (const team of [1, 2] as const) {
     const { used, capacity } = supply(match, team);
     let excess = used - capacity;
@@ -313,15 +466,18 @@ function supplyAndBuild(match: Match, dt: number) {
       if (match.shortage[team - 1] + 1e-6 >= GRACE) unit.hp -= 3 * dt;
     }
     for (const city of match.cities) {
-      if (city.owner !== team || !city.build) continue;
+      if (city.owner !== team) continue;
+      if (!city.build) city.build = { kind: "light", elapsed: 0 };
+      city.repeat = true;
+      if (captured.has(city.id)) continue;
       const stats = units[city.build.kind];
       if (current + stats.supply > capacity) continue;
       city.build.elapsed += dt;
-      if (city.build.elapsed + 1e-6 < stats.build) continue;
+      if (city.build.elapsed + 1e-6 < CITY_PRODUCTION) continue;
       spawn(match, city, city.build.kind);
       if (team === 1 && match.tutorial === 3) match.tutorial = 4;
       current += stats.supply;
-      city.build = city.repeat ? { kind: city.build.kind, elapsed: 0 } : null;
+      city.build = { kind: city.build.kind, elapsed: 0 };
     }
   }
 }
@@ -333,17 +489,20 @@ function removeDead(match: Match) {
   for (const unit of match.units) {
     if (unit.order.mode === "attack" && !ids.has(unit.order.target)) orderUnit(unit, { mode: "hold" }, match.map);
   }
+  maintainCommanders(match);
 }
 
 export function step(match: Match, dt: number, flashes: Flash[], decide: (match: Match) => void) {
   if (match.result || !Number.isFinite(dt) || dt <= 0) return;
   match.elapsed += dt;
+  maintainCommanders(match);
+  autoFront(match);
   decide(match);
   fight(match, new UnitIndex(match.units), dt, flashes);
   removeDead(match);
   separate(match, dt);
-  takeCities(match, new UnitIndex(match.units), dt);
-  supplyAndBuild(match, dt);
+  const captured = takeCities(match, new UnitIndex(match.units), dt);
+  supplyAndBuild(match, dt, captured);
   removeDead(match);
   const survives = (team: Team) => match.cities.some((city) => city.owner === team) ||
     match.units.some((unit) => unit.team === team);
