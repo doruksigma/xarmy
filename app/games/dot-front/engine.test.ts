@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { decide } from "./ai";
 import { CAPTURE, GRACE, STEP, dist, units } from "./config";
-import { createMatch, orderUnit, send, step, supply } from "./engine";
+import { canTraverse, createMatch, orderUnit, send, step, supply } from "./engine";
 import type { Match } from "./engine";
 import { validMatch } from "./storage";
-import { cities, clearShot, passable, route, tileAt } from "./terrain";
+import { cities, clearShot, getMap, mapIds, nearestOpen, passable, route, tileAt } from "./terrain";
 
 const match = () => createMatch("normal", "test-match", false);
 const advance = (state: Match, seconds: number, ai = false) => {
@@ -150,4 +150,111 @@ test("eliminating both enemy holdings and units wins and losing both ends the ma
     advance(state, STEP);
     assert.equal(state.result, team === 1 ? "lost" : "won");
   }
+});
+
+test("all maps start with balanced holdings and resume saved movement deterministically", () => {
+  for (const map of mapIds) {
+    const state = createMatch("normal", `movement-${map}`, false, map);
+    assert.equal(state.map, map);
+    assert.equal(state.cities.length, getMap(map).cities.length);
+    for (const team of [1, 2] as const) {
+      assert.equal(state.cities.filter((city) => city.owner === team).length, 2);
+      assert.equal(state.units.filter((unit) => unit.team === team && unit.kind === "light").length, 3);
+      assert.equal(state.units.filter((unit) => unit.team === team && unit.kind === "heavy").length, 1);
+      assert.deepEqual(supply(state, team), { used: 5, capacity: 10 });
+    }
+    state.units = state.units.filter((unit) => unit.team === 1);
+    const destination = state.cities[2];
+    send(state.units, destination, map);
+    advance(state, 7);
+    const restored: unknown = JSON.parse(JSON.stringify(state));
+    assert.ok(validMatch(restored), `${map}: valid saved match`);
+    for (let i = 0; i < 1_800; i++) {
+      advance(state, STEP);
+      advance(restored, STEP);
+      assert.ok(state.units.every((unit) => passable(unit, map)), `${map}: troop stays on land or bridge`);
+    }
+    assert.deepEqual(restored, state, `${map}: exact deterministic continuation`);
+    assert.ok(state.units.every((unit) => dist(unit, destination) < 3), `${map}: whole formation arrives`);
+    assert.ok(state.units.every((unit) => unit.order.mode === "hold"), `${map}: completed order clears`);
+  }
+});
+
+test("movement rejects a clipped mountain corner and replans from an arbitrary position", () => {
+  const from = { x: 14.25, y: 11.8 };
+  const target = { x: 13.8, y: 12.25 };
+  assert.ok(passable(from));
+  assert.ok(passable(target));
+  assert.equal(canTraverse(from, target), false);
+  assert.equal(canTraverse(target, from), false);
+  const state = match();
+  const unit = state.units[0];
+  state.units = [unit];
+  Object.assign(unit, from);
+  // A stale saved waypoint must not bypass the segment collision guard.
+  unit.order = { mode: "move", point: target };
+  unit.path = [target];
+  unit.waypoint = 0;
+  for (let i = 0; i < 120; i++) {
+    const before = { x: unit.x, y: unit.y };
+    advance(state, STEP);
+    assert.ok(canTraverse(before, unit));
+    assert.ok(passable(unit));
+  }
+  assert.ok(dist(unit, nearestOpen(target)) < 0.01);
+  assert.equal(unit.order.mode, "hold");
+});
+
+test("crowded units spread deterministically without being pushed into obstacles", () => {
+  const state = match();
+  const group = state.units.filter((unit) => unit.team === 1);
+  state.units = group;
+  for (const unit of group) Object.assign(unit, { x: 13.98, y: 12.5 });
+  const restored = structuredClone(state);
+  for (let i = 0; i < 100; i++) {
+    const previous = group.map((unit) => ({ x: unit.x, y: unit.y }));
+    advance(state, STEP);
+    advance(restored, STEP);
+    for (let j = 0; j < group.length; j++) {
+      assert.ok(passable(group[j]));
+      assert.ok(canTraverse(previous[j], group[j]));
+      assert.ok(dist(previous[j], group[j]) <= STEP * 0.8 + 1e-9, "separation has a bounded speed");
+    }
+  }
+  assert.deepEqual(restored, state);
+  for (const unit of group) for (const other of group) if (unit.id !== other.id) assert.ok(dist(unit, other) > 0.25);
+});
+
+test("a reinforced formation clears the river bridges without permanent congestion", () => {
+  const state = match();
+  const templates = state.units.filter((unit) => unit.team === 1);
+  state.units = [];
+  for (let i = 0; i < 16; i++) {
+    const unit = structuredClone(templates[i % templates.length]);
+    unit.id = state.nextId++;
+    unit.x = 4.5 + i % 4;
+    unit.y = 12.5 + Math.floor(i / 4);
+    state.units.push(unit);
+  }
+  for (const city of state.cities) if (!city.owner) city.owner = 1;
+  const destination = state.cities[2];
+  send(state.units, destination, state.map);
+  for (let i = 0; i < 1_800; i++) {
+    advance(state, STEP);
+    assert.ok(state.units.every((unit) => passable(unit, state.map)));
+  }
+  assert.equal(state.units.length, 16);
+  assert.ok(state.units.every((unit) => dist(unit, destination) < 4));
+  assert.ok(state.units.every((unit) => unit.order.mode === "hold"));
+});
+
+test("tutorial production completes only after a reinforcement is actually built", () => {
+  const state = createMatch("easy", "production-training", true);
+  state.tutorial = 3;
+  state.cities[0].build = { kind: "light", elapsed: 0 };
+  advance(state, units.light.build - STEP);
+  assert.equal(state.tutorial, 3);
+  advance(state, STEP);
+  assert.equal(state.tutorial, 4);
+  assert.equal(state.units.filter((unit) => unit.team === 1).length, 5);
 });

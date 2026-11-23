@@ -1,6 +1,7 @@
 import { CAPTURE, GRACE, RADIUS, SUPPLY, dist, units } from "./config";
 import type { Difficulty, Kind, Owner, Point, Team } from "./config";
-import { cities, clearShot, nearestOpen, passable, route, tileAt } from "./terrain";
+import { clearShot, getMap, nearestOpen, passable, route, tileAt } from "./terrain";
+import type { MapId } from "./terrain";
 
 export type Order =
   | { mode: "hold" }
@@ -17,17 +18,17 @@ export type City = Point & {
 };
 export type Result = "won" | "lost" | "draw";
 export type Match = {
-  version: 1; id: string; difficulty: Difficulty; map: "valley"; elapsed: number; nextId: number;
+  version: 1; id: string; difficulty: Difficulty; map: MapId; elapsed: number; nextId: number;
   units: Unit[]; cities: City[]; shortage: [number, number]; nextAi: number;
   result: Result | null; report: { captured: number; killed: number; fallen: number };
   tutorial: number | null;
 };
 export type Flash = { from: Point; to: Point; team: Team; expires: number };
 
-export function createMatch(difficulty: Difficulty, id: string, tutorial: boolean): Match {
+export function createMatch(difficulty: Difficulty, id: string, tutorial: boolean, map: MapId = "valley"): Match {
   const match: Match = {
-    version: 1, id, difficulty, map: "valley", elapsed: 0, nextId: 1,
-    units: [], cities: cities.map((city, id) => ({
+    version: 1, id, difficulty, map, elapsed: 0, nextId: 1,
+    units: [], cities: getMap(map).cities.map((city, id) => ({
       ...city, id, capturing: 0, progress: 0, rally: null, build: null, repeat: false,
     })),
     shortage: [0, 0], nextAi: tutorial ? 45 : 2, result: null,
@@ -57,31 +58,32 @@ function spawn(match: Match, city: City, kind: Kind) {
     { x: city.x - 0.65, y: city.y + 0.65 }, { x: city.x + 0.65, y: city.y + 0.65 },
     { x: city.x + 0.65, y: city.y - 0.65 }, { x: city.x - 0.65, y: city.y - 0.65 },
   ];
-  const point = spots.find((spot) => passable(spot) && match.units.every((unit) => dist(unit, spot) > 0.35))
-    ?? nearestOpen(city);
+  const point = spots.find((spot) => passable(spot, match.map) && match.units.every((unit) => dist(unit, spot) > 0.35))
+    ?? nearestOpen(city, match.map);
   const unit: Unit = {
     ...point, id: match.nextId++, team: city.owner, kind, hp: units[kind].hp, cooldown: 0,
     order: { mode: "hold" }, path: [], waypoint: 0, replan: 0, marked: false,
   };
   match.units.push(unit);
-  if (city.rally) orderUnit(unit, { mode: "move", point: city.rally });
+  if (city.rally) orderUnit(unit, { mode: "move", point: city.rally }, match.map);
 }
 
-export function orderUnit(unit: Unit, order: Order) {
+export function orderUnit(unit: Unit, order: Order, map: MapId = "valley") {
   unit.order = order;
   unit.waypoint = 0;
   unit.replan = 0;
-  unit.path = order.mode === "move" ? route(unit, order.point, unit.kind) : [];
+  unit.path = order.mode === "move" ? route(unit, order.point, unit.kind, map) : [];
 }
 
-export function send(group: Unit[], point: Point) {
-  const slots = [nearestOpen(point)];
+export function send(group: Unit[], point: Point, map: MapId = "valley") {
+  if (!group.length) return;
+  const slots = [nearestOpen(point, map)];
   for (let radius = 1; slots.length < group.length && radius < 12; radius++) {
     const origin = slots[0];
     for (let y = -radius; y <= radius; y++) {
       for (let x = -radius; x <= radius; x++) {
         const candidate = { x: origin.x + x, y: origin.y + y };
-        if (Math.max(Math.abs(x), Math.abs(y)) === radius && passable(candidate)) slots.push(candidate);
+        if (Math.max(Math.abs(x), Math.abs(y)) === radius && passable(candidate, map)) slots.push(candidate);
       }
     }
   }
@@ -91,9 +93,9 @@ export function send(group: Unit[], point: Point) {
     const best = available.reduce((closest, unit, index) =>
       dist(unit, slot) < dist(available[closest], slot) ? index : closest, 0);
     const [unit] = available.splice(best, 1);
-    orderUnit(unit, { mode: "move", point: slot });
+    orderUnit(unit, { mode: "move", point: slot }, map);
   }
-  for (const unit of available) orderUnit(unit, { mode: "move", point: slots[0] });
+  for (const unit of available) orderUnit(unit, { mode: "move", point: slots[0] }, map);
 }
 
 class UnitIndex {
@@ -124,19 +126,105 @@ class UnitIndex {
   }
 }
 
-function walk(unit: Unit, dt: number) {
-  const point = unit.path[unit.waypoint];
-  if (!point) {
-    if (unit.order.mode === "move") orderUnit(unit, { mode: "hold" });
-    return;
+// Check the complete segment, including very short corner crossings between
+// two legal endpoints. Endpoint checks alone let displaced units clip rocks.
+export function canTraverse(from: Point, to: Point, map: MapId = "valley"): boolean {
+  if (![from.x, from.y, to.x, to.y].every(Number.isFinite) || !passable(from, map) || !passable(to, map)) return false;
+  let x = Math.floor(from.x);
+  let y = Math.floor(from.y);
+  const endX = Math.floor(to.x);
+  const endY = Math.floor(to.y);
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const sx = Math.sign(dx);
+  const sy = Math.sign(dy);
+  const deltaX = sx ? Math.abs(1 / dx) : Infinity;
+  const deltaY = sy ? Math.abs(1 / dy) : Infinity;
+  let nextX = sx ? ((sx > 0 ? x + 1 : x) - from.x) / dx : Infinity;
+  let nextY = sy ? ((sy > 0 ? y + 1 : y) - from.y) / dy : Infinity;
+  while (x !== endX || y !== endY) {
+    if (Math.abs(nextX - nextY) < 1e-10) {
+      if (!passable({ x: x + sx, y }, map) || !passable({ x, y: y + sy }, map)) return false;
+      x += sx;
+      y += sy;
+      nextX += deltaX;
+      nextY += deltaY;
+    } else if (nextX < nextY) {
+      x += sx;
+      nextX += deltaX;
+    } else {
+      y += sy;
+      nextY += deltaY;
+    }
+    if (!passable({ x, y }, map)) return false;
   }
+  return true;
+}
+
+function walk(unit: Unit, dt: number, map: MapId) {
   const stats = units[unit.kind];
-  const speed = stats.speed * (tileAt(unit) === "forest" ? stats.forest : 1);
-  const length = dist(unit, point);
-  const fraction = length ? Math.min(1, speed * dt / length) : 1;
-  unit.x += (point.x - unit.x) * fraction;
-  unit.y += (point.y - unit.y) * fraction;
-  if (fraction === 1) unit.waypoint++;
+  const speed = stats.speed * (tileAt(unit, map) === "forest" ? stats.forest : 1);
+  let remaining = speed * dt;
+  while (remaining > 0) {
+    const point = unit.path[unit.waypoint];
+    if (!point) {
+      if (unit.order.mode === "move") orderUnit(unit, { mode: "hold" }, map);
+      return;
+    }
+    const length = dist(unit, point);
+    if (length < 1e-9) { unit.waypoint++; continue; }
+    const travel = Math.min(remaining, length);
+    const next = { x: unit.x + (point.x - unit.x) * travel / length, y: unit.y + (point.y - unit.y) * travel / length };
+    if (!canTraverse(unit, next, map)) {
+      // Soft separation or an old saved waypoint may change the initial
+      // approach. Rebuild through the current tile center rather than teleport.
+      const goal = unit.order.mode === "move" ? unit.order.point : unit.path.at(-1);
+      unit.path = goal ? route(unit, goal, unit.kind, map) : [];
+      unit.waypoint = 0;
+      unit.replan = 0;
+      if (!unit.path.length) orderUnit(unit, { mode: "hold" }, map);
+      return;
+    }
+    unit.x = next.x;
+    unit.y = next.y;
+    remaining -= travel;
+    if (travel >= length) unit.waypoint++;
+  }
+}
+
+function separate(match: Match, dt: number) {
+  const index = new UnitIndex(match.units);
+  const displacement = new Map<number, number>();
+  for (const unit of match.units) for (const other of index.nearby(unit, 0.5)) {
+    if (other.id <= unit.id) continue;
+    let dx = unit.x - other.x;
+    let dy = unit.y - other.y;
+    let length = Math.hypot(dx, dy);
+    const minimum = (unit.kind === "heavy" ? 0.24 : 0.18) + (other.kind === "heavy" ? 0.24 : 0.18);
+    if (length >= minimum) continue;
+    if (length < 1e-9) {
+      const angle = (unit.id * 2.399963 + other.id) % (Math.PI * 2);
+      dx = Math.cos(angle);
+      dy = Math.sin(angle);
+      length = 1;
+    }
+    const amount = Math.min((minimum - Math.min(dist(unit, other), minimum)) / 2,
+      dt * 0.8 - (displacement.get(unit.id) ?? 0), dt * 0.8 - (displacement.get(other.id) ?? 0));
+    if (amount <= 1e-9) continue;
+    const ox = dx / length * amount;
+    const oy = dy / length * amount;
+    const first = { x: unit.x + ox, y: unit.y + oy };
+    const second = { x: other.x - ox, y: other.y - oy };
+    // Units never become hard pathfinding obstacles: crowded bridges keep moving.
+    if (canTraverse(unit, first, match.map)) {
+      Object.assign(unit, first);
+      displacement.set(unit.id, (displacement.get(unit.id) ?? 0) + amount);
+    }
+    if (canTraverse(other, second, match.map)) {
+      Object.assign(other, second);
+      displacement.set(other.id, (displacement.get(other.id) ?? 0) + amount);
+    }
+  }
 }
 
 function fight(match: Match, index: UnitIndex, dt: number, flashes: Flash[]) {
@@ -145,9 +233,12 @@ function fight(match: Match, index: UnitIndex, dt: number, flashes: Flash[]) {
   for (const unit of match.units) {
     const stats = units[unit.kind];
     unit.cooldown = Math.max(0, unit.cooldown - dt);
-    const target = unit.order.mode === "attack" ? byId.get(unit.order.target) : undefined;
-    if (unit.order.mode === "attack" && (!target || target.team === unit.team)) orderUnit(unit, { mode: "hold" });
-    const inRange = (other: Unit) => other.team !== unit.team && dist(unit, other) <= stats.range && clearShot(unit, other);
+    let target = unit.order.mode === "attack" ? byId.get(unit.order.target) : undefined;
+    if (unit.order.mode === "attack" && (!target || target.team === unit.team)) {
+      orderUnit(unit, { mode: "hold" }, match.map);
+      target = undefined;
+    }
+    const inRange = (other: Unit) => other.team !== unit.team && dist(unit, other) <= stats.range && clearShot(unit, other, match.map);
     const victim = target && inRange(target) ? target : index.nearby(unit, stats.range)
       .filter(inRange).sort((a, b) => dist(unit, a) - dist(unit, b) || a.id - b.id)[0];
     if (victim && unit.cooldown <= 1e-6) {
@@ -158,18 +249,18 @@ function fight(match: Match, index: UnitIndex, dt: number, flashes: Flash[]) {
     if (target && !inRange(target)) {
       const endpoint = unit.path.at(-1);
       if (unit.replan <= match.elapsed && (!endpoint || unit.waypoint >= unit.path.length ||
-          dist(endpoint, target) > stats.range || !clearShot(endpoint, target))) {
+          dist(endpoint, target) > stats.range || !clearShot(endpoint, target, match.map))) {
         const choices = [
           { x: target.x + 1, y: target.y }, { x: target.x - 1, y: target.y },
           { x: target.x, y: target.y + 1 }, { x: target.x, y: target.y - 1 }, target,
-        ].map(nearestOpen).filter((point) => clearShot(point, target));
+        ].map((point) => nearestOpen(point, match.map)).filter((point) => clearShot(point, target, match.map));
         choices.sort((a, b) => dist(a, unit) - dist(b, unit));
-        unit.path = route(unit, choices[0] ?? target, unit.kind);
+        unit.path = route(unit, choices[0] ?? target, unit.kind, match.map);
         unit.waypoint = 0;
         unit.replan = match.elapsed + 0.8 + (unit.id % 7) * 0.07;
       }
-      walk(unit, dt);
-    } else if (!target) walk(unit, dt);
+      walk(unit, dt, match.map);
+    } else if (!target) walk(unit, dt, match.map);
   }
   for (const unit of match.units) {
     unit.hp -= damage.get(unit.id) ?? 0;
@@ -228,6 +319,7 @@ function supplyAndBuild(match: Match, dt: number) {
       city.build.elapsed += dt;
       if (city.build.elapsed + 1e-6 < stats.build) continue;
       spawn(match, city, city.build.kind);
+      if (team === 1 && match.tutorial === 3) match.tutorial = 4;
       current += stats.supply;
       city.build = city.repeat ? { kind: city.build.kind, elapsed: 0 } : null;
     }
@@ -239,16 +331,17 @@ function removeDead(match: Match) {
   match.units = match.units.filter((unit) => unit.hp > 0);
   const ids = new Set(match.units.map((unit) => unit.id));
   for (const unit of match.units) {
-    if (unit.order.mode === "attack" && !ids.has(unit.order.target)) orderUnit(unit, { mode: "hold" });
+    if (unit.order.mode === "attack" && !ids.has(unit.order.target)) orderUnit(unit, { mode: "hold" }, match.map);
   }
 }
 
 export function step(match: Match, dt: number, flashes: Flash[], decide: (match: Match) => void) {
-  if (match.result) return;
+  if (match.result || !Number.isFinite(dt) || dt <= 0) return;
   match.elapsed += dt;
   decide(match);
   fight(match, new UnitIndex(match.units), dt, flashes);
   removeDead(match);
+  separate(match, dt);
   takeCities(match, new UnitIndex(match.units), dt);
   supplyAndBuild(match, dt);
   removeDead(match);

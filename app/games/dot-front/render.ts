@@ -1,7 +1,8 @@
 import { CAPTURE, GRACE, HEIGHT, RADIUS, WIDTH, units } from "./config";
 import type { Point } from "./config";
 import type { Flash, Match } from "./engine";
-import { tiles } from "./terrain";
+import { getMap } from "./terrain";
+import type { MapId } from "./terrain";
 
 export const colors = ["#b2b7ae", "#69c7ff", "#ff806f"];
 const terrainColors = { field: "#475447", forest: "#2d4139", rock: "#31363d", water: "#243946", bridge: "#807360" };
@@ -15,8 +16,13 @@ export function viewOf(width: number, height: number, camera: Camera): View {
 }
 export const toWorld = (view: View, point: Point) => ({ x: (point.x - view.x) / view.scale, y: (point.y - view.y) / view.scale });
 
-export function landscapeCanvas() {
+const landscapes = new Map<MapId, HTMLCanvasElement>();
+export function landscapeCanvas(mapId: MapId = "valley") {
+  const cached = landscapes.get(mapId);
+  if (cached) return cached;
+  const tiles = getMap(mapId).tiles;
   const canvas = document.createElement("canvas");
+  canvas.dataset.dotFrontMap = mapId;
   canvas.width = WIDTH * 24;
   canvas.height = HEIGHT * 24;
   const ctx = canvas.getContext("2d")!;
@@ -56,6 +62,7 @@ export function landscapeCanvas() {
       ctx.stroke();
     }
   }
+  landscapes.set(mapId, canvas);
   return canvas;
 }
 
@@ -80,6 +87,8 @@ export function render(
   canvas: HTMLCanvasElement, mini: HTMLCanvasElement | null, terrain: HTMLCanvasElement,
   view: View, match: Match, selected: Set<number>, selectedCity: number | null, flashes: Flash[], box: Box | null,
 ) {
+  // A restored match always paints its own map, even if a caller supplies an old cache.
+  if (terrain.dataset.dotFrontMap !== match.map) terrain = landscapeCanvas(match.map);
   const ctx = canvas.getContext("2d")!;
   ctx.setTransform(canvas.width / Math.max(1, view.width), 0, 0, canvas.height / Math.max(1, view.height), 0, 0);
   ctx.fillStyle = "#101a20";

@@ -1,10 +1,13 @@
 const { spawnSync } = require("node:child_process");
-const { mkdtempSync, rmSync } = require("node:fs");
+const { mkdtempSync, rmSync, readdirSync } = require("node:fs");
 const path = require("node:path");
 
 const root = path.resolve(__dirname, "..");
 const output = mkdtempSync(path.join(root, "node_modules", ".dot-front-tests-"));
-const sources = ["app/games/dot-front/engine.test.ts"];
+const sources = readdirSync(path.join(root, "app/games/dot-front"))
+  .filter((file) => file.endsWith(".test.ts"))
+  .sort()
+  .map((file) => "app/games/dot-front/" + file);
 try {
   const compilation = spawnSync(
     process.execPath,

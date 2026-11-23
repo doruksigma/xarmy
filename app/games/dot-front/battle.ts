@@ -32,7 +32,7 @@ export function startBattle(
   match: Match, canvas: HTMLCanvasElement, mini: HTMLCanvasElement,
   notify: (summary: Summary) => void, onPause: () => void, autosave: () => void, finished: () => void,
 ) {
-  const terrain = landscapeCanvas();
+  const terrain = landscapeCanvas(match.map);
   const camera: Camera = { x: WIDTH / 2, y: HEIGHT / 2, zoom: 1 };
   const picked = new Set<number>();
   let cityId: number | null = null;
@@ -49,6 +49,7 @@ export function startBattle(
   let nextNotice = 0;
   let lastSave = performance.now();
   let notifiedResult = false;
+  let disposed = false;
   const audio = soundEffects();
   const view = () => viewOf(Math.max(1, canvas.clientWidth), Math.max(1, canvas.clientHeight), camera);
   const update = () => notify(summary(match, picked, cityId));
@@ -58,7 +59,8 @@ export function startBattle(
     const city = currentCity();
     return city?.owner === 1 ? city : null;
   };
-  const active = () => !paused && !match.result;
+  const active = () => !disposed && !paused && !match.result && !document.hidden;
+  const focus = () => { if (active()) canvas.focus({ preventScroll: true }); };
   function pick(units: Unit[], add: boolean) {
     if (!add) picked.clear();
     for (const unit of units) picked.add(unit.id);
@@ -72,19 +74,26 @@ export function startBattle(
   function move(point: Point) {
     const group = selected();
     if (!group.length) return;
-    send(group, point);
+    send(group, point, match.map);
     if (match.tutorial === 1) match.tutorial = 2;
   }
   function attack(target: Unit) {
     const group = selected();
     if (!group.length) return;
-    for (const unit of group) orderUnit(unit, { mode: "attack", target: target.id });
+    for (const unit of group) orderUnit(unit, { mode: "attack", target: target.id }, match.map);
     if (match.tutorial === 4) match.tutorial = 5;
+  }
+  function finish() {
+    if (!match.result || notifiedResult || disposed) return;
+    notifiedResult = true;
+    audio.stop();
+    controls.reset();
+    finished();
   }
 
   const controls = bindInput(canvas, {
-    view, camera, multi: () => multi, drag: (value) => { box = value; },
-    pause: onPause,
+    view, camera, active, multi: () => multi, drag: (value) => { box = value; },
+    pause: () => { setPaused(true); onPause(); },
     select(from, to, add) {
       if (!active()) return;
       pick(match.units.filter((unit) => unit.team === 1 &&
@@ -95,7 +104,7 @@ export function startBattle(
       if (!active()) return;
       const owned = myCity();
       if (rally && owned) {
-        owned.rally = nearestOpen(point);
+        owned.rally = nearestOpen(point, match.map);
         rally = false;
         update();
         return;
@@ -124,7 +133,9 @@ export function startBattle(
   });
 
   function tick(now: number) {
-    const delta = previous ? Math.min((now - previous) / 1000, 0.15) : 0;
+    frame = 0;
+    if (disposed) return;
+    const delta = previous ? Math.max(0, Math.min((now - previous) / 1000, 0.15)) : 0;
     previous = now;
     if (active() && !document.hidden) {
       controls.moveCamera(delta);
@@ -147,75 +158,119 @@ export function startBattle(
       nextNotice = now + 160;
       update();
     }
-    if (match.result && !notifiedResult) {
-      notifiedResult = true;
-      audio.stop();
-      finished();
-    }
+    finish();
+    if (disposed) return;
     resize(canvas);
+    clampCamera(camera, view());
     render(canvas, mini, terrain, view(), match, picked, cityId, flashes, box);
-    frame = requestAnimationFrame(tick);
+    schedule();
   }
-  frame = requestAnimationFrame(tick);
-
-  function visibility() {
-    if (!document.hidden || match.result) return;
-    paused = true;
+  function schedule() {
+    if (!disposed && !frame && !document.hidden) frame = requestAnimationFrame(tick);
+  }
+  function stopFrame() {
+    cancelAnimationFrame(frame);
+    frame = 0;
+  }
+  function setPaused(value: boolean) {
+    if (disposed) return;
+    const next = value || document.hidden || Boolean(match.result);
+    const changed = paused !== next;
+    paused = next;
     accumulator = 0;
     previous = 0;
+    controls.reset();
     box = null;
-    audio.stop();
-    onPause();
+    if (paused) {
+      audio.stop();
+      if (changed && !match.result) {
+        lastSave = performance.now();
+        autosave();
+      }
+    } else if (!muted) void audio.enable().catch(() => {});
+  }
+  schedule();
+
+  function visibility() {
+    previous = 0;
+    accumulator = 0;
+    if (document.hidden) {
+      stopFrame();
+      setPaused(true);
+      if (!match.result) onPause();
+    } else schedule();
+  }
+  function pagehide() {
+    setPaused(true);
+    stopFrame();
+  }
+  function pageshow() {
+    previous = 0;
+    accumulator = 0;
+    if (paused && !match.result) onPause();
+    schedule();
   }
   document.addEventListener("visibilitychange", visibility);
+  window.addEventListener("pagehide", pagehide);
+  window.addEventListener("pageshow", pageshow);
 
   return {
-    focus() { canvas.focus({ preventScroll: true }); },
-    pause(value: boolean) {
-      paused = value;
-      accumulator = 0;
-      previous = 0;
-      if (value) {
-        audio.stop();
-        autosave();
-      } else if (!muted) void audio.enable().catch(() => {});
-    },
-    speed(value: number) { speed = value; },
+    focus,
+    pause: setPaused,
+    speed(value: number) { speed = value === 2 ? 2 : 1; focus(); },
     sound(value: boolean) {
       muted = !value;
       if (value && active()) void audio.enable().catch(() => {});
       else audio.stop();
     },
-    multi(value: boolean) { multi = value; },
-    selectAll() { if (active()) pick(match.units.filter((unit) => unit.team === 1), false); },
-    deselect() { cityId = null; pick([], false); },
-    hold() { if (active()) for (const unit of selected()) orderUnit(unit, { mode: "hold" }); },
+    multi(value: boolean) { multi = value; controls.reset(); focus(); },
+    selectAll() { if (active()) { pick(match.units.filter((unit) => unit.team === 1), false); focus(); } },
+    deselect() { if (active()) { cityId = null; pick([], false); focus(); } },
+    hold() {
+      if (!active()) return;
+      for (const unit of selected()) orderUnit(unit, { mode: "hold" }, match.map);
+      rally = false;
+      focus();
+    },
     sendToCity() {
       const city = currentCity();
-      if (city && active()) move(city);
+      if (city && active()) { move(city); focus(); }
     },
-    rally() { rally = Boolean(myCity()) && active(); return rally; },
+    rally() { rally = Boolean(myCity()) && active(); focus(); return rally; },
+    rallyPending() { return rally; },
     build(kind: Kind) {
       const city = myCity();
       if (!active() || !city || city.build) return;
       city.build = { kind, elapsed: 0 };
-      if (match.tutorial === 3) match.tutorial = 4;
       update();
+      focus();
     },
     repeat(value: boolean) { const city = myCity(); if (active() && city) city.repeat = value; update(); },
     cancel() { const city = myCity(); if (active() && city) city.build = null; update(); },
     pan(point: Point) {
+      if (!active()) return;
       camera.zoom = Math.max(1.5, camera.zoom);
       camera.x = point.x * WIDTH;
       camera.y = point.y * HEIGHT;
-      clampCamera(camera);
+      clampCamera(camera, view());
+      focus();
     },
-    surrender() { match.result = "lost"; update(); },
+    surrender() {
+      if (disposed || match.result) return;
+      match.result = "lost";
+      update();
+      // Commit the result even if the page closes before another animation frame.
+      finish();
+    },
     dispose() {
-      cancelAnimationFrame(frame);
+      if (disposed) return;
+      disposed = true;
+      stopFrame();
       controls.dispose();
       audio.dispose();
       document.removeEventListener("visibilitychange", visibility);
+      window.removeEventListener("pagehide", pagehide);
+      window.removeEventListener("pageshow", pageshow);
     },
   };
 }

@@ -33,6 +33,18 @@
 .mapName { color: var(--accent); letter-spacing: 0.14em; text-transform: uppercase; font-size: 0.8rem; font-weight: 750; }
 .lead { color: #d8e3da; max-width: 35ch; }
 .menu { display: grid; gap: 0.5rem; }
+.selectedMap { display: grid; gap: 0.4rem; color: var(--muted); max-width: 48ch; font-size: 0.95rem; line-height: 1.6; margin-top: 1.25rem; }
+.selectedMap strong { color: var(--accent); font-size: 1rem; }
+.mapPicker { border: 0; min-width: 0; padding: 0; margin: 1.5rem 0 1rem; }
+.mapPicker legend { font-size: 1.1rem; font-weight: 700; margin-bottom: 0.8rem; }
+.mapGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.8rem; }
+.shell button.mapCard { overflow: hidden; padding: 0; text-align: left; background: #17252d; }
+.shell button.mapCard[aria-pressed="true"] { border-color: var(--accent); outline: 1px solid var(--accent); background: #26342f; }
+.mapThumbnail { width: 100%; height: 108px; object-fit: cover; display: block; pointer-events: none; }
+.mapCard > span { display: grid; gap: 0.4rem; padding: 0.8rem; }
+.mapCard strong { font-size: 0.95rem; }
+.mapCard small { color: var(--muted); font-size: 0.8rem; line-height: 1.5; }
+.matchMap { color: var(--muted); font-size: 0.9rem; font-weight: 500; display: inline-block; margin-left: 0.4rem; }
 .shell button, .shell select {
   min-height: 42px;
   max-width: 100%;
@@ -75,6 +87,8 @@
 .shade { position: absolute; inset: 0; z-index: 2; display: grid; place-items: center; background: #0b161edb; }
 .dialog { display: grid; gap: 0.38rem; text-align: center; width: min(320px, 90%); padding: 0.65rem; background: #1b2b33; border: 1px solid var(--line); border-radius: 0.8rem; }
 @media (max-width: 560px) {
+  .mapGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.6rem; }
+  .mapThumbnail { height: 90px; }
   .landing { grid-template-columns: 1fr; gap: 1rem; }
   .hud { justify-content: flex-start; font-size: 0.8rem; gap: 0.35rem 0.6rem; }
   .toolbar { gap: 0.35rem; }
