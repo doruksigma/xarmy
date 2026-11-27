@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { decide } from "./ai";
-import { CITY_PRODUCTION, STEP, difficulty, dist, units } from "./config";
+import { CAPTURE, CITY_PRODUCTION, HEIGHT, STEP, difficulty, dist, units } from "./config";
 import type { Kind, Owner, Team } from "./config";
-import { commanderMembers, createMatch, step, supply } from "./engine";
+import { commandUnit, createMatch, step } from "./engine";
 import type { City, Match, Unit } from "./engine";
 import { mapIds, nearestOpen, passable } from "./terrain";
 
-const soldier = (id: number, team: Team, x: number, y: number, kind: Kind = "light", commanderId = team * 100): Unit => ({
-  ...nearestOpen({ x, y }, "plains"), id, team, commanderId, kind, hp: units[kind].hp, cooldown: 0,
+const soldier = (id: number, team: Team, x: number, y: number, kind: Kind = "light"): Unit => ({
+  ...nearestOpen({ x, y }, "plains"), id, team, stance: "defend", nextOrder: 0, kind, hp: units[kind].hp, cooldown: 0,
   order: { mode: "hold" }, path: [], waypoint: 0, replan: 0, marked: false,
 });
 const city = (id: number, owner: Owner, x: number, y: number): City => ({
@@ -17,14 +17,7 @@ const city = (id: number, owner: Owner, x: number, y: number): City => ({
 });
 const fixture = (army: Unit[], cities: City[], level: Match["difficulty"] = "normal") => {
   const match = createMatch(level, "ai-unit-test", false, "plains");
-  match.units = army;
-  match.cities = cities;
-  match.commanders = [...new Set(army.map((unit) => unit.commanderId))].map((id) => {
-    const leader = army.find((unit) => unit.commanderId === id)!;
-    return { id, team: leader.team, leaderId: leader.id, order: { mode: "hold" as const }, autoFront: false, nextOrder: 0 };
-  });
-  match.nextCommanderId = Math.max(0, ...match.commanders.map((commander) => commander.id)) + 1;
-  match.nextAi = 0;
+  match.units = army; match.cities = cities; match.nextAi = 0;
   match.nextId = Math.max(0, ...army.map((unit) => unit.id)) + 1;
   return match;
 };
@@ -32,141 +25,139 @@ const advance = (match: Match, seconds: number) => {
   for (let i = 0; i < Math.round(seconds / STEP); i++) step(match, STEP, [], decide);
 };
 
-test("difficulty only changes decisions and keeps automatic production clocks intact", () => {
+test("difficulty changes decision frequency without accelerating the minute production clock", () => {
+  assert.equal(CITY_PRODUCTION, 60);
   for (const level of ["easy", "normal", "hard"] as const) {
     const match = fixture([soldier(1, 2, 110.5, 16.5)], [city(0, 2, 110.5, 16.5), city(1, 1, 90.5, 16.5)], level);
-    match.cities[0].build!.elapsed = CITY_PRODUCTION / 2;
+    match.cities[0].build!.elapsed = 30;
     decide(match);
     assert.equal(match.nextAi, difficulty[level].period);
-    assert.equal(match.cities[0].build!.elapsed, CITY_PRODUCTION / 2);
-    assert.equal(match.cities[0].repeat, true);
+    assert.equal(match.cities[0].build!.elapsed, 30);
     assert.equal(match.units[0].hp, units.light.hp);
-    const snapshot = JSON.stringify(match);
-    decide(match);
+    const snapshot = JSON.stringify(match); decide(match);
     assert.equal(JSON.stringify(match), snapshot);
   }
 });
 
-test("AI orders preserve persistent 10+10+5 commander memberships", () => {
-  const match = createMatch("normal", "ai-commanders", false, "plains");
-  const commanders = match.commanders.filter((commander) => commander.team === 2);
-  assert.deepEqual(commanders.map((commander) => commanderMembers(match, commander.id).length).sort((a, b) => b - a), [10, 10, 5]);
-  const membership = match.units.map((unit) => [unit.id, unit.commanderId]);
-  const ids = match.commanders.map((commander) => commander.id);
-  match.elapsed = match.nextAi;
-  decide(match);
-  assert.deepEqual(match.units.map((unit) => [unit.id, unit.commanderId]), membership);
-  assert.deepEqual(match.commanders.map((commander) => commander.id), ids);
-  assert.ok(commanders.some((commander) => commander.order.mode !== "hold"));
+test("the initial individual army attacks across multiple lanes and keeps interleaved defenders", () => {
+  const match = createMatch("normal", "ai-wide-front", false, "plains");
+  const red = match.units.filter((unit) => unit.team === 2);
+  assert.equal("commanders" in match, false);
+  assert.equal(red.length, 25);
+  assert.ok(red.every((unit) => !("commanderId" in unit)));
+  assert.ok(Math.max(...red.map((unit) => unit.y)) - Math.min(...red.map((unit) => unit.y)) > HEIGHT * 0.8);
+  match.elapsed = match.nextAi; decide(match);
+  assert.ok(red.filter((unit) => unit.stance === "attack").length >= 15);
+  assert.ok(red.filter((unit) => unit.stance === "defend").length >= 4);
+  const destinations = red.flatMap((unit) => unit.order.mode === "move" ? [unit.order.point] : []);
+  assert.ok(destinations.length > 20);
+  assert.equal(new Set(destinations.map((point) => `${point.x}:${point.y}`)).size, destinations.length);
+  assert.ok(Math.max(...destinations.map((point) => point.y)) - Math.min(...destinations.map((point) => point.y)) > HEIGHT * 0.7);
 });
 
-test("a commander does not borrow the strength of distant members or another army", () => {
-  const leader = soldier(1, 2, 105.5, 5.5);
-  const match = fixture([leader,
-    ...Array.from({ length: 9 }, (_, i) => soldier(i + 2, 2, 130.5 + i * 0.2, 75.5)),
-    ...Array.from({ length: 4 }, (_, i) => soldier(i + 11, 1, 95.5 + i * 0.2, 5.5, "heavy"))],
-    [city(0, 2, 110.5, 5.5), city(1, 2, 130.5, 75.5), city(2, 1, 95.5, 5.5)]);
+test("a dispersed army advances without gathering around a leader or borrowing distant support", () => {
+  const red = Array.from({ length: 12 }, (_, i) => soldier(i + 1, 2, 85.5, 3.5 + i * 7));
+  const blue = Array.from({ length: 6 }, (_, i) => soldier(i + 20, 1, 65.5, 4.5 + i * 14));
+  const match = fixture([...red, ...blue], [city(0, 2, 110.5, 45.5), city(1, 1, 45.5, 45.5)]);
   decide(match);
-  const commander = match.commanders.find((candidate) => candidate.id === leader.commanderId)!;
-  assert.notEqual(commander.order.mode, "attack");
-  if (commander.order.mode === "move") assert.ok(dist(commander.order.point, match.cities[2]) > 5);
+  assert.ok(red.filter((unit) => unit.stance === "attack").length >= 8);
+  assert.ok(red.every((unit) => unit.order.mode === "move"));
+  assert.ok(red.every((unit) => unit.path.length > 0));
 });
 
-test("an outnumbered commander retreats with its existing group", () => {
-  const red = [soldier(1, 2, 82.5, 5.5), soldier(2, 2, 82.8, 5.5)];
-  const match = fixture([...red, ...Array.from({ length: 4 }, (_, i) => soldier(i + 3, 1, 85.5, 5.5 + i * 0.2, "heavy"))],
-    [city(0, 2, 110.5, 5.5), city(1, 1, 75.5, 5.5)]);
-  const commander = match.commanders.find((candidate) => candidate.team === 2)!;
+test("a locally outmatched soldier defends without pulling distant soldiers into a blob", () => {
+  const endangered = soldier(1, 2, 82.5, 5.5);
+  const distant = Array.from({ length: 8 }, (_, i) => soldier(i + 2, 2, 85.5, 30.5 + i * 6));
+  const enemies = Array.from({ length: 4 }, (_, i) => soldier(i + 20, 1, 85.5, 5.5 + i, "heavy"));
+  const match = fixture([endangered, ...distant, ...enemies], [city(0, 2, 110.5, 5.5), city(1, 1, 60.5, 5.5)]);
   decide(match);
-  assert.equal(commander.order.mode, "move");
-  if (commander.order.mode === "move") assert.ok(dist(commander.order.point, match.cities[0]) < 1);
-  assert.ok(red.every((unit) => unit.commanderId === commander.id && unit.order.mode === "move"));
+  assert.equal(endangered.stance, "defend");
+  assert.ok(distant.some((unit) => unit.stance === "attack"));
+  const goals = distant.flatMap((unit) => unit.order.mode === "move" ? [unit.order.point] : []);
+  assert.equal(new Set(goals.map((point) => `${point.x}:${point.y}`)).size, goals.length);
+  assert.ok(goals.some((a) => goals.some((b) => dist(a, b) > 20)), "support remains spread across the actual troop front");
 });
 
-test("a nearby assembled commander defends its city as one formation", () => {
-  const red = Array.from({ length: 6 }, (_, i) => soldier(i + 1, 2, 105.5, 15.5 + i * 0.1));
-  const enemy = soldier(7, 1, 107.5, 15.5);
-  const match = fixture([...red, enemy], [city(0, 2, 108.5, 15.5), city(1, 1, 85.5, 5.5)]);
-  decide(match);
-  const commander = match.commanders.find((candidate) => candidate.team === 2)!;
-  assert.deepEqual(commander.order, { mode: "attack", target: enemy.id });
-  assert.ok(red.every((unit) => unit.order.mode === "attack" && unit.order.target === enemy.id));
+test("blue individual drawn routes are untouched by enemy tactical decisions", () => {
+  const blue = soldier(1, 1, 40.5, 10.5);
+  const red = Array.from({ length: 8 }, (_, i) => soldier(i + 2, 2, 85.5, 10.5 + i * 9));
+  const match = fixture([blue, ...red], [city(0, 2, 110.5, 45.5), city(1, 1, 30.5, 45.5)]);
+  commandUnit(match, blue.id, { mode: "route", points: [{ x: 45.5, y: 10.5 }, { x: 45.5, y: 15.5 }], next: 0 });
+  const before = JSON.stringify(blue); decide(match);
+  assert.equal(JSON.stringify(blue), before);
 });
 
-test("an isolated commander waits safely rather than feeding into a siege", () => {
-  const recruit = soldier(1, 2, 114.5, 5.5);
-  const match = fixture([recruit, ...Array.from({ length: 4 }, (_, i) => soldier(i + 2, 1, 94.5, 5.5 + i * 0.2, "heavy"))],
-    [city(0, 2, 94.5, 5.5), city(1, 2, 114.5, 5.5), city(2, 1, 75.5, 5.5)]);
+test("capture detachments use different city targets while most soldiers retain front coverage", () => {
+  const red = Array.from({ length: 25 }, (_, i) => soldier(i + 1, 2, 80.5, 2.5 + i * 3.5));
+  const match = fixture(red, [city(0, 2, 115.5, 10.5), city(1, 2, 115.5, 70.5),
+    ...Array.from({ length: 5 }, (_, i) => city(i + 2, 1, 70.5, 10.5 + i * 16))]);
   decide(match);
-  const commander = match.commanders.find((candidate) => candidate.team === 2)!;
-  assert.notEqual(commander.order.mode, "attack");
-  if (commander.order.mode === "move") assert.ok(dist(commander.order.point, match.cities[0]) > 5);
+  const raiders = red.filter((unit) => unit.stance === "manual");
+  assert.ok(raiders.length > 0 && raiders.length <= 6);
+  const destinations = raiders.flatMap((unit) => unit.order.mode === "move" ? [`${unit.order.point.x}:${unit.order.point.y}`] : []);
+  assert.equal(new Set(destinations).size, destinations.length);
+  assert.ok(red.filter((unit) => unit.stance !== "manual").length >= 19);
+  assert.ok(red.some((unit) => unit.stance === "attack"));
+  assert.ok(red.some((unit) => unit.stance === "defend"));
 });
 
-test("a cityless surviving commander attempts to recapture an undefended city", () => {
+test("a nearby threatened city receives local help without recalling the whole line", () => {
+  const red = Array.from({ length: 12 }, (_, i) => soldier(i + 1, 2, 85.5, 5.5 + i * 7));
+  const intruder = soldier(30, 1, 88.5, 5.5);
+  const threatened = city(0, 2, 88.5, 5.5); threatened.capturing = 1; threatened.progress = 2;
+  const match = fixture([...red, intruder], [threatened, city(1, 2, 120.5, 70.5), city(2, 1, 50.5, 45.5)]);
+  decide(match);
+  assert.equal(red[0].stance, "manual");
+  assert.equal(red[0].order.mode, "move");
+  if (red[0].order.mode === "move") assert.ok(dist(red[0].order.point, threatened) < 1.5);
+  assert.ok(red.filter((unit) => unit.stance !== "manual").length >= 9);
+});
+
+test("a cityless soldier can walk slowly to and recapture an undefended city", () => {
   const unit = soldier(1, 2, 103.5, 5.5);
   const match = fixture([unit], [city(0, 1, 100.5, 5.5), city(1, 1, 15.5, 5.5)], "hard");
   decide(match);
-  const commander = match.commanders.find((candidate) => candidate.team === 2)!;
-  assert.equal(commander.order.mode, "move");
-  if (commander.order.mode === "move") assert.ok(dist(commander.order.point, match.cities[0]) < 1);
-  advance(match, 9.8);
+  assert.equal(unit.order.mode, "move");
+  if (unit.order.mode === "move") assert.ok(dist(unit.order.point, match.cities[0]) < 1);
+  advance(match, CAPTURE + 10);
   assert.equal(match.cities[0].owner, 2);
 });
 
-test("full supply keeps the automatic light cycle instead of creating unaffordable heavies", () => {
-  const match = fixture(Array.from({ length: 5 }, (_, i) => soldier(i + 1, 2, 110.5, 16.5)),
-    [city(0, 2, 110.5, 16.5), city(1, 1, 90.5, 16.5)]);
-  match.cities[0].build!.elapsed = 3;
-  decide(match);
-  assert.deepEqual(match.cities[0].build, { kind: "light", elapsed: 3 });
-  assert.equal(supply(match, 2).used, 5);
+test("AI cannot produce an automatic reinforcement before sixty simulation seconds", () => {
+  const match = fixture([soldier(1, 2, 110.5, 16.5)], [city(0, 2, 110.5, 16.5), city(1, 1, 15.5, 70.5)]);
+  const nextId = match.nextId;
+  advance(match, CITY_PRODUCTION - STEP); assert.equal(match.nextId, nextId);
+  advance(match, STEP);
+  assert.ok(match.units.some((unit) => unit.team === 2 && unit.id >= nextId));
 });
 
-test("tutorial decisions stay dormant until the enemy-capture and attack lessons finish", () => {
-  const match = createMatch("hard", "tutorial-ai", true);
-  match.elapsed = 100;
+test("tutorial AI waits for the interactive lessons to finish", () => {
+  const match = createMatch("hard", "tutorial-ai", true); match.elapsed = 100;
   for (const phase of [0, 1, 2, 3, 4]) {
-    match.tutorial = phase;
-    const snapshot = JSON.stringify(match);
-    decide(match);
+    match.tutorial = phase; const snapshot = JSON.stringify(match); decide(match);
     assert.equal(JSON.stringify(match), snapshot);
   }
-  match.tutorial = 5;
-  decide(match);
-  assert.ok(match.nextAi > match.elapsed);
+  match.tutorial = 5; decide(match); assert.ok(match.nextAi > match.elapsed);
 });
 
-test("AI advances commanders, auto-produces and captures enemy cities on all six large maps", () => {
+test("all six maps keep slow individual armies on legal terrain and produce on minute boundaries", () => {
   for (const map of mapIds) {
     const match = createMatch("normal", `ai-${map}`, false, map);
-    const initialIds = new Set(match.units.map((unit) => unit.id));
-    const original = new Map(match.units.map((unit) => [unit.id, { x: unit.x, y: unit.y, commanderId: unit.commanderId }]));
-    assert.equal(match.cities.length, 50);
-    assert.equal(match.cities.filter((city) => city.owner === 2).length, 25);
-    advance(match, 12);
-    assert.ok(match.units.some((unit) => unit.team === 2 && original.has(unit.id) && dist(unit, original.get(unit.id)!) > 2), `${map}: commander movement`);
-    // Defended passes and the reinforced center need longer to break than open
-    // terrain. Retain player automatic-front defense to exercise a real assault.
-    const assaultWindow = map === "passes" ? 90 : map === "center" ? 180 : 60;
-    advance(match, assaultWindow - 12);
-    assert.ok(match.units.some((unit) => unit.team === 2 && !initialIds.has(unit.id)), `${map}: automatic reinforcements`);
-    assert.ok(match.cities.filter((city) => city.owner === 2).length > 25, `${map}: enemy city capture`);
-    if (map === "passes" || map === "center") assert.ok(match.report.killed > 0 && match.report.fallen > 0, `${map}: both armies fight before the breakthrough`);
-    assert.ok(match.units.every((unit) => !original.has(unit.id) || unit.commanderId === original.get(unit.id)!.commanderId), `${map}: persistent membership`);
+    const initialNextId = match.nextId;
+    advance(match, 65);
+    assert.ok(match.nextId > initialNextId, `${map}: first minute production completes`);
+    assert.ok(match.units.some((unit) => unit.team === 2 && unit.stance === "attack"), `${map}: advancing soldiers remain active`);
     assert.ok(match.units.every((unit) => passable(unit, map)), `${map}: legal terrain`);
     assert.ok(match.units.every((unit) => unit.hp <= units[unit.kind].hp), `${map}: shared health limits`);
-    assert.ok(match.commanders.every((commander) => commanderMembers(match, commander.id).length <= 10), `${map}: bounded squads`);
+    assert.equal("commanders" in match, false);
   }
 });
 
-test("large-map commander decisions resume exactly from serialized match state", () => {
-  for (const map of mapIds) {
-    const match = createMatch("hard", `resume-${map}`, false, map);
-    advance(match, 8);
-    const restored: Match = JSON.parse(JSON.stringify(match));
-    advance(match, 6);
-    advance(restored, 6);
-    assert.deepEqual(restored, match, map);
-  }
+test("slow opposing fronts really fight and AI decisions restore exactly across production", () => {
+  const match = createMatch("hard", "resume-front", false, "plains");
+  advance(match, 55);
+  const restored: Match = JSON.parse(JSON.stringify(match));
+  advance(match, 20); advance(restored, 20);
+  assert.deepEqual(restored, match);
+  assert.ok(match.report.killed + match.report.fallen > 0, "slow combat still resolves losses");
 });

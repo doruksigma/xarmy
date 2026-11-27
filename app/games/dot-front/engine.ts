@@ -1,28 +1,28 @@
-import { CAPTURE, CITY_PRODUCTION, COMMANDER_LIMIT, FRONT_INTERVAL, GRACE, HEIGHT, RADIUS, SUPPLY, WIDTH, dist, units } from "./config";
+import { CAPTURE, CITY_PRODUCTION, FRONT_ATTACK_ADVANCE, FRONT_INTERVAL, FRONT_REPLAN_DISTANCE, MAX_ROUTE_POINTS, GRACE, HEIGHT, RADIUS, SUPPLY, WIDTH, dist, units } from "./config";
 import type { Difficulty, Kind, Owner, Point, Team } from "./config";
 import { clearShot, getMap, nearestOpen, passable, route, tileAt } from "./terrain";
 import type { MapId } from "./terrain";
+import { frontDirection, frontSlots } from "./front";
 
 export type Order =
   | { mode: "hold" }
   | { mode: "move"; point: Point }
-  | { mode: "attack"; target: number };
+  | { mode: "attack"; target: number }
+  | { mode: "route"; points: Point[]; next: number };
 
 export type Unit = Point & {
-  id: number; team: Team; kind: Kind; hp: number; cooldown: number; commanderId: number;
+  id: number; team: Team; kind: Kind; hp: number; cooldown: number; stance: Stance | "manual"; nextOrder: number;
   order: Order; path: Point[]; waypoint: number; replan: number; marked: boolean;
 };
 export type City = Point & {
   id: number; owner: Owner; capturing: Owner; progress: number; rally: Point | null;
   build: { kind: Kind; elapsed: number } | null; repeat: boolean;
 };
-export type Commander = {
-  id: number; team: Team; leaderId: number; order: Order; autoFront: boolean; nextOrder: number;
-};
+export type Stance = "attack" | "defend";
 export type Result = "won" | "lost" | "draw";
 export type Match = {
-  version: 2; id: string; difficulty: Difficulty; map: MapId; elapsed: number; nextId: number;
-  units: Unit[]; cities: City[]; commanders: Commander[]; nextCommanderId: number; shortage: [number, number]; nextAi: number;
+  version: 3; id: string; difficulty: Difficulty; map: MapId; elapsed: number; nextId: number;
+  units: Unit[]; cities: City[]; shortage: [number, number]; nextAi: number;
   result: Result | null; report: { captured: number; killed: number; fallen: number };
   tutorial: number | null;
 };
@@ -30,8 +30,8 @@ export type Flash = { from: Point; to: Point; team: Team; expires: number };
 
 export function createMatch(difficulty: Difficulty, id: string, tutorial: boolean, map: MapId = "valley"): Match {
   const match: Match = {
-    version: 2, id, difficulty, map, elapsed: 0, nextId: 1, nextCommanderId: 1,
-    units: [], commanders: [], cities: getMap(map).cities.map((city, id) => ({
+    version: 3, id, difficulty, map, elapsed: 0, nextId: 1,
+    units: [], cities: getMap(map).cities.map((city, id) => ({
       ...city, id, capturing: 0, progress: 0, rally: null,
       build: city.owner ? { kind: "light", elapsed: 0 } : null, repeat: !!city.owner,
     })),
@@ -39,18 +39,10 @@ export function createMatch(difficulty: Difficulty, id: string, tutorial: boolea
     report: { captured: 0, killed: 0, fallen: 0 }, tutorial: tutorial ? 0 : null,
   };
   for (const team of [1, 2] as const) {
-    for (const [lane, count] of [[18, 10], [45, 10], [72, 5]] as const) {
-      const origin = { x: WIDTH / 2 + (team === 1 ? -5 : 5), y: team === 1 ? lane : HEIGHT - lane };
-      const front = nearestOpen(origin, match.map);
-      const group = makeCommander(match, team);
-      for (let i = 0; i < count; i++) {
-        const candidate = { x: front.x + (i % 5 - 2), y: front.y + (Math.floor(i / 5) - (count > 5 ? 0.5 : 0)) };
-        const point = openSpawn(match, candidate);
-        const unit = makeUnit(match, team, "light", point, group.id);
-        if (!group.leaderId) group.leaderId = unit.id;
-      }
-      // Armies begin at the border, outside one another's firing range.
-      group.nextOrder = FRONT_INTERVAL;
+    for (let index = 0; index < 25; index++) {
+      const y = 2.5 + index * (HEIGHT - 5) / 24;
+      const point = openSpawn(match, { x: WIDTH / 2 + (team === 1 ? -5 : 5), y });
+      makeUnit(match, team, "light", point).nextOrder = FRONT_INTERVAL;
     }
   }
   return match;
@@ -63,18 +55,10 @@ export function supply(match: Match, team: Team) {
   };
 }
 
-function makeCommander(match: Match, team: Team): Commander {
-  const commander: Commander = {
-    id: match.nextCommanderId++, team, leaderId: 0, order: { mode: "hold" },
-    autoFront: true, nextOrder: match.elapsed,
-  };
-  match.commanders.push(commander);
-  return commander;
-}
-
-function makeUnit(match: Match, team: Team, kind: Kind, point: Point, commanderId: number): Unit {
+function makeUnit(match: Match, team: Team, kind: Kind, point: Point): Unit {
   const unit: Unit = {
-    ...point, id: match.nextId++, team, kind, hp: units[kind].hp, cooldown: 0, commanderId,
+    ...point, id: match.nextId++, team, kind, hp: units[kind].hp, cooldown: 0,
+    stance: "defend", nextOrder: match.elapsed,
     order: { mode: "hold" }, path: [], waypoint: 0, replan: 0, marked: false,
   };
   match.units.push(unit);
@@ -91,142 +75,136 @@ function openSpawn(match: Match, origin: Point): Point {
   return center;
 }
 
-export function commanderMembers(match: Match, id: number): Unit[] {
-  return match.units.filter((unit) => unit.commanderId === id);
-}
-
-export function commanderLeader(match: Match, id: number): Unit | undefined {
-  const commander = match.commanders.find((item) => item.id === id);
-  return commander ? match.units.find((unit) => unit.id === commander.leaderId && unit.commanderId === id) : undefined;
-}
-
-function recruitCommander(match: Match, unit: Unit): Commander {
-  const available = match.commanders.filter((commander) => commander.team === unit.team && commanderMembers(match, commander.id).length < COMMANDER_LIMIT);
-  available.sort((a, b) => dist(commanderLeader(match, a.id) ?? unit, unit) - dist(commanderLeader(match, b.id) ?? unit, unit) || a.id - b.id);
-  const commander = available[0] ?? makeCommander(match, unit.team);
-  unit.commanderId = commander.id;
-  if (!commander.leaderId) commander.leaderId = unit.id;
-  return commander;
-}
-
-function followRecruit(match: Match, unit: Unit, commander: Commander) {
-  const leader = commanderLeader(match, commander.id);
-  const order = commander.order;
-  if (order.mode === "attack" && match.units.some((target) => target.id === order.target && target.team !== unit.team)) {
-    orderUnit(unit, order, match.map);
-  } else if (order.mode === "move") {
-    orderUnit(unit, { mode: "move", point: order.point }, match.map);
-  } else if (leader && leader.id !== unit.id && dist(leader, unit) > 0.7) {
-    orderUnit(unit, { mode: "move", point: { x: leader.x, y: leader.y } }, match.map);
-  }
-}
-
 function spawn(match: Match, city: City, kind: Kind): Unit | undefined {
   if (!city.owner) return;
-  const point = openSpawn(match, city);
-  const unit = makeUnit(match, city.owner, kind, point, 0);
-  const commander = recruitCommander(match, unit);
-  followRecruit(match, unit, commander);
-  if (city.rally) orderUnit(unit, { mode: "move", point: city.rally }, match.map);
+  const unit = makeUnit(match, city.owner, kind, openSpawn(match, city));
+  if (city.rally) commandUnit(match, unit.id, { mode: "move", point: city.rally });
   return unit;
 }
 
-/** Promote a surviving member without adding a soldier or changing combat stats. */
-export function maintainCommanders(match: Match) {
-  for (const commander of match.commanders) {
-    const members = commanderMembers(match, commander.id).filter((unit) => unit.team === commander.team).sort((a, b) => a.id - b.id);
-    if (!members.some((unit) => unit.id === commander.leaderId)) commander.leaderId = members[0]?.id ?? 0;
-    // A malformed external command cannot leave a permanently invalid attack.
-    const order = commander.order;
-    if (order.mode === "attack" && !match.units.some((unit) => unit.id === order.target && unit.team !== commander.team)) commander.order = { mode: "hold" };
-  }
-  match.commanders = match.commanders.filter((commander) => commander.leaderId !== 0);
-  for (const unit of match.units) {
-    const commander = match.commanders.find((item) => item.id === unit.commanderId && item.team === unit.team);
-    if (!commander) recruitCommander(match, unit);
-  }
-}
-
-/** The nearest city-border midpoint, held five cells back on the friendly side. */
+/** Compatibility helper: nearest friendly slot on the living-army front. */
 export function frontlinePoint(match: Match, team: Team, origin: Point): Point {
-  const home = match.cities.filter((city) => city.owner === team);
-  const enemy = match.cities.filter((city) => city.owner && city.owner !== team);
-  if (!home.length) {
-    const target = [...match.cities].sort((a, b) => dist(origin, a) - dist(origin, b) || a.id - b.id)[0];
-    return nearestOpen(target ?? origin, match.map);
-  }
-  if (!enemy.length) {
-    const target = match.units.filter((unit) => unit.team !== team).sort((a, b) => dist(origin, a) - dist(origin, b) || a.id - b.id)[0];
-    return nearestOpen(target ?? home.reduce((a, b) => dist(origin, a) < dist(origin, b) ? a : b), match.map);
-  }
-  const borderCities = home.filter((city) => {
-    const target = enemy.reduce((a, b) => dist(city, a) < dist(city, b) ? a : b);
-    return !home.some((other) => dist(other, target) < dist(city, target) - 1e-6);
-  });
-  const candidates = (borderCities.length ? borderCities : home).map((city) => {
-    const target = enemy.reduce((a, b) => dist(city, a) < dist(city, b) ? a : b);
-    const length = dist(city, target) || 1;
-    const back = Math.min(5, length * 0.35);
-    const point = { x: (city.x + target.x) / 2 + (city.x - target.x) / length * back,
-      y: (city.y + target.y) / 2 + (city.y - target.y) / length * back };
-    return { point, score: dist(point, origin) + length * 0.25, id: city.id };
-  }).sort((a, b) => a.score - b.score || a.id - b.id);
-  return nearestOpen(candidates[0].point, match.map);
+  const count = Math.max(25, match.units.filter((unit) => unit.team === team && unit.hp > 0).length);
+  const slots = frontSlots(match, team, count);
+  return slots.reduce((best, point) => dist(point, origin) < dist(best, origin) ? point : best,
+    slots[0] ?? nearestOpen(origin, match.map));
 }
 
-function dispatchCommander(match: Match, commander: Commander, order: Order) {
-  commander.order = order.mode === "move" ? { mode: "move", point: nearestOpen(order.point, match.map) } : { ...order };
-  const members = commanderMembers(match, commander.id);
-  if (commander.order.mode === "move") send(members, commander.order.point, match.map);
-  else for (const unit of members) orderUnit(unit, commander.order, match.map);
+function copyOrder(order: Order): Order {
+  if (order.mode === "move") return { mode: "move", point: { x: order.point.x, y: order.point.y } };
+  if (order.mode === "route") return { mode: "route", points: order.points.map((point) => ({ x: point.x, y: point.y })), next: order.next };
+  return { ...order };
 }
 
-export function commandCommander(match: Match, id: number, order: Order): void {
+function validOrder(match: Match, team: Team, order: Order): boolean {
+  const point = (value: Point) => Number.isFinite(value?.x) && Number.isFinite(value?.y) &&
+    value.x >= 0 && value.y >= 0 && value.x <= WIDTH && value.y <= HEIGHT;
+  if (order.mode === "move") return point(order.point);
+  if (order.mode === "route") return Array.isArray(order.points) && order.points.length > 0 &&
+    order.points.length <= MAX_ROUTE_POINTS && order.points.every(point) && Number.isInteger(order.next) &&
+    order.next >= 0 && order.next <= order.points.length;
+  if (order.mode === "attack") return match.units.some((unit) => unit.id === order.target && unit.team !== team && unit.hp > 0);
+  return order.mode === "hold";
+}
+
+/** A direct order affects exactly one soldier and remains independent of automation. */
+export function commandUnit(match: Match, id: number, order: Order): void {
   if (match.result) return;
-  const commander = match.commanders.find((item) => item.id === id);
-  if (!commander) return;
-  if (order.mode === "attack" && !match.units.some((unit) => unit.id === order.target && unit.team !== commander.team)) return;
-  commander.autoFront = false;
-  commander.nextOrder = match.elapsed + FRONT_INTERVAL;
-  dispatchCommander(match, commander, order);
+  const unit = match.units.find((item) => item.id === id && item.hp > 0);
+  if (!unit || !validOrder(match, unit.team, order)) return;
+  unit.stance = "manual";
+  unit.nextOrder = match.elapsed + FRONT_INTERVAL;
+  orderUnit(unit, order.mode === "move" ? { mode: "move", point: nearestOpen(order.point, match.map) } : order, match.map);
 }
 
-export function setCommanderAutoFront(match: Match, id: number, enabled: boolean): void {
-  const commander = match.commanders.find((item) => item.id === id);
-  if (!commander || match.result) return;
-  commander.autoFront = enabled;
-  commander.nextOrder = match.elapsed;
-  if (enabled) {
-    const leader = commanderLeader(match, id);
-    if (leader) dispatchCommander(match, commander, { mode: "move", point: frontlinePoint(match, commander.team, leader) });
-    commander.nextOrder = match.elapsed + FRONT_INTERVAL;
+/** Apply a stance in one batch, allocating the whole side once rather than per click. */
+export function setGroupStance(match: Match, ids: readonly number[], stance: Stance): void {
+  if (match.result || (stance !== "attack" && stance !== "defend")) return;
+  const selected = new Set(ids), teams = new Set<Team>();
+  for (const unit of match.units) {
+    if (!selected.has(unit.id) || unit.hp <= 0) continue;
+    if (unit.stance === stance) continue;
+    unit.stance = stance;
+    unit.nextOrder = match.elapsed;
+    teams.add(unit.team);
+  }
+  for (const team of teams) autoFront(match, team);
+}
+
+export function setUnitStance(match: Match, id: number, stance: Stance): void {
+  setGroupStance(match, [id], stance);
+}
+
+function uniqueTarget(match: Match, point: Point, occupied: Set<string>): Point {
+  const center = nearestOpen(point, match.map);
+  for (let ring = 0; ring <= 12; ring++) for (let y = -ring; y <= ring; y++) for (let x = -ring; x <= ring; x++) {
+    if (Math.max(Math.abs(x), Math.abs(y)) !== ring) continue;
+    const candidate = { x: center.x + x, y: center.y + y }, key = `${candidate.x}:${candidate.y}`;
+    if (passable(candidate, match.map) && !occupied.has(key)) { occupied.add(key); return candidate; }
+  }
+  occupied.add(`${center.x}:${center.y}`);
+  return center;
+}
+
+/** Allocate a unique target to each automated soldier across the entire front. */
+function autoFront(match: Match, forceTeam?: Team) {
+  if (forceTeam === undefined && match.tutorial !== null && match.tutorial < 5) return;
+  for (const team of [1, 2] as const) {
+    if (forceTeam !== undefined && forceTeam !== team) continue;
+    // Existing destinations preserve lane order. New troops enter beside the
+    // nearest existing lane instead of moving the whole line toward their city.
+    const lane = (unit: Unit) => unit.order.mode === "move" ? unit.order.point.y : unit.y;
+    const members = match.units.filter(unit => unit.team === team && unit.hp > 0 && unit.stance !== "manual")
+      .sort((a, b) => lane(a) - lane(b) || a.id - b.id);
+    if (!members.length || (forceTeam === undefined && !members.some(unit => match.elapsed + 1e-6 >= unit.nextOrder))) continue;
+    const slots = frontSlots(match, team, members.length), occupied = new Set<string>();
+    for (let index = 0; index < members.length; index++) {
+      const unit = members[index];
+      unit.nextOrder = match.elapsed + FRONT_INTERVAL;
+      const friendly = slots[index];
+      if (!friendly) continue;
+      const direction = frontDirection(match, team, friendly);
+      const candidate = unit.stance === "attack" ? {
+        x: friendly.x + direction.x * FRONT_ATTACK_ADVANCE,
+        y: friendly.y + direction.y * FRONT_ATTACK_ADVANCE,
+      } : friendly;
+      const goal = uniqueTarget(match, candidate, occupied);
+      const oldGoal = unit.order.mode === "move" ? unit.order.point : null;
+      if (oldGoal && dist(oldGoal, goal) <= FRONT_REPLAN_DISTANCE) continue;
+      if (!oldGoal && dist(unit, goal) <= 0.4) continue;
+      orderUnit(unit, { mode: "move", point: goal }, match.map);
+    }
   }
 }
 
-function autoFront(match: Match) {
-  // During the interactive lesson, player commands remain under explicit control.
-  if (match.tutorial !== null && match.tutorial < 5) return;
-  for (const commander of match.commanders) {
-    if (!commander.autoFront || match.elapsed + 1e-6 < commander.nextOrder) continue;
-    commander.nextOrder = match.elapsed + FRONT_INTERVAL;
-    const leader = commanderLeader(match, commander.id);
-    if (!leader) continue;
-    const point = frontlinePoint(match, commander.team, leader);
-    const changed = commander.order.mode !== "move" || dist(commander.order.point, point) > 1;
-    const stragglers = commanderMembers(match, commander.id).some((unit) => unit.order.mode === "hold" && dist(unit, point) > 3);
-    if ((changed && dist(leader, point) > 1.5) || stragglers) dispatchCommander(match, commander, { mode: "move", point });
+function planRouteSegment(unit: Unit, map: MapId): boolean {
+  if (unit.order.mode !== "route") return false;
+  // At most 128 skipped segments: disconnected or duplicate destinations cannot
+  // lock the simulation or shortcut later reachable drawn waypoints.
+  let attempts = 0;
+  while (unit.order.next < unit.order.points.length && attempts++ < MAX_ROUTE_POINTS) {
+    const goal = nearestOpen(unit.order.points[unit.order.next], map);
+    if (dist(unit, goal) < 1e-7) { unit.order.next++; continue; }
+    unit.path = route(unit, goal, unit.kind, map);
+    unit.waypoint = 0;
+    if (unit.path.length) return true;
+    unit.order.next++;
   }
+  unit.order = { mode: "hold" }; unit.path = []; unit.waypoint = 0;
+  return false;
 }
 
 export function orderUnit(unit: Unit, order: Order, map: MapId = "valley") {
-  unit.order = order.mode === "move" ? { mode: "move", point: { x: order.point.x, y: order.point.y } } : { ...order };
+  unit.order = copyOrder(order);
   unit.waypoint = 0;
   unit.replan = 0;
   unit.path = order.mode === "move" ? route(unit, order.point, unit.kind, map) : [];
+  if (unit.order.mode === "route") planRouteSegment(unit, map);
 }
 
 export function send(group: Unit[], point: Point, map: MapId = "valley") {
   if (!group.length) return;
+  for (const unit of group) unit.stance = "manual";
   const slots = [nearestOpen(point, map)];
   for (let radius = 1; slots.length < group.length && radius < 12; radius++) {
     const origin = slots[0];
@@ -318,6 +296,11 @@ function walk(unit: Unit, dt: number, map: MapId) {
   while (remaining > 0) {
     const point = unit.path[unit.waypoint];
     if (!point) {
+      if (unit.order.mode === "route") {
+        unit.order.next++;
+        if (planRouteSegment(unit, map)) continue;
+        return;
+      }
       if (unit.order.mode === "move") orderUnit(unit, { mode: "hold" }, map);
       return;
     }
@@ -328,11 +311,15 @@ function walk(unit: Unit, dt: number, map: MapId) {
     if (!canTraverse(unit, next, map)) {
       // Soft separation or an old saved waypoint may change the initial
       // approach. Rebuild through the current tile center rather than teleport.
-      const goal = unit.order.mode === "move" ? unit.order.point : unit.path.at(-1);
+      const goal = unit.order.mode === "move" ? unit.order.point :
+        unit.order.mode === "route" ? unit.order.points[unit.order.next] : unit.path.at(-1);
       unit.path = goal ? route(unit, goal, unit.kind, map) : [];
       unit.waypoint = 0;
       unit.replan = 0;
-      if (!unit.path.length) orderUnit(unit, { mode: "hold" }, map);
+      if (!unit.path.length) {
+        if (unit.order.mode === "route") { unit.order.next++; planRouteSegment(unit, map); }
+        else orderUnit(unit, { mode: "hold" }, map);
+      }
       return;
     }
     unit.x = next.x;
@@ -345,12 +332,12 @@ function walk(unit: Unit, dt: number, map: MapId) {
 function separate(match: Match, dt: number) {
   const index = new UnitIndex(match.units);
   const displacement = new Map<number, number>();
-  for (const unit of match.units) for (const other of index.nearby(unit, 0.5)) {
+  for (const unit of match.units) for (const other of index.nearby(unit, 1.2)) {
     if (other.id <= unit.id) continue;
     let dx = unit.x - other.x;
     let dy = unit.y - other.y;
     let length = Math.hypot(dx, dy);
-    const minimum = (unit.kind === "heavy" ? 0.24 : 0.18) + (other.kind === "heavy" ? 0.24 : 0.18);
+    const minimum = (unit.kind === "heavy" ? 0.56 : 0.42) + (other.kind === "heavy" ? 0.56 : 0.42);
     if (length >= minimum) continue;
     if (length < 1e-9) {
       const angle = (unit.id * 2.399963 + other.id) % (Math.PI * 2);
@@ -359,7 +346,7 @@ function separate(match: Match, dt: number) {
       length = 1;
     }
     const amount = Math.min((minimum - Math.min(dist(unit, other), minimum)) / 2,
-      dt * 0.8 - (displacement.get(unit.id) ?? 0), dt * 0.8 - (displacement.get(other.id) ?? 0));
+      dt * 0.15 - (displacement.get(unit.id) ?? 0), dt * 0.15 - (displacement.get(other.id) ?? 0));
     if (amount <= 1e-9) continue;
     const ox = dx / length * amount;
     const oy = dy / length * amount;
@@ -410,7 +397,7 @@ function fight(match: Match, index: UnitIndex, dt: number, flashes: Flash[]) {
         unit.replan = match.elapsed + 0.8 + (unit.id % 7) * 0.07;
       }
       walk(unit, dt, match.map);
-    } else if (!target) walk(unit, dt, match.map);
+    } else if (!target && !(victim && unit.stance !== "manual")) walk(unit, dt, match.map);
   }
   for (const unit of match.units) {
     unit.hp -= damage.get(unit.id) ?? 0;
@@ -489,13 +476,11 @@ function removeDead(match: Match) {
   for (const unit of match.units) {
     if (unit.order.mode === "attack" && !ids.has(unit.order.target)) orderUnit(unit, { mode: "hold" }, match.map);
   }
-  maintainCommanders(match);
 }
 
 export function step(match: Match, dt: number, flashes: Flash[], decide: (match: Match) => void) {
   if (match.result || !Number.isFinite(dt) || dt <= 0) return;
   match.elapsed += dt;
-  maintainCommanders(match);
   autoFront(match);
   decide(match);
   fight(match, new UnitIndex(match.units), dt, flashes);

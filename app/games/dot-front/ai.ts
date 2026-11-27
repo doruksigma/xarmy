@@ -1,36 +1,25 @@
-import { RADIUS, difficulty, dist, units } from "./config";
+import { difficulty, dist, units } from "./config";
 import type { Point } from "./config";
-import type { City, Commander, Match, Unit } from "./engine";
-import { commandCommander, commanderLeader, commanderMembers, supply } from "./engine";
-import { route, tileAt } from "./terrain";
+import type { City, Match, Unit } from "./engine";
+import { commandUnit, setGroupStance, supply } from "./engine";
+import { nearestOpen, route, tileAt } from "./terrain";
 
 const strength = (group: Unit[]) => group.reduce((score, unit) => score + units[unit.kind].supply * (0.3 + 0.7 * unit.hp / units[unit.kind].hp), 0);
 const near = (group: Unit[], point: Point, radius: number) => group.filter((unit) => dist(unit, point) <= radius);
 
-function moveCommander(match: Match, commander: Commander, members: Unit[], point: Point) {
-  const sameDestination = commander.order.mode === "move" && dist(commander.order.point, point) < 1.5;
-  const arrived = members.some((unit) => dist(unit, point) <= RADIUS);
-  if (sameDestination && (arrived || members.some((unit) => unit.order.mode === "move"))) return;
-  if (commander.order.mode === "hold" && arrived && !commander.autoFront) return;
-  commandCommander(match, commander.id, { mode: "move", point: { x: point.x, y: point.y } });
+function move(match: Match, unit: Unit, point: Point) {
+  const goal = nearestOpen(point, match.map);
+  if (unit.stance === "manual" && unit.order.mode === "move" && dist(unit.order.point, goal) < 0.6) return;
+  if (unit.stance === "manual" && unit.order.mode === "hold" && dist(unit, goal) < 0.8) return;
+  commandUnit(match, unit.id, { mode: "move", point: goal });
 }
 
-function holdCommander(match: Match, commander: Commander) {
-  if (commander.order.mode !== "hold" || commander.autoFront) commandCommander(match, commander.id, { mode: "hold" });
-}
-
-function attackCommander(match: Match, commander: Commander, target: Unit) {
-  if (commander.order.mode !== "attack" || commander.order.target !== target.id || commander.autoFront) {
-    commandCommander(match, commander.id, { mode: "attack", target: target.id });
-  }
-}
-
-// Every owned city already runs the same ten-second automatic cycle as the
-// player's cities. AI only chooses its unit type; it never resets/advances time.
+// Player and AI cities share this same minute-long engine clock. Choosing a type
+// cannot reset or advance production, add supply or change health.
 function chooseProduction(match: Match, home: City[], red: Unit[]) {
   const { used, capacity } = supply(match, 2);
   const active = home.filter((city) => city.build);
-  let free = capacity - used - active.reduce((total, city) => total + units[city.build!.kind].supply, 0);
+  let free = capacity - used - active.reduce((sum, city) => sum + units[city.build!.kind].supply, 0);
   let heavyCount = red.filter((unit) => unit.kind === "heavy").length + active.filter((city) => city.build!.kind === "heavy").length;
   const plannedSize = red.length + active.length;
   const targets = match.cities.filter((city) => city.owner !== 2);
@@ -38,12 +27,11 @@ function chooseProduction(match: Match, home: City[], red: Unit[]) {
     const build = city.build!;
     free += units[build.kind].supply;
     if (build.kind === "heavy") heavyCount--;
-    const target = [...targets].sort((a, b) => dist(city, a) - dist(city, b) || a.id - b.id)[0] ?? city;
+    const target = targets.reduce<City | undefined>((best, candidate) => !best || dist(city, candidate) < dist(city, best) ? candidate : best, undefined) ?? city;
     const samples = [city, target, { x: (city.x + target.x) / 2, y: (city.y + target.y) / 2 }];
-    const forest = samples.reduce((total, point) => total + [-2, -1, 0, 1, 2]
+    const forest = samples.reduce((sum, point) => sum + [-2, -1, 0, 1, 2]
       .filter((offset) => tileAt({ x: point.x + offset, y: point.y + 1 }, match.map) === "forest").length, 0);
-    const ratio = forest >= 4 ? 0.14 : 0.24;
-    const heavy = free >= 2 && red.length >= 4 && heavyCount / Math.max(1, plannedSize) < ratio;
+    const heavy = free >= 2 && red.length >= 4 && heavyCount / Math.max(1, plannedSize) < (forest >= 4 ? 0.14 : 0.24);
     build.kind = heavy ? "heavy" : "light";
     free -= units[build.kind].supply;
     if (heavy) heavyCount++;
@@ -51,128 +39,91 @@ function chooseProduction(match: Match, home: City[], red: Unit[]) {
 }
 
 export function decide(match: Match) {
-  if (match.result || (match.tutorial !== null && match.tutorial < 5) || match.elapsed < match.nextAi) return;
+  if (match.result || (match.tutorial !== null && match.tutorial < 5) || match.elapsed + 1e-6 < match.nextAi) return;
   const options = difficulty[match.difficulty];
   match.nextAi = match.elapsed + options.period;
   const home = match.cities.filter((city) => city.owner === 2);
-  const red = match.units.filter((unit) => unit.team === 2 && unit.hp > 0);
+  const red = match.units.filter((unit) => unit.team === 2 && unit.hp > 0).sort((a, b) => a.id - b.id);
   const blue = match.units.filter((unit) => unit.team === 1 && unit.hp > 0);
   chooseProduction(match, home, red);
   if (!red.length) return;
 
-  // Commander membership is durable engine state. Do not split formations or
-  // reassign recruits merely because their current positions happen to be close.
-  const squads = match.commanders.filter((commander) => commander.team === 2).flatMap((commander) => {
-    const leader = commanderLeader(match, commander.id);
-    if (!leader) return [];
-    const members = commanderMembers(match, commander.id);
-    return [{ commander, leader, members, assembled: near(members, leader, 8) }];
-  });
   const targets = match.cities.filter((city) => city.owner !== 2);
-  const cityPower = new Map(match.cities.map((city) => [city.id, strength(near(blue, city, 8))]));
-  const threats = home.map((city) => ({ city, power: cityPower.get(city.id)! }))
-    .filter(({ city, power }) => power > 0 || city.capturing === 1)
-    .sort((a, b) => b.city.progress - a.city.progress || b.power - a.power);
-  const safeHomes = home.filter((city) => (cityPower.get(city.id) ?? 0) <= strength(near(red, city, 7)));
-  const assigned = new Map<number, number>();
+  const cityPower = new Map(match.cities.map((city) => [city.id, strength(near(blue, city, 6))]));
+  const threats = home.filter((city) => city.capturing === 1 || (cityPower.get(city.id) ?? 0) > 0)
+    .sort((a, b) => b.progress - a.progress || a.id - b.id);
+  const reserved = new Set<number>();
   const claimed = new Set<number>();
-  const distances = new Map<string, number>();
-  const { used, capacity } = supply(match, 2);
-  if (threats.length && match.difficulty !== "easy") {
-    squads.sort((a, b) => dist(a.leader, threats[0].city) - dist(b.leader, threats[0].city) || a.commander.id - b.commander.id);
+  const attack: number[] = [], defend: number[] = [];
+  // Detachments are deliberately small. Most soldiers keep independent positions
+  // along the full living-troop front, rather than gathering around one target.
+  const detachmentBudget = home.length ? Math.max(1, Math.floor(red.length * 0.24)) : red.length;
+  let detached = 0;
+
+  // A threatened city draws its nearest available soldier, not the whole army.
+  for (const city of threats) {
+    if (detached >= detachmentBudget) break;
+    const attackers = near(blue, city, 6);
+    const nearby = red.filter((unit) => !reserved.has(unit.id) && dist(unit, city) < 18)
+      .sort((a, b) => dist(a, city) - dist(b, city) || a.id - b.id);
+    const unit = nearby[0];
+    if (!unit || !attackers.length) continue;
+    const enemyPower = strength(attackers), nearbyPower = strength(near(red, city, 8));
+    if (enemyPower * options.caution > nearbyPower * 1.5 && city.capturing !== 1) continue;
+    const target = attackers.sort((a, b) => dist(a, city) - dist(b, city) || a.id - b.id)[0];
+    const dx = target.x - city.x, dy = target.y - city.y, length = Math.hypot(dx, dy) || 1;
+    move(match, unit, { x: city.x + dx / length * 0.65, y: city.y + dy / length * 0.65 });
+    reserved.add(unit.id); detached++;
   }
 
-  for (const { commander, leader, members, assembled } of squads) {
-    const power = strength(assembled);
-    let searches = 0;
-    const travel = (city: City) => {
-      const key = `${commander.id}:${city.id}`;
-      const cached = distances.get(key);
-      if (cached !== undefined) return cached;
-      // The large map has 50 cities. Score cheaply first; at most four candidate
-      // routes per commander are inspected during an entire decision, cached here.
-      if (searches >= 4) return dist(leader, city) + 4;
-      searches++;
-      const path = route(leader, city, leader.kind, match.map);
-      const length = path.length ? path.reduce((cost, point, index) => index
-        ? cost + dist(path[index - 1], point) * (tileAt(point, match.map) === "forest" ? 1 / units[leader.kind].forest : 1)
-        : cost, 0) : dist(leader, city) < 1 ? 0 : 10_000;
-      distances.set(key, length);
-      return length;
-    };
-    const localEnemies = near(blue, leader, 8);
-    const enemyPower = strength(localEnemies);
-    const localPower = strength(near(red, leader, 9));
-    const nearestSafe = [...(safeHomes.length ? safeHomes : home)]
-      .sort((a, b) => dist(leader, a) + (cityPower.get(a.id) ?? 0) * 5 - dist(leader, b) - (cityPower.get(b.id) ?? 0) * 5 || a.id - b.id)
-      .slice(0, 2).sort((a, b) => travel(a) - travel(b))[0];
+  for (const unit of red) {
+    if (reserved.has(unit.id)) continue;
+    const health = unit.hp / units[unit.kind].hp;
+    const enemies = near(blue, unit, 6);
+    const enemyPower = strength(enemies), localPower = strength(near(red, unit, 8));
+    const outmatched = enemyPower * options.caution > localPower * 1.3;
 
-    if (nearestSafe && enemyPower * options.caution > localPower * 1.15 && dist(leader, nearestSafe) > 2) {
-      moveCommander(match, commander, members, nearestSafe);
-      continue;
-    }
-
-    const defense = threats.filter(({ city, power: threat }) =>
-      (assigned.get(city.id) ?? 0) < threat * options.caution && dist(leader, city) < (match.difficulty === "easy" ? 18 : 30))
-      .sort((a, b) => dist(leader, a.city) - dist(leader, b.city))[0];
-    if (defense) {
-      const target = near(blue, defense.city, 7).sort((a, b) => dist(leader, a) - dist(leader, b) || a.id - b.id)[0];
-      if (target && dist(leader, target) <= 8 && localPower >= enemyPower * options.caution && assembled.length >= 2) {
-        assigned.set(defense.city.id, (assigned.get(defense.city.id) ?? 0) + power);
-        attackCommander(match, commander, target);
-        continue;
-      }
-      if (power >= defense.power * options.caution && assembled.length >= 2) {
-        assigned.set(defense.city.id, (assigned.get(defense.city.id) ?? 0) + power);
-        moveCommander(match, commander, members, defense.city);
-        continue;
-      }
-      // Distant recruits are not counted as present combat strength. Keep the
-      // commander intact at a safe assembly point while followers catch up.
-      if (nearestSafe && dist(nearestSafe, defense.city) > 5) {
-        moveCommander(match, commander, members, nearestSafe);
-        continue;
+    // Wounded soldiers can fall back separately; other lanes keep their orders.
+    if (home.length && health < 0.4 && enemies.length && detached < detachmentBudget) {
+      const refuge = home.filter((city) => !(cityPower.get(city.id) ?? 0))
+        .sort((a, b) => dist(unit, a) - dist(unit, b) || a.id - b.id)[0];
+      if (refuge) {
+        move(match, unit, { x: refuge.x + (unit.id % 3 - 1), y: refuge.y });
+        detached++; continue;
       }
     }
 
-    if (localEnemies.length && localPower >= enemyPower * options.caution && assembled.length >= 2) {
-      const target = [...localEnemies].sort((a, b) => {
-        const score = (unit: Unit) => dist(leader, unit) + (match.difficulty === "hard" ? unit.hp / units[unit.kind].hp : 0);
-        return score(a) - score(b) || a.id - b.id;
-      })[0];
-      attackCommander(match, commander, target);
-      continue;
-    }
-    if (!targets.length) {
-      const target = [...blue].sort((a, b) => dist(leader, a) - dist(leader, b) || a.id - b.id)[0];
-      if (target) attackCommander(match, commander, target);
-      continue;
+    const existingRaid = unit.stance === "manual" && unit.order.mode === "move"
+      ? targets.find((city) => unit.order.mode === "move" && dist(unit.order.point, city) < 1)
+      : unit.stance === "manual" && unit.order.mode === "hold" ? targets.find((city) => dist(unit, city) < 1) : undefined;
+    if (existingRaid && detached < detachmentBudget && !claimed.has(existingRaid.id) &&
+        (!home.length || (!outmatched && (cityPower.get(existingRaid.id) ?? 0) <= strength(near(red, existingRaid, 8))))) {
+      claimed.add(existingRaid.id); detached++; continue;
     }
 
-    // Strong defenders make neighboring, weakly defended cities more attractive;
-    // separate commanders can attack distinct flanks instead of one giant blob.
-    const candidates = targets.map((city) => ({ city, power: cityPower.get(city.id) ?? 0 }))
-      .sort((a, b) => {
-        const score = ({ city, power: defenders }: typeof a) => dist(leader, city) + (claimed.has(city.id) ? 18 : 0) +
-          defenders * (match.difficulty === "easy" ? 2 : match.difficulty === "hard" ? 5 : 3) -
-          (city.capturing === 2 ? city.progress : 0);
-        return score(a) - score(b) || a.city.id - b.city.id;
-      }).slice(0, match.difficulty === "easy" ? 2 : 4)
-      .map((candidate) => ({ ...candidate, cost: travel(candidate.city) + candidate.power * options.caution * 3 +
-        (claimed.has(candidate.city.id) ? 18 : 0) - (candidate.city.capturing === 2 ? candidate.city.progress : 0) }))
-      .sort((a, b) => a.cost - b.cost || a.city.id - b.city.id);
-    const goal = candidates.find((candidate) => !home.length || power >= candidate.power * options.caution) ?? candidates[0];
-    const minimum = goal.city.owner === 0 ? 2 : options.gather;
-    const ready = !home.length || assembled.length >= minimum ||
-      (used >= capacity && assembled.length >= 2 && power >= goal.power * options.caution);
-    if (ready && (!home.length || power >= goal.power * options.caution)) {
-      claimed.add(goal.city.id);
-      moveCommander(match, commander, members, goal.city);
-    } else {
-      const assembly = [...(safeHomes.length ? safeHomes : home)]
-        .sort((a, b) => dist(a, goal.city) + dist(leader, a) * 0.25 - dist(b, goal.city) - dist(leader, b) * 0.25 || a.id - b.id)[0];
-      if (assembly && dist(leader, assembly) > 2) moveCommander(match, commander, members, assembly);
-      else holdCommander(match, commander);
+    // One target per raider keeps capture attempts spread over different cities.
+    if (targets.length && detached < detachmentBudget && (!home.length || (!outmatched && health > 0.72))) {
+      const candidates = targets.filter((city) => !claimed.has(city.id) &&
+        (!home.length || (dist(unit, city) < 14 && Math.abs(unit.y - city.y) < 10)) &&
+        (!home.length || (cityPower.get(city.id) ?? 0) < 0.1))
+        .sort((a, b) => dist(unit, a) - dist(unit, b) || a.id - b.id).slice(0, 2);
+      const target = candidates.find((city) => route(unit, city, unit.kind, match.map).length > 0);
+      if (target) {
+        move(match, unit, target); claimed.add(target.id); detached++; continue;
+      }
     }
+
+    if (!targets.length && blue.length) {
+      const target = [...blue].sort((a, b) => dist(unit, a) - dist(unit, b) || a.id - b.id)[0];
+      if (unit.order.mode !== "attack" || unit.order.target !== target.id) commandUnit(match, unit.id, { mode: "attack", target: target.id });
+      continue;
+    }
+    // Interleaved reserves cover every latitude. There is no assembly gate or
+    // leader radius before these independent soldiers advance.
+    const reserve = unit.id % (match.difficulty === "easy" ? 3 : match.difficulty === "hard" ? 5 : 4) === 0;
+    (health < 0.58 || outmatched || reserve ? defend : attack).push(unit.id);
   }
+  // At most two full-front allocations per decision instead of one per soldier.
+  setGroupStance(match, attack, "attack");
+  setGroupStance(match, defend, "defend");
 }

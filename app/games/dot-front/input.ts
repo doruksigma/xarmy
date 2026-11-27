@@ -1,4 +1,4 @@
-import { HEIGHT, WIDTH, dist } from "./config";
+import { HEIGHT, MAX_ROUTE_POINTS, WIDTH, dist } from "./config";
 import type { Point } from "./config";
 import { toWorld } from "./render";
 import type { Box, Camera, View } from "./render";
@@ -14,6 +14,9 @@ export interface Inputs {
   multi(): boolean;
   pause(): void;
   active?(): boolean;
+  routeMode?(): boolean;
+  preview?(points: Point[]): void;
+  route?(points: Point[]): void;
 }
 
 export function clampCamera(camera: Camera, view?: View) {
@@ -35,6 +38,7 @@ export function bindInput(canvas: HTMLCanvasElement, handler: Inputs) {
   let shift = false;
   let selection = false;
   let gesture = false;
+  let routePoints: Point[] | null = null;
   let disposed = false;
   const active = () => !disposed && (handler.active?.() ?? true);
   const pointOf = (ev: PointerEvent | WheelEvent) => {
@@ -56,8 +60,32 @@ export function bindInput(canvas: HTMLCanvasElement, handler: Inputs) {
     start = null;
     owner = null;
     gesture = false;
+    routePoints = null;
     handler.drag(null);
+    handler.preview?.([]);
     for (const id of ids) release(id);
+  }
+  function routePoint(point: Point) {
+    const world = toWorld(handler.view(), point);
+    return { x: Math.max(0.001, Math.min(WIDTH - 0.001, world.x)), y: Math.max(0.001, Math.min(HEIGHT - 0.001, world.y)) };
+  }
+  function appendRoute(point: Point, final = false) {
+    if (!routePoints) return;
+    const world = routePoint(point);
+    const last = routePoints.at(-1);
+    if (last && dist(last, world) < (final ? 0.001 : 0.5)) return;
+    routePoints.push(world);
+    if (routePoints.length > MAX_ROUTE_POINTS) {
+      // Preserve endpoints and turns; remove the least significant interior bend.
+      let remove = 1, smallest = Infinity;
+      for (let i = 1; i < routePoints.length - 1; i++) {
+        const [a, b, c] = [routePoints[i - 1], routePoints[i], routePoints[i + 1]];
+        const score = dist(a, b) + dist(b, c) - dist(a, c);
+        if (score < smallest) { smallest = score; remove = i; }
+      }
+      routePoints.splice(remove, 1);
+    }
+    handler.preview?.(routePoints.map(value => ({ ...value })));
   }
   function zoomAt(point: Point, factor: number) {
     const before = toWorld(handler.view(), point);
@@ -82,12 +110,21 @@ export function bindInput(canvas: HTMLCanvasElement, handler: Inputs) {
       gesture = true;
       start = null;
       owner = null;
+      routePoints = null;
       handler.drag(null);
+      handler.preview?.([]);
       return;
     }
     if (gesture) return;
     owner = event.pointerId;
     start = point;
+    if (handler.routeMode?.()) {
+      routePoints = [];
+      appendRoute(point, true);
+      selection = false;
+      keys.clear();
+      return;
+    }
     selection = event.pointerType === "mouse" || handler.multi();
     shift = event.shiftKey || (event.pointerType !== "mouse" && handler.multi());
   }, opts);
@@ -106,6 +143,10 @@ export function bindInput(canvas: HTMLCanvasElement, handler: Inputs) {
       handler.camera.x += (oldCenter.x - newCenter.x) / scale;
       handler.camera.y += (oldCenter.y - newCenter.y) / scale;
       zoomAt(newCenter, dist(after[0], after[1]) / Math.max(1, dist(before[0], before[1])));
+    } else if (!gesture && owner === event.pointerId && routePoints) {
+      const samples = event.getCoalescedEvents?.() ?? [];
+      for (const sample of samples) appendRoute(pointOf(sample));
+      appendRoute(point);
     } else if (!gesture && owner === event.pointerId && start && selection && dist(start, point) >= 7) {
       handler.drag({ from: start, to: point });
     }
@@ -119,13 +160,21 @@ export function bindInput(canvas: HTMLCanvasElement, handler: Inputs) {
     event.preventDefault();
     const from = start;
     const consumed = gesture || owner !== event.pointerId;
+    if (routePoints && !consumed) appendRoute(pointOf(event), true);
+    const drawnRoute = routePoints;
+    routePoints = null;
     pointers.delete(event.pointerId);
     start = null;
     owner = null;
     if (!pointers.size) gesture = false;
     release(event.pointerId);
     handler.drag(null);
+    handler.preview?.([]);
     if (consumed || !from || !active()) return;
+    if (drawnRoute) {
+      if (handler.routeMode?.() && drawnRoute.length) handler.route?.(drawnRoute.map(point => ({ ...point })));
+      return;
+    }
     const point = pointOf(event);
     const view = handler.view();
     if (selection && dist(from, point) >= 7) handler.select(toWorld(view, from), toWorld(view, point), shift);
@@ -139,7 +188,9 @@ export function bindInput(canvas: HTMLCanvasElement, handler: Inputs) {
     start = null;
     owner = null;
     gesture = pointers.size > 0;
+    routePoints = null;
     handler.drag(null);
+    handler.preview?.([]);
     release(event.pointerId);
   };
   canvas.addEventListener("pointercancel", cancel, opts);
@@ -148,6 +199,7 @@ export function bindInput(canvas: HTMLCanvasElement, handler: Inputs) {
   canvas.addEventListener("wheel", (event) => {
     if (!active()) return;
     event.preventDefault();
+    if (routePoints) return;
     const multiplier = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 240 : 1;
     zoomAt(pointOf(event), Math.exp(-Math.max(-160, Math.min(160, event.deltaY * multiplier)) * 0.0012));
   }, { ...opts, passive: false });
@@ -172,6 +224,7 @@ export function bindInput(canvas: HTMLCanvasElement, handler: Inputs) {
   return {
     moveCamera(dt: number) {
       if (!active() || document.activeElement !== canvas) { keys.clear(); return; }
+      if (routePoints) { keys.clear(); return; }
       const dx = Number(keys.has("d") || keys.has("arrowright")) - Number(keys.has("a") || keys.has("arrowleft"));
       const dy = Number(keys.has("s") || keys.has("arrowdown")) - Number(keys.has("w") || keys.has("arrowup"));
       const delta = 420 * Math.max(0, Math.min(dt, 0.15)) / handler.view().scale / Math.max(1, Math.hypot(dx, dy));

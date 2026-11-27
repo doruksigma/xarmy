@@ -1,6 +1,8 @@
-import { CAPTURE, COMMANDER_LIMIT, GRACE, HEIGHT, RADIUS, WIDTH, units } from "./config";
+import { CAPTURE, GRACE, HEIGHT, RADIUS, WIDTH, units } from "./config";
 import type { Point } from "./config";
 import type { Flash, Match, Unit } from "./engine";
+import { frontField } from "./front";
+import type { FrontField } from "./front";
 import { getMap } from "./terrain";
 import type { MapId } from "./terrain";
 
@@ -16,10 +18,6 @@ export function viewOf(width: number, height: number, camera: Camera): View {
 }
 export const toWorld = (view: View, point: Point) => ({ x: (point.x - view.x) / view.scale, y: (point.y - view.y) / view.scale });
 const troopRadius = (unit: Unit, scale: number) => Math.max(unit.kind === "heavy" ? .52 : .38, (unit.kind === "heavy" ? 6 : 4) / scale);
-/** The input adapter uses this exact CSS rectangle for commander badge hit testing. */
-export function commanderBadge(view: View, unit: Unit) {
-  return { x: view.x + unit.x * view.scale, y: view.y + unit.y * view.scale - troopRadius(unit, view.scale) * view.scale - 25, width: 56, height: 32 };
-}
 
 const landscapes = new Map<MapId, HTMLCanvasElement>();
 export function landscapeCanvas(mapId: MapId = "valley") {
@@ -73,43 +71,72 @@ export function landscapeCanvas(mapId: MapId = "valley") {
   return canvas;
 }
 
-type Territory = { owners: string; canvas: HTMLCanvasElement; nearest: Int16Array };
+type Territory = { key: string; canvas: HTMLCanvasElement };
 const territories = new WeakMap<Match, Territory>();
-function territoryCanvas(match: Match) {
+function territoryCanvas(match: Match, field: FrontField) {
   let cached = territories.get(match);
-  const owners = match.cities.map(city => city.owner).join("");
-  if (cached?.owners === owners) return cached.canvas;
+  if (cached?.key === field.key) return cached.canvas;
   if (!cached) {
     const canvas = document.createElement("canvas"); canvas.width = WIDTH * 4; canvas.height = HEIGHT * 4;
-    const nearest = new Int16Array(WIDTH * HEIGHT);
-    for (let id = 0; id < nearest.length; id++) {
-      const x = id % WIDTH + .5, y = Math.floor(id / WIDTH) + .5;
-      let closest = Infinity;
-      match.cities.forEach((city, index) => {
-        const distance = (city.x - x) ** 2 + (city.y - y) ** 2;
-        if (distance < closest) { closest = distance; nearest[id] = index; }
-      });
-    }
-    cached = { owners: "", canvas, nearest }; territories.set(match, cached);
+    cached = { key: "", canvas }; territories.set(match, cached);
   }
   const ctx = cached.canvas.getContext("2d")!;
   ctx.setTransform(4, 0, 0, 4, 0, 0); ctx.clearRect(0, 0, WIDTH, HEIGHT);
-  const ownerAt = (id: number) => match.cities[cached!.nearest[id]]?.owner ?? 0;
-  for (let id = 0; id < cached.nearest.length; id++) {
-    const owner = ownerAt(id); if (!owner) continue;
-    ctx.fillStyle = colors[owner] + "18"; ctx.fillRect(id % WIDTH, Math.floor(id / WIDTH), 1, 1);
+  // Clip each sampled triangle at signed influence zero. Unlike a nearest-city
+  // bitmap, these polygon edges move fractionally with the actual soldiers.
+  type Vertex = Point & { value: number };
+  const polygon = (triangle: Vertex[], sign: number) => {
+    const result: Point[] = [];
+    for (let index = 0; index < triangle.length; index++) {
+      const a = triangle[index], b = triangle[(index + 1) % triangle.length];
+      const insideA = a.value * sign >= 0, insideB = b.value * sign >= 0;
+      if (insideA) result.push(a);
+      if (insideA !== insideB) {
+        const t = a.value / (a.value - b.value);
+        result.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+      }
+    }
+    if (result.length < 3) return;
+    ctx.moveTo(result[0].x, result[0].y);
+    for (const point of result.slice(1)) ctx.lineTo(point.x, point.y);
+    ctx.closePath();
+  };
+  for (const team of [1, 2] as const) {
+    ctx.beginPath();
+    const sign = team === 1 ? -1 : 1;
+    for (let y = 0; y < field.rows - 1; y++) for (let x = 0; x < field.cols - 1; x++) {
+      const vertex = (dx: number, dy: number): Vertex => ({ x: (x + dx) * field.spacing, y: (y + dy) * field.spacing,
+        value: field.values[(y + dy) * field.cols + x + dx] });
+      const [a, b, c, d] = [vertex(0, 0), vertex(1, 0), vertex(1, 1), vertex(0, 1)];
+      polygon([a, b, c], sign); polygon([a, c, d], sign);
+    }
+    ctx.fillStyle = colors[team] + "1a"; ctx.fill();
   }
-  // Territory is recomputed only after a city changes hands, not every frame.
-  ctx.beginPath();
-  for (let y = 0; y < HEIGHT; y++) for (let x = 0; x < WIDTH; x++) {
-    const id = y * WIDTH + x, owner = ownerAt(id);
-    if (x < WIDTH - 1 && owner !== ownerAt(id + 1)) { ctx.moveTo(x + 1, y); ctx.lineTo(x + 1, y + 1); }
-    if (y < HEIGHT - 1 && owner !== ownerAt(id + WIDTH)) { ctx.moveTo(x, y + 1); ctx.lineTo(x + 1, y + 1); }
-  }
-  ctx.strokeStyle = "#14212cbd"; ctx.lineWidth = .55; ctx.stroke();
-  ctx.strokeStyle = "#f7eac8b8"; ctx.lineWidth = .18; ctx.setLineDash([.65, .45]); ctx.stroke(); ctx.setLineDash([]);
-  cached.owners = owners;
+  cached.key = field.key;
   return cached.canvas;
+}
+
+function drawFront(ctx: CanvasRenderingContext2D, field: FrontField, scale: number) {
+  ctx.beginPath();
+  for (const segment of field.segments) { ctx.moveTo(segment.a.x, segment.a.y); ctx.lineTo(segment.b.x, segment.b.y); }
+  ctx.strokeStyle = "#112333cc"; ctx.lineWidth = Math.max(.42, 3 / scale); ctx.stroke();
+  ctx.strokeStyle = "#f5e7b8e8"; ctx.lineWidth = Math.max(.11, 1.1 / scale); ctx.stroke();
+}
+
+function drawArrow(ctx: CanvasRenderingContext2D, points: readonly Point[], scale: number, preview = false) {
+  if (points.length < 2) return;
+  ctx.beginPath(); ctx.moveTo(points[0].x, points[0].y);
+  for (let index = 1; index < points.length; index++) ctx.lineTo(points[index].x, points[index].y);
+  ctx.strokeStyle = preview ? "#ffe49a" : "#f2da90bc";
+  ctx.lineWidth = (preview ? 2.5 : 1.7) / scale;
+  ctx.setLineDash(preview ? [] : [5 / scale, 3 / scale]); ctx.stroke(); ctx.setLineDash([]);
+  const end = points.at(-1)!;
+  let before = points.at(-2)!;
+  for (let index = points.length - 2; index >= 0 && Math.hypot(end.x - before.x, end.y - before.y) < .001; index--) before = points[index];
+  const angle = Math.atan2(end.y - before.y, end.x - before.x), length = (preview ? 13 : 10) / scale;
+  ctx.beginPath(); ctx.moveTo(end.x - Math.cos(angle - .45) * length, end.y - Math.sin(angle - .45) * length);
+  ctx.lineTo(end.x, end.y); ctx.lineTo(end.x - Math.cos(angle + .45) * length, end.y - Math.sin(angle + .45) * length);
+  ctx.stroke();
 }
 
 export function resize(canvas: HTMLCanvasElement) {
@@ -132,19 +159,11 @@ const circle = (ctx: CanvasRenderingContext2D, p: Point, radius: number) => {
 export function render(
   canvas: HTMLCanvasElement, mini: HTMLCanvasElement | null, terrain: HTMLCanvasElement,
   view: View, match: Match, selected: Set<number>, selectedCity: number | null, flashes: Flash[], box: Box | null,
+  routePreview: readonly Point[] = [],
 ) {
   // A restored match always paints its own map, even if a caller supplies an old cache.
   if (terrain.dataset.dotFrontMap !== match.map) terrain = landscapeCanvas(match.map);
-  const territory = territoryCanvas(match);
-  const byId = new Map(match.units.map(unit => [unit.id, unit]));
-  const groups = new Map<number, Unit[]>();
-  const pickedCommanders = new Set<number>();
-  for (const unit of match.units) {
-    const group = groups.get(unit.commanderId) ?? [];
-    group.push(unit); groups.set(unit.commanderId, group);
-    if (selected.has(unit.id)) pickedCommanders.add(unit.commanderId);
-  }
-  const leaders = new Set(match.commanders.map(commander => commander.leaderId));
+  const field = frontField(match), territory = territoryCanvas(match, field);
   const visible = (point: Point, padding = 3) => point.x * view.scale + view.x > -padding * view.scale &&
     point.y * view.scale + view.y > -padding * view.scale && point.x * view.scale + view.x < view.width + padding * view.scale &&
     point.y * view.scale + view.y < view.height + padding * view.scale;
@@ -157,6 +176,7 @@ export function render(
   ctx.scale(view.scale, view.scale);
   ctx.drawImage(terrain, 0, 0, WIDTH, HEIGHT);
   ctx.drawImage(territory, 0, 0, WIDTH, HEIGHT);
+  drawFront(ctx, field, view.scale);
   for (const city of match.cities) {
     if (!visible(city)) continue;
     circle(ctx, city, RADIUS);
@@ -203,17 +223,6 @@ export function render(
       ctx.fillRect(city.rally.x - 0.15, city.rally.y - 0.15, 0.3, 0.3);
     }
   }
-  for (const commander of match.commanders) {
-    if (!pickedCommanders.has(commander.id)) continue;
-    const leader = byId.get(commander.leaderId); if (!leader) continue;
-    ctx.beginPath();
-    for (const unit of groups.get(commander.id) ?? []) {
-      if (unit.id === leader.id) continue;
-      ctx.moveTo(leader.x, leader.y); ctx.lineTo(unit.x, unit.y);
-    }
-    ctx.strokeStyle = colors[commander.team] + "60"; ctx.lineWidth = 1 / view.scale;
-    ctx.setLineDash([3 / view.scale, 4 / view.scale]); ctx.stroke(); ctx.setLineDash([]);
-  }
   let paintedPaths = 0;
   for (const unit of match.units) {
     if (!visible(unit, 7)) continue;
@@ -227,6 +236,7 @@ export function render(
       ctx.strokeStyle = "#8dd4ff64";
       ctx.lineWidth = Math.max(.055, 1 / view.scale);
       ctx.stroke();
+      if (unit.order.mode === "route") drawArrow(ctx, [unit, ...unit.order.points.slice(unit.order.next)], view.scale);
     }
     if (picked || unit.marked) {
       circle(ctx, unit, radius + Math.max(.19, 3 / view.scale));
@@ -243,13 +253,6 @@ export function render(
     if (unit.team === 2) {
       ctx.fillStyle = unit.kind === "heavy" ? colors[2] : "#44282a";
       ctx.fillRect(unit.x - radius * .55, unit.y - radius * .12, radius * 1.1, radius * .24);
-    }
-    if (leaders.has(unit.id)) {
-      circle(ctx, unit, radius + 2.5 / view.scale);
-      ctx.strokeStyle = "#fff1b2"; ctx.lineWidth = 1.3 / view.scale; ctx.stroke();
-      ctx.fillStyle = "#fff4cd";
-      ctx.beginPath(); ctx.moveTo(unit.x, unit.y - radius * .6); ctx.lineTo(unit.x + radius * .45, unit.y + radius * .3);
-      ctx.lineTo(unit.x - radius * .45, unit.y + radius * .3); ctx.closePath(); ctx.fill();
     }
     if (picked || unit.hp < stats.hp) {
       const barWidth = Math.max(.95, 22 / view.scale), barHeight = Math.max(.12, 3 / view.scale);
@@ -271,25 +274,9 @@ export function render(
     circle(ctx, flash.to, 0.17);
     ctx.stroke();
   }
+  ctx.globalAlpha = 1;
+  drawArrow(ctx, routePreview, view.scale, true);
   ctx.restore();
-  // Badges stay readable at every camera zoom and identify the existing leader.
-  for (const commander of match.commanders) {
-    const leader = byId.get(commander.leaderId); if (!leader) continue;
-    const badge = commanderBadge(view, leader);
-    if (badge.x < -badge.width || badge.y < -badge.height || badge.x > view.width + badge.width || badge.y > view.height + badge.height) continue;
-    const picked = pickedCommanders.has(commander.id), count = groups.get(commander.id)?.length ?? 0;
-    ctx.fillStyle = picked ? "#182a35f5" : "#10202be8";
-    ctx.fillRect(badge.x - badge.width / 2, badge.y - badge.height / 2, badge.width, badge.height);
-    ctx.strokeStyle = picked ? "#fff1b2" : colors[commander.team]; ctx.lineWidth = picked ? 1.5 : 1;
-    ctx.strokeRect(badge.x - badge.width / 2 + .5, badge.y - badge.height / 2 + .5, badge.width - 1, badge.height - 1);
-    ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.font = "600 11px system-ui, sans-serif"; ctx.fillStyle = "#e8f1ee";
-    ctx.fillText(`${count}/${COMMANDER_LIMIT}`, badge.x, badge.y - 6);
-    ctx.font = "700 10px system-ui, sans-serif"; ctx.fillStyle = colors[commander.team];
-    ctx.fillText(`#${commander.id}`, badge.x + 5, badge.y + 7);
-    ctx.beginPath(); ctx.moveTo(badge.x - 17, badge.y + 9); ctx.lineTo(badge.x - 13, badge.y + 4); ctx.lineTo(badge.x - 9, badge.y + 9);
-    ctx.lineWidth = 1.5; ctx.strokeStyle = colors[commander.team]; ctx.stroke();
-  }
   ctx.textAlign = "start"; ctx.textBaseline = "alphabetic";
   if (box) {
     ctx.fillStyle = "#69c7ff28";
@@ -303,6 +290,7 @@ export function render(
     map.setTransform(mini.width / WIDTH, 0, 0, mini.height / HEIGHT, 0, 0);
     map.drawImage(terrain, 0, 0, WIDTH, HEIGHT);
     map.drawImage(territory, 0, 0, WIDTH, HEIGHT);
+    drawFront(map, field, mini.width / WIDTH);
     for (const city of match.cities) {
       map.fillStyle = colors[city.owner];
       map.fillRect(city.x - 0.8, city.y - 0.8, 1.6, 1.6);

@@ -71,24 +71,19 @@
 .arena:fullscreen { border-radius: 0; overflow: auto; }
 .hud, .toolbar, .inspector { display: flex; align-items: center; flex-wrap: wrap; gap: 0.45rem 0.8rem; padding: 0.55rem; }
 .hud { justify-content: space-between; font-size: 0.94rem; font-variant-numeric: tabular-nums; }
-.commandDeck { padding: 0.7rem; border-block: 1px solid var(--line); background: #122129; min-width: 0; }
-.commandTitle { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.3rem 0.8rem; margin-bottom: 0.55rem; }
-.commandTitle strong { color: var(--accent); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; }
-.commandTitle > span { color: var(--muted); font-size: 0.77rem; }
-.commandCards { display: flex; gap: 0.5rem; overflow-x: auto; padding-bottom: 0.25rem; scrollbar-color: #5e7778 #14242b; }
-.shell button.commandCard { display: flex; flex: 0 0 auto; align-items: center; gap: 0.7rem; padding: 0.55rem 0.7rem; text-align: left; background: #1a303c; border-color: #385262; }
-.shell button.commandCard[aria-pressed="true"] { border-color: #e7cf90; box-shadow: inset 0 -2px #e7cf90; background: #283f48; }
-.commandBadge { color: var(--accent); font-size: 1.3rem; }
-.commandCard > span:nth-child(2) { display: grid; gap: 0.15rem; }
-.commandCard strong { font-size: 0.82rem; }
-.commandCard small { font-size: 0.7rem; font-weight: 400; color: #b2cad4; }
-.commandCard > b { font-size: 1.15rem; color: #e9f3f2; min-width: 2.5rem; text-align: right; }
+.ordersPanel { padding: 0.7rem; border-block: 1px solid var(--line); background: #122129; min-width: 0; }
+.ordersTitle { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.3rem 0.8rem; margin-bottom: 0.55rem; }
+.ordersTitle strong { color: var(--accent); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; }
+.ordersTitle > span { color: var(--muted); font-size: 0.77rem; }
+.tactics { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.6rem; }
+.tactics button { font-size: 0.82rem; }
+.routeHint { padding: 0.55rem 0.7rem; color: #ffe7a0; background: #3b3829; font-size: 0.85rem; border-block: 1px solid #b79a5866; }
 .frontButton[aria-pressed="true"] { color: #d6eec1; border-color: #93b983 !important; }
 .blue { color: #79d1ff; }
 .red { color: #ffa192; }
 .stage { position: relative; background: #101a20; }
 .canvas { display: block; width: 100%; height: clamp(270px, 53vw, 575px); touch-action: none; cursor: crosshair; }
-.wide .canvas, .arena:fullscreen .canvas { height: max(220px, calc(100dvh - 270px)); }
+.wide .canvas, .arena:fullscreen .canvas { height: max(220px, calc(100dvh - 245px)); }
 .minimap { position: absolute; bottom: 0.4rem; right: 0.4rem; width: clamp(100px, 20vw, 190px); aspect-ratio: 8 / 5; border: 1px solid #afc2af; cursor: crosshair; touch-action: none; }
 .toolbar { border-top: 1px solid var(--line); }
 .toolbar button, .inspector button { font-size: 0.85rem; }
@@ -109,7 +104,6 @@
   .hud { justify-content: flex-start; font-size: 0.8rem; gap: 0.35rem 0.6rem; }
   .toolbar { gap: 0.35rem; }
   .toolbar button, .inspector button { font-size: 0.77rem; padding-inline: 0.45rem; }
-  .commandDeck { padding: 0.5rem; }
-  .commandTitle > span { display: none; }
-  .shell button.commandCard { gap: 0.4rem; padding: 0.4rem 0.5rem; }
+  .ordersPanel { padding: 0.5rem; }
+  .ordersTitle > span { display: none; }
 }

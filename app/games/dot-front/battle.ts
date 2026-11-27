@@ -1,36 +1,28 @@
 import { decide } from "./ai";
 import { soundEffects } from "./audio";
-import { GRACE, HEIGHT, RADIUS, STEP, WIDTH, dist, units } from "./config";
+import { GRACE, HEIGHT, MAX_ROUTE_POINTS, RADIUS, STEP, WIDTH, dist, units } from "./config";
 import type { Kind, Point } from "./config";
-import { commanderLeader, commanderMembers, commandCommander, setCommanderAutoFront, step, supply } from "./engine";
-import type { Flash, Match, Unit } from "./engine";
+import { commandUnit, setGroupStance, step, supply } from "./engine";
+import type { Flash, Match, Order, Unit } from "./engine";
 import { bindInput, clampCamera, MAX_ZOOM } from "./input";
-import { commanderBadge, landscapeCanvas, render, resize, toWorld, viewOf } from "./render";
+import { landscapeCanvas, render, resize, viewOf } from "./render";
 import type { Box, Camera } from "./render";
 import { nearestOpen } from "./terrain";
 
-export function summary(match: Match, picked: Set<number>, cityId: number | null) {
+export function summary(match: Match, picked: Set<number>, cityId: number | null, routeDrawing = false) {
   const city = cityId === null ? null : match.cities[cityId];
   const logistics = supply(match, 1);
   const selected = match.units.filter((unit) => picked.has(unit.id));
-  const commanders = match.commanders.filter(commander => commander.team === 1).map(commander => {
-    const members = commanderMembers(match, commander.id);
-    const leader = commanderLeader(match, commander.id);
-    return {
-      id: commander.id, leaderId: commander.leaderId, count: members.length,
-      selected: members.some(unit => picked.has(unit.id)), autoFront: commander.autoFront,
-      x: leader?.x ?? members[0]?.x ?? WIDTH / 2, y: leader?.y ?? members[0]?.y ?? HEIGHT / 2,
-      order: { ...commander.order },
-    };
-  }).filter(commander => commander.count > 0);
+  const selectedStance: Unit["stance"] | "mixed" | null = !selected.length ? null
+    : selected.every(unit => unit.stance === selected[0].stance) ? selected[0].stance : "mixed";
   return {
     time: Math.floor(match.elapsed), logistics, shortage: match.shortage[0],
     blue: match.units.filter((unit) => unit.team === 1).length,
     red: match.units.filter((unit) => unit.team === 2).length,
     blueCities: match.cities.filter((item) => item.owner === 1).length,
     redCities: match.cities.filter((item) => item.owner === 2).length,
-    commanders, blueCommanders: commanders.length,
-    redCommanders: match.commanders.filter(commander => commander.team === 2 && commanderMembers(match, commander.id).length > 0).length,
+    selectedUnits: selected.length, selectedStance,
+    routeDrawing: routeDrawing && selected.length > 0,
     light: selected.filter((unit) => unit.kind === "light").length, heavy: selected.filter((unit) => unit.kind === "heavy").length,
     city: city && { ...city, build: city.build && { ...city.build } },
     blocked: Boolean(city?.build && logistics.used + units[city.build.kind].supply > logistics.capacity),
@@ -45,20 +37,20 @@ export function startBattle(
   notify: (summary: Summary) => void, onPause: () => void, autosave: () => void, finished: () => void,
 ) {
   const terrain = landscapeCanvas(match.map);
-  const initialLeader = match.commanders.filter(commander => commander.team === 1)
-    .map(commander => commanderLeader(match, commander.id)).filter((unit): unit is Unit => Boolean(unit))
+  const initialUnit = match.units.filter(unit => unit.team === 1)
     .sort((a, b) => dist(a, { x: WIDTH / 2 - 6, y: HEIGHT / 2 }) - dist(b, { x: WIDTH / 2 - 6, y: HEIGHT / 2 }))[0];
   const detailZoom = () => Math.max(1, Math.min(MAX_ZOOM,
     20 / Math.min(Math.max(1, canvas.clientWidth) / WIDTH, Math.max(1, canvas.clientHeight) / HEIGHT)));
-  const camera: Camera = { x: initialLeader ? initialLeader.x + 4 : WIDTH / 2, y: initialLeader?.y ?? HEIGHT / 2, zoom: detailZoom() };
+  const camera: Camera = { x: initialUnit ? initialUnit.x + 4 : WIDTH / 2, y: initialUnit?.y ?? HEIGHT / 2, zoom: detailZoom() };
   const picked = new Set<number>();
-  const pickedCommanders = new Set<number>();
   let cityId: number | null = null;
   let flashes: Flash[] = [];
   let box: Box | null = null;
   let paused = document.hidden;
   let multi = false;
   let rally = false;
+  let routeDrawing = false;
+  let routePreview: Point[] = [];
   let speed = 1;
   let muted = true;
   let frame = 0;
@@ -70,8 +62,8 @@ export function startBattle(
   let disposed = false;
   const audio = soundEffects();
   const view = () => viewOf(Math.max(1, canvas.clientWidth), Math.max(1, canvas.clientHeight), camera);
-  const update = () => notify(summary(match, picked, cityId));
-  const selectedCommanders = () => match.commanders.filter(commander => commander.team === 1 && pickedCommanders.has(commander.id));
+  const update = () => notify(summary(match, picked, cityId, routeDrawing));
+  const selected = () => match.units.filter(unit => unit.team === 1 && picked.has(unit.id));
   const currentCity = () => cityId === null ? null : match.cities[cityId];
   const myCity = () => {
     const city = currentCity();
@@ -79,15 +71,20 @@ export function startBattle(
   };
   const active = () => !disposed && !paused && !match.result && !document.hidden;
   const focus = () => { if (active()) canvas.focus({ preventScroll: true }); };
+  function exitRoute() {
+    routeDrawing = false;
+    routePreview = [];
+    controls.reset();
+  }
   function syncSelection() {
-    const alive = new Set(match.commanders.filter(commander => commander.team === 1 && commanderMembers(match, commander.id).length > 0).map(commander => commander.id));
-    for (const id of pickedCommanders) if (!alive.has(id)) pickedCommanders.delete(id);
-    picked.clear();
-    for (const unit of match.units) if (unit.team === 1 && pickedCommanders.has(unit.commanderId)) picked.add(unit.id);
+    const unitIds = new Set(match.units.filter(unit => unit.team === 1).map(unit => unit.id));
+    for (const id of picked) if (!unitIds.has(id)) picked.delete(id);
+    if (!picked.size && routeDrawing) exitRoute();
   }
   function pick(units: Unit[], add: boolean) {
-    if (!add) pickedCommanders.clear();
-    for (const unit of units) if (unit.team === 1) pickedCommanders.add(unit.commanderId);
+    exitRoute();
+    if (!add) picked.clear();
+    for (const unit of units) if (unit.team === 1) picked.add(unit.id);
     syncSelection();
     if (units.length) {
       cityId = null;
@@ -97,20 +94,23 @@ export function startBattle(
     update();
   }
   function move(point: Point) {
-    const commanders = selectedCommanders();
-    if (!commanders.length) return;
-    commanders.forEach((commander, index) => {
-      const radius = index ? 4 * Math.ceil(index / 6) : 0;
-      const angle = (index - 1) * Math.PI / 3;
-      const destination = nearestOpen({ x: point.x + Math.cos(angle) * radius, y: point.y + Math.sin(angle) * radius }, match.map);
-      commandCommander(match, commander.id, { mode: "move", point: destination });
+    exitRoute();
+    const individuals = selected();
+    if (!individuals.length) return;
+    const columns = Math.ceil(Math.sqrt(individuals.length));
+    individuals.forEach((unit, index) => {
+      const offset = { x: index % columns - (columns - 1) / 2, y: Math.floor(index / columns) - (Math.ceil(individuals.length / columns) - 1) / 2 };
+      commandUnit(match, unit.id, { mode: "move", point: nearestOpen({ x: point.x + offset.x, y: point.y + offset.y }, match.map) });
     });
     if (match.tutorial === 1) match.tutorial = 2;
   }
+  function issue(order: Order) {
+    for (const unit of selected()) commandUnit(match, unit.id, order);
+  }
   function attack(target: Unit) {
-    const commanders = selectedCommanders();
-    if (!commanders.length) return;
-    for (const commander of commanders) commandCommander(match, commander.id, { mode: "attack", target: target.id });
+    exitRoute();
+    if (!picked.size) return;
+    issue({ mode: "attack", target: target.id });
     if (match.tutorial === 4) match.tutorial = 5;
   }
   function finish() {
@@ -124,13 +124,20 @@ export function startBattle(
   const controls = bindInput(canvas, {
     view, camera, active, multi: () => multi, drag: (value) => { box = value; },
     pause: () => { setPaused(true); onPause(); },
+    routeMode: () => routeDrawing && picked.size > 0,
+    preview: points => { routePreview = points; },
+    route: points => {
+      if (!active() || !picked.size || !points.length) return;
+      issue({ mode: "route", points: points.slice(0, MAX_ROUTE_POINTS).map(point => ({ ...point })), next: 0 });
+      exitRoute();
+      if (match.tutorial === 1) match.tutorial = 2;
+      update();
+    },
     select(from, to, add) {
       if (!active()) return;
       const inside = (point: Point) => point.x >= Math.min(from.x, to.x) && point.x <= Math.max(from.x, to.x) &&
         point.y >= Math.min(from.y, to.y) && point.y <= Math.max(from.y, to.y);
-      const badgeLeaders = match.commanders.filter(commander => commander.team === 1).map(commander => commanderLeader(match, commander.id))
-        .filter((unit): unit is Unit => Boolean(unit)).filter(unit => inside(toWorld(view(), commanderBadge(view(), unit))));
-      pick([...match.units.filter(unit => unit.team === 1 && inside(unit)), ...badgeLeaders], add);
+      pick(match.units.filter(unit => unit.team === 1 && inside(unit)), add);
     },
     tap(point, command, touch, add, radius) {
       if (!active()) return;
@@ -141,13 +148,7 @@ export function startBattle(
         update();
         return;
       }
-      const screen = { x: view().x + point.x * view().scale, y: view().y + point.y * view().scale };
-      const badgeLeader = match.commanders.map(commander => commanderLeader(match, commander.id)).find(unit => {
-        if (!unit) return false;
-        const badge = commanderBadge(view(), unit), padding = touch ? 5 : 2;
-        return Math.abs(screen.x - badge.x) <= badge.width / 2 + padding && Math.abs(screen.y - badge.y) <= badge.height / 2 + padding;
-      });
-      const hits = badgeLeader ? [badgeLeader] : match.units.filter((unit) => dist(unit, point) <= radius)
+      const hits = match.units.filter((unit) => dist(unit, point) <= radius)
         .sort((a, b) => dist(a, point) - dist(b, point));
       const enemy = hits.find((unit) => unit.team === 2);
       const own = hits.find((unit) => unit.team === 1);
@@ -155,7 +156,7 @@ export function startBattle(
       if (command || (touch && enemy && (!own || dist(enemy, point) < dist(own, point)))) {
         if (enemy) attack(enemy);
         else move(point);
-      } else if (own && (badgeLeader || !city || dist(own, point) < dist(city, point))) {
+      } else if (own && (!city || dist(own, point) < dist(city, point))) {
         pick([own], add);
       } else if (city) {
         cityId = city.id;
@@ -163,7 +164,7 @@ export function startBattle(
       } else if (touch) {
         move(point);
       } else if (!add) {
-        pickedCommanders.clear();
+        exitRoute();
         picked.clear();
         cityId = null;
       }
@@ -200,7 +201,7 @@ export function startBattle(
     if (disposed) return;
     resize(canvas);
     clampCamera(camera, view());
-    render(canvas, mini, terrain, view(), match, picked, cityId, flashes, box);
+    render(canvas, mini, terrain, view(), match, picked, cityId, flashes, box, routePreview);
     schedule();
   }
   function schedule() {
@@ -219,6 +220,7 @@ export function startBattle(
     previous = 0;
     controls.reset();
     box = null;
+    if (paused) { routeDrawing = false; routePreview = []; }
     if (paused) {
       audio.stop();
       if (changed && !match.result) {
@@ -226,6 +228,7 @@ export function startBattle(
         autosave();
       }
     } else if (!muted) void audio.enable().catch(() => {});
+    update();
   }
   schedule();
 
@@ -255,7 +258,7 @@ export function startBattle(
   return {
     focus,
     pause: setPaused,
-    speed(value: number) { speed = value === 2 ? 2 : 1; focus(); },
+    speed(value: number) { speed = value === 0.5 ? 0.5 : 1; focus(); },
     sound(value: boolean) {
       muted = !value;
       if (value && active()) void audio.enable().catch(() => {});
@@ -263,28 +266,31 @@ export function startBattle(
     },
     multi(value: boolean) { multi = value; controls.reset(); focus(); },
     selectAll() { if (active()) { pick(match.units.filter((unit) => unit.team === 1), false); focus(); } },
-    selectCommander(id: number, center = true) {
+    stance(value: "attack" | "defend") {
       if (!active()) return;
-      const commander = match.commanders.find(item => item.id === id && item.team === 1);
-      const leader = commander && commanderLeader(match, id);
-      if (!leader) return;
-      pick(commanderMembers(match, id), false);
-      if (center) {
-        camera.x = leader.x; camera.y = leader.y;
-        camera.zoom = Math.max(camera.zoom, detailZoom());
-        clampCamera(camera, view());
-      }
-      focus();
+      exitRoute();
+      setGroupStance(match, [...picked], value);
+      update(); focus();
     },
-    autoFront(enabled: boolean) {
+    frontlineAll() {
       if (!active()) return;
-      for (const commander of selectedCommanders()) setCommanderAutoFront(match, commander.id, enabled);
+      pick(match.units.filter(unit => unit.team === 1), false);
+      setGroupStance(match, [...picked], "defend");
+      update(); focus();
+    },
+    routeMode(enabled: boolean) {
+      if (!active()) return;
+      controls.reset();
+      routeDrawing = enabled && picked.size > 0;
+      routePreview = [];
+      rally = false;
       update(); focus();
     },
     deselect() { if (active()) { cityId = null; pick([], false); focus(); } },
     hold() {
       if (!active()) return;
-      for (const commander of selectedCommanders()) commandCommander(match, commander.id, { mode: "hold" });
+      exitRoute();
+      issue({ mode: "hold" });
       rally = false;
       update(); focus();
     },
@@ -292,7 +298,7 @@ export function startBattle(
       const city = currentCity();
       if (city && active()) { move(city); focus(); }
     },
-    rally() { rally = Boolean(myCity()) && active(); focus(); return rally; },
+    rally() { exitRoute(); rally = Boolean(myCity()) && active(); focus(); return rally; },
     rallyPending() { return rally; },
     build(kind: Kind = "light") {
       const city = myCity();

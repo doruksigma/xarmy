@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { recovery, startBattle, summary, timeLabel } from "./battle";
 import type { Summary } from "./battle";
 import { copy } from "./copy";
-import { CITY_PRODUCTION, COMMANDER_LIMIT } from "./config";
+import { CITY_PRODUCTION } from "./config";
 import type { Difficulty } from "./config";
 import { createMatch } from "./engine";
 import type { Match } from "./engine";
@@ -195,7 +195,7 @@ export default function DotFront() {
       </fieldset>
       {saved && <p className={styles.note}>{copy.saveMap}: {copy.maps[saved.map].name} · {copy[saved.difficulty]} · {timeLabel(Math.floor(saved.elapsed))}</p>}
       {panel === "how" && <div className={styles.details}>
-        <h2>{copy.how}</h2><p>{copy.goal}</p><p>{copy.logistics}</p><p>{copy.commanderRules}</p><p>{copy.terrainRules}</p><p>{copy.controls}</p><p>{copy.touch}</p>
+        <h2>{copy.how}</h2><p>{copy.goal}</p><p>{copy.logistics}</p><p>{copy.frontRules}</p><p>{copy.routeRules}</p><p>{copy.paceRules}</p><p>{copy.terrainRules}</p><p>{copy.controls}</p><p>{copy.touch}</p>
         <p className={styles.note}>{copy.tutorialMap}</p>
         <button onClick={() => newMatch(true)}>{copy.tutorial}</button>
       </div>}
@@ -214,16 +214,14 @@ export default function DotFront() {
   const city = hud.city;
   const canCommand = !paused && !hud.result;
   const hasSelection = hud.light + hud.heavy > 0;
-  const selectedCommanders = hud.commanders.filter((commander) => commander.selected);
-  const allOnFront = selectedCommanders.length > 0 && selectedCommanders.every((commander) => commander.autoFront);
   return (
     <section className={styles.shell} aria-labelledby="dot-front-title">
       <Link className={styles.back} href="/#oyunlar">{copy.back}</Link>
       <h1 className={styles.heading} id="dot-front-title">{copy.title} <span className={styles.matchMap}>{copy.maps[match.map].name}</span></h1>
       <section ref={arena} className={wide ? styles.wide : styles.arena} aria-label={copy.title}>
         <header className={styles.hud}>
-          <span className={styles.blue}>{copy.player} <b>{hud.blueCities}</b> {copy.cities} · <b>{hud.blue}</b> {copy.soldiers} · <b>{hud.blueCommanders}</b> {copy.commander}</span>
-          <span className={styles.red}>{copy.enemy} <b>{hud.redCities}</b> {copy.cities} · <b>{hud.red}</b> {copy.soldiers} · <b>{hud.redCommanders}</b> {copy.commander}</span>
+          <span className={styles.blue}>{copy.player} <b>{hud.blueCities}</b> {copy.cities} · <b>{hud.blue}</b> {copy.soldiers}</span>
+          <span className={styles.red}>{copy.enemy} <b>{hud.redCities}</b> {copy.cities} · <b>{hud.red}</b> {copy.soldiers}</span>
           <span>{copy.supply} <b>{hud.logistics.used}/{hud.logistics.capacity}</b></span>
           <time>{timeLabel(hud.time)}</time>
         </header>
@@ -231,19 +229,20 @@ export default function DotFront() {
           {copy.supplyWarning} · {recovery(hud.shortage) ? recovery(hud.shortage) + " sn" : copy.attrition}
         </p>}
         {hud.tutorial !== null && <p className={styles.tutorial} role="status">{copy.steps[hud.tutorial]}</p>}
-        <div className={styles.commandDeck} aria-label={copy.commanders}>
-          <div className={styles.commandTitle}><strong>{copy.commanders}</strong><span>{copy.commanderHint}</span></div>
-          <div className={styles.commandCards}>
-            {hud.commanders.map((commander) => <button key={commander.id} disabled={!canCommand}
-              className={styles.commandCard} aria-pressed={commander.selected}
-              onClick={() => battle.current?.selectCommander(commander.id)}>
-              <span className={styles.commandBadge} aria-hidden="true">★</span>
-              <span><strong>{copy.commander} {commander.id}</strong>
-                <small>{commander.autoFront ? copy.autoFront : commander.order.mode === "attack" ? copy.attacking : commander.order.mode === "move" ? copy.marching : copy.holding}</small></span>
-              <b>{commander.count}<small>/{COMMANDER_LIMIT}</small></b>
-            </button>)}
+        <div className={styles.ordersPanel} aria-label={copy.orders}>
+          <div className={styles.ordersTitle}><strong>{copy.orders}</strong><span>{copy.ordersHint}</span></div>
+          <div className={styles.tactics} role="group" aria-label={copy.tactics}>
+            <button disabled={!canCommand || !hasSelection} title={copy.attackHint}
+              aria-pressed={hud.selectedStance === "attack"}
+              onClick={() => battle.current?.stance("attack")}>{copy.attackStance}</button>
+            <button disabled={!canCommand || !hasSelection} title={copy.defendHint}
+              aria-pressed={hud.selectedStance === "defend"}
+              onClick={() => battle.current?.stance("defend")}>{copy.defendStance}</button>
+            <button className={styles.frontButton} disabled={!canCommand} title={copy.spreadHint}
+              onClick={() => battle.current?.frontlineAll()}>{copy.spreadAll}</button>
           </div>
         </div>
+        {hud.routeDrawing && <p className={styles.routeHint} role="status">{copy.drawingRoute}</p>}
         <div className={styles.stage}>
           <canvas className={styles.canvas} ref={canvas} tabIndex={0} aria-label={copy.maps[match.map].name} />
           <canvas ref={mini} className={styles.minimap} width={192} height={120} aria-label={copy.maps[match.map].name}
@@ -282,12 +281,11 @@ export default function DotFront() {
           <button disabled={!canCommand} onClick={() => battle.current?.selectAll()}>{copy.selectAll}</button>
           <button disabled={!canCommand || (!hasSelection && !city)} onClick={() => battle.current?.deselect()}>{copy.deselect}</button>
           <button disabled={!canCommand || !hasSelection} onClick={() => battle.current?.hold()}>{copy.hold}</button>
-          <button className={styles.frontButton} disabled={!canCommand || !selectedCommanders.length}
-            aria-pressed={allOnFront} title={copy.autoFrontHint}
-            onClick={() => battle.current?.autoFront(!allOnFront)}>{copy.autoFront}</button>
+          <button disabled={!canCommand || !hasSelection} aria-pressed={hud.routeDrawing}
+            onClick={() => battle.current?.routeMode(!hud.routeDrawing)}>{copy.drawRoute}</button>
           <button disabled={!canCommand} aria-pressed={multi} onClick={() => setMulti(!multi)}>{copy.multi}</button>
           <button disabled={!canCommand} onClick={() => pause(true)}>{copy.pause}</button>
-          <button aria-label={copy.speed} aria-pressed={speed === 2} onClick={() => setSpeed(speed === 1 ? 2 : 1)}>{speed}×</button>
+          <button aria-label={copy.speed} aria-pressed={speed === 0.5} onClick={() => setSpeed(speed === 1 ? 0.5 : 1)}>{speed}×</button>
           <button aria-pressed={settings.sound} onClick={() => {
             battle.current?.sound(!settings.sound);
             updateSettings({ ...settings, sound: !settings.sound });
@@ -295,9 +293,10 @@ export default function DotFront() {
           <button onClick={() => void fullscreen()}>{copy.full}</button>
         </div>
         <div className={styles.inspector}>
-          <span>{copy.selectedSquads} <b>{selectedCommanders.length}</b></span>
+          <span>{copy.selectedSoldiers} <b>{hud.selectedUnits}</b></span>
+          {hud.selectedStance && <span>{hud.selectedStance === "attack" ? copy.attackStance : hud.selectedStance === "defend" ? copy.defendStance : hud.selectedStance === "mixed" ? copy.mixedOrders : copy.manualOrders}</span>}
           <span>{copy.light} <b>{hud.light}</b> · {copy.heavy} <b>{hud.heavy}</b></span>
-          <span className={styles.note}>{copy.legend}</span>
+          <span className={styles.note}>{copy.liveFront}</span>
           {city && <>
             <strong>{copy.placeNames[city.id]} · {city.owner ? copy[city.owner === 1 ? "player" : "enemy"] : copy.neutral}</strong>
             <button disabled={!canCommand || !hasSelection} onClick={() => battle.current?.sendToCity()}>{copy.send}</button>

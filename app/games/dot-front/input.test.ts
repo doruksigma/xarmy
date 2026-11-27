@@ -3,10 +3,10 @@ import test from "node:test";
 import type { TestContext } from "node:test";
 import { bindInput, clampCamera } from "./input";
 import { startBattle, summary } from "./battle";
-import { commanderLeader, commanderMembers, createMatch } from "./engine";
-import { commanderBadge, toWorld, viewOf } from "./render";
+import { createMatch } from "./engine";
+import { toWorld, viewOf } from "./render";
 import type { Box, Camera, View } from "./render";
-import { HEIGHT, WIDTH } from "./config";
+import { HEIGHT, MAX_ROUTE_POINTS, WIDTH } from "./config";
 import type { Point } from "./config";
 import { mapIds, nearestOpen, passable } from "./terrain";
 
@@ -88,13 +88,14 @@ function inputs(t: TestContext) {
   const env = environment(t);
   const canvas = new FakeCanvas();
   const camera: Camera = { x: WIDTH / 2, y: HEIGHT / 2, zoom: 40 / Math.min(canvas.clientWidth / WIDTH, canvas.clientHeight / HEIGHT) };
-  const state = { active: true, multi: false, paused: 0, box: null as Box | null,
+  const state = { active: true, multi: false, paused: 0, drawing: false, preview: [] as Point[], routes: [] as Point[][], box: null as Box | null,
     taps: [] as Array<{ point: Point; command: boolean; touch: boolean; add: boolean; radius: number }>,
     selections: [] as Array<{ from: Point; to: Point; add: boolean }> };
   const view = () => viewOf(canvas.clientWidth, canvas.clientHeight, camera);
   const input = bindInput(canvas.asCanvas(), {
     camera, view, active: () => state.active, multi: () => state.multi,
     drag(box) { state.box = box; }, pause() { state.paused++; },
+    routeMode: () => state.drawing, preview(points) { state.preview = points; }, route(points) { state.routes.push(points); },
     tap(point, command, touch, add, radius) { state.taps.push({ point, command, touch, add, radius }); },
     select(from, to, add) { state.selections.push({ from, to, add }); },
   });
@@ -250,39 +251,35 @@ test("battle saves and pauses when hidden, resumes without accumulated time, and
   assert.equal(saved, beforePagehideSaves + 1);
 });
 
-test("commander movement and rally orders use each match's terrain and hold clears persistent squad orders", t => {
+test("manual soldier movement and rally orders use each match's terrain without controlling another soldier", t => {
   const env = environment(t);
   for (const map of mapIds) {
     const canvas = new FakeCanvas();
-    const match = createMatch("normal", `commands-${map}`, false, map);
+    const match = createMatch("normal", `commands-${map}`, true, map);
     const battle = startBattle(match, canvas.asCanvas(), new FakeCanvas().asCanvas(), () => {}, () => {}, () => {}, () => {});
     try {
-      const commander = match.commanders.find(item => item.team === 1)!;
-      battle.selectCommander(commander.id);
       env.runFrame(1000);
-      const leader = commanderLeader(match, commander.id)!;
-      const target = nearestOpen({ x: leader.x - 8, y: leader.y + 3 }, map);
+      const unit = match.units.filter(item => item.team === 1).sort((a, b) => Math.abs(a.y - HEIGHT / 2) - Math.abs(b.y - HEIGHT / 2))[0];
+      const pointer = canvas.point(unit);
+      canvas.emit("pointerdown", pointer); canvas.emit("pointerup", pointer);
+      const untouched = match.units.filter(other => other !== unit).map(other => JSON.stringify(other.order));
+      const target = nearestOpen({ x: unit.x - 8, y: unit.y + 3 }, map);
       canvas.emit("pointerdown", { button: 2, ...canvas.point(target) });
-      const own = commanderMembers(match, commander.id);
-      assert.ok(own.every(unit => unit.path.length > 0));
-      assert.ok(own.every(unit => unit.path.every(point => passable(point, map))), map);
-      assert.ok(own.some(unit => unit.path.at(-1)?.x === target.x && unit.path.at(-1)?.y === target.y), map);
+      assert.ok(unit.path.length > 0);
+      assert.ok(unit.path.every(point => passable(point, map)), map);
+      assert.deepEqual(unit.path.at(-1), target);
+      assert.equal(unit.stance, "manual");
+      assert.deepEqual(match.units.filter(other => other !== unit).map(other => JSON.stringify(other.order)), untouched);
       battle.hold();
-      assert.ok(own.every(unit => unit.order.mode === "hold" && unit.path.length === 0));
-      assert.equal(commander.order.mode, "hold");
-      assert.equal(commander.autoFront, false);
+      assert.equal(unit.order.mode, "hold"); assert.equal(unit.path.length, 0);
       const city = match.cities.find(item => item.owner === 1)!;
-      battle.pan({ x: city.x / WIDTH, y: city.y / HEIGHT });
-      env.runFrame(1000);
+      battle.pan({ x: city.x / WIDTH, y: city.y / HEIGHT }); env.runFrame(1000);
       const cityPointer = canvas.point(city);
       canvas.emit("pointerdown", cityPointer); canvas.emit("pointerup", cityPointer);
       assert.equal(battle.rally(), true);
-      assert.equal(battle.rallyPending(), true);
-      const rallyPoint = { x: WIDTH / 2, y: HEIGHT / 2 };
-      const rallyPointer = canvas.point(rallyPoint);
+      const rallyPoint = { x: WIDTH / 2, y: HEIGHT / 2 }, rallyPointer = canvas.point(rallyPoint);
       canvas.emit("pointerdown", rallyPointer); canvas.emit("pointerup", rallyPointer);
-      assert.deepEqual(city.rally, nearestOpen(rallyPoint, map));
-      assert.equal(battle.rallyPending(), false);
+      assert.deepEqual(city.rally, nearestOpen(rallyPoint, map)); assert.equal(battle.rallyPending(), false);
     } finally { battle.dispose(); }
   }
 });
@@ -294,96 +291,128 @@ test("surrender commits exactly once without waiting for an animation frame", t 
   const battle = startBattle(match, new FakeCanvas().asCanvas(), new FakeCanvas().asCanvas(), () => {}, () => {}, () => {}, () => { finished++; });
   try {
     battle.surrender(); battle.surrender();
-    assert.equal(match.result, "lost");
-    assert.equal(finished, 1);
-    env.runFrame(1000); env.runFrame(1050);
-    assert.equal(finished, 1);
+    assert.equal(match.result, "lost"); assert.equal(finished, 1);
+    env.runFrame(1000); env.runFrame(1050); assert.equal(finished, 1);
   } finally { battle.dispose(); }
 });
 
-test("soldier and badge taps select complete commanders; Shift and boxes operate on full squads", t => {
+test("soldier taps select only one, Shift adds individuals, and boxes select exact soldiers", t => {
   const env = environment(t), canvas = new FakeCanvas();
-  const match = createMatch("normal", "squad-selection", true, "plains");
-  const blue = match.commanders.filter(commander => commander.team === 1);
-  const first = blue[1], second = blue[2];
-  const firstLeader = commanderLeader(match, first.id)!;
-  const secondLeader = commanderLeader(match, second.id)!;
-  const shift = { x: firstLeader.x + 7 - secondLeader.x, y: firstLeader.y + 6 - secondLeader.y };
-  for (const unit of commanderMembers(match, second.id)) { unit.x += shift.x; unit.y += shift.y; }
+  const match = createMatch("normal", "individual-selection", true, "plains");
+  const blue = match.units.filter(unit => unit.team === 1);
+  const [first, second, third] = blue.slice(10, 13);
   let hud = summary(match, new Set(), null);
   const battle = startBattle(match, canvas.asCanvas(), new FakeCanvas().asCanvas(), value => { hud = value; }, () => {}, () => {}, () => {});
-  env.cleanup(() => battle.dispose());
-  env.runFrame(1000);
+  env.cleanup(() => battle.dispose()); env.runFrame(1000);
   const tap = (point: Point, extra: Record<string, unknown> = {}) => {
     canvas.emit("pointerdown", { ...canvas.point(point), ...extra });
     canvas.emit("pointerup", { ...canvas.point(point), ...extra });
   };
-  tap(commanderMembers(match, first.id).at(-1)!);
-  assert.equal(hud.light + hud.heavy, 10);
-  assert.deepEqual(hud.commanders.filter(commander => commander.selected).map(commander => commander.id), [first.id]);
-  tap(commanderMembers(match, second.id).at(-1)!, { shiftKey: true });
-  assert.equal(hud.light + hud.heavy, 15);
-  assert.equal(hud.commanders.filter(commander => commander.selected).length, 2);
-  const member = commanderMembers(match, first.id).at(-1)!;
-  canvas.emit("pointerdown", canvas.point({ x: member.x - 0.3, y: member.y - 0.3 }));
-  canvas.emit("pointerup", canvas.point({ x: member.x + 0.3, y: member.y + 0.3 }));
-  assert.equal(hud.light + hud.heavy, 10);
-  battle.deselect();
-  const badge = commanderBadge(canvas.view(), firstLeader);
-  const badgePointer = { clientX: 100 + badge.x, clientY: 50 + badge.y, pointerType: "touch" };
-  canvas.emit("pointerdown", badgePointer); canvas.emit("pointerup", badgePointer);
-  assert.equal(hud.light + hud.heavy, 10);
-  assert.equal(hud.blueCommanders, 3);
-  assert.equal(hud.redCommanders, 3);
+  tap(first); assert.equal(hud.selectedUnits, 1);
+  tap(second, { shiftKey: true }); assert.equal(hud.selectedUnits, 2);
+  canvas.emit("pointerdown", canvas.point({ x: third.x - .4, y: third.y - .4 }));
+  canvas.emit("pointerup", canvas.point({ x: third.x + .4, y: third.y + .4 }));
+  assert.equal(hud.selectedUnits, 1);
+  battle.selectAll(); assert.equal(hud.selectedUnits, 25);
+  battle.hold(); assert.ok(blue.every(unit => unit.stance === "manual" && unit.order.mode === "hold"));
+  battle.stance("attack"); assert.equal(hud.selectedStance, "attack");
+  assert.ok(blue.every(unit => unit.stance === "attack"));
+  battle.deselect(); assert.equal(hud.selectedUnits, 0); assert.equal(hud.selectedStance, null);
+  battle.frontlineAll(); assert.equal(hud.selectedUnits, 25); assert.equal(hud.selectedStance, "defend");
+  assert.ok(blue.every(unit => unit.stance === "defend"));
 });
 
-test("commander panel selection persists across reinforcements and manual orders disable automatic front movement", t => {
+test("select-all keeps its exact selection after new recruits and removes dead selected soldiers", t => {
   const env = environment(t), canvas = new FakeCanvas();
-  const match = createMatch("normal", "squad-recruits", true, "plains");
-  const commander = match.commanders.find(item => item.team === 1 && commanderMembers(match, item.id).length === 5)!;
+  const match = createMatch("normal", "selection-recruits", true, "plains");
   let hud = summary(match, new Set(), null);
   const battle = startBattle(match, canvas.asCanvas(), new FakeCanvas().asCanvas(), value => { hud = value; }, () => {}, () => {}, () => {});
-  env.cleanup(() => battle.dispose());
-  battle.selectCommander(commander.id);
-  assert.equal(hud.light + hud.heavy, 5);
-  battle.hold();
-  assert.equal(commander.autoFront, false);
-  assert.equal(commander.order.mode, "hold");
-  battle.autoFront(true);
-  assert.equal(commander.autoFront, true);
-  assert.equal(hud.commanders.find(item => item.id === commander.id)?.autoFront, true);
-  battle.hold();
-  const original = commanderMembers(match, commander.id)[0];
+  env.cleanup(() => battle.dispose()); battle.selectAll();
+  assert.equal(hud.selectedUnits, 25);
+  const original = match.units.find(unit => unit.team === 1)!;
   match.units.push({ ...original, id: match.nextId++, x: original.x - 2, order: { mode: "hold" }, path: [], waypoint: 0 });
   env.runFrame(1000); env.runFrame(1200);
-  assert.equal(hud.light + hud.heavy, 6);
-  assert.equal(hud.commanders.find(item => item.id === commander.id)?.count, 6);
-  assert.equal(hud.commanders.find(item => item.id === commander.id)?.selected, true);
+  assert.equal(hud.selectedUnits, 25);
+  original.hp = 0; env.runFrame(1400);
+  assert.equal(hud.selectedUnits, 24);
 });
 
-test("mobile battle starts on a visible front squad at readable scale and changing automatic city production preserves progress", t => {
+test("drawing a route records ordered world-space bends after camera scaling and ends without selecting or tapping", t => {
+  const f = inputs(t); f.state.drawing = true;
+  f.canvas.renderedWidth = 480; f.canvas.renderedHeight = 300;
+  f.camera.x += 3; f.camera.y -= 2;
+  const first = { x: 200, y: 100 }, bend = { x: 300, y: 200 }, final = { x: 400, y: 100 };
+  const eventPoint = (p: Point) => ({ clientX: 100 + p.x / 2, clientY: 50 + p.y / 2 });
+  f.canvas.emit("pointerdown", eventPoint(first));
+  f.canvas.emit("pointermove", eventPoint(bend));
+  assert.equal(f.state.preview.length, 2);
+  f.canvas.emit("pointerup", eventPoint(final));
+  assert.deepEqual(f.state.routes[0], [first, bend, final].map(point => toWorld(f.view(), point)));
+  assert.deepEqual(f.state.preview, []);
+  assert.equal(f.state.taps.length, 0); assert.equal(f.state.selections.length, 0); assert.equal(f.canvas.captures.size, 0);
+});
+
+test("route drawing is bounded, preserves the last endpoint, and cancels when two fingers pan or the tab hides", t => {
+  const f = inputs(t); f.state.drawing = true;
+  f.canvas.emit("pointerdown", { clientX: 200, clientY: 100 });
+  for (let i = 0; i < 400; i++) f.canvas.emit("pointermove", { clientX: 200 + (i % 20) * 30, clientY: 100 + Math.floor(i / 20) * 20 });
+  f.canvas.emit("pointerup", { clientX: 600, clientY: 400 });
+  assert.ok(f.state.routes[0].length <= MAX_ROUTE_POINTS);
+  assert.deepEqual(f.state.routes[0].at(-1), toWorld(f.view(), { x: 500, y: 350 }));
+  f.canvas.emit("pointerdown", { pointerId: 10, pointerType: "touch", clientX: 300, clientY: 300 });
+  f.canvas.emit("pointermove", { pointerId: 10, pointerType: "touch", clientX: 400, clientY: 300 });
+  assert.ok(f.state.preview.length);
+  f.canvas.emit("pointerdown", { pointerId: 11, pointerType: "touch", clientX: 500, clientY: 300 });
+  assert.deepEqual(f.state.preview, []);
+  f.canvas.emit("pointermove", { pointerId: 11, pointerType: "touch", clientX: 600, clientY: 320 });
+  f.canvas.emit("pointerup", { pointerId: 11, pointerType: "touch", clientX: 600, clientY: 320 });
+  f.canvas.emit("pointerup", { pointerId: 10, pointerType: "touch", clientX: 400, clientY: 300 });
+  assert.equal(f.state.routes.length, 1);
+  f.canvas.emit("pointerdown", { pointerId: 12, pointerType: "touch", clientX: 300, clientY: 300 });
+  f.document.hidden = true; f.document.emit("visibilitychange");
+  f.canvas.emit("pointerup", { pointerId: 12, pointerType: "touch", clientX: 400, clientY: 300 });
+  assert.equal(f.state.routes.length, 1); assert.deepEqual(f.state.preview, []); assert.equal(f.canvas.captures.size, 0);
+});
+
+test("drawn battle routes control only the selected soldier and stay manual during automatic front updates", t => {
   const env = environment(t), canvas = new FakeCanvas();
-  canvas.clientWidth = canvas.renderedWidth = 390;
-  canvas.clientHeight = canvas.renderedHeight = 500;
+  const match = createMatch("normal", "draw-individual-route", true, "plains");
+  const unit = match.units.filter(unit => unit.team === 1)[12];
+  let hud = summary(match, new Set(), null);
+  const battle = startBattle(match, canvas.asCanvas(), new FakeCanvas().asCanvas(), value => { hud = value; }, () => {}, () => {}, () => {});
+  env.cleanup(() => battle.dispose()); env.runFrame(1000);
+  const pointer = canvas.point(unit); canvas.emit("pointerdown", pointer); canvas.emit("pointerup", pointer);
+  assert.equal(hud.selectedUnits, 1);
+  battle.routeMode(true); assert.equal(hud.routeDrawing, true);
+  const points = [{ x: unit.x, y: unit.y }, { x: unit.x - 2, y: unit.y + 2 }, { x: unit.x - 4, y: unit.y }];
+  canvas.emit("pointerdown", canvas.point(points[0])); canvas.emit("pointermove", canvas.point(points[1])); canvas.emit("pointerup", canvas.point(points[2]));
+  assert.equal(hud.routeDrawing, false); assert.equal(unit.stance, "manual"); assert.equal(unit.order.mode, "route");
+  if (unit.order.mode === "route") assert.deepEqual(unit.order.points, points);
+  assert.equal(match.units.filter(other => other.order.mode === "route").length, 1);
+  match.tutorial = null; match.nextAi = 999;
+  for (let i = 1; i <= 15; i++) env.runFrame(1000 + i * 100);
+  assert.equal(unit.stance, "manual"); assert.equal(unit.order.mode, "route");
+  battle.routeMode(true); battle.pause(true); assert.equal(hud.routeDrawing, false);
+  env.runFrame(3000); assert.equal(hud.routeDrawing, false);
+});
+
+test("mobile battle shows individual front soldiers, production type preserves progress, and speed cannot exceed1x", t => {
+  const env = environment(t), canvas = new FakeCanvas();
+  canvas.clientWidth = canvas.renderedWidth = 390; canvas.clientHeight = canvas.renderedHeight = 500;
   const match = createMatch("normal", "mobile-front", true, "plains");
   const battle = startBattle(match, canvas.asCanvas(), new FakeCanvas().asCanvas(), () => {}, () => {}, () => {}, () => {});
-  env.cleanup(() => battle.dispose());
-  env.runFrame(1000);
+  env.cleanup(() => battle.dispose()); env.runFrame(1000);
   assert.ok(canvas.drawnView.scale >= 19.9);
-  assert.ok(match.commanders.filter(commander => commander.team === 1).some(commander => {
-    const leader = commanderLeader(match, commander.id)!;
-    const p = canvas.point(leader);
-    return p.clientX > 100 && p.clientX < 490 && p.clientY > 50 && p.clientY < 550;
+  assert.ok(match.units.some(unit => {
+    const p = canvas.point(unit); return unit.team === 1 && p.clientX > 100 && p.clientX < 490 && p.clientY > 50 && p.clientY < 550;
   }));
   const city = match.cities.find(item => item.owner === 1)!;
   city.build = { kind: "light", elapsed: 4 };
-  battle.pan({ x: city.x / WIDTH, y: city.y / HEIGHT });
-  env.runFrame(1000);
-  const pointer = canvas.point(city);
-  canvas.emit("pointerdown", pointer); canvas.emit("pointerup", pointer);
-  battle.build("heavy");
-  assert.deepEqual(city.build, { kind: "heavy", elapsed: 4 });
-  assert.equal(city.repeat, true);
-  battle.build("light");
-  assert.deepEqual(city.build, { kind: "light", elapsed: 4 });
+  battle.pan({ x: city.x / WIDTH, y: city.y / HEIGHT }); env.runFrame(1000);
+  const pointer = canvas.point(city); canvas.emit("pointerdown", pointer); canvas.emit("pointerup", pointer);
+  battle.build("heavy"); assert.deepEqual(city.build, { kind: "heavy", elapsed: 4 }); assert.equal(city.repeat, true);
+  battle.build("light"); assert.deepEqual(city.build, { kind: "light", elapsed: 4 });
+  battle.speed(2); env.runFrame(1100); assert.ok(match.elapsed <= .101);
+  const before = match.elapsed; battle.speed(.5); env.runFrame(1200);
+  assert.ok(match.elapsed - before <= .051);
 });
