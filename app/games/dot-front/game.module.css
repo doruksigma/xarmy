@@ -87,6 +87,10 @@
 .minimap { position: absolute; bottom: 0.4rem; right: 0.4rem; width: clamp(100px, 20vw, 190px); aspect-ratio: 8 / 5; border: 1px solid #afc2af; cursor: crosshair; touch-action: none; }
 .toolbar { border-top: 1px solid var(--line); }
 .toolbar button, .inspector button { font-size: 0.85rem; }
+.speedControl { display: inline-flex; align-items: center; gap: 0.4rem; color: var(--muted); font-size: 0.8rem; }
+.speedControl select { min-width: 4.8rem; font-size: 0.85rem; color: var(--paper); }
+.pocketWarning { padding: 0.45rem 0.7rem; color: #ffe1ac; background: #493026; border-top: 1px solid #b27855; font-size: 0.85rem; }
+.pocketStatus { color: #ffd09b; font-size: 0.85rem; }
 .inspector { border-top: 1px solid var(--line); }
 .field { display: inline-flex; align-items: center; gap: 0.45rem; }
 .inspector .field { flex-wrap: wrap; }

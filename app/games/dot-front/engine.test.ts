@@ -11,7 +11,7 @@ const advance = (state: Match, seconds: number) => {
   for (let i = 0; i < Math.round(seconds / STEP); i++) step(state, STEP, [], () => {});
 };
 const soldier = (id: number, team: Team, x: number, y: number, kind: Kind = "light"): Unit => ({
-  id, team, x, y, kind, hp: units[kind].hp, cooldown: 0, stance: "manual", nextOrder: 0,
+  id, team, x, y, kind, hp: units[kind].hp, cooldown: 0, stance: "manual", nextOrder: 0, pocketed: false, pocketTime: 0,
   order: { mode: "hold" }, path: [], waypoint: 0, replan: 0, marked: false,
 });
 const city = (id: number, owner: Owner, x: number, y: number): City => ({
@@ -29,7 +29,7 @@ test("all six expanded maps start with fifty owned cities and fifty frontline so
   assert.equal(WIDTH, 144); assert.equal(HEIGHT, 90);
   for (const map of mapIds) {
     const state = createMatch("normal", `initial-${map}`, false, map);
-    assert.equal(state.version, 3); assert.equal(state.cities.length, 50);
+    assert.equal(state.version, 4); assert.equal(state.cities.length, 50);
     assert.equal(getMap(map).tiles.length, WIDTH * HEIGHT);
     assert.equal(state.units.length, 50); assert.equal("commanders" in state, false);
     for (const team of [1, 2] as const) {

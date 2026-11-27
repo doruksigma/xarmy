@@ -3,6 +3,7 @@ import type { Point } from "./config";
 import type { Match, Order, Result, Unit } from "./engine";
 import { getMap, mapIds, passable } from "./terrain";
 import type { MapId } from "./terrain";
+import { advanceTerritory, createTerritory, isSupplied, TERRITORY_COLS, TERRITORY_ROWS } from "./territory";
 
 const prefix = "xarmy:dot-front:";
 const numeric = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value) && value >= 0;
@@ -22,14 +23,33 @@ const LEGACY_CAPTURE = 8;
 type LegacyCommander = {
   id: number; team: 1 | 2; leaderId: number; order: Order; autoFront: boolean; nextOrder: number;
 };
-type StoredUnit = Omit<Unit, "stance" | "nextOrder"> & {
-  stance?: unknown; nextOrder?: unknown; commanderId?: unknown; independent?: unknown;
+type StoredUnit = Omit<Unit, "stance" | "nextOrder" | "pocketed" | "pocketTime"> & {
+  stance?: unknown; nextOrder?: unknown; commanderId?: unknown; independent?: unknown; pocketed?: unknown; pocketTime?: unknown;
 };
-type StoredMatch = Omit<Match, "version" | "units"> & {
-  version: number; units: StoredUnit[]; commanders?: LegacyCommander[]; nextCommanderId?: number;
+type StoredMatch = Omit<Match, "version" | "units" | "territory"> & {
+  version: number; units: StoredUnit[]; commanders?: LegacyCommander[]; nextCommanderId?: number; territory?: unknown;
 };
 
-function validVersion(value: unknown, version: 2 | 3): boolean {
+const blockedMasks = new Map<MapId, Uint8Array>();
+function validTerritory(value: unknown, map: MapId): boolean {
+  if (!value || typeof value !== "object") return false;
+  const territory = value as { owners?: unknown; revision?: unknown };
+  if (!Array.isArray(territory.owners) || territory.owners.length !== TERRITORY_COLS * TERRITORY_ROWS ||
+    !integer(territory.revision) || territory.revision > 0x7fffffff) return false;
+  let blocked = blockedMasks.get(map);
+  if (!blocked) {
+    blocked = Uint8Array.from(createTerritory(map).owners, owner => owner === 0 ? 1 : 0);
+    blockedMasks.set(map, blocked);
+  }
+  // Sparse arrays and zero claims on passable cells are rejected as well.
+  for (let index = 0; index < blocked.length; index++) {
+    const value = territory.owners[index];
+    if (blocked[index] ? value !== 0 : value !== 1 && value !== 2) return false;
+  }
+  return true;
+}
+
+function validVersion(value: unknown, version: 2 | 3 | 4): boolean {
   try {
     const m = value as StoredMatch;
     if (!m || m.version !== version || !isMapId(m.map) || typeof m.id !== "string" || !m.id ||
@@ -38,7 +58,8 @@ function validVersion(value: unknown, version: 2 | 3): boolean {
       !numeric(m.nextAi) || !Array.isArray(m.shortage) || m.shortage.length !== 2 || !m.shortage.every(numeric) ||
       !m.report || ![m.report.captured, m.report.killed, m.report.fallen].every(integer) ||
       !Array.isArray(m.cities) || !Array.isArray(m.units) || m.units.length > 600) return false;
-    if (version === 3 && (Object.hasOwn(m, "commanders") || Object.hasOwn(m, "nextCommanderId"))) return false;
+    if (version >= 3 && (Object.hasOwn(m, "commanders") || Object.hasOwn(m, "nextCommanderId"))) return false;
+    if (version === 4 ? !validTerritory(m.territory, m.map) : Object.hasOwn(m, "territory")) return false;
     if (version === 2 && (!Array.isArray(m.commanders) || m.commanders.length > 600 ||
       !integer(m.nextCommanderId) || m.nextCommanderId < 1)) return false;
     const layout = getMap(m.map).cities;
@@ -47,7 +68,7 @@ function validVersion(value: unknown, version: 2 | 3): boolean {
     const validOrder = (order: Order | null | undefined) => Boolean(order && (
       order.mode === "hold" || (order.mode === "move" && validPoint(order.point)) ||
       (order.mode === "attack" && integer(order.target) && order.target >= 1 && order.target < m.nextId) ||
-      (version === 3 && order.mode === "route" && Array.isArray(order.points) && order.points.length > 0 &&
+      (version >= 3 && order.mode === "route" && Array.isArray(order.points) && order.points.length > 0 &&
         order.points.length <= MAX_ROUTE_POINTS && order.points.every(guidePoint) && integer(order.next) && order.next <= order.points.length)
     ));
     const ids = new Set<number>();
@@ -59,7 +80,11 @@ function validVersion(value: unknown, version: 2 | 3): boolean {
         !Array.isArray(u.path) || u.path.length > WIDTH * HEIGHT || !u.path.every(validPoint) ||
         !integer(u.waypoint) || u.waypoint > u.path.length || !validOrder(u.order)) return false;
       ids.add(u.id);
-      if (version === 3) {
+      if (version === 4) {
+        if (typeof u.pocketed !== "boolean" || !numeric(u.pocketTime) || u.pocketTime > m.elapsed + 1e-6 ||
+          (!u.pocketed && u.pocketTime !== 0)) return false;
+      } else if (Object.hasOwn(u, "pocketed") || Object.hasOwn(u, "pocketTime")) return false;
+      if (version >= 3) {
         if (!stance(u.stance) || !numeric(u.nextOrder) || u.nextOrder > m.elapsed + 60 ||
           Object.hasOwn(u, "commanderId") || Object.hasOwn(u, "independent")) return false;
       } else {
@@ -97,36 +122,56 @@ function validVersion(value: unknown, version: 2 | 3): boolean {
 
 /** Accept the current runtime shape only; old save data must be migrated first. */
 export function validMatch(value: unknown): value is Match {
-  return validVersion(value, 3);
+  return validVersion(value, 4);
 }
 
-/** Validate the published v2 schema before removing its obsolete command layer.
- * Positions, health and orders survive; timed progress keeps its percentage. */
+function initializeTerritory(legacy: StoredMatch, oldVersion: 2 | 3): Match | null {
+  const { commanders, nextCommanderId, ...record } = legacy;
+  void nextCommanderId;
+  const migrated = {
+    ...record,
+    version: 4,
+    territory: createTerritory(legacy.map),
+    units: legacy.units.map(unit => {
+      const { commanderId, ...soldier } = unit;
+      const group = oldVersion === 2 ? commanders!.find(commander => commander.id === commanderId)! : null;
+      return {
+        ...soldier,
+        stance: group ? (group.autoFront ? "defend" : "manual") : soldier.stance,
+        nextOrder: oldVersion === 2 ? legacy.elapsed : soldier.nextOrder,
+        pocketed: false, pocketTime: 0,
+      };
+    }),
+    cities: legacy.cities.map(city => ({ ...city,
+      progress: oldVersion === 2 ? city.progress * CAPTURE / LEGACY_CAPTURE : city.progress,
+      build: city.build ? { ...city.build, elapsed: oldVersion === 2
+        ? city.build.elapsed * CITY_PRODUCTION / LEGACY_PRODUCTION : city.build.elapsed } : null,
+    })),
+  } as Match;
+  // Older versions did not store land history. Keep the original split and
+  // claim only the current living army's footprint, never inferred past paths.
+  advanceTerritory(migrated);
+  for (const unit of migrated.units) unit.pocketed = !isSupplied(migrated, unit.team, unit);
+  return validMatch(migrated) ? migrated : null;
+}
+
+/** Validate published v2 before discarding the obsolete command layer. */
 export function migrateV2Match(value: unknown): Match | null {
   if (!validVersion(value, 2)) return null;
-  try {
-    const legacy = structuredClone(value) as StoredMatch;
-    const { commanders, nextCommanderId, ...record } = legacy;
-    void nextCommanderId;
-    const migrated = {
-      ...record,
-      version: 3,
-      units: legacy.units.map(unit => {
-        const { commanderId, ...soldier } = unit;
-        const group = commanders!.find(commander => commander.id === commanderId)!;
-        return { ...soldier, stance: group.autoFront ? "defend" : "manual", nextOrder: legacy.elapsed };
-      }),
-      cities: legacy.cities.map(city => ({ ...city,
-        progress: city.progress * CAPTURE / LEGACY_CAPTURE,
-        build: city.build ? { ...city.build, elapsed: city.build.elapsed * CITY_PRODUCTION / LEGACY_PRODUCTION } : null,
-      })),
-    };
-    return validMatch(migrated) ? migrated : null;
-  } catch { return null; }
+  try { return initializeTerritory(structuredClone(value) as StoredMatch, 2); }
+  catch { return null; }
+}
+
+/** Version three already uses individual soldiers and the slow timing values. */
+export function migrateV3Match(value: unknown): Match | null {
+  if (!validVersion(value, 3)) return null;
+  try { return initializeTerritory(structuredClone(value) as StoredMatch, 3); }
+  catch { return null; }
 }
 
 export function migrateMatch(value: unknown): Match | null {
-  return validMatch(value) ? structuredClone(value) : migrateV2Match(value);
+  if (validMatch(value)) return structuredClone(value);
+  return migrateV3Match(value) ?? migrateV2Match(value);
 }
 
 const STORAGE_TIMEOUT = 5000;
@@ -202,7 +247,7 @@ export async function loadMatch(): Promise<unknown> {
   const saved: unknown = await transaction("readonly", (store) => store.get("current"));
   // Leave invalid data intact so the client can show its existing invalid-save
   // notice. Merely opening the menu never overwrites the on-disk snapshot.
-  return migrateV2Match(saved) ?? saved;
+  return migrateMatch(saved) ?? saved;
 }
 export function saveMatch(match: Match) {
   if (!validMatch(match)) return Promise.reject(new Error("Invalid Dot Front match"));

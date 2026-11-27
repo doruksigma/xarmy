@@ -1,6 +1,6 @@
 import { decide } from "./ai";
 import { soundEffects } from "./audio";
-import { GRACE, HEIGHT, MAX_ROUTE_POINTS, RADIUS, STEP, WIDTH, dist, units } from "./config";
+import { GRACE, HEIGHT, MAX_ROUTE_POINTS, POCKET_GRACE, RADIUS, STEP, WIDTH, dist, units } from "./config";
 import type { Kind, Point } from "./config";
 import { commandUnit, setGroupStance, step, supply } from "./engine";
 import type { Flash, Match, Order, Unit } from "./engine";
@@ -8,11 +8,16 @@ import { bindInput, clampCamera, MAX_ZOOM } from "./input";
 import { landscapeCanvas, render, resize, viewOf } from "./render";
 import type { Box, Camera } from "./render";
 import { nearestOpen } from "./terrain";
+import { isSupplied } from "./territory";
+
+export const GAME_SPEEDS = [0.5, 1, 2, 3] as const;
 
 export function summary(match: Match, picked: Set<number>, cityId: number | null, routeDrawing = false) {
   const city = cityId === null ? null : match.cities[cityId];
   const logistics = supply(match, 1);
   const selected = match.units.filter((unit) => picked.has(unit.id));
+  const pocketed = selected.filter(unit => unit.pocketed);
+  const cityIsolated = Boolean(city?.owner && !isSupplied(match, city.owner, city));
   const selectedStance: Unit["stance"] | "mixed" | null = !selected.length ? null
     : selected.every(unit => unit.stance === selected[0].stance) ? selected[0].stance : "mixed";
   return {
@@ -21,11 +26,15 @@ export function summary(match: Match, picked: Set<number>, cityId: number | null
     red: match.units.filter((unit) => unit.team === 2).length,
     blueCities: match.cities.filter((item) => item.owner === 1).length,
     redCities: match.cities.filter((item) => item.owner === 2).length,
+    bluePocketed: match.units.filter(unit => unit.team === 1 && unit.pocketed).length,
     selectedUnits: selected.length, selectedStance,
+    selectedPocketed: pocketed.length,
+    selectedPocketGrace: pocketed.length ? Math.max(0, Math.ceil(POCKET_GRACE - Math.max(...pocketed.map(unit => unit.pocketTime)))) : null,
     routeDrawing: routeDrawing && selected.length > 0,
     light: selected.filter((unit) => unit.kind === "light").length, heavy: selected.filter((unit) => unit.kind === "heavy").length,
     city: city && { ...city, build: city.build && { ...city.build } },
-    blocked: Boolean(city?.build && logistics.used + units[city.build.kind].supply > logistics.capacity),
+    cityIsolated,
+    blocked: Boolean(city?.build && (cityIsolated || logistics.used + units[city.build.kind].supply > logistics.capacity)),
     tutorial: match.tutorial, result: match.result, report: { ...match.report },
   };
 }
@@ -258,7 +267,7 @@ export function startBattle(
   return {
     focus,
     pause: setPaused,
-    speed(value: number) { speed = value === 0.5 ? 0.5 : 1; focus(); },
+    speed(value: number) { speed = (GAME_SPEEDS as readonly number[]).includes(value) ? value : 1; },
     sound(value: boolean) {
       muted = !value;
       if (value && active()) void audio.enable().catch(() => {});

@@ -2,13 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { TestContext } from "node:test";
 import { bindInput, clampCamera } from "./input";
-import { startBattle, summary } from "./battle";
+import { GAME_SPEEDS, startBattle, summary } from "./battle";
 import { createMatch } from "./engine";
 import { toWorld, viewOf } from "./render";
 import type { Box, Camera, View } from "./render";
-import { HEIGHT, MAX_ROUTE_POINTS, WIDTH } from "./config";
+import { HEIGHT, MAX_ROUTE_POINTS, POCKET_GRACE, STEP, WIDTH } from "./config";
 import type { Point } from "./config";
 import { mapIds, nearestOpen, passable } from "./terrain";
+import { TERRITORY_COLS, TERRITORY_SPACING } from "./territory";
 
 // DOM/event mocks test input and lifecycle contracts; they are not browser/device QA.
 class Surface extends EventTarget {
@@ -396,7 +397,7 @@ test("drawn battle routes control only the selected soldier and stay manual duri
   env.runFrame(3000); assert.equal(hud.routeDrawing, false);
 });
 
-test("mobile battle shows individual front soldiers, production type preserves progress, and speed cannot exceed1x", t => {
+test("mobile battle shows individual front soldiers and production type changes preserve progress", t => {
   const env = environment(t), canvas = new FakeCanvas();
   canvas.clientWidth = canvas.renderedWidth = 390; canvas.clientHeight = canvas.renderedHeight = 500;
   const match = createMatch("normal", "mobile-front", true, "plains");
@@ -412,7 +413,100 @@ test("mobile battle shows individual front soldiers, production type preserves p
   const pointer = canvas.point(city); canvas.emit("pointerdown", pointer); canvas.emit("pointerup", pointer);
   battle.build("heavy"); assert.deepEqual(city.build, { kind: "heavy", elapsed: 4 }); assert.equal(city.repeat, true);
   battle.build("light"); assert.deepEqual(city.build, { kind: "light", elapsed: 4 });
-  battle.speed(2); env.runFrame(1100); assert.ok(match.elapsed <= .101);
-  const before = match.elapsed; battle.speed(.5); env.runFrame(1200);
-  assert.ok(match.elapsed - before <= .051);
+});
+
+test("every offered speed advances the fixed-step simulation by its wall-time multiplier", t => {
+  const env = environment(t);
+  assert.deepEqual(GAME_SPEEDS, [.5, 1, 2, 3]);
+  for (const speed of GAME_SPEEDS) {
+    const match = createMatch("normal", `speed-${speed}`, true, "plains");
+    const battle = startBattle(match, new FakeCanvas().asCanvas(), new FakeCanvas().asCanvas(), () => {}, () => {}, () => {}, () => {});
+    try {
+      battle.speed(speed); env.runFrame(1000);
+      for (let frame = 1; frame <= 40; frame++) env.runFrame(1000 + frame * 100);
+      assert.ok(Math.abs(match.elapsed - 4 * speed) <= STEP + 1e-8, `${speed}x produced ${match.elapsed} game seconds`);
+      assert.equal(env.frames.size, 1);
+      // A delayed render can only add the bounded live-frame delta, not catch up
+      // several minutes of unobserved battle time at the selected speed.
+      const beforeStall = match.elapsed; env.runFrame(500_000);
+      assert.ok(match.elapsed - beforeStall <= .15 * speed + STEP + 1e-8);
+    } finally { battle.dispose(); }
+  }
+});
+
+test("3x speed remains frame-rate independent and hidden tabs never catch up on resume", t => {
+  const env = environment(t);
+  const elapsed: number[] = [];
+  for (const frameMs of [20, 100]) {
+    const match = createMatch("normal", `rate-${frameMs}`, true, "plains");
+    const battle = startBattle(match, new FakeCanvas().asCanvas(), new FakeCanvas().asCanvas(), () => {}, () => {}, () => {}, () => {});
+    try {
+      battle.speed(3); env.runFrame(1000);
+      for (let time = frameMs; time <= 2000; time += frameMs) env.runFrame(1000 + time);
+      elapsed.push(match.elapsed);
+      const beforeHidden = match.elapsed;
+      env.document.hidden = true; env.document.emit("visibilitychange");
+      assert.equal(env.frames.size, 0);
+      env.document.hidden = false; env.document.emit("visibilitychange");
+      env.runFrame(800_000); env.runFrame(800_100);
+      assert.equal(match.elapsed, beforeHidden);
+      battle.pause(false); env.runFrame(800_200); env.runFrame(800_300);
+      assert.ok(Math.abs(match.elapsed - beforeHidden - .3) <= STEP + 1e-8);
+      battle.pause(true); const beforePause = match.elapsed;
+      env.runFrame(810_000); assert.equal(match.elapsed, beforePause);
+    } finally { battle.dispose(); }
+  }
+  assert.ok(Math.abs(elapsed[0] - elapsed[1]) <= STEP + 1e-8);
+});
+
+test("invalid speed input safely falls back to1x", t => {
+  const env = environment(t);
+  const match = createMatch("normal", "invalid-speed", true, "plains");
+  const battle = startBattle(match, new FakeCanvas().asCanvas(), new FakeCanvas().asCanvas(), () => {}, () => {}, () => {}, () => {});
+  env.cleanup(() => battle.dispose()); env.runFrame(1000);
+  env.document.activeElement = null;
+  battle.speed(3);
+  assert.equal(env.document.activeElement, null, "changing the speed must not steal focus from its select control");
+  let time = 1000;
+  for (const invalid of [0, -1, 100, Infinity, NaN]) {
+    const before = match.elapsed; battle.speed(invalid);
+    env.runFrame(time += 100); env.runFrame(time += 100);
+    assert.ok(Math.abs(match.elapsed - before - .2) <= STEP + 1e-8);
+  }
+});
+
+test("HUD exposes pocket counts and the earliest selected attrition countdown", () => {
+  const match = createMatch("normal", "pocket-hud", true, "plains");
+  const [first, second] = match.units.filter(unit => unit.team === 1);
+  const enemy = match.units.find(unit => unit.team === 2)!;
+  first.pocketed = true; first.pocketTime = POCKET_GRACE - 7;
+  second.pocketed = true; second.pocketTime = POCKET_GRACE + 2;
+  enemy.pocketed = true;
+  const one = summary(match, new Set([first.id]), null);
+  assert.equal(one.bluePocketed, 2); assert.equal(one.selectedPocketed, 1); assert.equal(one.selectedPocketGrace, 7);
+  const both = summary(match, new Set([first.id, second.id]), null);
+  assert.equal(both.selectedPocketed, 2); assert.equal(both.selectedPocketGrace, 0);
+  first.pocketed = false; first.pocketTime = 0;
+  const safe = summary(match, new Set([first.id]), null);
+  assert.equal(safe.selectedPocketed, 0); assert.equal(safe.selectedPocketGrace, null);
+});
+
+test("HUD distinguishes an isolated city from normal capacity shortage and clears when its corridor reopens", () => {
+  const match = createMatch("normal", "isolated-city-hud", true, "plains");
+  const city = match.cities.find(item => item.owner === 1)!;
+  const col = Math.floor(city.x / TERRITORY_SPACING), row = Math.floor(city.y / TERRITORY_SPACING);
+  assert.equal(summary(match, new Set(), city.id).cityIsolated, false);
+  const ring: number[] = [];
+  for (let y = row - 3; y <= row + 3; y++) for (let x = col - 3; x <= col + 3; x++) {
+    if (Math.max(Math.abs(x - col), Math.abs(y - row)) !== 3) continue;
+    const id = y * TERRITORY_COLS + x; match.territory.owners[id] = 2; ring.push(id);
+  }
+  match.territory.revision++;
+  const cut = summary(match, new Set(), city.id);
+  assert.equal(cut.cityIsolated, true); assert.equal(cut.blocked, true);
+  assert.ok(cut.logistics.used < cut.logistics.capacity);
+  for (const id of ring) match.territory.owners[id] = 1;
+  match.territory.revision++;
+  const open = summary(match, new Set(), city.id);
+  assert.equal(open.cityIsolated, false); assert.equal(open.blocked, false);
 });

@@ -5,10 +5,11 @@ import { CAPTURE, CITY_PRODUCTION, HEIGHT, MAX_ROUTE_POINTS, STEP, WIDTH } from 
 import { commandUnit, createMatch, step } from "./engine";
 import type { City, Unit } from "./engine";
 import {
-  defaults, loadMatch, migrateMatch, migrateV2Match, readSettings, readStats, recordResult, saveMatch, saveSettings, validMatch,
+  defaults, loadMatch, migrateMatch, migrateV2Match, migrateV3Match, readSettings, readStats, recordResult, saveMatch, saveSettings, validMatch,
 } from "./storage";
 import { getMap, mapIds, passable } from "./terrain";
 import type { MapId } from "./terrain";
+import { advanceTerritory, createTerritory, isSupplied, TERRITORY_COLS, TERRITORY_ROWS, territoryOwner } from "./territory";
 
 function replaceGlobal(context: TestContext, name: string, value: unknown) {
   const previous = Object.getOwnPropertyDescriptor(globalThis, name);
@@ -88,14 +89,16 @@ function versionTwoMatch(map: MapId = "valley") {
       for (const unit of army.slice(start, start + 10)) membership.set(unit.id, id);
     }
   }
+  const { territory, ...record } = current;
+  void territory;
   return {
-    ...current,
+    ...record,
     version: 2 as const,
     nextCommanderId: commanders.length + 1,
     commanders,
     units: current.units.map(unit => {
-      const { stance, nextOrder, ...legacy } = unit;
-      void stance; void nextOrder;
+      const { stance, nextOrder, pocketed, pocketTime, ...legacy } = unit;
+      void stance; void nextOrder; void pocketed; void pocketTime;
       return { ...legacy, commanderId: membership.get(unit.id)! };
     }),
     cities: current.cities.map(city => ({ ...city,
@@ -129,13 +132,14 @@ test("published v2 saves migrate to individual soldiers while preserving identit
     db.entries.set("current", structuredClone(legacy));
     const migrated = await loadMatch();
     assert.ok(validMatch(migrated), map);
-    assert.equal(migrated.version, 3); assert.equal(migrated.id, legacy.id); assert.equal(migrated.elapsed, legacy.elapsed);
+    assert.equal(migrated.version, 4); assert.equal(migrated.id, legacy.id); assert.equal(migrated.elapsed, legacy.elapsed);
     assert.equal(migrated.nextId, legacy.nextId); assert.equal(migrated.nextAi, legacy.nextAi);
     assert.equal(Object.hasOwn(migrated, "commanders"), false);
     assert.equal(Object.hasOwn(migrated, "nextCommanderId"), false);
     assert.deepEqual(migrated.report, legacy.report); assert.deepEqual(migrated.shortage, legacy.shortage);
     for (let i = 0; i < migrated.units.length; i++) {
-      const { stance, nextOrder, ...unit }: Unit = migrated.units[i];
+      const { stance, nextOrder, pocketed, pocketTime, ...unit }: Unit = migrated.units[i];
+      assert.equal(pocketTime, 0); assert.equal(pocketed, !isSupplied(migrated, unit.team, unit));
       const { commanderId, ...before } = legacy.units[i];
       assert.deepEqual(unit, before, "individual position, health, cooldown, path and order survive");
       assert.equal(stance, legacy.commanders.find(group => group.id === commanderId)!.autoFront ? "defend" : "manual");
@@ -161,6 +165,72 @@ test("published v2 saves migrate to individual soldiers while preserving identit
     assert.deepEqual(migrateMatch(migrated), migrated);
   }
   assert.deepEqual(await readStats(), { won: 1, lost: 0, draw: 0 });
+});
+
+function versionThreeMatch(map: MapId = "plains") {
+  const current = createMatch("normal", `existing-v3-${map}`, false, map);
+  const { territory, ...record } = current;
+  void territory;
+  return {
+    ...record, version: 3 as const,
+    units: current.units.map(unit => {
+      const { pocketed, pocketTime, ...soldier } = unit;
+      void pocketed; void pocketTime;
+      return soldier;
+    }),
+  };
+}
+
+test("real v3 records keep every previous field and initialize only current occupied territory", async (context) => {
+  const db = memoryDatabase(); replaceGlobal(context, "indexedDB", db.factory);
+  for (const map of mapIds) {
+    const legacy = versionThreeMatch(map);
+    legacy.elapsed = 93; legacy.nextAi = 98;
+    const soldier = legacy.units[0];
+    const destination = legacy.cities.find(city => city.owner === 2)!;
+    soldier.x = destination.x; soldier.y = destination.y;
+    // This advanced position is all the historical territory evidence v3 has.
+    soldier.stance = "manual"; soldier.nextOrder = 94;
+    soldier.order = { mode: "hold" }; soldier.path = []; soldier.waypoint = 0;
+    legacy.cities[0].build = { kind: "heavy", elapsed: 31.5 };
+    legacy.cities[1].capturing = 2; legacy.cities[1].progress = 12;
+    const before = structuredClone(legacy);
+    const restored = migrateV3Match(legacy);
+    assert.ok(restored && validMatch(restored), map);
+    assert.equal(restored.version, 4);
+    const { territory, units: restoredUnits, version, ...fields } = restored;
+    void version;
+    const { units: priorUnits, version: priorVersion, ...priorFields } = legacy;
+    void priorVersion;
+    assert.deepEqual(fields, priorFields, "all existing v3 match and city timers are retained");
+    assert.deepEqual(restoredUnits.map(unit => {
+      const { pocketed, pocketTime, ...prior } = unit;
+      assert.equal(pocketTime, 0, "no invented prior encirclement damage");
+      assert.equal(pocketed, !isSupplied(restored, unit.team, unit));
+      return prior;
+    }), priorUnits);
+    assert.equal(territoryOwner(restored, soldier), 1, "current occupied footprint becomes controlled land");
+    const expected = { ...restored, territory: createTerritory(map) };
+    advanceTerritory(expected);
+    assert.deepEqual(territory, expected.territory, "initial split plus current footprints is the only reconstruction");
+    const distant = legacy.cities.filter(city => city.owner === 2 && Math.hypot(city.x-soldier.x,city.y-soldier.y)>10)[0];
+    assert.equal(territoryOwner(restored, distant), 2, "past travel or city ownership does not invent land claims");
+    assert.deepEqual(legacy, before);
+    db.entries.set("current", structuredClone(legacy));
+    assert.deepEqual(await loadMatch(), restored);
+    assert.deepEqual(db.entries.get("current"), before);
+    await saveMatch(restored); assert.deepEqual(await loadMatch(), restored);
+  }
+});
+
+test("corrupt v3 data is rejected before territory reconstruction", () => {
+  const legacy = versionThreeMatch();
+  assert.equal(migrateV3Match({ ...legacy, territory: createTerritory(legacy.map) }), null);
+  assert.equal(migrateV3Match({ ...legacy, version: 4 }), null);
+  assert.equal(migrateV3Match({ ...legacy, units: legacy.units.map((unit,index) => index ? unit : { ...unit, stance: "invalid" }) }), null);
+  assert.equal(migrateV3Match({ ...legacy, units: legacy.units.map((unit,index) => index ? unit : { ...unit, pocketed: false, pocketTime: 0 }) }), null);
+  const damaged = structuredClone(legacy); damaged.cities[0].build!.elapsed = 60.1;
+  assert.equal(migrateV3Match(damaged), null);
 });
 
 test("malformed v2 records fail old-schema validation before commander data is discarded", async (context) => {
@@ -212,7 +282,7 @@ test("all six maps save a commander-free current shape in the existing namespace
   const db = memoryDatabase(); replaceGlobal(context, "indexedDB", db.factory);
   for (const map of mapIds) {
     const state = createMatch("normal", `round-trip-${map}`, false, map);
-    assert.ok(validMatch(state), map); assert.equal(state.version, 3);
+    assert.ok(validMatch(state), map); assert.equal(state.version, 4);
     assert.equal(state.cities.length, 50); assert.equal(state.units.length, 50);
     assert.equal(Object.hasOwn(state, "commanders"), false);
     await saveMatch(state); const restored = await loadMatch();
@@ -307,6 +377,74 @@ test("incompatible v1 records remain intact and do not erase statistics or setti
   assert.deepEqual(readSettings(), { sound: true, difficulty: "hard", map: "valley" });
   saveSettings({ ...readSettings(), map: "forest" }); assert.equal(readSettings().map, "forest");
   assert.equal(settings.entries.size, 1);
+});
+
+test("territory snapshots reject wrong lengths, blocked claims, sparse data and invalid revisions", () => {
+  const state = createMatch("normal", "territory-validation", false, "plains");
+  const blocked = state.territory.owners.findIndex(owner => owner === 0);
+  const open = state.territory.owners.findIndex(owner => owner !== 0);
+  assert.equal(state.territory.owners.length, TERRITORY_COLS * TERRITORY_ROWS);
+  assert.ok(blocked >= 0 && open >= 0);
+  const mutations: Array<(record: typeof state) => void> = [
+    value => { value.territory.owners.pop(); },
+    value => { value.territory.owners.push(1); },
+    value => { value.territory.owners[blocked] = 1; },
+    value => { value.territory.owners[open] = 0; },
+    value => { value.territory.owners[open] = 3; },
+    value => { value.territory.owners[open] = NaN; },
+    value => { value.territory.owners[open] = "1" as never; },
+    value => { delete value.territory.owners[open]; },
+    value => { value.territory.revision = -1; },
+    value => { value.territory.revision = .5; },
+    value => { value.territory.revision = Infinity; },
+    value => { value.territory.revision = 0x80000000; },
+  ];
+  for (const mutate of mutations) {
+    const malformed = structuredClone(state); mutate(malformed);
+    assert.equal(validMatch(malformed), false, mutate.toString());
+  }
+  assert.equal(validMatch({ ...state, territory: null }), false);
+  state.territory.revision = 0x7fffffff; assert.ok(validMatch(state));
+});
+
+test("pocket flags and timers reject impossible values without losing real grace-period progress", () => {
+  const state = createMatch("normal", "pocket-validation", false, "plains");
+  state.elapsed = 30;
+  const mutations: Array<(unit: Unit) => void> = [
+    unit => { unit.pocketed = "yes" as never; },
+    unit => { unit.pocketTime = -1; },
+    unit => { unit.pocketTime = Infinity; },
+    unit => { unit.pocketed = true; unit.pocketTime = 30.1; },
+    unit => { unit.pocketed = false; unit.pocketTime = 1; },
+  ];
+  for (const mutate of mutations) {
+    const malformed = structuredClone(state); mutate(malformed.units[0]);
+    assert.equal(validMatch(malformed), false, mutate.toString());
+  }
+  state.units[0].pocketed = true; state.units[0].pocketTime = 19.75;
+  assert.ok(validMatch(state));
+});
+
+test("captured land and an active pocket resume with exact territory, timer, health and future effects", async (context) => {
+  const db = memoryDatabase(); replaceGlobal(context, "indexedDB", db.factory);
+  const state = createMatch("normal", "pocket-resume", false, "plains");
+  for (const unit of state.units) commandUnit(state, unit.id, { mode: "hold" });
+  state.elapsed = 30;
+  const trapped = state.units[0];
+  const destination = state.cities.find(city => city.owner === 2)!;
+  trapped.x = destination.x; trapped.y = destination.y;
+  advanceTerritory(state);
+  assert.equal(isSupplied(state, 1, trapped), false);
+  trapped.pocketed = true; trapped.pocketTime = 19.75;
+  const beforeHp = trapped.hp;
+  await saveMatch(state);
+  const restored = await loadMatch(); assert.ok(validMatch(restored));
+  assert.deepEqual(restored, state);
+  for (let tick = 0; tick < 20; tick++) { step(state, STEP, [], () => {}); step(restored, STEP, [], () => {}); }
+  assert.deepEqual(restored, state, "derived connectivity can rebuild without changing the saved simulation");
+  assert.ok(Math.abs(state.units.find(unit=>unit.id===trapped.id)!.hp - (beforeHp - 1.25 * .75)) < 1e-6,
+    "the remainder of the existing grace period is used, not restarted on load");
+  assert.ok(validMatch(restored));
 });
 
 test("new settings default to Plains and invalid stored map data safely falls back", (context) => {

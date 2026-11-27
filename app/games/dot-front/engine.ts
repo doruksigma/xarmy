@@ -1,8 +1,10 @@
-import { CAPTURE, CITY_PRODUCTION, FRONT_ATTACK_ADVANCE, FRONT_INTERVAL, FRONT_REPLAN_DISTANCE, MAX_ROUTE_POINTS, GRACE, HEIGHT, RADIUS, SUPPLY, WIDTH, dist, units } from "./config";
+import { CAPTURE, CITY_PRODUCTION, FRONT_ATTACK_ADVANCE, FRONT_ATTACK_COMMIT_DISTANCE, FRONT_ATTACK_SEARCH, FRONT_INTERVAL, FRONT_REPLAN_DISTANCE, MAX_ROUTE_POINTS, GRACE, HEIGHT, POCKET_DAMAGE, POCKET_FIREPOWER, POCKET_GRACE, POCKET_SPEED, RADIUS, SUPPLY, WIDTH, dist, units } from "./config";
 import type { Difficulty, Kind, Owner, Point, Team } from "./config";
 import { clearShot, getMap, nearestOpen, passable, route, tileAt } from "./terrain";
 import type { MapId } from "./terrain";
 import { frontDirection, frontSlots } from "./front";
+import { advanceTerritory, createTerritory, isSupplied, territoryOwner } from "./territory";
+import type { Territory } from "./territory";
 
 export type Order =
   | { mode: "hold" }
@@ -12,6 +14,7 @@ export type Order =
 
 export type Unit = Point & {
   id: number; team: Team; kind: Kind; hp: number; cooldown: number; stance: Stance | "manual"; nextOrder: number;
+  pocketed: boolean; pocketTime: number;
   order: Order; path: Point[]; waypoint: number; replan: number; marked: boolean;
 };
 export type City = Point & {
@@ -21,7 +24,7 @@ export type City = Point & {
 export type Stance = "attack" | "defend";
 export type Result = "won" | "lost" | "draw";
 export type Match = {
-  version: 3; id: string; difficulty: Difficulty; map: MapId; elapsed: number; nextId: number;
+  version: 4; id: string; difficulty: Difficulty; map: MapId; elapsed: number; nextId: number; territory: Territory;
   units: Unit[]; cities: City[]; shortage: [number, number]; nextAi: number;
   result: Result | null; report: { captured: number; killed: number; fallen: number };
   tutorial: number | null;
@@ -30,7 +33,7 @@ export type Flash = { from: Point; to: Point; team: Team; expires: number };
 
 export function createMatch(difficulty: Difficulty, id: string, tutorial: boolean, map: MapId = "valley"): Match {
   const match: Match = {
-    version: 3, id, difficulty, map, elapsed: 0, nextId: 1,
+    version: 4, id, difficulty, map, elapsed: 0, nextId: 1, territory: createTerritory(map),
     units: [], cities: getMap(map).cities.map((city, id) => ({
       ...city, id, capturing: 0, progress: 0, rally: null,
       build: city.owner ? { kind: "light", elapsed: 0 } : null, repeat: !!city.owner,
@@ -45,6 +48,8 @@ export function createMatch(difficulty: Difficulty, id: string, tutorial: boolea
       makeUnit(match, team, "light", point).nextOrder = FRONT_INTERVAL;
     }
   }
+  advanceTerritory(match);
+  updatePockets(match, 0);
   return match;
 }
 
@@ -59,6 +64,7 @@ function makeUnit(match: Match, team: Team, kind: Kind, point: Point): Unit {
   const unit: Unit = {
     ...point, id: match.nextId++, team, kind, hp: units[kind].hp, cooldown: 0,
     stance: "defend", nextOrder: match.elapsed,
+    pocketed: false, pocketTime: 0,
     order: { mode: "hold" }, path: [], waypoint: 0, replan: 0, marked: false,
   };
   match.units.push(unit);
@@ -146,6 +152,20 @@ function uniqueTarget(match: Match, point: Point, occupied: Set<string>): Point 
   return center;
 }
 
+function attackDestination(match: Match, unit: Unit, friendly: Point, direction: Point): Point {
+  // A short projection can land in a river or mountain and nearestOpen would
+  // snap it back onto our own bank. Search beyond the obstacle for actual enemy
+  // ground; A* then takes the soldier through a legal crossing to reach it.
+  for (let distance = FRONT_ATTACK_ADVANCE; distance <= FRONT_ATTACK_SEARCH; distance += FRONT_ATTACK_ADVANCE) {
+    const point = nearestOpen({ x: friendly.x + direction.x * distance, y: friendly.y + direction.y * distance }, match.map);
+    const advance = (point.x - unit.x) * direction.x + (point.y - unit.y) * direction.y;
+    if (advance >= FRONT_ATTACK_COMMIT_DISTANCE && territoryOwner(match, point) !== unit.team) return point;
+  }
+  const enemies = match.units.filter(other => other.team !== unit.team && other.hp > 0)
+    .sort((a, b) => dist(unit, a) - dist(unit, b) || a.id - b.id);
+  return nearestOpen(enemies[0] ?? { x: unit.x + direction.x * FRONT_ATTACK_ADVANCE, y: unit.y + direction.y * FRONT_ATTACK_ADVANCE }, match.map);
+}
+
 /** Allocate a unique target to each automated soldier across the entire front. */
 function autoFront(match: Match, forceTeam?: Team) {
   if (forceTeam === undefined && match.tutorial !== null && match.tutorial < 5) return;
@@ -158,16 +178,23 @@ function autoFront(match: Match, forceTeam?: Team) {
       .sort((a, b) => lane(a) - lane(b) || a.id - b.id);
     if (!members.length || (forceTeam === undefined && !members.some(unit => match.elapsed + 1e-6 >= unit.nextOrder))) continue;
     const slots = frontSlots(match, team, members.length), occupied = new Set<string>();
+    // Once an assault has a route, commit to that destination. Re-sampling a
+    // growing captured corridor each second must not pull attackers backwards.
+    const committed = new Set<number>();
+    for (const unit of members) {
+      if (unit.stance !== "attack" || unit.order.mode !== "move" || unit.waypoint >= unit.path.length ||
+          dist(unit, unit.order.point) <= FRONT_ATTACK_COMMIT_DISTANCE) continue;
+      committed.add(unit.id);
+      occupied.add(`${unit.order.point.x}:${unit.order.point.y}`);
+    }
     for (let index = 0; index < members.length; index++) {
       const unit = members[index];
       unit.nextOrder = match.elapsed + FRONT_INTERVAL;
+      if (committed.has(unit.id)) continue;
       const friendly = slots[index];
       if (!friendly) continue;
       const direction = frontDirection(match, team, friendly);
-      const candidate = unit.stance === "attack" ? {
-        x: friendly.x + direction.x * FRONT_ATTACK_ADVANCE,
-        y: friendly.y + direction.y * FRONT_ATTACK_ADVANCE,
-      } : friendly;
+      const candidate = unit.stance === "attack" ? attackDestination(match, unit, friendly, direction) : friendly;
       const goal = uniqueTarget(match, candidate, occupied);
       const oldGoal = unit.order.mode === "move" ? unit.order.point : null;
       if (oldGoal && dist(oldGoal, goal) <= FRONT_REPLAN_DISTANCE) continue;
@@ -291,7 +318,7 @@ export function canTraverse(from: Point, to: Point, map: MapId = "valley"): bool
 
 function walk(unit: Unit, dt: number, map: MapId) {
   const stats = units[unit.kind];
-  const speed = stats.speed * (tileAt(unit, map) === "forest" ? stats.forest : 1);
+  const speed = stats.speed * (tileAt(unit, map) === "forest" ? stats.forest : 1) * (unit.pocketed ? POCKET_SPEED : 1);
   let remaining = speed * dt;
   while (remaining > 0) {
     const point = unit.path[unit.waypoint];
@@ -368,6 +395,7 @@ function fight(match: Match, index: UnitIndex, dt: number, flashes: Flash[]) {
   const byId = new Map(match.units.map((unit) => [unit.id, unit]));
   const damage = new Map<number, number>();
   for (const unit of match.units) {
+    if (unit.hp <= 0) continue;
     const stats = units[unit.kind];
     unit.cooldown = Math.max(0, unit.cooldown - dt);
     let target = unit.order.mode === "attack" ? byId.get(unit.order.target) : undefined;
@@ -380,7 +408,7 @@ function fight(match: Match, index: UnitIndex, dt: number, flashes: Flash[]) {
       .filter(inRange).sort((a, b) => dist(unit, a) - dist(unit, b) || a.id - b.id)[0];
     if (victim && unit.cooldown <= 1e-6) {
       unit.cooldown = stats.cooldown;
-      damage.set(victim.id, (damage.get(victim.id) ?? 0) + stats.damage);
+      damage.set(victim.id, (damage.get(victim.id) ?? 0) + stats.damage * (unit.pocketed ? POCKET_FIREPOWER : 1));
       flashes.push({ from: { x: unit.x, y: unit.y }, to: { x: victim.x, y: victim.y }, team: unit.team, expires: match.elapsed + 0.18 });
     }
     if (target && !inRange(target)) {
@@ -457,6 +485,7 @@ function supplyAndBuild(match: Match, dt: number, captured: ReadonlySet<number>)
       if (!city.build) city.build = { kind: "light", elapsed: 0 };
       city.repeat = true;
       if (captured.has(city.id)) continue;
+      if (!isSupplied(match, team, city)) continue;
       const stats = units[city.build.kind];
       if (current + stats.supply > capacity) continue;
       city.build.elapsed += dt;
@@ -478,16 +507,41 @@ function removeDead(match: Match) {
   }
 }
 
+/** Supply follows physically connected occupation; reconnection removes every penalty. */
+function updatePockets(match: Match, dt: number) {
+  for (const unit of match.units) {
+    if (unit.hp <= 0) continue;
+    if (isSupplied(match, unit.team, unit)) {
+      unit.pocketed = false;
+      unit.pocketTime = 0;
+      continue;
+    }
+    const previous = unit.pocketed ? unit.pocketTime : 0;
+    unit.pocketed = true;
+    unit.pocketTime = previous + dt;
+    const exposed = Math.max(0, unit.pocketTime - POCKET_GRACE) - Math.max(0, previous - POCKET_GRACE);
+    unit.hp -= exposed * POCKET_DAMAGE;
+    if (unit.hp <= 0 && unit.team === 2) match.report.killed++;
+  }
+}
+
 export function step(match: Match, dt: number, flashes: Flash[], decide: (match: Match) => void) {
   if (match.result || !Number.isFinite(dt) || dt <= 0) return;
   match.elapsed += dt;
+  updatePockets(match, 0);
   autoFront(match);
   decide(match);
   fight(match, new UnitIndex(match.units), dt, flashes);
   removeDead(match);
   separate(match, dt);
+  advanceTerritory(match);
+  updatePockets(match, dt);
+  removeDead(match);
   const captured = takeCities(match, new UnitIndex(match.units), dt);
   supplyAndBuild(match, dt, captured);
+  // New troops occupy their real spawn footprint; no timers advance twice.
+  advanceTerritory(match);
+  updatePockets(match, 0);
   removeDead(match);
   const survives = (team: Team) => match.cities.some((city) => city.owner === team) ||
     match.units.some((unit) => unit.team === team);

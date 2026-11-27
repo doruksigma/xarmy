@@ -3,6 +3,7 @@ import type { Point } from "./config";
 import type { Flash, Match, Unit } from "./engine";
 import { frontField } from "./front";
 import type { FrontField } from "./front";
+import { TERRITORY_COLS, TERRITORY_ROWS, TERRITORY_SPACING, suppliedCells } from "./territory";
 import { getMap } from "./terrain";
 import type { MapId } from "./terrain";
 
@@ -82,36 +83,34 @@ function territoryCanvas(match: Match, field: FrontField) {
   }
   const ctx = cached.canvas.getContext("2d")!;
   ctx.setTransform(4, 0, 0, 4, 0, 0); ctx.clearRect(0, 0, WIDTH, HEIGHT);
-  // Clip each sampled triangle at signed influence zero. Unlike a nearest-city
-  // bitmap, these polygon edges move fractionally with the actual soldiers.
-  type Vertex = Point & { value: number };
-  const polygon = (triangle: Vertex[], sign: number) => {
-    const result: Point[] = [];
-    for (let index = 0; index < triangle.length; index++) {
-      const a = triangle[index], b = triangle[(index + 1) % triangle.length];
-      const insideA = a.value * sign >= 0, insideB = b.value * sign >= 0;
-      if (insideA) result.push(a);
-      if (insideA !== insideB) {
-        const t = a.value / (a.value - b.value);
-        result.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+  const owners = match.territory.owners, supplied = suppliedCells(match);
+  // Draw actual occupied cells, not a proximity field. Run-length batches keep
+  // unchanged broad territories inexpensive even at half-cell resolution.
+  const isolatedRuns: Array<{ x: number; y: number; length: number }> = [];
+  for (let y = 0; y < TERRITORY_ROWS; y++) {
+    let x = 0;
+    while (x < TERRITORY_COLS) {
+      const cell = y * TERRITORY_COLS + x, owner = owners[cell], isolated = owner !== 0 && supplied[cell] !== owner;
+      let end = x + 1;
+      while (end < TERRITORY_COLS && owners[y * TERRITORY_COLS + end] === owner &&
+        (owner !== 0 && supplied[y * TERRITORY_COLS + end] !== owner) === isolated) end++;
+      if (owner) {
+        ctx.fillStyle = colors[owner] + "1a";
+        ctx.fillRect(x * TERRITORY_SPACING, y * TERRITORY_SPACING, (end - x) * TERRITORY_SPACING, TERRITORY_SPACING);
+        if (isolated) isolatedRuns.push({ x, y, length: end - x });
       }
+      x = end;
     }
-    if (result.length < 3) return;
-    ctx.moveTo(result[0].x, result[0].y);
-    for (const point of result.slice(1)) ctx.lineTo(point.x, point.y);
-    ctx.closePath();
-  };
-  for (const team of [1, 2] as const) {
-    ctx.beginPath();
-    const sign = team === 1 ? -1 : 1;
-    for (let y = 0; y < field.rows - 1; y++) for (let x = 0; x < field.cols - 1; x++) {
-      const vertex = (dx: number, dy: number): Vertex => ({ x: (x + dx) * field.spacing, y: (y + dy) * field.spacing,
-        value: field.values[(y + dy) * field.cols + x + dx] });
-      const [a, b, c, d] = [vertex(0, 0), vertex(1, 0), vertex(1, 1), vertex(0, 1)];
-      polygon([a, b, c], sign); polygon([a, c, d], sign);
-    }
-    ctx.fillStyle = colors[team] + "1a"; ctx.fill();
   }
+  ctx.beginPath();
+  for (const run of isolatedRuns) {
+    for (let x = run.x; x < run.x + run.length; x++) {
+      if ((x + run.y) % 4 !== 0) continue;
+      ctx.moveTo(x * TERRITORY_SPACING, (run.y + 1) * TERRITORY_SPACING);
+      ctx.lineTo((x + 1) * TERRITORY_SPACING, run.y * TERRITORY_SPACING);
+    }
+  }
+  ctx.strokeStyle = "#ffc56577"; ctx.lineWidth = .1; ctx.stroke();
   cached.key = field.key;
   return cached.canvas;
 }
@@ -238,11 +237,12 @@ export function render(
       ctx.stroke();
       if (unit.order.mode === "route") drawArrow(ctx, [unit, ...unit.order.points.slice(unit.order.next)], view.scale);
     }
-    if (picked || unit.marked) {
+    if (picked || unit.marked || unit.pocketed) {
       circle(ctx, unit, radius + Math.max(.19, 3 / view.scale));
-      ctx.strokeStyle = unit.marked ? "#ffcb6c" : "#f6f4d4";
+      ctx.strokeStyle = unit.pocketed || unit.marked ? "#ffcb6c" : "#f6f4d4";
+      if (unit.pocketed) ctx.setLineDash([3 / view.scale, 2 / view.scale]);
       ctx.lineWidth = Math.max(.085, 1.5 / view.scale);
-      ctx.stroke();
+      ctx.stroke(); ctx.setLineDash([]);
     }
     circle(ctx, unit, radius);
     ctx.fillStyle = unit.kind === "heavy" ? "#17222a" : colors[unit.team];
@@ -254,12 +254,12 @@ export function render(
       ctx.fillStyle = unit.kind === "heavy" ? colors[2] : "#44282a";
       ctx.fillRect(unit.x - radius * .55, unit.y - radius * .12, radius * 1.1, radius * .24);
     }
-    if (picked || unit.hp < stats.hp) {
+    if (picked || unit.hp < stats.hp || unit.pocketed) {
       const barWidth = Math.max(.95, 22 / view.scale), barHeight = Math.max(.12, 3 / view.scale);
       const barY = unit.y - radius - 7 / view.scale;
       ctx.fillStyle = "#152129";
       ctx.fillRect(unit.x - barWidth / 2, barY, barWidth, barHeight);
-      ctx.fillStyle = unit.marked && match.shortage[unit.team - 1] >= GRACE ? "#ffcb6c" : colors[unit.team];
+      ctx.fillStyle = unit.pocketed || (unit.marked && match.shortage[unit.team - 1] >= GRACE) ? "#ffcb6c" : colors[unit.team];
       ctx.fillRect(unit.x - barWidth / 2, barY, barWidth * Math.max(0, unit.hp / stats.hp), barHeight);
     }
   }

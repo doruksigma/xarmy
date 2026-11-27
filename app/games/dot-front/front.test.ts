@@ -1,50 +1,44 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { HEIGHT, WIDTH } from "./config";
-import type { Point } from "./config";
 import { frontDirection, frontField, frontSlots, frontValue } from "./front";
 import type { FrontSource, FrontUnit } from "./front";
 import { mapIds, passable, route } from "./terrain";
 import type { MapId } from "./terrain";
+import { advanceTerritory, createTerritory, territoryOwner, TERRITORY_COLS } from "./territory";
 
 const source = (map: MapId = "plains", count = 25): FrontSource => ({
-  map, elapsed: 0, units: ([1, 2] as const).flatMap(team => Array.from({ length: count }, (_, index): FrontUnit => ({
+  map, elapsed: 0, territory: createTerritory(map), units: ([1, 2] as const).flatMap(team => Array.from({ length: count }, (_, index): FrontUnit => ({
     id: (team - 1) * count + index + 1, team, hp: 48,
     x: team === 1 ? 61.5 : 82.5, y: HEIGHT * (index + .5) / count,
   }))),
 });
-const meanBorderX = (state: FrontSource) => {
-  const field = frontField(state);
-  return field.segments.reduce((total, segment) => total + (segment.a.x + segment.b.x) / 2, 0) / field.segments.length;
-};
-
-test("a fraction of a slow soldier's movement shifts the live border before any city changes", () => {
-  const state = source("plains", 1);
-  const first = frontField(state), before = meanBorderX(state);
-  state.units[0].x += .05;
-  const after = frontField(state);
-  assert.notEqual(after.key, first.key);
-  assert.ok(meanBorderX(state) > before + .01);
-  assert.ok(meanBorderX(state) < before + .1);
-  assert.ok(frontValue(after, { x: WIDTH / 2, y: HEIGHT / 2 }) < 0);
-  state.units[0].x += .25;
-  assert.ok(meanBorderX(state) > before + .1);
+test("the frontier changes only where a live soldier physically occupies enemy ground", () => {
+  const state = source("plains", 1), first = frontField(state);
+  state.units[0].x = 70.25; state.units[0].y = 45.25;
+  assert.equal(frontField(state), first, "movement alone does not capture remote territory");
+  advanceTerritory(state); assert.equal(frontField(state), first, "moving inside owned ground leaves borders unchanged");
+  state.units[0].x = 72.25; advanceTerritory(state);
+  const captured = frontField(state);
+  assert.notEqual(captured.key, first.key);
+  assert.equal(territoryOwner(state, state.units[0]), 1);
+  assert.ok(captured.segments.some(segment => segment.a.x > WIDTH / 2));
+  state.units[0].x = 60; state.units[0].hp = 0; advanceTerritory(state);
+  assert.equal(frontField(state), captured, "retreat or death does not return captured land");
 });
 
-test("city ownership, elapsed time and dead soldiers never supply territory influence", () => {
+test("city ownership, elapsed time, army death and remote troop positions cannot change occupation", () => {
   const state = Object.assign(source(), { cities: [{ x: 2, y: 2, owner: 1 }] });
   const first = frontField(state);
   state.cities[0].owner = 2; state.elapsed = 90;
+  state.units = state.units.map(unit => ({ ...unit, x: unit.x + 20, hp: 0 }));
+  advanceTerritory(state);
   assert.equal(frontField(state), first);
-  state.units = [...state.units, { id: 900, team: 1, hp: 0, x: 130, y: 45 }];
-  assert.equal(frontField(state), first);
-  state.units.at(-1)!.hp = 1;
-  assert.notEqual(frontField(state).key, first.key);
 });
 
 test("front geometry and target positions resume deterministically from current soldier poses", () => {
   const state = source("forest");
-  state.units[5].x += .28; state.units[8].y -= .13;
+  state.units[5].x = 72.75; state.units[8].x = 72.25; advanceTerritory(state);
   const restored: FrontSource = JSON.parse(JSON.stringify(state));
   assert.deepEqual(frontField(restored), frontField(state));
   for (const team of [1, 2] as const) assert.deepEqual(frontSlots(restored, team, 25), frontSlots(state, team, 25));
@@ -53,7 +47,7 @@ test("front geometry and target positions resume deterministically from current 
   assert.equal(frontSlots(state, 1, 25)[0].x, x, "callers cannot mutate cached slot geometry");
 });
 
-test("front directions face the opposing army and remain finite for empty or coincident armies", () => {
+test("front directions follow stored ownership and remain finite with no armies", () => {
   const state = source();
   assert.ok(frontDirection(state, 1, { x: 70, y: 45 }).x > .99);
   assert.ok(frontDirection(state, 2, { x: 74, y: 45 }).x < -.99);
@@ -85,20 +79,24 @@ for (const map of mapIds) test(`${map}: all soldiers receive distinct reachable 
     for (const slot of slots) {
       assert.ok(passable(slot, map), `blocked ${slot.x},${slot.y}`);
       assert.ok(frontValue(field, slot) * (team === 1 ? 1 : -1) < 0, "defense target stays on its own side");
+      assert.equal(territoryOwner(state, slot), team);
       assert.ok(route(first, slot, "light", map).length, `disconnected ${slot.x},${slot.y}`);
     }
     assert.ok(slots.every((point, index) => index === 0 || point.y >= slots[index - 1].y));
   }
 });
 
-test("a curved border follows local troops and target assignment stays spatially distributed", () => {
-  const state = source();
-  state.units = state.units.map(unit => ({ ...unit, x: unit.x + (unit.team === 1 ? 13 * Math.sin(unit.y / HEIGHT * Math.PI * 2) : 0) }));
-  const field = frontField(state);
-  const xs = field.segments.flatMap(segment => [segment.a.x, segment.b.x]);
-  assert.ok(Math.max(...xs) - Math.min(...xs) > 8);
-  const slots = frontSlots(state, 1, 25);
-  assert.equal(slots.length, 25);
-  assert.ok(slots.at(-1)!.y - slots[0].y > HEIGHT * .8);
-  assert.ok(slots.every((point: Point) => Number.isFinite(point.x) && Number.isFinite(point.y)));
+test("closed persistent pocket loops appear in the line without requiring soldiers inside", () => {
+  const state = source(), cols = TERRITORY_COLS;
+  // A blue island inside red occupation: exact half-cell edges form a closed loop.
+  for (let y = 80; y < 88; y++) for (let x = 190; x < 198; x++) state.territory.owners[y * cols + x] = 1;
+  state.territory.revision++;
+  const segments = frontField(state).segments.filter(segment => segment.a.x >= 95 && segment.b.x >= 95);
+  assert.equal(segments.length, 4);
+  const vertices = new Map<string, number>();
+  for (const segment of segments) for (const point of [segment.a, segment.b]) {
+    const key = `${point.x}:${point.y}`; vertices.set(key, (vertices.get(key) ?? 0) + 1);
+  }
+  assert.equal(vertices.size, 4); assert.ok([...vertices.values()].every(count => count === 2));
+  assert.ok(frontDirection(state, 1, { x: 98.5, y: 42 }).x > .9);
 });

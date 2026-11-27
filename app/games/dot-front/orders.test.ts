@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { CITY_PRODUCTION, FRONT_INTERVAL, HEIGHT, STEP, WIDTH, dist, units } from "./config";
-import { commandUnit, createMatch, frontlinePoint, setGroupStance, setUnitStance, step } from "./engine";
+import { commandUnit, createMatch, setGroupStance, setUnitStance, step } from "./engine";
 import type { Match } from "./engine";
 import { frontSlots } from "./front";
+import { territoryOwner } from "./territory";
 import { mapIds, nearestOpen, passable } from "./terrain";
 import { validMatch } from "./storage";
 
@@ -91,15 +92,25 @@ test("autonomous paths are not rebuilt every frame and manual hold never chases"
   assert.equal(unit.stance, "manual");
 });
 
-test("the front follows troop movement without reading city ownership", () => {
-  const state = fixture(), origin = { x: 67.5, y: 45.5 };
-  const before = frontlinePoint(state, 1, origin);
+test("captured ground persists after departure and death until an enemy physically arrives", () => {
+  const state = fixture(), unit = state.units[12];
+  for (const enemy of state.units.filter(item => item.team === 2)) enemy.x = 120.5;
+  const captured = { x: 75.5, y: unit.y };
+  assert.equal(territoryOwner(state, captured), 2);
+  commandUnit(state, unit.id, { mode: "move", point: { x: 78.5, y: unit.y } });
+  advance(state, 30);
+  assert.equal(territoryOwner(state, captured), 1);
+  commandUnit(state, unit.id, { mode: "move", point: { x: 67.5, y: unit.y } });
+  advance(state, 30);
+  assert.equal(territoryOwner(state, captured), 1);
+  unit.hp = 0;
   for (const city of state.cities) city.owner = city.owner === 1 ? 2 : 1;
-  assert.deepEqual(frontlinePoint(state, 1, origin), before);
-  for (const unit of state.units) if (unit.team === 1) unit.x += 3;
-  const after = frontlinePoint(state, 1, origin);
-  assert.ok(after.x > before.x);
-  assert.ok(passable(after, state.map));
+  advance(state, STEP);
+  assert.equal(territoryOwner(state, captured), 1);
+  const enemy = state.units.find(item => item.team === 2)!;
+  Object.assign(enemy, captured);
+  advance(state, STEP);
+  assert.equal(territoryOwner(state, captured), 2);
 });
 
 test("drawn routes visit each bend in order and resume within the current segment", () => {
@@ -154,7 +165,7 @@ test("slow combat respects three-second attack cooldowns instead of rapid volley
   const state = fixture();
   const blue = state.units[0], red = state.units.find(unit => unit.team === 2)!;
   state.units = [blue, red];
-  Object.assign(blue, { x: 10.5, y: 10.5 }); Object.assign(red, { x: 11.5, y: 10.5 });
+  Object.assign(blue, { x: 71.5, y: 10.5 }); Object.assign(red, { x: 72.5, y: 10.5 });
   advance(state, STEP);
   assert.equal(blue.hp, units.light.hp - 4); assert.equal(red.hp, units.light.hp - 4);
   advance(state, 3 - STEP);

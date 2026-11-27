@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { recovery, startBattle, summary, timeLabel } from "./battle";
+import { GAME_SPEEDS, recovery, startBattle, summary, timeLabel } from "./battle";
 import type { Summary } from "./battle";
 import { copy } from "./copy";
 import { CITY_PRODUCTION } from "./config";
@@ -195,7 +195,7 @@ export default function DotFront() {
       </fieldset>
       {saved && <p className={styles.note}>{copy.saveMap}: {copy.maps[saved.map].name} · {copy[saved.difficulty]} · {timeLabel(Math.floor(saved.elapsed))}</p>}
       {panel === "how" && <div className={styles.details}>
-        <h2>{copy.how}</h2><p>{copy.goal}</p><p>{copy.logistics}</p><p>{copy.frontRules}</p><p>{copy.routeRules}</p><p>{copy.paceRules}</p><p>{copy.terrainRules}</p><p>{copy.controls}</p><p>{copy.touch}</p>
+        <h2>{copy.how}</h2><p>{copy.goal}</p><p>{copy.logistics}</p><p>{copy.frontRules}</p><p>{copy.pocketRules}</p><p>{copy.routeRules}</p><p>{copy.paceRules}</p><p>{copy.terrainRules}</p><p>{copy.controls}</p><p>{copy.touch}</p>
         <p className={styles.note}>{copy.tutorialMap}</p>
         <button onClick={() => newMatch(true)}>{copy.tutorial}</button>
       </div>}
@@ -227,6 +227,9 @@ export default function DotFront() {
         </header>
         {hud.shortage > 0 && <p className={styles.warning} role="status">
           {copy.supplyWarning} · {recovery(hud.shortage) ? recovery(hud.shortage) + " sn" : copy.attrition}
+        </p>}
+        {hud.bluePocketed > 0 && <p className={styles.pocketWarning} role="status">
+          <strong>{hud.bluePocketed} {copy.pocketWarning}.</strong> {copy.pocketRescue}
         </p>}
         {hud.tutorial !== null && <p className={styles.tutorial} role="status">{copy.steps[hud.tutorial]}</p>}
         <div className={styles.ordersPanel} aria-label={copy.orders}>
@@ -285,7 +288,12 @@ export default function DotFront() {
             onClick={() => battle.current?.routeMode(!hud.routeDrawing)}>{copy.drawRoute}</button>
           <button disabled={!canCommand} aria-pressed={multi} onClick={() => setMulti(!multi)}>{copy.multi}</button>
           <button disabled={!canCommand} onClick={() => pause(true)}>{copy.pause}</button>
-          <button aria-label={copy.speed} aria-pressed={speed === 0.5} onClick={() => setSpeed(speed === 1 ? 0.5 : 1)}>{speed}×</button>
+          <label className={styles.speedControl}>{copy.speed}
+            <select aria-label={copy.speed} value={speed} disabled={Boolean(hud.result)}
+              onChange={(event) => setSpeed(Number(event.target.value))}>
+              {GAME_SPEEDS.map((value) => <option key={value} value={value}>{value}×</option>)}
+            </select>
+          </label>
           <button aria-pressed={settings.sound} onClick={() => {
             battle.current?.sound(!settings.sound);
             updateSettings({ ...settings, sound: !settings.sound });
@@ -296,9 +304,14 @@ export default function DotFront() {
           <span>{copy.selectedSoldiers} <b>{hud.selectedUnits}</b></span>
           {hud.selectedStance && <span>{hud.selectedStance === "attack" ? copy.attackStance : hud.selectedStance === "defend" ? copy.defendStance : hud.selectedStance === "mixed" ? copy.mixedOrders : copy.manualOrders}</span>}
           <span>{copy.light} <b>{hud.light}</b> · {copy.heavy} <b>{hud.heavy}</b></span>
+          {hud.selectedPocketed > 0 && <span className={styles.pocketStatus} role="status">
+            {copy.pocketed} <b>{hud.selectedPocketed}/{hud.selectedUnits}</b> · {hud.selectedPocketGrace
+              ? `${copy.pocketGrace} ${hud.selectedPocketGrace} ${copy.seconds}` : copy.pocketDamage}
+          </span>}
           <span className={styles.note}>{copy.liveFront}</span>
           {city && <>
             <strong>{copy.placeNames[city.id]} · {city.owner ? copy[city.owner === 1 ? "player" : "enemy"] : copy.neutral}</strong>
+            {hud.cityIsolated && <span className={styles.pocketStatus}>{copy.isolatedCity}</span>}
             <button disabled={!canCommand || !hasSelection} onClick={() => battle.current?.sendToCity()}>{copy.send}</button>
             {city.owner === 1 && <>
               <label className={styles.field}>{copy.production} · {copy[city.build?.kind ?? "light"]}
@@ -309,7 +322,7 @@ export default function DotFront() {
                 onClick={() => battle.current?.build("light")}>{copy.chooseLight}</button>
               <button disabled={!canCommand} aria-pressed={city.build?.kind === "heavy"}
                 onClick={() => battle.current?.build("heavy")}>{copy.chooseHeavy}</button>
-              {hud.blocked && <span className={styles.warning}>{copy.supplyWarning}</span>}
+              {hud.blocked && <span className={styles.warning}>{hud.cityIsolated ? copy.isolatedProduction : copy.supplyWarning}</span>}
             </>}
           </>}
         </div>

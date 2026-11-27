@@ -2,93 +2,94 @@ import { HEIGHT, WIDTH } from "./config";
 import type { Point, Team } from "./config";
 import { getMap, nearestOpen, passable } from "./terrain";
 import type { MapId } from "./terrain";
+import { TERRITORY_COLS, TERRITORY_ROWS, TERRITORY_SPACING, territoryOwner } from "./territory";
+import type { Territory, TerritorySource } from "./territory";
 
 export type FrontUnit = Point & { id: number; team: Team; hp: number };
-export type FrontSource = { map: MapId; elapsed: number; units: readonly FrontUnit[] };
-export type FrontSegment = { a: Point; b: Point };
+export type FrontSource = TerritorySource & { elapsed: number; units: readonly FrontUnit[] };
+/** normal points from blue occupation toward red occupation. */
+export type FrontSegment = { a: Point; b: Point; normal?: Point };
 export type FrontField = {
-  key: string; spacing: number; cols: number; rows: number; values: Float64Array;
+  key: string; spacing: number; origin: number; cols: number; rows: number; values: Float64Array;
   segments: FrontSegment[]; blueCount: number; redCount: number;
 };
-const SPACING = 3;
-const POSE_SCALE = 32;
 const clamp = (value: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, value));
-type Tree = { point: Point; axis: 0 | 1; left: Tree | null; right: Tree | null };
-function tree(points: Point[], depth = 0): Tree | null {
-  if (!points.length) return null;
-  const axis = (depth % 2) as 0 | 1, key = axis ? "y" : "x";
-  points.sort((a, b) => a[key] - b[key] || a.x - b.x || a.y - b.y);
-  const middle = points.length >> 1;
-  return { point: points[middle], axis, left: tree(points.slice(0, middle), depth + 1), right: tree(points.slice(middle + 1), depth + 1) };
-}
-function nearest(root: Tree | null, point: Point, best = Infinity): number {
-  if (!root) return best;
-  const dx = root.point.x - point.x, dy = root.point.y - point.y;
-  best = Math.min(best, dx * dx + dy * dy);
-  const delta = root.axis ? point.y - root.point.y : point.x - root.point.x;
-  best = nearest(delta < 0 ? root.left : root.right, point, best);
-  if (delta * delta < best) best = nearest(delta < 0 ? root.right : root.left, point, best);
-  return best;
-}
-
-type Cached = { field: FrontField; slots: Map<string, Point[]> };
+type Cached = { field: FrontField; territory: Territory; owners: number[]; revision: number; map: MapId; slots: Map<string, Point[]> };
 const fields = new WeakMap<FrontSource, Cached>();
 
-/** Troop-only influence. Negative is blue, positive is red; city data is never read.
- * A thirty-second of a cell is below one screen pixel at the normal camera scale,
- * so even the slow infantry continuously changes the line. Cached geometry is a
- * pure function of these poses: reloading a save produces the identical front.
+// Exact grid Manhattan distance with two bounded raster passes. This fills only
+// the geometric field: it never changes occupation or creates supply through rock.
+function distances(owners: readonly number[], team: Team) {
+  const cols = TERRITORY_COLS, rows = TERRITORY_ROWS, far = cols + rows + 1;
+  // TypedArray.from over a JavaScript array creates an intermediate iterable
+  // conversion. Indexed writes keep full-grid revisions cheap during 3× play.
+  const result = new Float32Array(owners.length);
+  for (let i = 0; i < owners.length; i++) result[i] = owners[i] === team ? 0 : far;
+  for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
+    const i = y * cols + x;
+    if (x > 0) result[i] = Math.min(result[i], result[i - 1] + 1);
+    if (y > 0) result[i] = Math.min(result[i], result[i - cols] + 1);
+  }
+  for (let y = rows - 1; y >= 0; y--) for (let x = cols - 1; x >= 0; x--) {
+    const i = y * cols + x;
+    if (x + 1 < cols) result[i] = Math.min(result[i], result[i + 1] + 1);
+    if (y + 1 < rows) result[i] = Math.min(result[i], result[i + cols] + 1);
+  }
+  return result;
+}
+
+/** Occupation is persistent state. Neither troop proximity, death, time nor city
+ * ownership can move this line. Only a physical occupation change bumps revision.
  */
 export function frontField(match: FrontSource): FrontField {
-  const living = match.units.filter(unit => unit.hp > 0 && Number.isFinite(unit.x) && Number.isFinite(unit.y))
-    .map(unit => ({ id: unit.id, team: unit.team, x: Math.round(unit.x * POSE_SCALE) / POSE_SCALE, y: Math.round(unit.y * POSE_SCALE) / POSE_SCALE }))
-    .sort((a, b) => a.id - b.id);
-  const key = `${match.map}|${living.map(unit => `${unit.id}:${unit.team}:${unit.x}:${unit.y}`).join(";")}`;
-  const cached = fields.get(match);
-  if (cached?.field.key === key) return cached.field;
-  const blue = living.filter(unit => unit.team === 1), red = living.filter(unit => unit.team === 2);
-  const blueTree = tree([...blue]), redTree = tree([...red]);
-  const cols = Math.ceil(WIDTH / SPACING) + 1, rows = Math.ceil(HEIGHT / SPACING) + 1;
-  const values = new Float64Array(cols * rows);
-  let anyNegative = false, anyPositive = false;
-  for (let row = 0; row < rows; row++) for (let col = 0; col < cols; col++) {
-    const point = { x: Math.min(WIDTH, col * SPACING), y: Math.min(HEIGHT, row * SPACING) };
-    const value = blue.length && red.length ? Math.sqrt(nearest(blueTree, point)) - Math.sqrt(nearest(redTree, point)) :
-      point.x - (blue.length ? WIDTH - 1.5 : red.length ? 1.5 : WIDTH / 2);
-    values[row * cols + col] = value;
-    if (value < 0) anyNegative = true; if (value > 0) anyPositive = true;
+  const { territory, map } = match, owners = territory.owners, cached = fields.get(match);
+  if (cached?.territory === territory && cached.owners === owners && cached.map === map && cached.revision === territory.revision) return cached.field;
+  const blueDistance = distances(owners, 1), redDistance = distances(owners, 2);
+  const cols = TERRITORY_COLS, rows = TERRITORY_ROWS, spacing = TERRITORY_SPACING;
+  const values = new Float64Array(owners.length), effective = new Uint8Array(owners.length);
+  let blueCount = 0, redCount = 0, hash = 2166136261;
+  for (let cell = 0; cell < owners.length; cell++) {
+    const owner = owners[cell];
+    values[cell] = (owner === 1 ? -redDistance[cell] : owner === 2 ? blueDistance[cell] : blueDistance[cell] - redDistance[cell]) * spacing;
+    // Neutral blockers have no owner. A geometric extension places the visible
+    // front between opposing banks so soldiers can still spread along the banks.
+    effective[cell] = owner || (values[cell] <= 0 ? 1 : 2);
+    if (owner === 1) blueCount++; else if (owner === 2) redCount++;
+    hash = Math.imul(hash ^ owner, 16777619);
   }
-  // Coincident opposing armies give an undefined all-zero bisector; split the map
-  // deterministically instead of losing the line or consulting ownership.
-  if (!anyNegative && !anyPositive) for (let row = 0; row < rows; row++) for (let col = 0; col < cols; col++) values[row * cols + col] = col * SPACING - WIDTH / 2;
-  const field: FrontField = { key, spacing: SPACING, cols, rows, values, segments: [], blueCount: blue.length, redCount: red.length };
-  for (let row = 0; row < rows - 1; row++) for (let col = 0; col < cols - 1; col++) {
-    const points = [
-      { x: col * SPACING, y: row * SPACING }, { x: (col + 1) * SPACING, y: row * SPACING },
-      { x: (col + 1) * SPACING, y: (row + 1) * SPACING }, { x: col * SPACING, y: (row + 1) * SPACING },
-    ];
-    const v = [values[row * cols + col], values[row * cols + col + 1], values[(row + 1) * cols + col + 1], values[(row + 1) * cols + col]];
-    const crossings: Point[] = [];
-    for (let edge = 0; edge < 4; edge++) {
-      const next = (edge + 1) % 4;
-      if ((v[edge] <= 0) === (v[next] <= 0)) continue;
-      const t = clamp(v[edge] / (v[edge] - v[next]), 0, 1);
-      crossings.push({ x: points[edge].x + (points[next].x - points[edge].x) * t, y: points[edge].y + (points[next].y - points[edge].y) * t });
+  const field: FrontField = { key: `${map}:${territory.revision}:${hash >>> 0}`, spacing, origin: spacing / 2, cols, rows, values, segments: [], blueCount, redCount };
+  // Merge collinear half-cell edges. Closed pockets stay closed and boundaries
+  // match the exact stored cells instead of shifting halfway toward remote units.
+  for (let x = 1; x < cols; x++) {
+    let start = -1, normal = 0;
+    for (let y = 0; y <= rows; y++) {
+      const left = y < rows ? effective[y * cols + x - 1] : 0, right = y < rows ? effective[y * cols + x] : 0;
+      const next = left && right && left !== right ? (left === 1 ? 1 : -1) : 0;
+      if (next !== normal) {
+        if (normal) field.segments.push({ a: { x: x * spacing, y: start * spacing }, b: { x: x * spacing, y: y * spacing }, normal: { x: normal, y: 0 } });
+        start = next ? y : -1; normal = next;
+      }
     }
-    if (crossings.length === 2) field.segments.push({ a: crossings[0], b: crossings[1] });
-    else if (crossings.length === 4) {
-      const same = (v[0] <= 0) === (v.reduce((sum, value) => sum + value, 0) <= 0);
-      for (const [a, b] of same ? [[0, 1], [2, 3]] : [[0, 3], [1, 2]]) field.segments.push({ a: crossings[a], b: crossings[b] });
+  }
+  for (let y = 1; y < rows; y++) {
+    let start = -1, normal = 0;
+    for (let x = 0; x <= cols; x++) {
+      const above = x < cols ? effective[(y - 1) * cols + x] : 0, below = x < cols ? effective[y * cols + x] : 0;
+      const next = above && below && above !== below ? (above === 1 ? 1 : -1) : 0;
+      if (next !== normal) {
+        if (normal) field.segments.push({ a: { x: start * spacing, y: y * spacing }, b: { x: x * spacing, y: y * spacing }, normal: { x: 0, y: normal } });
+        start = next ? x : -1; normal = next;
+      }
     }
   }
   field.segments.sort((a, b) => (a.a.y + a.b.y) - (b.a.y + b.b.y) || (a.a.x + a.b.x) - (b.a.x + b.b.x));
-  fields.set(match, { field, slots: new Map() });
+  fields.set(match, { field, territory, owners, revision: territory.revision, map, slots: new Map() });
   return field;
 }
 
-/** Bilinear signed influence, shared by rendering, slot placement and stance direction. */
+/** Bilinear signed distance from cell centers: negativeblue, positivered. */
 export function frontValue(field: FrontField, point: Point): number {
-  const gx = clamp(point.x / field.spacing, 0, field.cols - 1), gy = clamp(point.y / field.spacing, 0, field.rows - 1);
+  const gx = clamp((point.x - field.origin) / field.spacing, 0, field.cols - 1), gy = clamp((point.y - field.origin) / field.spacing, 0, field.rows - 1);
   const x = Math.min(field.cols - 2, Math.floor(gx)), y = Math.min(field.rows - 2, Math.floor(gy));
   const tx = gx - x, ty = gy - y, base = y * field.cols + x;
   return (field.values[base] * (1 - tx) + field.values[base + 1] * tx) * (1 - ty) +
@@ -99,7 +100,13 @@ function direction(field: FrontField, team: Team, point: Point): Point {
   const dx = frontValue(field, { x: point.x + .75, y: point.y }) - frontValue(field, { x: point.x - .75, y: point.y });
   const dy = frontValue(field, { x: point.x, y: point.y + .75 }) - frontValue(field, { x: point.x, y: point.y - .75 });
   const length = Math.hypot(dx, dy);
-  return length > 1e-7 ? { x: sign * dx / length, y: sign * dy / length } : { x: sign, y: 0 };
+  if (length > 1e-7) return { x: sign * dx / length, y: sign * dy / length };
+  let closest: FrontSegment | undefined, best = Infinity;
+  for (const segment of field.segments) {
+    const distance = (point.x - (segment.a.x + segment.b.x) / 2) ** 2 + (point.y - (segment.a.y + segment.b.y) / 2) ** 2;
+    if (distance < best) { closest = segment; best = distance; }
+  }
+  return closest?.normal ? { x: sign * closest.normal.x, y: sign * closest.normal.y } : { x: sign, y: 0 };
 }
 export function frontDirection(match: FrontSource, team: Team, point: Point): Point { return direction(frontField(match), team, point); }
 
@@ -124,13 +131,11 @@ function components(mapId: MapId) {
   connectedMaps.set(mapId, result); return result;
 }
 
-/** Distinct reachable positions sampled along the entire troop-derived border. */
+/** Distinct reachable friendly positions sampled along the stored occupation border. */
 export function frontSlots(match: FrontSource, team: Team, count: number): Point[] {
   count = Math.max(0, Math.min(WIDTH * HEIGHT, Math.floor(count)));
   if (!count) return [];
   const field = frontField(match), cache = fields.get(match)!;
-  const cacheKey = `${team}:${count}`, existing = cache.slots.get(cacheKey);
-  if (existing) return existing.map(point => ({ ...point }));
   const connectivity = components(match.map), accessible = new Set<number>();
   for (const unit of match.units) if (unit.team === team && unit.hp > 0) {
     const point = nearestOpen(unit, match.map); accessible.add(connectivity[Math.floor(point.y) * WIDTH + Math.floor(point.x)]);
@@ -139,7 +144,10 @@ export function frontSlots(match: FrontSource, team: Team, count: number): Point
     const point = nearestOpen({ x: team === 1 ? .5 : WIDTH - .5, y: HEIGHT / 2 }, match.map);
     accessible.add(connectivity[Math.floor(point.y) * WIDTH + Math.floor(point.x)]);
   }
-  const segments = field.segments.length ? field.segments : [{ a: { x: WIDTH / 2, y: 0 }, b: { x: WIDTH / 2, y: HEIGHT } }];
+  const cacheKey = `${team}:${count}:${[...accessible].sort((a, b) => a - b).join(",")}`;
+  const existing = cache.slots.get(cacheKey); if (existing) return existing.map(point => ({ ...point }));
+  const edge = team === 1 ? WIDTH - .5 : .5;
+  const segments: FrontSegment[] = field.segments.length ? field.segments : [{ a: { x: edge, y: 0 }, b: { x: edge, y: HEIGHT } }];
   const lengths = segments.map(segment => Math.hypot(segment.b.x - segment.a.x, segment.b.y - segment.a.y));
   const total = lengths.reduce((sum, length) => sum + length, 0), used = new Set<number>(), slots: Point[] = [];
   for (let slot = 0; slot < count; slot++) {
@@ -147,7 +155,7 @@ export function frontSlots(match: FrontSource, team: Team, count: number): Point
     while (segmentIndex < segments.length - 1 && distance > lengths[segmentIndex]) distance -= lengths[segmentIndex++];
     const segment = segments[segmentIndex], t = lengths[segmentIndex] ? distance / lengths[segmentIndex] : .5;
     const border = { x: segment.a.x + (segment.b.x - segment.a.x) * t, y: segment.a.y + (segment.b.y - segment.a.y) * t };
-    const toward = direction(field, team, border), ideal = { x: border.x - toward.x * 2, y: border.y - toward.y * 2 };
+    const toward = segment.normal ? { x: segment.normal.x * (team === 1 ? 1 : -1), y: segment.normal.y * (team === 1 ? 1 : -1) } : direction(field, team, border), ideal = { x: border.x - toward.x * 2, y: border.y - toward.y * 2 };
     const origin = { x: Math.floor(clamp(ideal.x, 0, WIDTH - 1)), y: Math.floor(clamp(ideal.y, 0, HEIGHT - 1)) };
     let found: Point | null = null;
     for (let radius = 0; radius <= 20 && !found; radius++) {
@@ -157,7 +165,7 @@ export function frontSlots(match: FrontSource, team: Team, count: number): Point
         const x = origin.x + dx, y = origin.y + dy, id = y * WIDTH + x;
         if (x < 0 || y < 0 || x >= WIDTH || y >= HEIGHT || used.has(id) || !accessible.has(connectivity[id])) continue;
         const point = { x: x + .5, y: y + .5 };
-        if (!passable(point, match.map) || frontValue(field, point) * (team === 1 ? 1 : -1) > -.03) continue;
+        if (!passable(point, match.map) || territoryOwner(match, point) !== team) continue;
         const candidate = (point.x - ideal.x) ** 2 + (point.y - ideal.y) ** 2;
         if (candidate < score) { found = point; score = candidate; }
       }
