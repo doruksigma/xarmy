@@ -96,7 +96,7 @@ test("zoomed rendering crops visible terrain, skips an empty overlay and culls d
     assert.equal(call.args.length, 9);
     assert.ok(Number(call.args[3]) < source.width && Number(call.args[4]) < source.height);
   }
-  const circles = canvas.calls.filter(call => call.method === "arc");
+  const circles = canvas.calls.filter(call => call.method === "arc" && Number(call.args[2]) >= .48);
   assert.ok(circles.length >= 2, "the heavy soldier keeps an outer ring");
   assert.ok(circles.every(call => call.args[0] === 72 && call.args[1] === 45));
   assert.ok(canvas.calls.some(call => call.method === "fill" && call.fill === colors[1]), "heavy troops retain their team fill");
@@ -174,35 +174,68 @@ test("restored maps replace stale landscape inputs instead of painting the previ
   assert.equal((first.args[0] as HTMLCanvasElement).dataset.dotFrontMap, "valley");
 });
 
-test("detail labels display surviving strength, update after damage and omit offscreen armies", t => {
+test("regional front badges total nearby armies, update after damage and exclude rear formations", t => {
   environment(t);
-  const match = createMatch("normal", "army-strength", false, "plains"), canvas = new Canvas(), mini = new Canvas();
-  const first = { ...match.units[0], x: 68, y: 40 }, second = { ...match.units[1], x: 76, y: 50, hp: units.light.hp / 2 };
-  const offscreen = { ...match.units[2], x: 1, y: 1 };
-  match.units = [first, second, offscreen];
-  const terrain = landscapeCanvas(match.map), view = viewOf(960, 600, { x: 72, y: 45, zoom: 3 });
+  const match = createMatch("normal", "front-strength", false, "plains"), canvas = new Canvas(), mini = new Canvas();
+  const first = { ...match.units[0], x: 68, y: 35 }, second = { ...match.units[1], x: 70, y: 37, hp: units.light.hp / 2 };
+  const red = { ...match.units.find(unit => unit.team === 2)!, x: 76, y: 36 }, rear = { ...match.units[2], x: 10, y: 36 };
+  match.units = [first, second, red, rear];
+  const terrain = landscapeCanvas(match.map), view = viewOf(960, 600, { x: 72, y: 45, zoom: 1 });
   const paint = () => render(canvas.element(), mini.element(), terrain, view, match, new Set(), null, [], null);
   paint();
   const labels = canvas.calls.filter(call => call.method === "fillText");
-  assert.deepEqual(labels.map(call => call.args[0]), ["10.000", "5.000"]);
+  assert.deepEqual(labels.map(call => call.args[0]), ["Cephe", "15.000", "10.000"]);
   assert.ok(labels.every(call => call.fill === "#ffffff"));
   assert.equal(mini.calls.some(call => call.method === "fillText"), false, "the overview remains label-free");
   canvas.calls = []; first.hp = units.light.hp / 4; paint();
-  assert.deepEqual(canvas.calls.filter(call => call.method === "fillText").map(call => call.args[0]), ["2.500", "5.000"]);
+  assert.deepEqual(canvas.calls.filter(call => call.method === "fillText").map(call => call.args[0]), ["Cephe", "7.500", "10.000"]);
+  canvas.calls = []; second.x = 10; paint();
+  const moved = canvas.calls.filter(call => call.method === "fillText");
+  assert.deepEqual(moved.map(call => call.args[0]), ["Cephe", "2.500", "10.000"]);
+  assert.deepEqual(moved[0].args.slice(1), labels[0].args.slice(1), "the card stays attached to the front while army positions change");
 });
 
-test("zoomed-out maps show only selected strength labels and selected armies win overlap conflicts", t => {
+test("individual dots never receive numeric labels, including selected armies at detail zoom", t => {
   environment(t);
-  const match = createMatch("normal", "army-label-priority", false, "plains"), canvas = new Canvas();
-  const ordinary = { ...match.units[0], x: 72, y: 45 }, picked = { ...match.units[1], x: 72.2, y: 45, hp: units.light.hp / 2 };
+  const match = createMatch("normal", "no-army-labels", false, "plains"), canvas = new Canvas();
+  const ordinary = { ...match.units[0], x: 10, y: 45 }, picked = { ...match.units[1], x: 12, y: 45, hp: units.light.hp / 2 };
   match.units = [ordinary, picked];
   const terrain = landscapeCanvas(match.map), overview = viewOf(960, 600, { x: 72, y: 45, zoom: 1 });
   render(canvas.element(), null, terrain, overview, match, new Set(), null, [], null);
   assert.equal(canvas.calls.some(call => call.method === "fillText"), false);
   canvas.calls = [];
   render(canvas.element(), null, terrain, overview, match, new Set([picked.id]), null, [], null);
-  assert.deepEqual(canvas.calls.filter(call => call.method === "fillText").map(call => call.args[0]), ["5.000"]);
+  assert.equal(canvas.calls.some(call => call.method === "fillText"), false);
   canvas.calls = [];
-  render(canvas.element(), null, terrain, viewOf(960, 600, { x: 72, y: 45, zoom: 3 }), match, new Set([picked.id]), null, [], null);
-  assert.deepEqual(canvas.calls.filter(call => call.method === "fillText").map(call => call.args[0]), ["5.000"], "selected strength takes priority over a nearby unselected label");
+  render(canvas.element(), null, terrain, viewOf(960, 600, { x: 12, y: 45, zoom: 3 }), match, new Set([ordinary.id, picked.id]), null, [], null);
+  assert.equal(canvas.calls.some(call => call.method === "fillText"), false);
+});
+
+test("a narrow phone view anchors regional totals to its visible frontier even when the sector midpoint is offscreen", t => {
+  environment(t, true);
+  const match = createMatch("normal", "phone-front-badge", false, "plains"), canvas = new Canvas();
+  match.units = [{ ...match.units[0], x: 68, y: 36 }, { ...match.units.find(unit => unit.team === 2)!, x: 76, y: 36 }];
+  const view = viewOf(360, 540, { x: 72, y: 45, zoom: 16 });
+  assert.ok(36 * view.scale + view.y < 0, "the normal sector midpoint is outside this viewport");
+  render(canvas.element(), null, landscapeCanvas(match.map), view, match, new Set(), null, [], null);
+  const labels = canvas.calls.filter(call => call.method === "fillText");
+  assert.deepEqual(labels.map(call => call.args[0]), ["Cephe", "10.000", "10.000"]);
+  for (const label of labels) {
+    const x = Number(label.args[1]) * view.scale + view.x, y = Number(label.args[2]) * view.scale + view.y;
+    assert.ok(x >= 0 && x <= view.width && y >= 0 && y <= view.height);
+  }
+  canvas.calls = [];
+  render(canvas.element(), null, landscapeCanvas(match.map), viewOf(360, 540, { x: 20, y: 45, zoom: 16 }), match, new Set(), null, [], null);
+  assert.equal(canvas.calls.some(call => call.method === "fillText"), false, "fronts outside the camera are culled");
+});
+
+test("short mobile views clamp and separate regional badges instead of stacking every sector", t => {
+  environment(t, true);
+  const match = createMatch("normal", "badge-density", false, "plains"), canvas = new Canvas();
+  const view = viewOf(360, 160, { x: 72, y: 45, zoom: 1 });
+  render(canvas.element(), null, landscapeCanvas(match.map), view, match, new Set(match.units.map(unit => unit.id)), null, [], null);
+  const badges = canvas.calls.filter(call => call.method === "fillText" && call.args[0] === "Cephe");
+  assert.ok(badges.length > 0 && badges.length <= 3);
+  const positions = badges.map(call => Number(call.args[2]) * view.scale + view.y).sort((a, b) => a - b);
+  for (let index = 1; index < positions.length; index++) assert.ok(positions[index] - positions[index - 1] >= 39);
 });

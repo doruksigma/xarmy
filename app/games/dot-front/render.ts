@@ -6,7 +6,10 @@ import type { FrontField } from "./front";
 import { TERRITORY_COLS, TERRITORY_ROWS, TERRITORY_SPACING, suppliedCells } from "./territory";
 import { getMap } from "./terrain";
 import type { MapId } from "./terrain";
-import { formatSoldiers, soldiersInUnit } from "./manpower";
+import { formatSoldiers } from "./manpower";
+import { frontStrength } from "./front-strength";
+import type { FrontStrength } from "./front-strength";
+import { copy } from "./copy";
 
 export const colors = ["#858b8d", "#3700ff", "#ff0000"];
 const terrainColors = { field: "#a4c242", forest: "#38802f", rock: "#8c9089", water: "#2997f9", bridge: "#c5b57e" };
@@ -216,46 +219,71 @@ function drawVisible(ctx: CanvasRenderingContext2D, source: HTMLCanvasElement, b
     width * source.width / WIDTH, height * source.height / HEIGHT, bounds.left, bounds.top, width, height);
 }
 
-type StrengthLabel = { value: number; text: string; width: number };
-const strengthLabels = new WeakMap<Unit, StrengthLabel>();
-function strengthLabel(unit: Unit): StrengthLabel {
-  const value = soldiersInUnit(unit), cached = strengthLabels.get(unit);
-  if (cached?.value === value) return cached;
-  const text = formatSoldiers(value), label = { value, text, width: Math.ceil(text.length * 6.6 + 8) };
-  strengthLabels.set(unit, label); return label;
+function visibleFrontAnchor(group: FrontStrength, view: View, bounds: Bounds): Point | null {
+  const midpointVisible = group.x >= bounds.left && group.x <= bounds.right && group.y >= bounds.top && group.y <= bounds.bottom;
+  const preferred = midpointVisible ? group : toWorld(view, { x: view.width / 2, y: view.height / 2 });
+  let best: Point | null = null, distance = Infinity;
+  for (const segment of group.segments) {
+    const dx = segment.b.x - segment.a.x, dy = segment.b.y - segment.a.y;
+    let from = 0, to = 1;
+    for (const [delta, start, low, high] of [[dx, segment.a.x, bounds.left, bounds.right], [dy, segment.a.y, bounds.top, bounds.bottom]]) {
+      if (Math.abs(delta) < 1e-9) { if (start < low || start > high) to = -1; continue; }
+      const a = (low - start) / delta, b = (high - start) / delta;
+      from = Math.max(from, Math.min(a, b)); to = Math.min(to, Math.max(a, b));
+    }
+    if (from >= to) continue;
+    const length = dx * dx + dy * dy;
+    const along = Math.max(from, Math.min(to, length ? ((preferred.x - segment.a.x) * dx + (preferred.y - segment.a.y) * dy) / length : 0));
+    const point = { x: segment.a.x + dx * along, y: segment.a.y + dy * along };
+    const candidate = (point.x - preferred.x) ** 2 + (point.y - preferred.y) ** 2;
+    if (candidate < distance) { best = point; distance = candidate; }
+  }
+  return best;
 }
-function drawStrengthLabels(ctx: CanvasRenderingContext2D, candidates: readonly Unit[], selected: Set<number>, view: View) {
-  if (!candidates.length) return;
-  type LabelBox = { left: number; top: number; right: number; bottom: number };
-  const occupied = new Map<number, LabelBox[]>(), columns = Math.ceil(view.width / 64) + 2;
-  ctx.font = `600 ${11 / view.scale}px monospace`;
-  ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  // A small screen-space grid prevents label piles without an all-pairs scan.
-  // Selected formations claim their space first, even when drawn later in the army list.
-  for (const priority of [true, false]) for (const unit of candidates) {
-    if (selected.has(unit.id) !== priority || unit.hp <= 0) continue;
-    const centerX = unit.x * view.scale + view.x, centerY = unit.y * view.scale + view.y;
-    if (centerX < 0 || centerY < 0 || centerX > view.width || centerY > view.height) continue;
-    const label = strengthLabel(unit), height = 16;
-    const left = Math.round(centerX - label.width / 2), top = Math.round(centerY + troopRadius(unit, view.scale) * view.scale + 5);
-    if (left < 0 || top < 0 || left + label.width > view.width || top + height > view.height) continue;
-    const box = { left: left - 2, top: top - 1, right: left + label.width + 2, bottom: top + height + 1 };
-    const x0 = Math.floor(box.left / 64), x1 = Math.floor(box.right / 64), y0 = Math.floor(box.top / 24), y1 = Math.floor(box.bottom / 24);
-    let blocked = false;
-    for (let y = y0; y <= y1 && !blocked; y++) for (let x = x0; x <= x1 && !blocked; x++) {
-      blocked = occupied.get((y + 1) * columns + x + 1)?.some(other =>
-        box.left < other.right && box.right > other.left && box.top < other.bottom && box.bottom > other.top) ?? false;
+function drawFrontStrength(ctx: CanvasRenderingContext2D, match: Match, field: FrontField, view: View, bounds: Bounds) {
+  const groups = frontStrength(match, field).flatMap(group => {
+    const anchor = visibleFrontAnchor(group, view, bounds);
+    return anchor && group.formations ? [{ group, anchor }] : [];
+  });
+  const center = toWorld(view, { x: view.width / 2, y: view.height / 2 });
+  groups.sort((a, b) => (a.anchor.x - center.x) ** 2 + (a.anchor.y - center.y) ** 2 -
+    (b.anchor.x - center.x) ** 2 - (b.anchor.y - center.y) ** 2 || a.group.id.localeCompare(b.group.id));
+  const occupied: Bounds[] = [], limit = Math.max(1, Math.min(view.width < 600 ? 4 : 10, Math.floor(view.height / 44)));
+  ctx.textBaseline = "middle";
+  for (const { group, anchor } of groups) {
+    if (occupied.length >= limit) break;
+    const blue = formatSoldiers(group.blue), red = formatSoldiers(group.red);
+    const column = Math.max(55, Math.ceil(Math.max(blue.length, red.length) * 6.6 + 26)), width = column * 2, height = 33;
+    if (width + 12 > view.width || height + 12 > view.height) continue;
+    const px = anchor.x * view.scale + view.x, py = anchor.y * view.scale + view.y;
+    const left = Math.round(Math.max(6, Math.min(view.width - width - 6, px - width / 2)));
+    let chosen: Bounds | undefined;
+    for (const preferredTop of [py - height - 10, py + 10]) {
+      const top = Math.round(Math.max(6, Math.min(view.height - height - 6, preferredTop)));
+      const box = { left, top, right: left + width, bottom: top + height };
+      if (occupied.some(other => box.left < other.right + 6 && box.right > other.left - 6 && box.top < other.bottom + 6 && box.bottom > other.top - 6)) continue;
+      chosen = box; break;
     }
-    if (blocked) continue;
-    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
-      const key = (y + 1) * columns + x + 1, bucket = occupied.get(key);
-      if (bucket) bucket.push(box); else occupied.set(key, [box]);
+    if (!chosen) continue;
+    occupied.push(chosen);
+    const worldLeft = (chosen.left - view.x) / view.scale, worldTop = (chosen.top - view.y) / view.scale;
+    // Cards are attached to the visible boundary geometry, never to an army dot.
+    const stemX = Math.max(chosen.left, Math.min(chosen.right, px));
+    const stemY = py < chosen.top ? chosen.top : chosen.bottom;
+    ctx.strokeStyle = "#000000"; ctx.lineWidth = 1 / view.scale;
+    ctx.beginPath(); ctx.moveTo(anchor.x, anchor.y); ctx.lineTo((stemX - view.x) / view.scale, (stemY - view.y) / view.scale); ctx.stroke();
+    ctx.fillStyle = "#000000"; ctx.fillRect(worldLeft, worldTop, width / view.scale, height / view.scale);
+    ctx.fillStyle = "#ffffff"; ctx.font = `600 ${10 / view.scale}px sans-serif`; ctx.textAlign = "center";
+    ctx.fillText(copy.frontStrength, worldLeft + width / view.scale / 2, worldTop + 8.5 / view.scale);
+    ctx.font = `600 ${11 / view.scale}px monospace`; ctx.textAlign = "left";
+    for (const [index, text] of [blue, red].entries()) {
+      const x = worldLeft + index * column / view.scale, y = worldTop + 23.5 / view.scale;
+      ctx.fillStyle = colors[index + 1];
+      if (index === 0) {
+        circle(ctx, { x: x + 9 / view.scale, y }, 3.2 / view.scale); ctx.fill();
+      } else ctx.fillRect(x + 5.8 / view.scale, y - 3.2 / view.scale, 6.4 / view.scale, 6.4 / view.scale);
+      ctx.fillStyle = "#ffffff"; ctx.fillText(text, x + 18 / view.scale, y);
     }
-    const worldLeft = (left - view.x) / view.scale, worldTop = (top - view.y) / view.scale;
-    ctx.fillStyle = "#000000";
-    ctx.fillRect(worldLeft, worldTop, label.width / view.scale, height / view.scale);
-    ctx.fillStyle = "#ffffff";
-    ctx.fillText(label.text, worldLeft + label.width / view.scale / 2, worldTop + height / view.scale / 2);
   }
 }
 
@@ -373,11 +401,9 @@ export function render(
     }
   }
   let paintedPaths = 0;
-  const labelCandidates: Unit[] = [];
   for (const unit of match.units) {
     if (!visible(unit, 7)) continue;
     const picked = selected.has(unit.id);
-    if (picked || view.scale >= 10) labelCandidates.push(unit);
     const radius = troopRadius(unit, view.scale);
     const stats = units[unit.kind];
     if (picked && unit.path[unit.waypoint] && paintedPaths++ < 16) {
@@ -433,7 +459,7 @@ export function render(
   }
   ctx.globalAlpha = 1;
   drawArrow(ctx, routePreview, view.scale, true);
-  drawStrengthLabels(ctx, labelCandidates, selected, view);
+  drawFrontStrength(ctx, match, field, view, bounds);
   ctx.restore();
   ctx.textAlign = "start"; ctx.textBaseline = "alphabetic";
   if (box) {
