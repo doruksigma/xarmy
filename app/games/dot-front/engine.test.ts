@@ -6,6 +6,7 @@ import { canTraverse, createMatch, recruitmentCity, send, step, supply } from ".
 import type { City, Match, Unit } from "./engine";
 import { validMatch } from "./storage";
 import { clearShot, getMap, mapIds, nearestOpen, passable, route } from "./terrain";
+import { TERRITORY_COLS, TERRITORY_SPACING } from "./territory";
 
 const advance = (state: Match, seconds: number) => {
   for (let i = 0; i < Math.round(seconds / STEP); i++) step(state, STEP, [], () => {});
@@ -73,6 +74,9 @@ test("capture pauses when contested and clears old city orders while keeping the
   const state = fixture([blue, red], [city(0, 1, 5.5, 20.5), city(1, 2, 100.5, 20.5), target]);
   advance(state, 2); assert.ok(target.progress > 1.9);
   Object.assign(red, { x: target.x + 0.5, y: target.y });
+  const row = Math.floor(red.y / TERRITORY_SPACING);
+  for (let x = Math.floor(red.x / TERRITORY_SPACING); x < TERRITORY_COLS; x++) state.territory.owners[row * TERRITORY_COLS + x] = 2;
+  state.territory.revision++;
   const progress = target.progress; advance(state, STEP); assert.equal(target.progress, progress);
   Object.assign(blue, { x: 5.5, y: 20.5 }); Object.assign(red, { x: 100.5, y: 20.5 });
   advance(state, STEP); assert.equal(target.progress, 0);
@@ -146,6 +150,9 @@ test("mountain corners occlude fire and hold orders never pursue remote enemies"
   assert.equal(clearShot(from, to, "valley"), false);
   const blue = soldier(1, 1, from.x, from.y), red = soldier(2, 2, to.x, to.y);
   const state = fixture([blue, red], [city(0, 1, 5.5, 20.5), city(1, 2, 120.5, 70.5)], "valley");
+  // Both armies lack a grounded captor here; this isolates the line-of-sight
+  // behavior from the separate closed-enclosure elimination rule.
+  state.territory.owners = state.territory.owners.map(owner => owner ? 3 - owner : 0); state.territory.revision++;
   advance(state, 1); assert.equal(blue.hp, units.light.hp); assert.equal(red.hp, units.light.hp);
   Object.assign(red, { x: 120.5, y: 70.5 }); const previous = { x: blue.x, y: blue.y };
   advance(state, 1); assert.deepEqual({ x: blue.x, y: blue.y }, previous);
@@ -187,8 +194,8 @@ test("simultaneous extinction draws, cityless soldiers survive, and each elimina
   const state = fixture([blue, red], []); assert.equal(state.result, null);
   advance(state, STEP); assert.equal(state.result, "draw"); assert.equal(state.units.length, 0);
   for (const team of [1, 2] as const) {
-    const survivor = soldier(1, team, 10.5, 20.5);
-    const other = soldier(2, team === 1 ? 2 : 1, 120.5, 70.5);
+    const survivor = soldier(1, team, team === 1 ? 10.5 : 120.5, 20.5);
+    const other = soldier(2, team === 1 ? 2 : 1, team === 1 ? 120.5 : 10.5, 70.5);
     const match = fixture([survivor, other], []); advance(match, STEP); assert.equal(match.result, null);
     match.units = [survivor]; advance(match, STEP); assert.equal(match.result, team === 1 ? "won" : "lost");
   }

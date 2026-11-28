@@ -13,6 +13,7 @@ export type TerritorySource = { map: MapId; territory: Territory };
 export type OccupationSource = TerritorySource & { units: readonly (Point & { team: Team; hp: number })[] };
 
 const masks = new Map<MapId, Uint8Array>();
+const openCounts = new Map<MapId, number>();
 function walkable(map: MapId) {
   const cached = masks.get(map); if (cached) return cached;
   const tiles = getMap(map).tiles, mask = new Uint8Array(TERRITORY_SIZE);
@@ -20,6 +21,9 @@ function walkable(map: MapId) {
     const tile = tiles[Math.floor(y * TERRITORY_SPACING) * WIDTH + Math.floor(x * TERRITORY_SPACING)];
     mask[y * TERRITORY_COLS + x] = Number(tile !== "rock" && tile !== "water");
   }
+  let count = 0;
+  for (const open of mask) count += open;
+  openCounts.set(map, count);
   masks.set(map, mask); return mask;
 }
 
@@ -86,7 +90,7 @@ export function advanceTerritory(source: OccupationSource): boolean {
   return changed;
 }
 
-type SupplyCache = { map: MapId; revision: number; owners: number[]; supplied: Uint8Array };
+type SupplyCache = { map: MapId; revision: number; owners: number[]; supplied: Uint8Array; queue: Int32Array; count: number };
 const supplies = new WeakMap<Territory, SupplyCache>();
 
 /** Both teams are filled in one bounded four-neighbor search from their rear edge.
@@ -95,7 +99,8 @@ const supplies = new WeakMap<Territory, SupplyCache>();
 export function suppliedCells(source: TerritorySource): Uint8Array {
   const { territory, map } = source, cached = supplies.get(territory);
   if (cached?.map === map && cached.revision === territory.revision && cached.owners === territory.owners) return cached.supplied;
-  const owners = territory.owners, mask = walkable(map), supplied = new Uint8Array(TERRITORY_SIZE), queue = new Int32Array(TERRITORY_SIZE);
+  const owners = territory.owners, mask = walkable(map);
+  const supplied = new Uint8Array(TERRITORY_SIZE), queue = cached?.queue ?? new Int32Array(TERRITORY_SIZE);
   let read = 0, length = 0;
   for (let y = 0; y < TERRITORY_ROWS; y++) for (const team of [1, 2] as const) {
     const cell = y * TERRITORY_COLS + (team === 1 ? 0 : TERRITORY_COLS - 1);
@@ -103,17 +108,73 @@ export function suppliedCells(source: TerritorySource): Uint8Array {
   }
   while (read < length) {
     const cell = queue[read++], team = supplied[cell], x = cell % TERRITORY_COLS, y = Math.floor(cell / TERRITORY_COLS);
-    const visit = (next: number) => {
-      if (!supplied[next] && mask[next] && owners[next] === team) { supplied[next] = team; queue[length++] = next; }
-    };
-    if (x > 0) visit(cell - 1); if (x + 1 < TERRITORY_COLS) visit(cell + 1);
-    if (y > 0) visit(cell - TERRITORY_COLS); if (y + 1 < TERRITORY_ROWS) visit(cell + TERRITORY_COLS);
+    let next = cell - 1;
+    if (x > 0 && !supplied[next] && mask[next] && owners[next] === team) { supplied[next] = team; queue[length++] = next; }
+    next = cell + 1;
+    if (x + 1 < TERRITORY_COLS && !supplied[next] && mask[next] && owners[next] === team) { supplied[next] = team; queue[length++] = next; }
+    next = cell - TERRITORY_COLS;
+    if (y > 0 && !supplied[next] && mask[next] && owners[next] === team) { supplied[next] = team; queue[length++] = next; }
+    next = cell + TERRITORY_COLS;
+    if (y + 1 < TERRITORY_ROWS && !supplied[next] && mask[next] && owners[next] === team) { supplied[next] = team; queue[length++] = next; }
   }
-  supplies.set(territory, { map, revision: territory.revision, owners, supplied });
+  supplies.set(territory, { map, revision: territory.revision, owners, supplied, queue, count: length });
   return supplied;
 }
 
 export function isSupplied(source: TerritorySource, team: Team, point: Point): boolean {
   const cell = territoryCell(point);
   return cell >= 0 && source.territory.owners[cell] === team && suppliedCells(source)[cell] === team;
+}
+
+type EnclosureCache = {
+  map: MapId; revision: number; owners: number[];
+  visited: Uint8Array; queue: Int32Array; captured: Uint8Array; changed: number[];
+};
+const enclosures = new WeakMap<Territory, EnclosureCache>();
+
+/** Resolve disconnected land against the same pre-change topology for both
+ * sides. A real enemy boundary must connect to that enemy's rear edge: natural
+ * terrain islands and mutually isolated armies cannot invent an encircling side.
+ * Returns the new owner of captured cells, once; unchanged revisions cost O(1).
+ */
+export function resolveEnclosures(source: TerritorySource): Uint8Array | null {
+  const { territory, map } = source, owners = territory.owners;
+  let cached = enclosures.get(territory);
+  if (cached?.map === map && cached.owners === owners && cached.revision === territory.revision) return null;
+  const supplied = suppliedCells(source);
+  if (!cached) {
+    cached = { map, revision: territory.revision, owners, visited: new Uint8Array(TERRITORY_SIZE),
+      queue: new Int32Array(TERRITORY_SIZE), captured: new Uint8Array(TERRITORY_SIZE), changed: [] };
+    enclosures.set(territory, cached);
+  }
+  cached.map = map; cached.owners = owners; cached.revision = territory.revision;
+  // Normal continuous fronts have no disconnected land. Supply's existing BFS
+  // proves that case without another grid scan or component allocation.
+  if (supplies.get(territory)!.count === openCounts.get(map)) return null;
+  const { visited, queue, captured, changed } = cached;
+  visited.fill(0); captured.fill(0); changed.length = 0;
+  for (let start = 0; start < TERRITORY_SIZE; start++) {
+    const team = owners[start];
+    if (!team || supplied[start] || visited[start]) continue;
+    const opponent = team === 1 ? 2 : 1;
+    let read = 0, length = 1, groundedEnemy = false;
+    queue[0] = start; visited[start] = 1;
+    while (read < length) {
+      const cell = queue[read++], x = cell % TERRITORY_COLS, y = Math.floor(cell / TERRITORY_COLS);
+      const neighbors = [x > 0 ? cell - 1 : -1, x + 1 < TERRITORY_COLS ? cell + 1 : -1,
+        y > 0 ? cell - TERRITORY_COLS : -1, y + 1 < TERRITORY_ROWS ? cell + TERRITORY_COLS : -1];
+      for (const next of neighbors) {
+        if (next < 0) continue;
+        if (owners[next] === team && !visited[next]) { visited[next] = 1; queue[length++] = next; }
+        else if (owners[next] === opponent && supplied[next] === opponent) groundedEnemy = true;
+      }
+    }
+    if (!groundedEnemy) continue;
+    for (let index = 0; index < length; index++) { const cell = queue[index]; captured[cell] = opponent; changed.push(cell); }
+  }
+  if (!changed.length) return null;
+  for (const cell of changed) owners[cell] = captured[cell];
+  territory.revision = (territory.revision + 1) & 0x7fffffff;
+  cached.revision = territory.revision;
+  return captured;
 }

@@ -17,7 +17,11 @@ function withinBudget(value: unknown): boolean {
 /** Lossless transport encoding; simulation timers, paths and random state remain intact. */
 export function packMatch(match: Match): PackedMatch {
   if (!validMatch(match)) throw new Error("Invalid online match");
-  const { territory, ...state } = structuredClone(match);
+  // The dense occupation grid is encoded directly; cloning its 51,840 cells
+  // before RLE doubled snapshot allocation on tablet hosts. All dynamic state
+  // still gets an independent copy for stable network retries.
+  const { territory, ...liveState } = match;
+  const state = structuredClone(liveState);
   const runs: [number, number][] = [];
   for (const owner of territory.owners) {
     const last = runs[runs.length - 1];
@@ -47,9 +51,9 @@ export function unpackMatch(value: unknown): Match | null {
     const owners = new Array<number>(TERRITORY_SIZE);
     let offset = 0;
     for (const [owner, count] of packed.territory.runs) { owners.fill(owner, offset, offset + count); offset += count; }
-    const { encoding, territory, ...state } = structuredClone(packed);
+    const { encoding, territory, ...state } = packed;
     void encoding;
-    const match = { ...state, territory: { revision: territory.revision, owners } };
+    const match = { ...structuredClone(state), territory: { revision: territory.revision, owners } };
     return validMatch(match) ? match : null;
   } catch { return null; }
 }

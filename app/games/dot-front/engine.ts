@@ -3,7 +3,7 @@ import type { Difficulty, Kind, Owner, Point, Team } from "./config";
 import { clearShot, getMap, nearestOpen, passable, route, tileAt } from "./terrain";
 import type { MapId } from "./terrain";
 import { frontDirection, frontField, frontSlots } from "./front";
-import { advanceTerritory, createTerritory, isSupplied, territoryOwner } from "./territory";
+import { advanceTerritory, createTerritory, isSupplied, resolveEnclosures, territoryCell, territoryOwner } from "./territory";
 import type { Territory } from "./territory";
 
 export type Order =
@@ -215,8 +215,7 @@ function autoFront(match: Match, forceTeam?: Team) {
       if (committed.has(unit.id)) continue;
       const friendly = slots[index];
       if (!friendly) continue;
-      const direction = frontDirection(match, team, friendly);
-      const candidate = unit.stance === "attack" ? attackDestination(match, unit, friendly, direction) : friendly;
+      const candidate = unit.stance === "attack" ? attackDestination(match, unit, friendly, frontDirection(match, team, friendly)) : friendly;
       const goal = uniqueTarget(match, candidate, occupied);
       const oldGoal = unit.order.mode === "move" ? unit.order.point : null;
       if (oldGoal && dist(oldGoal, goal) <= FRONT_REPLAN_DISTANCE) continue;
@@ -276,30 +275,37 @@ export function send(group: Unit[], point: Point, map: MapId = "valley") {
 }
 
 class UnitIndex {
-  private buckets = new Map<string, Unit[]>();
+  private static readonly size = 3;
+  private static readonly cols = Math.ceil(WIDTH / UnitIndex.size);
+  private static readonly rows = Math.ceil(HEIGHT / UnitIndex.size);
+  private buckets = new Map<number, Unit[]>();
 
   constructor(units: Unit[]) {
     for (const unit of units) {
-      const key = this.key(unit.x, unit.y);
+      const key = Math.floor(unit.y / UnitIndex.size) * UnitIndex.cols + Math.floor(unit.x / UnitIndex.size);
       const bucket = this.buckets.get(key);
       if (bucket) bucket.push(unit);
       else this.buckets.set(key, [unit]);
     }
   }
 
-  private key(x: number, y: number) {
-    return Math.floor(x / 3) + ":" + Math.floor(y / 3);
-  }
-
   nearby(point: Point, radius: number) {
-    const found: Unit[] = [];
-    for (let y = point.y - radius; y <= point.y + radius + 3; y += 3) {
-      for (let x = point.x - radius; x <= point.x + radius + 3; x += 3) {
-        const bucket = this.buckets.get(this.key(x, y));
-        if (bucket) found.push(...bucket);
+    const found: Unit[] = [], squared = radius * radius;
+    const minX = Math.max(0, Math.floor((point.x - radius) / UnitIndex.size));
+    const maxX = Math.min(UnitIndex.cols - 1, Math.floor((point.x + radius) / UnitIndex.size));
+    const minY = Math.max(0, Math.floor((point.y - radius) / UnitIndex.size));
+    const maxY = Math.min(UnitIndex.rows - 1, Math.floor((point.y + radius) / UnitIndex.size));
+    for (let y = minY; y <= maxY; y++) {
+      for (let x = minX; x <= maxX; x++) {
+        const bucket = this.buckets.get(y * UnitIndex.cols + x);
+        if (!bucket) continue;
+        for (const unit of bucket) {
+          const dx = unit.x - point.x, dy = unit.y - point.y;
+          if (dx * dx + dy * dy <= squared) found.push(unit);
+        }
       }
     }
-    return found.filter((unit) => dist(unit, point) <= radius);
+    return found;
   }
 }
 
@@ -426,8 +432,16 @@ function fight(match: Match, index: UnitIndex, dt: number, flashes: Flash[]) {
       target = undefined;
     }
     const inRange = (other: Unit) => other.team !== unit.team && dist(unit, other) <= stats.range && clearShot(unit, other, match.map);
-    const victim = target && inRange(target) ? target : index.nearby(unit, stats.range)
-      .filter(inRange).sort((a, b) => dist(unit, a) - dist(unit, b) || a.id - b.id)[0];
+    let victim = target && inRange(target) ? target : undefined;
+    if (!victim) {
+      let closest = Infinity;
+      for (const other of index.nearby(unit, stats.range)) {
+        if (other.team === unit.team) continue;
+        const squared = (other.x - unit.x) ** 2 + (other.y - unit.y) ** 2;
+        if (squared > closest || (squared === closest && victim && other.id > victim.id) || !clearShot(unit, other, match.map)) continue;
+        victim = other; closest = squared;
+      }
+    }
     if (victim && unit.cooldown <= 1e-6) {
       unit.cooldown = stats.cooldown;
       damage.set(victim.id, (damage.get(victim.id) ?? 0) + stats.damage * (unit.pocketed ? POCKET_FIREPOWER : 1));
@@ -455,6 +469,20 @@ function fight(match: Match, index: UnitIndex, dt: number, flashes: Flash[]) {
   }
 }
 
+function captureCity(match: Match, city: City, owner: Team) {
+  if (city.owner === owner) return;
+  city.owner = owner;
+  city.progress = 0;
+  city.capturing = 0;
+  city.build = { kind: "light", elapsed: 0 };
+  city.repeat = true;
+  city.rally = null;
+  if (owner === 1) {
+    match.report.captured++;
+    if (match.tutorial === 2) match.tutorial = 3;
+  }
+}
+
 function takeCities(match: Match, index: UnitIndex, dt: number) {
   const captured = new Set<number>();
   for (const city of match.cities) {
@@ -475,17 +503,8 @@ function takeCities(match: Match, index: UnitIndex, dt: number) {
     city.capturing = contender;
     city.progress += dt;
     if (city.progress + 1e-6 < CAPTURE) continue;
-    city.owner = contender;
-    city.progress = 0;
-    city.capturing = 0;
-    city.build = { kind: "light", elapsed: 0 };
-    city.repeat = true;
-    city.rally = null;
+    captureCity(match, city, contender);
     captured.add(city.id);
-    if (contender === 1) {
-      match.report.captured++;
-      if (match.tutorial === 2) match.tutorial = 3;
-    }
   }
   return captured;
 }
@@ -533,6 +552,24 @@ function removeDead(match: Match) {
   }
 }
 
+function takeEnclosures(match: Match) {
+  const captured = resolveEnclosures(match);
+  if (!captured) return;
+  // Land changes hands, never soldiers. Apply both teams' losses before the
+  // common cleanup so simultaneous elimination can still produce a draw.
+  for (const unit of match.units) {
+    const cell = territoryCell(unit), owner = cell >= 0 ? captured[cell] : 0;
+    if (!owner || owner === unit.team || unit.hp <= 0) continue;
+    unit.hp = 0;
+    if (unit.team === 2) match.report.killed++;
+  }
+  for (const city of match.cities) {
+    const cell = territoryCell(city), owner = cell >= 0 ? captured[cell] : 0;
+    if (owner === 1 || owner === 2) captureCity(match, city, owner);
+  }
+  removeDead(match);
+}
+
 /** Supply follows physically connected occupation; reconnection removes every penalty. */
 function updatePockets(match: Match, dt: number) {
   for (const unit of match.units) {
@@ -554,6 +591,7 @@ function updatePockets(match: Match, dt: number) {
 export function step(match: Match, dt: number, flashes: Flash[], decide: (match: Match) => void) {
   if (match.result || !Number.isFinite(dt) || dt <= 0) return;
   match.elapsed += dt;
+  takeEnclosures(match);
   updatePockets(match, 0);
   autoFront(match);
   decide(match);
@@ -561,12 +599,14 @@ export function step(match: Match, dt: number, flashes: Flash[], decide: (match:
   removeDead(match);
   separate(match, dt);
   advanceTerritory(match);
+  takeEnclosures(match);
   updatePockets(match, dt);
   removeDead(match);
   takeCities(match, new UnitIndex(match.units), dt);
   supplyAndBuild(match, dt);
   // New troops occupy their real spawn footprint; no timers advance twice.
   advanceTerritory(match);
+  takeEnclosures(match);
   updatePockets(match, 0);
   removeDead(match);
   const survives = (team: Team) => match.cities.some((city) => city.owner === team) ||

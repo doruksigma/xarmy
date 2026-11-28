@@ -1,4 +1,4 @@
-import { HEIGHT, WIDTH, difficulty, dist, units } from "./config";
+import { HEIGHT, RADIUS, WIDTH, difficulty, dist, units } from "./config";
 import type { Point } from "./config";
 import type { City, Match, Unit } from "./engine";
 import { commandUnit, recruitmentCity, setGroupStance, supply } from "./engine";
@@ -42,12 +42,14 @@ function suppliedExit(match: Match, unit: Unit): Point | null {
   // edge, not an arbitrary rear city that can itself be surrounded.
   for (let radius = 1; radius <= 40; radius++) {
     let best: Point | null = null, score = Infinity;
-    for (let dy = -radius; dy <= radius; dy++) for (let dx = -radius; dx <= radius; dx++) {
-      if (Math.max(Math.abs(dx), Math.abs(dy)) !== radius) continue;
-      const point = { x: Math.floor(unit.x) + dx + .5, y: Math.floor(unit.y) + dy + .5 };
-      if (!passable(point, match.map) || !isSupplied(match, 2, point)) continue;
-      const distance = dist(unit, point);
-      if (distance < score) { best = point; score = distance; }
+    for (let dy = -radius; dy <= radius; dy++) {
+      const stride = Math.abs(dy) === radius ? 1 : radius * 2;
+      for (let dx = -radius; dx <= radius; dx += stride) {
+        const point = { x: Math.floor(unit.x) + dx + .5, y: Math.floor(unit.y) + dy + .5 };
+        if (!passable(point, match.map) || !isSupplied(match, 2, point)) continue;
+        const distance = dist(unit, point);
+        if (distance < score) { best = point; score = distance; }
+      }
     }
     if (best) return best;
   }
@@ -62,15 +64,26 @@ function operationTarget(match: Match, soldiers: Unit[], targets: City[], blue: 
   // than recalling every spare sector toward one distant enemy raider.
   const candidates = inSector.length ? inSector : unclaimed.length ? unclaimed : targets;
   const score = (city: City) => {
-    const closest = Math.min(...soldiers.map(unit => dist(unit, city)));
-    const committed = soldiers.filter(unit => unit.stance === "manual" && unit.order.mode === "move" && dist(unit.order.point, city) < 1.5).length;
+    let closest = Infinity, committed = 0;
+    for (const unit of soldiers) {
+      closest = Math.min(closest, dist(unit, city));
+      if (unit.stance === "manual" && unit.order.mode === "move" && dist(unit.order.point, city) < 1.5) committed++;
+    }
     return closest + strength(near(blue, city, 7)) * (match.difficulty === "easy" ? 1.5 : 3) - committed * 5 - city.progress * (city.capturing === 2 ? .5 : 0);
   };
+  // Tactical scores do not change while sorting; calculate army/threat scans
+  // once per candidate instead of repeatedly inside the comparison function.
+  const ranked = candidates.map(city => ({ city, score: score(city) }))
+    .sort((a, b) => a.score - b.score || a.city.id - b.city.id);
   // Existing move destinations carry the operation through saves and decision
   // ticks. Two path probes per sector are enough to avoid unreachable objectives.
-  for (const city of [...candidates].sort((a, b) => score(a) - score(b) || a.id - b.id).slice(0, 2)) {
+  for (const { city } of ranked.slice(0, 2)) {
     const approach = soldiers.reduce((a, b) => dist(a, city) < dist(b, city) ? a : b);
-    if (route(approach, city, approach.kind, match.map).length) return city;
+    // A retained route already proves reachability; static terrain cannot make
+    // it invalid between decision ticks. Arrived capturers need no A* either.
+    if (dist(approach, city) <= RADIUS || (approach.order.mode === "move" &&
+        dist(approach.order.point, city) <= RADIUS && approach.waypoint < approach.path.length) ||
+        route(approach, city, approach.kind, match.map).length) return city;
   }
   return undefined;
 }
@@ -145,10 +158,9 @@ export function decide(match: Match) {
     if (goal) claimed.add(goal.id);
     const origin = goal ?? blue.reduce<Unit | undefined>((best, unit) => !best || dist(soldiers[0], unit) < dist(soldiers[0], best) ? unit : best, undefined);
     if (!origin) { defend.push(...soldiers.map(unit => unit.id)); continue; }
-    const ranked = [...soldiers].sort((a, b) => {
-      const cost = (unit: Unit) => dist(unit, origin) + (1 - unit.hp / units[unit.kind].hp) * 8 - (unit.stance === "manual" ? 2 : 0);
-      return cost(a) - cost(b) || a.id - b.id;
-    });
+    const costs = new Map(soldiers.map(unit => [unit.id, dist(unit, origin) +
+      (1 - unit.hp / units[unit.kind].hp) * 8 - (unit.stance === "manual" ? 2 : 0)]));
+    const ranked = [...soldiers].sort((a, b) => costs.get(a.id)! - costs.get(b.id)! || a.id - b.id);
     const attackCount = !home.length || !targets.length ? ranked.length : Math.max(1, Math.ceil(ranked.length * offensiveRatio));
     const attackers = ranked.slice(0, attackCount);
     defend.push(...ranked.slice(attackCount).map(unit => unit.id));
@@ -157,11 +169,10 @@ export function decide(match: Match) {
     const localRed = near(red, anchor, 10), localBlue = near(blue, anchor, 7);
     // Focus a real nearby opponent with several soldiers. Shared damage/health
     // still apply: this is coordination rather than a difficulty bonus.
-    const focus = [...contact].sort((a, b) => {
-      const votes = (target: Unit) => attackers.filter(unit => unit.order.mode === "attack" && unit.order.target === target.id).length;
-      const score = (target: Unit) => dist(anchor, target) + target.hp / units[target.kind].hp * 2 - votes(target) * 3;
-      return score(a) - score(b) || a.id - b.id;
-    })[0];
+    const votes = new Map<number, number>();
+    for (const unit of attackers) if (unit.order.mode === "attack") votes.set(unit.order.target, (votes.get(unit.order.target) ?? 0) + 1);
+    const focus = contact.map(target => ({ target, score: dist(anchor, target) + target.hp / units[target.kind].hp * 2 - (votes.get(target.id) ?? 0) * 3 }))
+      .sort((a, b) => a.score - b.score || a.target.id - b.target.id)[0]?.target;
     if (focus && strength(localBlue) > strength(localRed) * 1.9 * options.caution) {
       // An overwhelming defended point is held by reserves until reinforcements
       // arrive; other sectors continue their own operations without resetting.

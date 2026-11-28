@@ -27,6 +27,21 @@ test("RLE rejects oversized, fractional, missing, invalid-owner and ambiguous ru
   assert.equal(unpackMatch({ ...packet, territory: { revision: -1, runs: packet.territory.runs } }), null);
 });
 
+test("queued snapshots stay independent while the live host continues its simulation", () => {
+  const match = createMatch("normal", "retry-isolation", false, "plains");
+  const before = structuredClone(match), packet = packMatch(match);
+  match.units[0].hp--;
+  match.units[0].path.push({ x: 20.5, y: 20.5 });
+  match.cities[0].owner = 2;
+  match.recruitment[0] = 30;
+  match.territory.owners.fill(2);
+  assert.deepEqual(unpackMatch(packet), before);
+  const decoded = unpackMatch(packet)!;
+  decoded.units[0].hp--;
+  decoded.territory.owners.fill(2);
+  assert.deepEqual(unpackMatch(packet), before);
+});
+
 test("the decoded match still passes strict terrain, unit, timer and current-version validation", () => {
   const packet = packMatch(createMatch("easy", "codec", false, "valley"));
   assert.equal(unpackMatch({ ...packet, version: 4 }), null);

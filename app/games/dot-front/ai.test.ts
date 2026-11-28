@@ -135,10 +135,12 @@ test("a cityless soldier can walk slowly to and recover an undefended city", () 
   assert.equal(match.cities[0].owner, 2);
 });
 
-test("pocketed soldiers seek a supplied exit and nearby soldiers physically reopen the corridor", () => {
+test("AI rescue intentions never resurrect soldiers eliminated by a completed encirclement", () => {
   const trapped = soldier(1, 2, 90.5, 10.5), rescuer = soldier(2, 2, 94.5, 10.5);
   const match = fixture([trapped, rescuer], [city(0, 2, 115.5, 10.5), city(1, 1, 60.5, 10.5)]);
-  for (let y = 7; y < 14; y += .5) for (let x = 87; x < 94; x += .5) match.territory.owners[territoryCell({ x, y })] = 1;
+  // The blue corridor reaches its rear territory, so this is a completed red
+  // encirclement rather than an isolated blue ring inside supplied red land.
+  for (let y = 7; y < 14; y += .5) for (let x = 71; x < 94; x += .5) match.territory.owners[territoryCell({ x, y })] = 1;
   match.territory.owners[territoryCell(trapped)] = 2; match.territory.revision++;
   trapped.pocketed = true; trapped.pocketTime = 5;
   assert.equal(isSupplied(match, 2, trapped), false);
@@ -149,8 +151,10 @@ test("pocketed soldiers seek a supplied exit and nearby soldiers physically reop
   if (rescuer.order.mode === "move") assert.ok(dist(rescuer.order.point, trapped) < 1);
   assert.deepEqual(match.territory.owners, landBefore, "AI orders never grant territory without occupation");
   advance(match, 15);
-  assert.equal(trapped.pocketed, false, "walking back reconnects the trapped soldier");
-  assert.equal(trapped.pocketTime, 0);
+  assert.equal(match.units.some(unit => unit.id === trapped.id), false);
+  assert.equal(match.report.killed, 1);
+  assert.ok(match.units.some(unit => unit.id === rescuer.id && unit.order.mode === "move"), "surviving soldiers continue receiving offensive orders");
+  assert.ok(match.units.every(unit => passable(unit, match.map)));
 });
 
 test("AI cannot produce an automatic reinforcement before sixty simulation seconds", () => {

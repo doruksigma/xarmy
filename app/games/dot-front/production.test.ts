@@ -21,6 +21,7 @@ function isolate(state: Match, point: { x: number; y: number }) {
   for (let y = top; y <= bottom; y++) for (let x = left; x <= right; x++) {
     if (x === left || x === right || y === top || y === bottom) state.territory.owners[y * TERRITORY_COLS + x] = 2;
   }
+  for (let x = right; x < TERRITORY_COLS; x++) if (state.territory.owners[top * TERRITORY_COLS + x]) state.territory.owners[top * TERRITORY_COLS + x] = 2;
   state.territory.revision++;
 }
 
@@ -45,6 +46,8 @@ test("physical occupation changes the source immediately and transfers one exist
   old.build!.elapsed = 45; // A stale city queue cannot become extra progress.
   const invader = state.units.find(unit => unit.team === 2)!;
   Object.assign(invader, { x: 23.5, y: 26.5 });
+  for (let x = Math.floor(invader.x / TERRITORY_SPACING); x < TERRITORY_COLS; x++) state.territory.owners[Math.floor(invader.y / TERRITORY_SPACING) * TERRITORY_COLS + x] = 2;
+  state.territory.revision++;
   advanceTerritory(state);
   const source = recruitmentCity(state, 1)!;
   assert.equal(source.id, 6); assert.notEqual(source, old);
@@ -65,10 +68,12 @@ test("capturing the selected city cancels its local orders but cannot steal or m
   former.capturing = 2; former.progress = CAPTURE - STEP;
   const invader = state.units.find(unit => unit.team === 2)!;
   Object.assign(invader, { x: former.x, y: former.y });
+  for (let x = Math.floor(invader.x / TERRITORY_SPACING); x < TERRITORY_COLS; x++) state.territory.owners[Math.floor(invader.y / TERRITORY_SPACING) * TERRITORY_COLS + x] = 2;
+  state.territory.revision++;
   const nextId = state.nextId;
   advance(state, STEP);
   assert.equal(former.owner, 2); assert.equal(former.rally, null);
-  assert.deepEqual(former.build, { kind: "light", elapsed: 0 });
+  assert.deepEqual(former.build, { kind: "light", elapsed: state.recruitment[1] });
   const recruit = state.units.find(unit => unit.id === nextId)!;
   assert.equal(recruit.team, 1); assert.equal(recruit.kind, "light");
   assert.ok(dist(recruit, recruitmentCity(state, 1)!) <= 1);
@@ -87,8 +92,9 @@ test("a cut-off city yields recruitment to a supplied city without losing or dup
   const nextId = state.nextId;
   advance(state, STEP);
   assert.equal(state.units.length, 51);
-  assert.ok(dist(state.units.find(unit => unit.id === nextId)!, source) <= 1);
-  assert.equal(state.recruitment[0], 0); assert.equal(former.build!.elapsed, 0);
+  assert.ok(dist(state.units.find(unit => unit.id === nextId)!, recruitmentCity(state, 1)!) <= 1);
+  assert.equal(state.recruitment[0], 0); assert.equal(former.owner, 2);
+  assert.equal(former.build!.elapsed, recruitmentCity(state, 2) === former ? state.recruitment[1] : 0);
 });
 
 test("selected unit kind governs capacity and a free supply point resumes the saved team timer", () => {
@@ -135,6 +141,8 @@ test("shared timers and source changes continue identically after saving and loa
   state.recruitment = [59.9, 46.4];
   const invader = state.units.find(unit => unit.team === 2)!;
   Object.assign(invader, { x: 23.5, y: 26.5 });
+  for (let x = Math.floor(invader.x / TERRITORY_SPACING); x < TERRITORY_COLS; x++) state.territory.owners[Math.floor(invader.y / TERRITORY_SPACING) * TERRITORY_COLS + x] = 2;
+  state.territory.revision++;
   advance(state, STEP);
   const saved = JSON.parse(JSON.stringify(state));
   assert.ok(validMatch(saved));

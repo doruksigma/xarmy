@@ -546,25 +546,62 @@ test("pocket flags and timers reject impossible values without losing real grace
   assert.ok(validMatch(state));
 });
 
-test("captured land and an active pocket resume with exact territory, timer, health and future effects", async (context) => {
+test("a saved completed enclosure resumes with the same land and city transfer and removes soldiers without switching their team", async (context) => {
   const db = memoryDatabase(); replaceGlobal(context, "indexedDB", db.factory);
   const state = createMatch("normal", "pocket-resume", false, "plains");
   for (const unit of state.units) commandUnit(state, unit.id, { mode: "hold" });
   state.elapsed = 30;
   const trapped = state.units[0];
-  const destination = state.cities.find(city => city.owner === 2)!;
+  const red = state.units.find(unit => unit.team === 2)!;
+  const destination = state.cities.find(city => city.x === 21.5 && city.y === 26.5)!;
+  assert.equal(destination.owner, 1);
+  state.units = [trapped, red];
   trapped.x = destination.x; trapped.y = destination.y;
-  advanceTerritory(state);
+  red.x = 100.5; red.y = 80.5;
+  for (let index = 0; index < state.territory.owners.length; index++) {
+    if (!state.territory.owners[index]) continue;
+    const x = (index % TERRITORY_COLS + .5) / 2, y = (Math.floor(index / TERRITORY_COLS) + .5) / 2;
+    state.territory.owners[index] = Math.abs(x - trapped.x) < 2 && Math.abs(y - trapped.y) < 2 ? 1 : 2;
+  }
+  state.territory.revision++;
+  destination.build = { kind: "heavy", elapsed: 28 };
+  destination.rally = { x: trapped.x + 1, y: trapped.y };
+  destination.capturing = 2; destination.progress = 5;
   assert.equal(isSupplied(state, 1, trapped), false);
   trapped.pocketed = true; trapped.pocketTime = 19.75;
-  const beforeHp = trapped.hp;
   await saveMatch(state);
   const restored = await loadMatch(); assert.ok(validMatch(restored));
   assert.deepEqual(restored, state);
+  assert.equal(restored.units.find(unit => unit.id === trapped.id)!.team, 1, "loading does not mutate legacy soldiers");
   for (let tick = 0; tick < 20; tick++) { step(state, STEP, [], () => {}); step(restored, STEP, [], () => {}); }
   assert.deepEqual(restored, state, "derived connectivity can rebuild without changing the saved simulation");
-  assert.ok(Math.abs(state.units.find(unit=>unit.id===trapped.id)!.hp - (beforeHp - 1.25 * .75)) < 1e-6,
-    "the remainder of the existing grace period is used, not restarted on load");
+  assert.equal(state.units.some(unit => unit.id === trapped.id), false, "the soldier dies instead of changing teams");
+  assert.equal(trapped.team, 1);
+  assert.equal(territoryOwner(state, trapped), 2);
+  assert.equal(destination.owner, 2); assert.equal(destination.progress, 0); assert.equal(destination.capturing, 0);
+  assert.equal(destination.rally, null); assert.equal(state.report.fallen, 1);
+  await saveMatch(restored); assert.deepEqual(await loadMatch(), restored, "the resolved enclosure remains resolved after another reload");
+  assert.ok(validMatch(restored));
+});
+
+test("disconnected supply timers resume exactly when neither side has a grounded enclosure", async (context) => {
+  const db = memoryDatabase(); replaceGlobal(context, "indexedDB", db.factory);
+  const state = createMatch("normal", "ungrounded-supply-resume", false, "plains");
+  const blue = state.units.find(unit => unit.team === 1)!, red = state.units.find(unit => unit.team === 2)!;
+  state.units = [blue, red]; state.elapsed = 30;
+  for (const unit of state.units) commandUnit(state, unit.id, { mode: "hold" });
+  blue.x = 100.5; blue.y = 80.5; red.x = 40.5; red.y = 80.5;
+  state.territory.owners = state.territory.owners.map(owner => owner === 1 ? 2 : owner === 2 ? 1 : 0);
+  state.territory.revision++;
+  assert.equal(isSupplied(state, 1, blue), false); assert.equal(isSupplied(state, 2, red), false);
+  blue.pocketed = true; blue.pocketTime = 19.75;
+  const beforeHp = blue.hp;
+  await saveMatch(state); const restored = await loadMatch(); assert.ok(validMatch(restored));
+  assert.deepEqual(restored, state);
+  for (let tick = 0; tick < 20; tick++) { step(state, STEP, [], () => {}); step(restored, STEP, [], () => {}); }
+  assert.deepEqual(restored, state);
+  assert.ok(Math.abs(state.units.find(unit => unit.id === blue.id)!.hp - (beforeHp - 1.25 * .75)) < 1e-6,
+    "an unresolved supply interruption keeps its existing grace timer rather than restarting it on load");
   assert.ok(validMatch(restored));
 });
 

@@ -7,8 +7,10 @@ import { TERRITORY_COLS, TERRITORY_ROWS, TERRITORY_SPACING, suppliedCells } from
 import { getMap } from "./terrain";
 import type { MapId } from "./terrain";
 
-export const colors = ["#b2b7ae", "#69c7ff", "#ff806f"];
-const terrainColors = { field: "#475447", forest: "#2d4139", rock: "#31363d", water: "#243946", bridge: "#807360" };
+export const colors = ["#858b8d", "#0754ff", "#f3232d"];
+const terrainColors = { field: "#a3c746", forest: "#398336", rock: "#92958f", water: "#2998f5", bridge: "#c5b57e" };
+const CITY_COLOR = "#ffed28";
+const RASTER_SCALE = 4;
 export type Camera = Point & { zoom: number };
 export type View = { width: number; height: number; scale: number; x: number; y: number };
 export type Box = { from: Point; to: Point };
@@ -18,7 +20,7 @@ export function viewOf(width: number, height: number, camera: Camera): View {
   return { width, height, scale, x: width / 2 - camera.x * scale, y: height / 2 - camera.y * scale };
 }
 export const toWorld = (view: View, point: Point) => ({ x: (point.x - view.x) / view.scale, y: (point.y - view.y) / view.scale });
-const troopRadius = (unit: Unit, scale: number) => Math.max(unit.kind === "heavy" ? .52 : .38, (unit.kind === "heavy" ? 6 : 4) / scale);
+const troopRadius = (unit: Unit, scale: number) => Math.max(unit.kind === "heavy" ? .65 : .48, (unit.kind === "heavy" ? 7.5 : 5.5) / scale);
 
 const landscapes = new Map<MapId, HTMLCanvasElement>();
 export function landscapeCanvas(mapId: MapId = "valley") {
@@ -27,47 +29,25 @@ export function landscapeCanvas(mapId: MapId = "valley") {
   const tiles = getMap(mapId).tiles;
   const canvas = document.createElement("canvas");
   canvas.dataset.dotFrontMap = mapId;
-  canvas.width = WIDTH * 16;
-  canvas.height = HEIGHT * 16;
-  const ctx = canvas.getContext("2d")!;
-  ctx.scale(16, 16);
-  for (let id = 0; id < tiles.length; id++) {
-    const x = id % WIDTH;
-    const y = Math.floor(id / WIDTH);
-    const tile = tiles[id];
-    ctx.fillStyle = terrainColors[tile];
-    ctx.fillRect(x, y, 1, 1);
-    const seed = ((id * 17431 + 1291) % 997) / 997;
-    ctx.fillStyle = seed > 0.5 ? "#ffffff0b" : "#050e151b";
-    ctx.fillRect(x, y, 1, 1);
-    ctx.lineWidth = 0.035;
-    if (tile === "forest") {
-      ctx.fillStyle = "#23322e";
-      for (const shift of [0.21, 0.58]) {
-        ctx.beginPath();
-        ctx.moveTo(x + shift, y + 0.72 - seed / 5);
-        ctx.lineTo(x + shift + 0.15, y + 0.19 + seed / 5);
-        ctx.lineTo(x + shift + 0.34, y + 0.72 - seed / 5);
-        ctx.fill();
-      }
-    } else if (tile === "rock") {
-      ctx.fillStyle = "#50575b";
-      ctx.beginPath();
-      ctx.moveTo(x + 0.04, y + 0.83);
-      ctx.lineTo(x + 0.24 + seed / 4, y + 0.15);
-      ctx.lineTo(x + 0.73, y + 0.44);
-      ctx.lineTo(x + 0.92, y + 0.87);
-      ctx.fill();
-    } else if (tile === "bridge" || tile === "water") {
-      ctx.strokeStyle = tile === "bridge" ? "#ada18a" : "#395867";
-      ctx.beginPath();
-      ctx.moveTo(x + 0.05, y + 0.35 + seed / 3);
-      ctx.lineTo(x + 0.95, y + 0.35 + seed / 3);
-      ctx.stroke();
+  canvas.width = WIDTH * RASTER_SCALE;
+  canvas.height = HEIGHT * RASTER_SCALE;
+  const ctx = canvas.getContext("2d", { alpha: false })!;
+  ctx.scale(RASTER_SCALE, RASTER_SCALE);
+  // Flat, run-length painted terrain preserves the exact passability layout.
+  // No per-tile noise, tree sprites or high-resolution texture buffers are needed.
+  for (let y = 0; y < HEIGHT; y++) {
+    let x = 0;
+    while (x < WIDTH) {
+      const tile = tiles[y * WIDTH + x];
+      let end = x + 1;
+      while (end < WIDTH && tiles[y * WIDTH + end] === tile) end++;
+      ctx.fillStyle = terrainColors[tile];
+      ctx.fillRect(x, y, end - x, 1);
+      x = end;
     }
   }
   landscapes.set(mapId, canvas);
-  // Two recent maps cap retained raster memory at about 27 MB on mobile.
+  // Two recent maps retain about 1.7 MB instead of the old 27 MB textures.
   if (landscapes.size > 2) landscapes.delete(landscapes.keys().next().value!);
   return canvas;
 }
@@ -78,11 +58,11 @@ function territoryCanvas(match: Match, field: FrontField) {
   let cached = territories.get(match);
   if (cached?.key === field.key) return cached.canvas;
   if (!cached) {
-    const canvas = document.createElement("canvas"); canvas.width = WIDTH * 4; canvas.height = HEIGHT * 4;
+    const canvas = document.createElement("canvas"); canvas.width = TERRITORY_COLS; canvas.height = TERRITORY_ROWS;
     cached = { key: "", canvas }; territories.set(match, cached);
   }
   const ctx = cached.canvas.getContext("2d")!;
-  ctx.setTransform(4, 0, 0, 4, 0, 0); ctx.clearRect(0, 0, WIDTH, HEIGHT);
+  ctx.setTransform(1 / TERRITORY_SPACING, 0, 0, 1 / TERRITORY_SPACING, 0, 0); ctx.clearRect(0, 0, WIDTH, HEIGHT);
   const owners = match.territory.owners, supplied = suppliedCells(match);
   // Draw actual occupied cells, not a proximity field. Run-length batches keep
   // unchanged broad territories inexpensive even at half-cell resolution.
@@ -95,7 +75,7 @@ function territoryCanvas(match: Match, field: FrontField) {
       while (end < TERRITORY_COLS && owners[y * TERRITORY_COLS + end] === owner &&
         (owner !== 0 && supplied[y * TERRITORY_COLS + end] !== owner) === isolated) end++;
       if (owner) {
-        ctx.fillStyle = colors[owner] + "1a";
+        ctx.fillStyle = colors[owner] + "09";
         ctx.fillRect(x * TERRITORY_SPACING, y * TERRITORY_SPACING, (end - x) * TERRITORY_SPACING, TERRITORY_SPACING);
         if (isolated) isolatedRuns.push({ x, y, length: end - x });
       }
@@ -110,16 +90,70 @@ function territoryCanvas(match: Match, field: FrontField) {
       ctx.lineTo((x + 1) * TERRITORY_SPACING, run.y * TERRITORY_SPACING);
     }
   }
-  ctx.strokeStyle = "#ffc56577"; ctx.lineWidth = .1; ctx.stroke();
+  ctx.strokeStyle = "#8d4b0090"; ctx.lineWidth = .2; ctx.stroke();
   cached.key = field.key;
   return cached.canvas;
 }
 
-function drawFront(ctx: CanvasRenderingContext2D, field: FrontField, scale: number) {
-  ctx.beginPath();
-  for (const segment of field.segments) { ctx.moveTo(segment.a.x, segment.a.y); ctx.lineTo(segment.b.x, segment.b.y); }
-  ctx.strokeStyle = "#112333cc"; ctx.lineWidth = Math.max(.42, 3 / scale); ctx.stroke();
-  ctx.strokeStyle = "#f5e7b8e8"; ctx.lineWidth = Math.max(.11, 1.1 / scale); ctx.stroke();
+type FrontDrawing = { path: Path2D | null; chains: Point[][] };
+const frontDrawings = new WeakMap<FrontField, FrontDrawing>();
+type PathWriter = Pick<CanvasRenderingContext2D, "moveTo" | "lineTo" | "quadraticCurveTo" | "closePath">;
+function roundedChain(path: PathWriter, points: readonly Point[]) {
+  if (points.length < 2) return;
+  const closed = points.length > 2 && points[0].x === points.at(-1)!.x && points[0].y === points.at(-1)!.y;
+  const count = points.length - Number(closed);
+  const corner = (index: number) => {
+    const current = points[index], before = points[(index - 1 + count) % count], after = points[(index + 1) % count];
+    const incoming = Math.hypot(before.x - current.x, before.y - current.y), outgoing = Math.hypot(after.x - current.x, after.y - current.y);
+    const radius = Math.min(.35, incoming / 2, outgoing / 2);
+    return { current,
+      a: { x: current.x + (before.x - current.x) * radius / (incoming || 1), y: current.y + (before.y - current.y) * radius / (incoming || 1) },
+      b: { x: current.x + (after.x - current.x) * radius / (outgoing || 1), y: current.y + (after.y - current.y) * radius / (outgoing || 1) } };
+  };
+  const start = closed ? corner(0).a : points[0]; path.moveTo(start.x, start.y);
+  for (let index = closed ? 0 : 1; index < (closed ? count : count - 1); index++) {
+    const { current, a, b } = corner(index);
+    path.lineTo(a.x, a.y); path.quadraticCurveTo(current.x, current.y, b.x, b.y);
+  }
+  if (closed) path.closePath(); else path.lineTo(points[count - 1].x, points[count - 1].y);
+}
+function frontDrawing(field: FrontField): FrontDrawing {
+  const existing = frontDrawings.get(field); if (existing) return existing;
+  const key = (point: Point) => Math.round(point.y * 2) * (TERRITORY_COLS + 1) + Math.round(point.x * 2);
+  const adjacent = new Map<number, number[]>(), used = new Uint8Array(field.segments.length), chains: Point[][] = [];
+  field.segments.forEach((segment, index) => {
+    for (const point of [segment.a, segment.b]) {
+      const id = key(point), edges = adjacent.get(id);
+      if (edges) edges.push(index); else adjacent.set(id, [index]);
+    }
+  });
+  const walk = (start: Point, edge: number) => {
+    const chain = [start]; let point = start, next: number | undefined = edge;
+    while (next !== undefined && !used[next]) {
+      const segment = field.segments[next]; used[next] = 1;
+      point = key(segment.a) === key(point) ? segment.b : segment.a; chain.push(point);
+      if (key(point) === key(start)) break;
+      next = adjacent.get(key(point))?.find(index => !used[index]);
+    }
+    chains.push(chain);
+  };
+  // Open map-edge lines first, followed by closed encirclement loops.
+  field.segments.forEach((segment, index) => {
+    if (used[index]) return;
+    if (adjacent.get(key(segment.a))!.length !== 2) walk(segment.a, index);
+    else if (adjacent.get(key(segment.b))!.length !== 2) walk(segment.b, index);
+  });
+  field.segments.forEach((segment, index) => { if (!used[index]) walk(segment.a, index); });
+  const path = typeof Path2D === "undefined" ? null : new Path2D();
+  if (path) for (const chain of chains) roundedChain(path, chain);
+  const drawing = { path, chains }; frontDrawings.set(field, drawing); return drawing;
+}
+function drawFront(ctx: CanvasRenderingContext2D, field: FrontField, scale: number, minPixels = 4.5) {
+  const drawing = frontDrawing(field);
+  ctx.strokeStyle = "#111111"; ctx.lineWidth = Math.max(.62, minPixels / scale);
+  ctx.lineCap = "round"; ctx.lineJoin = "round";
+  if (drawing.path) ctx.stroke(drawing.path);
+  else { ctx.beginPath(); for (const chain of drawing.chains) roundedChain(ctx, chain); ctx.stroke(); }
 }
 
 function drawArrow(ctx: CanvasRenderingContext2D, points: readonly Point[], scale: number, preview = false) {
@@ -141,7 +175,9 @@ function drawArrow(ctx: CanvasRenderingContext2D, points: readonly Point[], scal
 export function resize(canvas: HTMLCanvasElement) {
   const width = canvas.clientWidth;
   const height = canvas.clientHeight;
-  const ratio = Math.min(2, window.devicePixelRatio || 1, Math.sqrt(2_600_000 / Math.max(1, width * height)));
+  const coarse = window.matchMedia?.("(pointer: coarse)").matches ?? false;
+  const ratio = Math.min(coarse ? 1 : 1.5, window.devicePixelRatio || 1,
+    Math.sqrt((coarse ? 1_500_000 : 2_000_000) / Math.max(1, width * height)));
   const pixelWidth = Math.max(1, Math.round(width * ratio));
   const pixelHeight = Math.max(1, Math.round(height * ratio));
   if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
@@ -155,6 +191,61 @@ const circle = (ctx: CanvasRenderingContext2D, p: Point, radius: number) => {
   ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
 };
 
+type Bounds = { left: number; top: number; right: number; bottom: number };
+function visibleBounds(view: View): Bounds {
+  return { left: Math.max(0, -view.x / view.scale), top: Math.max(0, -view.y / view.scale),
+    right: Math.min(WIDTH, (view.width - view.x) / view.scale), bottom: Math.min(HEIGHT, (view.height - view.y) / view.scale) };
+}
+function drawVisible(ctx: CanvasRenderingContext2D, source: HTMLCanvasElement, bounds: Bounds) {
+  const width = bounds.right - bounds.left, height = bounds.bottom - bounds.top;
+  if (width <= 0 || height <= 0) return;
+  ctx.drawImage(source, bounds.left * source.width / WIDTH, bounds.top * source.height / HEIGHT,
+    width * source.width / WIDTH, height * source.height / HEIGHT, bounds.left, bounds.top, width, height);
+}
+
+type MiniCache = { match: Match; base: HTMLCanvasElement; baseKey: string; units: number; viewport: string };
+const minimaps = new WeakMap<HTMLCanvasElement, MiniCache>();
+function drawMinimap(mini: HTMLCanvasElement, terrain: HTMLCanvasElement, territory: HTMLCanvasElement, field: FrontField, match: Match, view: View) {
+  let cached = minimaps.get(mini);
+  if (!cached || cached.match !== match) {
+    cached = { match, base: document.createElement("canvas"), baseKey: "", units: -1, viewport: "" }; minimaps.set(mini, cached);
+  }
+  let ownership = 0, unitHash = 2166136261;
+  for (const city of match.cities) ownership = Math.imul(ownership ^ city.owner, 16777619);
+  for (const unit of match.units) {
+    unitHash = Math.imul(unitHash ^ unit.id ^ (unit.team << 20), 16777619);
+    unitHash = Math.imul(unitHash ^ Math.round(unit.x * 4), 16777619);
+    unitHash = Math.imul(unitHash ^ Math.round(unit.y * 4), 16777619);
+  }
+  const key = `${field.key}:${ownership}:${mini.width}:${mini.height}`;
+  const viewport = `${view.x.toFixed(1)}:${view.y.toFixed(1)}:${view.scale.toFixed(4)}:${view.width}:${view.height}`;
+  const rebuild = cached.baseKey !== key;
+  if (!rebuild && cached.units === unitHash && cached.viewport === viewport) return;
+  if (rebuild) {
+    if (cached.base.width !== mini.width) cached.base.width = mini.width;
+    if (cached.base.height !== mini.height) cached.base.height = mini.height;
+    const base = cached.base.getContext("2d", { alpha: false })!;
+    base.setTransform(mini.width / WIDTH, 0, 0, mini.height / HEIGHT, 0, 0);
+    base.drawImage(terrain, 0, 0, WIDTH, HEIGHT); base.drawImage(territory, 0, 0, WIDTH, HEIGHT);
+    drawFront(base, field, mini.width / WIDTH, 1.1);
+    for (const city of match.cities) {
+      base.fillStyle = colors[city.owner]; base.fillRect(city.x - 1, city.y - 1, 2, 2);
+      base.fillStyle = CITY_COLOR; base.fillRect(city.x - .5, city.y - .5, 1, 1);
+    }
+    cached.baseKey = key;
+  }
+  const map = mini.getContext("2d", { alpha: false })!;
+  map.setTransform(1, 0, 0, 1, 0, 0); map.drawImage(cached.base, 0, 0);
+  map.setTransform(mini.width / WIDTH, 0, 0, mini.height / HEIGHT, 0, 0);
+  for (const team of [1, 2] as const) {
+    map.fillStyle = colors[team];
+    for (const unit of match.units) if (unit.team === team) map.fillRect(unit.x - .55, unit.y - .55, 1.1, 1.1);
+  }
+  map.strokeStyle = "#ffffff"; map.lineWidth = Math.max(.45, 1 / (mini.width / WIDTH));
+  map.strokeRect(-view.x / view.scale, -view.y / view.scale, view.width / view.scale, view.height / view.scale);
+  cached.units = unitHash; cached.viewport = viewport;
+}
+
 export function render(
   canvas: HTMLCanvasElement, mini: HTMLCanvasElement | null, terrain: HTMLCanvasElement,
   view: View, match: Match, selected: Set<number>, selectedCity: number | null, flashes: Flash[], box: Box | null,
@@ -163,54 +254,56 @@ export function render(
   // A restored match always paints its own map, even if a caller supplies an old cache.
   if (terrain.dataset.dotFrontMap !== match.map) terrain = landscapeCanvas(match.map);
   const field = frontField(match), territory = territoryCanvas(match, field);
-  const visible = (point: Point, padding = 3) => point.x * view.scale + view.x > -padding * view.scale &&
-    point.y * view.scale + view.y > -padding * view.scale && point.x * view.scale + view.x < view.width + padding * view.scale &&
-    point.y * view.scale + view.y < view.height + padding * view.scale;
-  const ctx = canvas.getContext("2d")!;
+  const bounds = visibleBounds(view);
+  const visible = (point: Point, padding = 3) => point.x > bounds.left - padding && point.y > bounds.top - padding &&
+    point.x < bounds.right + padding && point.y < bounds.bottom + padding;
+  const ctx = canvas.getContext("2d", { alpha: false })!;
   ctx.setTransform(canvas.width / Math.max(1, view.width), 0, 0, canvas.height / Math.max(1, view.height), 0, 0);
-  ctx.fillStyle = "#101a20";
+  ctx.fillStyle = terrainColors.water;
   ctx.fillRect(0, 0, view.width, view.height);
   ctx.save();
   ctx.translate(view.x, view.y);
   ctx.scale(view.scale, view.scale);
-  ctx.drawImage(terrain, 0, 0, WIDTH, HEIGHT);
-  ctx.drawImage(territory, 0, 0, WIDTH, HEIGHT);
+  drawVisible(ctx, terrain, bounds);
+  drawVisible(ctx, territory, bounds);
   drawFront(ctx, field, view.scale);
   for (const city of match.cities) {
     if (!visible(city)) continue;
-    circle(ctx, city, RADIUS);
-    ctx.fillStyle = colors[city.owner] + "25";
-    ctx.fill();
-    ctx.strokeStyle = selectedCity === city.id ? "#fff1b2" : colors[city.owner] + "a0";
-    ctx.lineWidth = selectedCity === city.id ? 0.13 : 0.055;
-    ctx.stroke();
+    const cityRadius = Math.max(.58, 5.5 / view.scale);
+    const ownerRadius = cityRadius + Math.max(.15, 2 / view.scale);
+    const indicatorRadius = Math.max(RADIUS, ownerRadius + Math.max(.25, 2 / view.scale));
+    if (selectedCity === city.id) {
+      circle(ctx, city, indicatorRadius);
+      ctx.fillStyle = "#fff9aa45"; ctx.fill(); ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = Math.max(.13, 1.5 / view.scale); ctx.stroke();
+    }
     if (city.progress > 0) {
       ctx.beginPath();
-      ctx.arc(city.x, city.y, RADIUS, -Math.PI / 2, -Math.PI / 2 + 2 * Math.PI * city.progress / CAPTURE);
+      ctx.arc(city.x, city.y, indicatorRadius, -Math.PI / 2, -Math.PI / 2 + 2 * Math.PI * city.progress / CAPTURE);
       ctx.strokeStyle = colors[city.capturing];
-      ctx.lineWidth = 0.16;
+      ctx.lineWidth = Math.max(.2, 2.5 / view.scale);
       ctx.stroke();
     }
-    ctx.fillStyle = "#152129";
-    ctx.fillRect(city.x - 0.43, city.y - 0.43, 0.86, 0.86);
-    ctx.strokeStyle = colors[city.owner];
-    ctx.lineWidth = 0.105;
-    ctx.strokeRect(city.x - 0.43, city.y - 0.43, 0.86, 0.86);
+    circle(ctx, city, ownerRadius);
+    ctx.fillStyle = colors[city.owner]; ctx.fill();
+    circle(ctx, city, cityRadius);
+    ctx.fillStyle = CITY_COLOR; ctx.fill(); ctx.strokeStyle = "#1b2414";
+    ctx.lineWidth = Math.max(.075, 1 / view.scale); ctx.stroke();
     ctx.beginPath();
     if (city.owner === 1) {
-      ctx.moveTo(city.x, city.y - 0.25);
-      ctx.lineTo(city.x, city.y + 0.25);
+      ctx.moveTo(city.x, city.y - cityRadius * .38);
+      ctx.lineTo(city.x, city.y + cityRadius * .38);
     } else if (city.owner === 2) {
-      ctx.moveTo(city.x - 0.25, city.y);
-      ctx.lineTo(city.x + 0.25, city.y);
+      ctx.moveTo(city.x - cityRadius * .38, city.y);
+      ctx.lineTo(city.x + cityRadius * .38, city.y);
     } else {
       ctx.moveTo(city.x - 0.18, city.y + 0.18);
       ctx.lineTo(city.x + 0.18, city.y - 0.18);
     }
     ctx.stroke();
-    if (city.build) {
+    if (city.build && (city.build.elapsed > 0 || selectedCity === city.id)) {
       ctx.fillStyle = colors[city.owner];
-      ctx.fillRect(city.x - 0.5, city.y + 0.64, Math.min(1, city.build.elapsed / units[city.build.kind].build), Math.max(.10, 2 / view.scale));
+      ctx.fillRect(city.x - cityRadius, city.y + cityRadius + .35, cityRadius * 2 * Math.min(1, city.build.elapsed / units[city.build.kind].build), Math.max(.10, 2 / view.scale));
     }
     if (selectedCity === city.id && city.rally) {
       ctx.beginPath();
@@ -232,38 +325,43 @@ export function render(
       ctx.beginPath();
       ctx.moveTo(unit.x, unit.y);
       for (let i = unit.waypoint; i < unit.path.length; i++) ctx.lineTo(unit.path[i].x, unit.path[i].y);
-      ctx.strokeStyle = "#8dd4ff64";
+      ctx.strokeStyle = "#123a77a0";
       ctx.lineWidth = Math.max(.055, 1 / view.scale);
       ctx.stroke();
       if (unit.order.mode === "route") drawArrow(ctx, [unit, ...unit.order.points.slice(unit.order.next)], view.scale);
     }
     if (picked || unit.marked || unit.pocketed) {
       circle(ctx, unit, radius + Math.max(.19, 3 / view.scale));
-      ctx.strokeStyle = unit.pocketed || unit.marked ? "#ffcb6c" : "#f6f4d4";
+      ctx.strokeStyle = unit.pocketed || unit.marked ? "#985400" : "#ffffff";
       if (unit.pocketed) ctx.setLineDash([3 / view.scale, 2 / view.scale]);
       ctx.lineWidth = Math.max(.085, 1.5 / view.scale);
       ctx.stroke(); ctx.setLineDash([]);
     }
     circle(ctx, unit, radius);
-    ctx.fillStyle = unit.kind === "heavy" ? "#17222a" : colors[unit.team];
+    ctx.fillStyle = colors[unit.team];
     ctx.fill();
-    ctx.strokeStyle = unit.kind === "heavy" ? colors[unit.team] : "#1b282d";
-    ctx.lineWidth = Math.max(unit.kind === "heavy" ? 0.12 : 0.063, (unit.kind === "heavy" ? 2 : 1) / view.scale);
+    ctx.strokeStyle = "#101510";
+    ctx.lineWidth = Math.max(unit.kind === "heavy" ? .18 : .07, (unit.kind === "heavy" ? 2.5 : 1) / view.scale);
     ctx.stroke();
+    if (unit.kind === "heavy") {
+      circle(ctx, unit, radius + Math.max(.21, 2.5 / view.scale));
+      ctx.lineWidth = Math.max(.075, 1 / view.scale); ctx.stroke();
+    }
     if (unit.team === 2) {
-      ctx.fillStyle = unit.kind === "heavy" ? colors[2] : "#44282a";
-      ctx.fillRect(unit.x - radius * .55, unit.y - radius * .12, radius * 1.1, radius * .24);
+      ctx.fillStyle = "#ffffffbd";
+      ctx.fillRect(unit.x - radius * .4, unit.y - radius * .1, radius * .8, radius * .2);
     }
     if (picked || unit.hp < stats.hp || unit.pocketed) {
       const barWidth = Math.max(.95, 22 / view.scale), barHeight = Math.max(.12, 3 / view.scale);
       const barY = unit.y - radius - 7 / view.scale;
       ctx.fillStyle = "#152129";
       ctx.fillRect(unit.x - barWidth / 2, barY, barWidth, barHeight);
-      ctx.fillStyle = unit.pocketed || (unit.marked && match.shortage[unit.team - 1] >= GRACE) ? "#ffcb6c" : colors[unit.team];
+      ctx.fillStyle = unit.pocketed || (unit.marked && match.shortage[unit.team - 1] >= GRACE) ? "#ffc331" : colors[unit.team];
       ctx.fillRect(unit.x - barWidth / 2, barY, barWidth * Math.max(0, unit.hp / stats.hp), barHeight);
     }
   }
   for (const flash of flashes) {
+    if (!visible(flash.from) && !visible(flash.to)) continue;
     ctx.strokeStyle = colors[flash.team];
     ctx.globalAlpha = Math.min(1, (flash.expires - match.elapsed) / 0.14);
     ctx.lineWidth = Math.max(0.095, 1.3 / view.scale);
@@ -285,22 +383,5 @@ export function render(
     ctx.fillRect(box.from.x, box.from.y, box.to.x - box.from.x, box.to.y - box.from.y);
     ctx.strokeRect(box.from.x, box.from.y, box.to.x - box.from.x, box.to.y - box.from.y);
   }
-  if (mini) {
-    const map = mini.getContext("2d")!;
-    map.setTransform(mini.width / WIDTH, 0, 0, mini.height / HEIGHT, 0, 0);
-    map.drawImage(terrain, 0, 0, WIDTH, HEIGHT);
-    map.drawImage(territory, 0, 0, WIDTH, HEIGHT);
-    drawFront(map, field, mini.width / WIDTH);
-    for (const city of match.cities) {
-      map.fillStyle = colors[city.owner];
-      map.fillRect(city.x - 0.8, city.y - 0.8, 1.6, 1.6);
-    }
-    for (const unit of match.units) {
-      map.fillStyle = colors[unit.team];
-      map.fillRect(unit.x - 0.35, unit.y - 0.35, 0.7, 0.7);
-    }
-    map.strokeStyle = "#fff1b2";
-    map.lineWidth = 0.4;
-    map.strokeRect(-view.x / view.scale, -view.y / view.scale, view.width / view.scale, view.height / view.scale);
-  }
+  if (mini && mini.clientWidth > 0 && mini.clientHeight > 0) drawMinimap(mini, terrain, territory, field, match, view);
 }

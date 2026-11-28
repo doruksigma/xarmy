@@ -31,8 +31,11 @@ class FakeCanvas extends Surface {
   renderedWidth = 960;
   renderedHeight = 600;
   captures = new Set<number>();
+  paints = 0;
+  rectReads = 0;
   drawnView = { x: 0, y: 0, scale: 1 };
   context = new Proxy<Record<string, unknown>>({
+    setTransform: () => { this.paints++; },
     translate: (x: number, y: number) => { this.drawnView.x = x; this.drawnView.y = y; },
     scale: (value: number) => { this.drawnView.scale = value; },
     measureText: (text: string) => ({ width: text.length * 7 }),
@@ -41,7 +44,7 @@ class FakeCanvas extends Surface {
     set(target, key: string, value) { target[key] = value; return true; },
   });
   getContext() { return this.context; }
-  getBoundingClientRect() { return { left: 100, top: 50, width: this.renderedWidth, height: this.renderedHeight }; }
+  getBoundingClientRect() { this.rectReads++; return { left: 100, top: 50, width: this.renderedWidth, height: this.renderedHeight }; }
   focus() { (document as unknown as FakeDocument).activeElement = this; }
   setPointerCapture(id: number) { this.captures.add(id); }
   hasPointerCapture(id: number) { return this.captures.has(id); }
@@ -57,7 +60,7 @@ class FakeDocument extends Surface {
 }
 function environment(t: TestContext) {
   const document = new FakeDocument();
-  const window = Object.assign(new Surface(), { devicePixelRatio: 2 });
+  const window = Object.assign(new Surface(), { devicePixelRatio: 2, matchMedia: () => ({ matches: false }) });
   const frames = new Map<number, FrameRequestCallback>();
   const cleanups: Array<() => void> = [];
   let nextFrame = 1;
@@ -90,14 +93,14 @@ function inputs(t: TestContext) {
   const env = environment(t);
   const canvas = new FakeCanvas();
   const camera: Camera = { x: WIDTH / 2, y: HEIGHT / 2, zoom: 40 / Math.min(canvas.clientWidth / WIDTH, canvas.clientHeight / HEIGHT) };
-  const state = { active: true, multi: false, paused: 0, drawing: false, preview: [] as Point[], routes: [] as Point[][], box: null as Box | null,
+  const state = { active: true, multi: false, paused: 0, drawing: false, preview: [] as Point[], previewUpdates: 0, routes: [] as Point[][], box: null as Box | null,
     taps: [] as Array<{ point: Point; command: boolean; touch: boolean; add: boolean; radius: number }>,
     selections: [] as Array<{ from: Point; to: Point; add: boolean }> };
   const view = () => viewOf(canvas.clientWidth, canvas.clientHeight, camera);
   const input = bindInput(canvas.asCanvas(), {
     camera, view, active: () => state.active, multi: () => state.multi,
     drag(box) { state.box = box; }, pause() { state.paused++; },
-    routeMode: () => state.drawing, preview(points) { state.preview = points; }, route(points) { state.routes.push(points); },
+    routeMode: () => state.drawing, preview(points) { state.preview = points; state.previewUpdates++; }, route(points) { state.routes.push(points); },
     tap(point, command, touch, add, radius) { state.taps.push({ point, command, touch, add, radius }); },
     select(from, to, add) { state.selections.push({ from, to, add }); },
   });
@@ -234,7 +237,7 @@ test("battle saves and pauses when hidden, resumes without accumulated time, and
   env.document.hidden = true; env.document.emit("visibilitychange");
   assert.equal(saved, 1); assert.equal(pauses, 1); assert.equal(env.frames.size, 0);
   env.document.hidden = false; env.document.emit("visibilitychange");
-  env.runFrame(100000); env.runFrame(100050);
+  env.runFrame(100000); assert.equal(env.frames.size, 0, "a paused visible battle sleeps after its final redraw");
   assert.equal(match.elapsed, beforeHidden);
   battle.pause(false);
   env.runFrame(100100); env.runFrame(100150);
@@ -275,7 +278,7 @@ test("manual soldier movement and rally orders use each match's terrain without 
       battle.hold();
       assert.equal(unit.order.mode, "hold"); assert.equal(unit.path.length, 0);
       const city = match.cities.find(item => item.owner === 1)!;
-      battle.pan({ x: city.x / WIDTH, y: city.y / HEIGHT }); env.runFrame(1000);
+      battle.pan({ x: city.x / WIDTH, y: city.y / HEIGHT }); env.runFrame(1100);
       const cityPointer = canvas.point(city);
       canvas.emit("pointerdown", cityPointer); canvas.emit("pointerup", cityPointer);
       assert.equal(battle.rally(), true);
@@ -294,7 +297,7 @@ test("surrender commits exactly once without waiting for an animation frame", t 
   try {
     battle.surrender(); battle.surrender();
     assert.equal(match.result, "lost"); assert.equal(finished, 1);
-    env.runFrame(1000); env.runFrame(1050); assert.equal(finished, 1);
+    env.runFrame(1000); assert.equal(env.frames.size, 0); assert.equal(finished, 1);
   } finally { battle.dispose(); }
 });
 
@@ -411,19 +414,20 @@ test("mobile battle shows individual front soldiers and production type changes 
   const city = recruitmentCity(match, 1)!;
   match.recruitment[0] = 4;
   city.build = { kind: "light", elapsed: 4 };
-  battle.pan({ x: city.x / WIDTH, y: city.y / HEIGHT }); env.runFrame(1000);
+  battle.pan({ x: city.x / WIDTH, y: city.y / HEIGHT }); env.runFrame(1100);
   const pointer = canvas.point(city); canvas.emit("pointerdown", pointer); canvas.emit("pointerup", pointer);
-  battle.build("heavy"); assert.deepEqual(city.build, { kind: "heavy", elapsed: 4 }); assert.equal(city.repeat, true);
-  battle.build("light"); assert.deepEqual(city.build, { kind: "light", elapsed: 4 });
+  const progress = match.recruitment[0];
+  battle.build("heavy"); assert.deepEqual(city.build, { kind: "heavy", elapsed: progress }); assert.equal(city.repeat, true);
+  battle.build("light"); assert.deepEqual(city.build, { kind: "light", elapsed: progress });
   const hud = summary(match, new Set(), city.id);
   assert.equal(hud.isRecruitmentCity, true); assert.equal(hud.recruitmentCityId, city.id);
-  assert.equal(hud.recruitmentProgress, 4); assert.equal(hud.city?.build?.elapsed, 4);
-  assert.equal(match.recruitment[0], 4, "switching type must preserve the shared team clock");
+  assert.equal(hud.recruitmentProgress, progress); assert.equal(hud.city?.build?.elapsed, progress);
+  assert.equal(match.recruitment[0], progress, "switching type must preserve the shared team clock");
   const inactive = match.cities.find(item => item.owner === 1 && item.id !== city.id)!;
   inactive.build!.elapsed = 58;
   const waiting = summary(match, new Set(), inactive.id);
   assert.equal(waiting.isRecruitmentCity, false); assert.equal(waiting.city?.build?.elapsed, 0);
-  assert.equal(waiting.recruitmentProgress, 4);
+  assert.equal(waiting.recruitmentProgress, progress);
 });
 
 test("every offered speed advances the fixed-step simulation by its wall-time multiplier", t => {
@@ -459,7 +463,7 @@ test("3x speed remains frame-rate independent and hidden tabs never catch up on 
       env.document.hidden = true; env.document.emit("visibilitychange");
       assert.equal(env.frames.size, 0);
       env.document.hidden = false; env.document.emit("visibilitychange");
-      env.runFrame(800_000); env.runFrame(800_100);
+      env.runFrame(800_000); assert.equal(env.frames.size, 0);
       assert.equal(match.elapsed, beforeHidden);
       battle.pause(false); env.runFrame(800_200); env.runFrame(800_300);
       assert.ok(Math.abs(match.elapsed - beforeHidden - .3) <= STEP + 1e-8);
@@ -606,9 +610,9 @@ test("host bot=false never makes AI decisions while guest simulate=false never a
       env.document.hidden = true; env.document.emit("visibilitychange");
       assert.equal(pauses, 1); assert.equal(env.frames.size, 0);
       env.document.hidden = false; env.document.emit("visibilitychange");
-      env.runFrame(90000); env.runFrame(90100);
+      env.runFrame(90000); assert.equal(env.frames.size, 0);
       const pausedAt = match.elapsed;
-      env.runFrame(90200); assert.equal(match.elapsed, pausedAt);
+      assert.equal(match.elapsed, pausedAt);
       if (!simulate) assert.equal(saved, 0);
     } finally { battle.dispose(); }
   }
@@ -637,7 +641,7 @@ test("guest snapshots replace stable match contents and refresh selection, suppl
   snapshot.result = "lost";
   battle.replaceSnapshot(snapshot); battle.replaceSnapshot(snapshot);
   assert.equal(hud.result, "won"); assert.equal(finished, 1); assert.equal(env.frames.size, 1);
-  env.runFrame(50000); env.runFrame(50100);
+  env.runFrame(50000); assert.equal(env.frames.size, 0);
   assert.equal(match.elapsed, 99); assert.equal(finished, 1);
 });
 
@@ -655,4 +659,113 @@ test("guest HUD uses red capacity, shortages and pockets while preserving canoni
   assert.equal(hud.selectedUnits, 1); assert.equal(hud.selectedPocketGrace, 4);
   assert.equal(hud.recruitmentProgress, 23); assert.equal(hud.city?.build?.elapsed, 23);
   assert.equal(hud.result, "lost"); assert.deepEqual(hud.report, match.report);
+});
+
+test("coarse-pointer tablets cap paints and minimap refresh without slowing the 3x simulation", t => {
+  const env = environment(t), canvas = new FakeCanvas(), mini = new FakeCanvas();
+  env.window.matchMedia = () => ({ matches: true }); env.window.devicePixelRatio = 3;
+  const match = createMatch("normal", "tablet-paint-budget", true, "plains");
+  const battle = startBattle(match, canvas.asCanvas(), mini.asCanvas(), () => {}, () => {}, () => {}, () => {}, { bot: false });
+  env.cleanup(() => battle.dispose()); battle.speed(3); env.runFrame(1000);
+  for (let frame = 1; frame <= 120; frame++) env.runFrame(1000 + frame * 1000 / 120);
+  assert.ok(Math.abs(match.elapsed - 3) <= STEP + 1e-8, `3x must still produce three game seconds, got ${match.elapsed}`);
+  assert.ok(canvas.paints >= 25 && canvas.paints <= 32, `${canvas.paints} main paints for 120 RAF callbacks`);
+  assert.ok(mini.paints <= 12, `${mini.paints} minimap paints should be bounded independently`);
+  assert.equal(env.frames.size, 1);
+});
+
+test("paused battles stop painting and HUD work, then resize and resume through the same single loop", t => {
+  const env = environment(t), canvas = new FakeCanvas();
+  const match = createMatch("normal", "sleeping-pause", true, "plains");
+  let notices = 0;
+  const battle = startBattle(match, canvas.asCanvas(), new FakeCanvas().asCanvas(), () => { notices++; }, () => {}, () => {}, () => {});
+  env.cleanup(() => battle.dispose()); env.runFrame(1000); env.runFrame(1100);
+  battle.pause(true); env.runFrame(1200);
+  assert.equal(env.frames.size, 0);
+  const elapsed = match.elapsed, paints = canvas.paints, hud = notices;
+  canvas.clientWidth = 800; env.window.emit("resize"); env.window.emit("resize");
+  assert.equal(env.frames.size, 1);
+  env.runFrame(10000);
+  assert.equal(canvas.paints, paints + 1); assert.equal(notices, hud); assert.equal(match.elapsed, elapsed);
+  assert.equal(env.frames.size, 0);
+  battle.pause(false); battle.pause(false);
+  assert.equal(env.frames.size, 1);
+  env.runFrame(20000); env.runFrame(20050);
+  assert.ok(Math.abs(match.elapsed - elapsed - STEP) < 1e-8);
+  const stale = [...env.frames.values()][0]; battle.dispose(); env.window.emit("resize"); stale(30000);
+  assert.equal(env.frames.size, 0);
+});
+
+test("an expensive simulation step yields its catch-up debt and later repays every fixed step", t => {
+  const env = environment(t), match = createMatch("normal", "bounded-catchup", true, "plains");
+  let workTime = 0;
+  t.mock.method(performance, "now", () => workTime += 10);
+  const battle = startBattle(match, new FakeCanvas().asCanvas(), new FakeCanvas().asCanvas(), () => {}, () => {}, () => {}, () => {}, { bot: false });
+  env.cleanup(() => battle.dispose()); battle.speed(3); env.runFrame(1000); env.runFrame(1150);
+  assert.ok(match.elapsed <= 3 * STEP + 1e-8, "the callback should yield after its bounded expensive burst");
+  for (let index = 0; index < 12; index++) env.runFrame(1150);
+  assert.ok(Math.abs(match.elapsed - .45) < 1e-8, "deferred steps must not be discarded or rescaled");
+  env.runFrame(1250);
+  for (let index = 0; index < 8; index++) env.runFrame(1250);
+  assert.ok(Math.abs(match.elapsed - .75) < 1e-8);
+  assert.equal(env.frames.size, 1);
+});
+
+test("adaptive simulation work keeps 3x at a sustained 20Hz instead of accumulating permanent time debt", t => {
+  const env = environment(t), match = createMatch("normal", "sustained-tablet-clock", true, "plains");
+  env.window.matchMedia = () => ({ matches: true });
+  let workTime = 0;
+  // Each completed fixed step costs about 9ms on this simulated slow device.
+  // The prior fixed 8ms budget could run only one of the three steps due per frame.
+  t.mock.method(performance, "now", () => workTime += 9);
+  const battle = startBattle(match, new FakeCanvas().asCanvas(), new FakeCanvas().asCanvas(), () => {}, () => {}, () => {}, () => {}, { bot: false });
+  env.cleanup(() => battle.dispose()); battle.speed(3); env.runFrame(1000);
+  for (let frame = 1; frame <= 200; frame++) {
+    env.runFrame(1000 + frame * 50);
+    assert.ok(Math.abs(match.elapsed - frame * .15) <= STEP + 1e-8, `time debt at frame ${frame}: ${match.elapsed}`);
+  }
+  assert.ok(Math.abs(match.elapsed - 30) < 1e-8, "ten real seconds at 3x must produce thirty simulation seconds");
+  assert.equal(env.frames.size, 1);
+});
+
+test("coalesced route input batches layout and preview work and keeps the final endpoint", t => {
+  const f = inputs(t); f.state.drawing = true;
+  f.canvas.emit("pointermove", { clientX: 400, clientY: 200 });
+  assert.equal(f.canvas.rectReads, 0, "hovering without a drag does not read layout");
+  f.canvas.emit("pointerdown", { clientX: 200, clientY: 200 });
+  const reads = f.canvas.rectReads, previews = f.state.previewUpdates;
+  const samples = Array.from({ length: 1000 }, (_, index) => ({ clientX: 200 + index % 20 * 15, clientY: 200 + Math.floor(index / 20) * 4 }));
+  f.canvas.emit("pointermove", { clientX: 600, clientY: 400, getCoalescedEvents: () => samples });
+  assert.equal(f.canvas.rectReads - reads, 1);
+  assert.equal(f.state.previewUpdates - previews, 1);
+  assert.ok(f.state.preview.length <= 34, "a delayed pointer event must not process an unbounded batch");
+  const end = { clientX: 650, clientY: 450 }, beforeUp = f.canvas.rectReads;
+  f.canvas.emit("pointerup", end);
+  assert.equal(f.canvas.rectReads - beforeUp, 1);
+  assert.deepEqual(f.state.routes[0].at(-1), toWorld(f.view(), { x: 550, y: 400 }));
+});
+
+test("instant enclosure death clears the selected soldier and route mode in that simulation step", t => {
+  const env = environment(t), canvas = new FakeCanvas();
+  const match = createMatch("normal", "enclosure-selection", false, "plains");
+  const trapped = match.units.find(unit => unit.team === 1)!, red = match.units.find(unit => unit.team === 2)!;
+  const city = match.cities.find(item => item.x === 21.5 && item.y === 26.5)!;
+  Object.assign(trapped, { x: city.x, y: city.y, stance: "manual" });
+  Object.assign(red, { x: 100.5, y: 80.5, stance: "manual" });
+  match.units = [trapped, red];
+  let hud = summary(match, new Set(), null);
+  const battle = startBattle(match, canvas.asCanvas(), new FakeCanvas().asCanvas(), value => { hud = value; }, () => {}, () => {}, () => {}, { bot: false });
+  env.cleanup(() => battle.dispose()); env.runFrame(1000); battle.selectAll(); battle.routeMode(true);
+  assert.equal(hud.selectedUnits, 1); assert.equal(hud.routeDrawing, true);
+  for (let index = 0; index < match.territory.owners.length; index++) {
+    if (!match.territory.owners[index]) continue;
+    const x = (index % TERRITORY_COLS + .5) * TERRITORY_SPACING;
+    const y = (Math.floor(index / TERRITORY_COLS) + .5) * TERRITORY_SPACING;
+    match.territory.owners[index] = Math.abs(x - trapped.x) < 2 && Math.abs(y - trapped.y) < 2 ? 1 : 2;
+  }
+  match.territory.revision++;
+  env.runFrame(1050);
+  assert.equal(match.elapsed, STEP); assert.equal(match.units.some(unit => unit.id === trapped.id), false);
+  assert.equal(trapped.team, 1); assert.equal(city.owner, 2);
+  assert.equal(hud.selectedUnits, 0); assert.equal(hud.routeDrawing, false); assert.equal(hud.selectedPocketGrace, null);
 });

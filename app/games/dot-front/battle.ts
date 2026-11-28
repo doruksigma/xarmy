@@ -12,13 +12,17 @@ import type { Box, Camera } from "./render";
 import { isSupplied } from "./territory";
 
 export const GAME_SPEEDS = [0.5, 1, 2, 3] as const;
+const MAX_STEPS_PER_FRAME = 6;
+const SIMULATION_BUDGET_MS = 8;
+const MAX_SIMULATION_BUDGET_MS = 24;
+const MINIMAP_INTERVAL_MS = 100;
 
 export function summary(match: Match, picked: Set<number>, cityId: number | null, routeDrawing = false, localTeam: Team = 1) {
   const city = cityId === null ? null : match.cities.find(item => item.id === cityId);
   const logistics = supply(match, localTeam);
   const selected = match.units.filter((unit) => unit.team === localTeam && picked.has(unit.id) && unit.hp > 0);
   const source = recruitmentCity(match, localTeam);
-  const citySource = city?.owner ? recruitmentCity(match, city.owner) : undefined;
+  const citySource = city?.owner === localTeam ? source : city?.owner ? recruitmentCity(match, city.owner) : undefined;
   const isRecruitmentCity = Boolean(city && citySource?.id === city.id);
   const pocketed = selected.filter(unit => unit.pocketed);
   const cityIsolated = Boolean(city?.owner && !isSupplied(match, city.owner, city));
@@ -74,6 +78,7 @@ export function startBattle(
   let flashes: Flash[] = [];
   let box: Box | null = null;
   let paused = document.hidden;
+  let pageHidden = false;
   let multi = false;
   let rally = false;
   let routeDrawing = false;
@@ -87,9 +92,19 @@ export function startBattle(
   let lastSave = performance.now();
   let notifiedResult = false;
   let disposed = false;
+  let ticking = false;
+  let dirty = true;
+  let hudReady = false;
+  let lastPaint = -Infinity;
+  let lastMiniPaint = -Infinity;
+  let paintedElapsed = -1;
+  let paintedView: ReturnType<typeof viewOf> | null = null;
+  let paintedRatio = 0;
+  const renderInterval = window.matchMedia?.("(pointer: coarse)").matches ? 1000 / 30 : 1000 / 60;
   const audio = soundEffects();
   const view = () => viewOf(Math.max(1, canvas.clientWidth), Math.max(1, canvas.clientHeight), camera);
-  const update = () => notify(summary(match, picked, cityId, routeDrawing, localTeam));
+  function requestPaint() { dirty = true; schedule(); }
+  const update = () => { hudReady = true; requestPaint(); notify(summary(match, picked, cityId, routeDrawing, localTeam)); };
   const selected = () => match.units.filter(unit => unit.team === localTeam && picked.has(unit.id) && unit.hp > 0);
   const currentCity = () => cityId === null ? null : match.cities.find(city => city.id === cityId);
   const myCity = () => {
@@ -101,7 +116,7 @@ export function startBattle(
     if (options.command) options.command(command);
     else applyGameCommand(match, localTeam, command);
   };
-  const active = () => !disposed && !paused && !match.result && !document.hidden;
+  const active = () => !disposed && !paused && !pageHidden && !match.result && !document.hidden;
   const focus = () => { if (active()) canvas.focus({ preventScroll: true }); };
   function exitRoute() {
     routeDrawing = false;
@@ -109,9 +124,12 @@ export function startBattle(
     controls.reset();
   }
   function syncSelection() {
+    const count = picked.size;
+    if (!count) return false;
     const unitIds = new Set(match.units.filter(unit => unit.team === localTeam && unit.hp > 0).map(unit => unit.id));
     for (const id of picked) if (!unitIds.has(id)) picked.delete(id);
     if (!picked.size && routeDrawing) exitRoute();
+    return count !== picked.size;
   }
   function pick(units: Unit[], add: boolean) {
     exitRoute();
@@ -148,10 +166,11 @@ export function startBattle(
   }
 
   const controls = bindInput(canvas, {
-    view, camera, active, multi: () => multi, drag: (value) => { box = value; },
+    view, camera, active, multi: () => multi, drag: (value) => { box = value; requestPaint(); },
+    invalidate: requestPaint,
     pause: () => { setPaused(true); onPause(); },
     routeMode: () => routeDrawing && picked.size > 0,
-    preview: points => { routePreview = points; },
+    preview: points => { routePreview = points; requestPaint(); },
     route: points => {
       if (!active() || !picked.size || !points.length) return;
       issue({ mode: "route", points: points.slice(0, MAX_ROUTE_POINTS).map(point => ({ ...point })), next: 0 });
@@ -200,37 +219,66 @@ export function startBattle(
   function tick(now: number) {
     frame = 0;
     if (disposed) return;
+    ticking = true;
     const delta = previous ? Math.max(0, Math.min((now - previous) / 1000, 0.15)) : 0;
     previous = now;
     if (active() && !document.hidden) {
       controls.moveCamera(delta);
       if (simulate) accumulator += delta * speed;
-      while (accumulator >= STEP && !match.result) {
+      let steps = 0;
+      const simulationStart = performance.now();
+      const dueSteps = Math.floor((accumulator + 1e-10) / STEP);
+      // A slower frame has more legitimate fixed steps due. Give those steps
+      // proportionate time so 3x remains 3x at 20–30Hz, while capping long bursts.
+      const simulationBudget = Math.min(MAX_SIMULATION_BUDGET_MS, Math.max(SIMULATION_BUDGET_MS, dueSteps * SIMULATION_BUDGET_MS));
+      while (accumulator + 1e-10 >= STEP && !match.result && steps < MAX_STEPS_PER_FRAME) {
+        // Keep fixed steps and retain unprocessed debt. Yield between steps so a
+        // slow tablet can deliver input instead of doing a long catch-up burst.
+        if (steps && performance.now() - simulationStart >= simulationBudget) break;
         accumulator -= STEP;
+        steps++;
         const before = flashes.length;
         step(match, STEP, flashes, bot ? decide : () => {});
         if (!muted && flashes.length > before) audio.hit();
       }
-      flashes = flashes.filter((flash) => flash.expires > match.elapsed);
-      syncSelection();
+      if (steps) {
+        if (flashes.length) flashes = flashes.filter((flash) => flash.expires > match.elapsed);
+        if (syncSelection()) update();
+      }
       if (simulate && now - lastSave >= 15_000 && !match.result) {
         lastSave = now;
         autosave();
       }
     }
-    if (now >= nextNotice || (match.result && !notifiedResult)) {
+    if (!hudReady || (simulate && active() && now >= nextNotice) || (match.result && !notifiedResult)) {
       nextNotice = now + 160;
       update();
     }
     finish();
-    if (disposed) return;
-    resize(canvas);
-    clampCamera(camera, view());
-    render(canvas, mini, terrain, view(), match, picked, cityId, flashes, box, routePreview);
-    schedule();
+    if (disposed) { ticking = false; return; }
+    let currentView = view();
+    clampCamera(camera, currentView);
+    currentView = view();
+    const ratio = window.devicePixelRatio || 1;
+    const resized = !paintedView || currentView.width !== paintedView.width || currentView.height !== paintedView.height || ratio !== paintedRatio;
+    const cameraMoved = !paintedView || currentView.x !== paintedView.x || currentView.y !== paintedView.y || currentView.scale !== paintedView.scale;
+    const changed = dirty || resized || cameraMoved || match.elapsed !== paintedElapsed;
+    if (changed && (!active() || now - lastPaint + .1 >= renderInterval)) {
+      resize(canvas);
+      const paintMini = resized || !active() || now - lastMiniPaint >= MINIMAP_INTERVAL_MS;
+      render(canvas, paintMini ? mini : null, terrain, currentView, match, picked, cityId, flashes, box, routePreview);
+      if (paintMini) lastMiniPaint = now;
+      paintedView = currentView;
+      paintedRatio = ratio;
+      paintedElapsed = match.elapsed;
+      lastPaint = now;
+      dirty = false;
+    }
+    ticking = false;
+    if (active() || dirty) schedule();
   }
   function schedule() {
-    if (!disposed && !frame && !document.hidden) frame = requestAnimationFrame(tick);
+    if (!disposed && !ticking && !frame && !pageHidden && !document.hidden) frame = requestAnimationFrame(tick);
   }
   function stopFrame() {
     cancelAnimationFrame(frame);
@@ -238,7 +286,7 @@ export function startBattle(
   }
   function setPaused(value: boolean) {
     if (disposed) return;
-    const next = value || document.hidden || Boolean(match.result);
+    const next = value || document.hidden || pageHidden || Boolean(match.result);
     const changed = paused !== next;
     paused = next;
     accumulator = 0;
@@ -267,11 +315,13 @@ export function startBattle(
     } else schedule();
   }
   function pagehide() {
+    pageHidden = true;
     setPaused(true);
     stopFrame();
     if (!match.result) onPause();
   }
   function pageshow() {
+    pageHidden = false;
     previous = 0;
     accumulator = 0;
     if (paused && !match.result) onPause();
@@ -280,6 +330,9 @@ export function startBattle(
   document.addEventListener("visibilitychange", visibility);
   window.addEventListener("pagehide", pagehide);
   window.addEventListener("pageshow", pageshow);
+  window.addEventListener("resize", requestPaint);
+  const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(requestPaint);
+  observer?.observe(canvas);
 
   return {
     focus,
@@ -339,6 +392,7 @@ export function startBattle(
       camera.x = point.x * WIDTH;
       camera.y = point.y * HEIGHT;
       clampCamera(camera, view());
+      requestPaint();
       focus();
     },
     surrender() {
@@ -369,9 +423,11 @@ export function startBattle(
       stopFrame();
       controls.dispose();
       audio.dispose();
+      observer?.disconnect();
       document.removeEventListener("visibilitychange", visibility);
       window.removeEventListener("pagehide", pagehide);
       window.removeEventListener("pageshow", pageshow);
+      window.removeEventListener("resize", requestPaint);
     },
   };
 }

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { CITY_PRODUCTION, POCKET_DAMAGE, POCKET_FIREPOWER, POCKET_GRACE, POCKET_SPEED, STEP, WIDTH, units } from "./config";
-import { commandUnit, createMatch, setGroupStance, step } from "./engine";
+import { CITY_PRODUCTION, POCKET_DAMAGE, POCKET_GRACE, STEP, WIDTH, units } from "./config";
+import { createMatch, setGroupStance, step } from "./engine";
 import type { Match } from "./engine";
 import { isSupplied, TERRITORY_COLS, TERRITORY_SPACING, territoryCell, territoryOwner } from "./territory";
 import { passable, tileAt } from "./terrain";
@@ -28,75 +28,88 @@ function encircle(state: Match, center: { x: number; y: number }, owner: 1 | 2) 
     assert.ok(passable({ x: (col + .5) * TERRITORY_SPACING, y: (row + .5) * TERRITORY_SPACING }, state.map));
     state.territory.owners[row * TERRITORY_COLS + col] = owner;
   }
+  // The encircling army needs a real connection to its own rear. An isolated
+  // ring is itself a pocket, not a license for both components to swap colors.
+  for (let col = owner === 1 ? 0 : minX; col <= (owner === 1 ? maxX : TERRITORY_COLS - 1); col++) {
+    const cell = minY * TERRITORY_COLS + col;
+    if (state.territory.owners[cell]) state.territory.owners[cell] = owner;
+  }
   state.territory.revision++;
   return Math.floor(center.y / TERRITORY_SPACING) * TERRITORY_COLS + minX;
 }
 
-test("an enemy occupation ring cuts supply even when the pocket contains a friendly city", () => {
-  const { state, city, blue } = fixture();
+test("a closed grounded ring takes the land and city, kills trapped soldiers and clears dead targets once", () => {
+  const { state, city, blue, red } = fixture();
+  city.build = { kind: "heavy", elapsed: 12 }; city.rally = { x: 15.5, y: city.y };
+  red.order = { mode: "attack", target: blue.id };
   assert.equal(isSupplied(state, 1, blue), true);
   encircle(state, blue, 2);
   assert.equal(city.owner, 1); assert.equal(territoryOwner(state, blue), 1);
   assert.equal(isSupplied(state, 1, blue), false); assert.equal(isSupplied(state, 1, city), false);
   advance(state, STEP);
-  assert.equal(blue.pocketed, true); assert.equal(blue.pocketTime, STEP);
+  assert.equal(blue.hp, 0); assert.equal(blue.team, 1, "soldiers never change team");
+  assert.equal(state.units.some(unit => unit.id === blue.id), false);
+  assert.equal(state.units.filter(unit => unit.team === 2).length, 1);
+  assert.equal(red.order.mode, "hold");
+  assert.equal(city.owner, 2); assert.equal(city.rally, null);
+  assert.equal(city.build?.kind, "light"); assert.equal(city.progress, 0); assert.equal(city.capturing, 0);
+  assert.equal(territoryOwner(state, blue), 2); assert.equal(state.report.fallen, 1);
+  advance(state, 2); assert.equal(state.report.fallen, 1); assert.equal(city.owner, 2);
 });
 
-test("pocket attrition waits twenty seconds and reconnection immediately resets its timer", () => {
-  const { state, blue } = fixture();
+test("one open friendly corridor prevents capture until an enemy physically seals it", () => {
+  const { state, city, blue, red } = fixture();
   const opening = encircle(state, blue, 2);
-  advance(state, POCKET_GRACE - STEP); assert.equal(blue.hp, units.light.hp);
-  advance(state, STEP); assert.ok(Math.abs(blue.hp - units.light.hp) < 1e-7);
-  advance(state, 2); assert.ok(Math.abs(blue.hp - (units.light.hp - POCKET_DAMAGE * 2)) < 1e-7);
   state.territory.owners[opening] = 1; state.territory.revision++;
-  const hp = blue.hp;
-  advance(state, STEP);
+  advance(state, 2);
+  assert.equal(state.units.includes(blue), true); assert.equal(city.owner, 1);
   assert.equal(blue.pocketed, false); assert.equal(blue.pocketTime, 0);
-  advance(state, 5); assert.equal(blue.hp, hp);
-});
-
-test("encircled cities preserve production progress until a ground corridor reconnects them", () => {
-  const { state, city, blue } = fixture();
-  for (const other of state.cities) if (other.owner === 1 && other.id !== city.id) {
-    other.owner = 0; other.build = null; other.repeat = false;
-  }
-  state.recruitment[0] = CITY_PRODUCTION - 5;
-  const opening = encircle(state, blue, 2), before = state.units.length;
-  advance(state, 12);
-  assert.equal(state.recruitment[0], CITY_PRODUCTION - 5);
-  assert.equal(city.build!.elapsed, 0); assert.equal(state.units.length, before);
-  state.territory.owners[opening] = 1; state.territory.revision++;
-  advance(state, 5 - STEP); assert.equal(state.units.length, before);
+  Object.assign(red, { x: (opening % TERRITORY_COLS + .5) * TERRITORY_SPACING,
+    y: (Math.floor(opening / TERRITORY_COLS) + .5) * TERRITORY_SPACING });
   advance(state, STEP);
-  assert.equal(state.units.length, before + 1); assert.equal(city.build!.elapsed, 0);
+  assert.equal(state.units.includes(blue), false); assert.equal(city.owner, 2);
+  assert.equal(red.team, 2); assert.equal(state.report.fallen, 1);
 });
 
-test("pocket movement and firepower penalties are immediate and apply equally to both teams", () => {
+test("supply isolation without a grounded captor retains its grace period and paused team timer", () => {
   const { state, blue, red } = fixture();
-  encircle(state, blue, 2);
-  const start = { x: blue.x, y: blue.y };
-  commandUnit(state, blue.id, { mode: "move", point: { x: start.x + 1, y: start.y } });
-  advance(state, 1);
-  assert.ok(Math.abs(blue.x - start.x - units.light.speed * POCKET_SPEED) < 1e-7);
-  commandUnit(state, blue.id, { mode: "hold" });
-  Object.assign(red, { x: blue.x + 1.5, y: blue.y });
-  const blueHp = blue.hp, redHp = red.hp;
-  advance(state, STEP);
-  assert.equal(blue.pocketed, true); assert.equal(red.pocketed, true);
-  assert.ok(Math.abs(blue.hp - (blueHp - units.light.damage * POCKET_FIREPOWER)) < 1e-7);
-  assert.ok(Math.abs(red.hp - (redHp - units.light.damage * POCKET_FIREPOWER)) < 1e-7);
+  state.territory.owners = state.territory.owners.map(owner => owner ? 3 - owner : 0);
+  state.territory.revision++;
+  Object.assign(blue, { x: 100.5, y: 45.5 }); Object.assign(red, { x: 40.5, y: 45.5 });
+  state.recruitment[0] = CITY_PRODUCTION - 5;
+  advance(state, POCKET_GRACE);
+  assert.equal(state.units.includes(blue), true); assert.ok(Math.abs(blue.hp - units.light.hp) < 1e-7);
+  assert.equal(state.recruitment[0], CITY_PRODUCTION - 5);
+  advance(state, 2);
+  assert.ok(Math.abs(blue.hp - units.light.hp + POCKET_DAMAGE * 2) < 1e-7);
+  const hp = blue.hp;
+  state.territory.owners = state.territory.owners.map(owner => owner ? 1 : 0); state.territory.revision++;
+  advance(state, STEP); assert.equal(blue.pocketed, false); assert.equal(blue.pocketTime, 0);
+  advance(state, 1); assert.equal(blue.hp, hp);
 });
 
-test("pocket timers, occupied cells and attrition resume deterministically from the saved match", () => {
+test("both sides lose enclosed soldiers simultaneously without conversions or duplicate result reports", () => {
+  const { state, blue, red } = fixture(); state.cities = [];
+  Object.assign(blue, { x: 100.5, y: 30.5 }); Object.assign(red, { x: 30.5, y: 60.5 });
+  for (const unit of [blue, red]) {
+    const center = territoryCell(unit);
+    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) state.territory.owners[center + dy * TERRITORY_COLS + dx] = unit.team;
+  }
+  state.territory.revision++;
+  advance(state, STEP);
+  assert.equal(state.result, "draw"); assert.equal(state.units.length, 0);
+  assert.equal(blue.team, 1); assert.equal(red.team, 2);
+  assert.deepEqual(state.report, { captured: 0, killed: 1, fallen: 1 });
+  advance(state, 1); assert.deepEqual(state.report, { captured: 0, killed: 1, fallen: 1 });
+});
+
+test("a saved completed enclosure resumes with identical land, city and soldier losses", () => {
   const { state, blue } = fixture(); encircle(state, blue, 2);
-  advance(state, 5);
   const saved = JSON.parse(JSON.stringify(state)); assert.ok(validMatch(saved));
-  advance(state, 19); advance(saved, 19);
+  advance(state, 1); advance(saved, 1);
   assert.deepEqual(saved, state); assert.ok(validMatch(state));
-  const split = JSON.parse(JSON.stringify(state));
-  advance(state, 2); advance(split, 2, .1);
-  assert.ok(Math.abs(state.units[0].hp - split.units[0].hp) < 1e-7);
-  assert.ok(Math.abs(state.units[0].pocketTime - split.units[0].pocketTime) < 1e-7);
+  assert.equal(state.units.some(unit => unit.id === blue.id), false);
+  assert.equal(state.report.fallen, 1);
 });
 
 test("attack stance chooses enemy ground beyond rivers and retains its crossing order", () => {

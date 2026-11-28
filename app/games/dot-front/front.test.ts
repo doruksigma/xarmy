@@ -5,7 +5,7 @@ import { frontDirection, frontField, frontSlots, frontValue } from "./front";
 import type { FrontSource, FrontUnit } from "./front";
 import { mapIds, passable, route } from "./terrain";
 import type { MapId } from "./terrain";
-import { advanceTerritory, createTerritory, territoryOwner, TERRITORY_COLS } from "./territory";
+import { advanceTerritory, createTerritory, territoryOwner, TERRITORY_COLS, TERRITORY_ROWS } from "./territory";
 
 const source = (map: MapId = "plains", count = 25): FrontSource => ({
   map, elapsed: 0, territory: createTerritory(map), units: ([1, 2] as const).flatMap(team => Array.from({ length: count }, (_, index): FrontUnit => ({
@@ -99,4 +99,79 @@ test("closed persistent pocket loops appear in the line without requiring soldie
   }
   assert.equal(vertices.size, 4); assert.ok([...vertices.values()].every(count => count === 2));
   assert.ok(frontDirection(state, 1, { x: 98.5, y: 42 }).x > .9);
+});
+
+// Independent whole-grid BFS reference for the old nearest-owner geometry.
+// The optimized frontier must preserve its answer even though it now floods
+// only neutral blockers and rebuilds only affected edge rows/columns.
+function referenceDistances(owners: number[], team: 1 | 2) {
+  const cols = TERRITORY_COLS, result = new Int32Array(owners.length).fill(cols + TERRITORY_ROWS + 1);
+  const queue = new Int32Array(owners.length); let read = 0, length = 0;
+  for (let cell = 0; cell < owners.length; cell++) if (owners[cell] === team) { result[cell] = 0; queue[length++] = cell; }
+  while (read < length) {
+    const cell = queue[read++], x = cell % cols, nextDistance = result[cell] + 1;
+    const visit = (next: number) => {
+      if (result[next] > nextDistance) { result[next] = nextDistance; queue[length++] = next; }
+    };
+    if (x) visit(cell - 1); if (x + 1 < cols) visit(cell + 1);
+    if (cell >= cols) visit(cell - cols); if (cell + cols < owners.length) visit(cell + cols);
+  }
+  return result;
+}
+
+for (const map of mapIds) test(`${map}: incremental border edges match independent nearest-owner geometry`, () => {
+  const state = source(map), cols = TERRITORY_COLS, rows = TERRITORY_ROWS;
+  frontField(state);
+  // Several revisions exercise reused edge runs, including blocker-bank changes.
+  for (let revision = 0; revision < 4; revision++) {
+    for (let index = 0; index < 35; index++) {
+      const cell = (6 + (index * 17 + revision * 11) % (rows - 12)) * cols + 126 + (index * 7 + revision * 3) % 36;
+      if (state.territory.owners[cell]) state.territory.owners[cell] = state.territory.owners[cell] === 1 ? 2 : 1;
+    }
+    state.territory.revision++; frontField(state);
+  }
+  const owners = state.territory.owners, blue = referenceDistances(owners, 1), red = referenceDistances(owners, 2);
+  const effective = owners.map((owner, cell) => owner || (blue[cell] <= red[cell] ? 1 : 2));
+  const expected: string[] = [], actual: string[] = [];
+  for (let y = 0; y < rows; y++) for (let x = 1; x < cols; x++) {
+    const left = effective[y * cols + x - 1], right = effective[y * cols + x];
+    if (left !== right) expected.push(`v:${x}:${y}:${left === 1 ? 1 : -1}`);
+  }
+  for (let y = 1; y < rows; y++) for (let x = 0; x < cols; x++) {
+    const above = effective[(y - 1) * cols + x], below = effective[y * cols + x];
+    if (above !== below) expected.push(`h:${x}:${y}:${above === 1 ? 1 : -1}`);
+  }
+  const field = frontField(state);
+  for (const segment of field.segments) {
+    if (segment.a.x === segment.b.x) {
+      for (let y = segment.a.y * 2; y < segment.b.y * 2; y++) actual.push(`v:${segment.a.x * 2}:${y}:${segment.normal!.x}`);
+    } else for (let x = segment.a.x * 2; x < segment.b.x * 2; x++) actual.push(`h:${x}:${segment.a.y * 2}:${segment.normal!.y}`);
+  }
+  assert.deepEqual(actual.sort(), expected.sort());
+  assert.deepEqual(field.values, Float64Array.from(owners, (owner, cell) =>
+    (owner === 1 ? -red[cell] : owner === 2 ? blue[cell] : blue[cell] - red[cell]) * .5));
+});
+
+test("deferred distance values and old geometry remain stable after later territory revisions", () => {
+  const state = source(), first = frontField(state), before = JSON.stringify(first.segments);
+  const point = { x: 75.25, y: 45.25 }, cell = 90 * TERRITORY_COLS + 150;
+  state.territory.owners[cell] = 1; state.territory.revision++;
+  const next = frontField(state);
+  assert.ok(frontValue(next, point) < 0);
+  assert.ok(frontValue(first, point) > 0, "the old lazy field reads its own ownership snapshot");
+  assert.equal(JSON.stringify(first.segments), before);
+  assert.notEqual(first.values, next.values);
+});
+
+test("restored ownership buffers and a different map invalidate reused frontier geometry and slots", () => {
+  const state = source(); frontSlots(state, 1, 25);
+  const owners = state.territory.owners.slice(); owners[90 * TERRITORY_COLS + 150] = 1;
+  state.territory = { owners, revision: state.territory.revision };
+  const fresh = JSON.parse(JSON.stringify(state)) as FrontSource;
+  assert.deepEqual(frontField(state), frontField(fresh));
+  assert.deepEqual(frontSlots(state, 1, 25), frontSlots(fresh, 1, 25));
+  state.map = "center"; state.territory = createTerritory("center");
+  const restored = JSON.parse(JSON.stringify(state)) as FrontSource;
+  assert.deepEqual(frontField(state), frontField(restored));
+  assert.deepEqual(frontSlots(state, 2, 125), frontSlots(restored, 2, 125));
 });

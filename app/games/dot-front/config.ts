@@ -2,6 +2,8 @@ export const STEP = 0.05;
 export const CAPTURE = 24;
 export const SUPPLY = 5;
 export const GRACE = 15;
+// A completed grounded enclosure resolves immediately. These penalties apply
+// only to disconnected supply that has not become a completed enemy enclosure.
 export const POCKET_GRACE = 20;
 export const POCKET_DAMAGE = 1.25;
 export const POCKET_SPEED = 0.75;
