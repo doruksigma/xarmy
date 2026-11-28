@@ -5,6 +5,8 @@ import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
 import { GAME_SPEEDS, recovery, startBattle, summary, timeLabel } from "./battle";
 import type { Summary } from "./battle";
+import { BattleHud, ManpowerScoreboard } from "./battle-hud";
+import { formatSoldiers } from "./manpower";
 import { copy } from "./copy";
 import { CITY_PRODUCTION } from "./config";
 import type { Difficulty } from "./config";
@@ -207,7 +209,7 @@ export default function DotFront() {
       </fieldset>
       {saved && <p className={styles.note}>{copy.saveMap}: {copy.maps[saved.map].name} · {copy[saved.difficulty]} · {timeLabel(Math.floor(saved.elapsed))}</p>}
       {panel === "how" && <div className={styles.details}>
-        <h2>{copy.how}</h2><p>{copy.goal}</p><p>{copy.logistics}</p><p>{copy.frontRules}</p><p>{copy.pocketRules}</p><p>{copy.routeRules}</p><p>{copy.paceRules}</p><p>{copy.terrainRules}</p><p>{copy.controls}</p><p>{copy.touch}</p>
+        <h2>{copy.how}</h2><p>{copy.goal}</p><p>{copy.manpowerRules}</p><p>{copy.logistics}</p><p>{copy.frontRules}</p><p>{copy.pocketRules}</p><p>{copy.routeRules}</p><p>{copy.paceRules}</p><p>{copy.terrainRules}</p><p>{copy.controls}</p><p>{copy.touch}</p>
         <p className={styles.note}>{copy.tutorialMap}</p>
         <button onClick={() => newMatch(true)}>{copy.tutorial}</button>
       </div>}
@@ -231,12 +233,7 @@ export default function DotFront() {
       <Link className={styles.back} href="/#oyunlar">{copy.back}</Link>
       <h1 className={styles.heading} id="dot-front-title">{copy.title} <span className={styles.matchMap}>{copy.maps[match.map].name}</span></h1>
       <section ref={arena} className={wide ? styles.wide : styles.arena} aria-label={copy.title}>
-        <header className={styles.hud}>
-          <span className={styles.blue}>{copy.player} <b>{hud.blueCities}</b> {copy.cities} · <b>{hud.blue}</b> {copy.soldiers}</span>
-          <span className={styles.red}>{copy.enemy} <b>{hud.redCities}</b> {copy.cities} · <b>{hud.red}</b> {copy.soldiers}</span>
-          <span>{copy.supply} <b>{hud.logistics.used}/{hud.logistics.capacity}</b></span>
-          <time>{timeLabel(hud.time)}</time>
-        </header>
+        <BattleHud hud={hud} />
         {hud.shortage > 0 && <p className={styles.warning} role="status">
           {copy.supplyWarning} · {recovery(hud.shortage) ? recovery(hud.shortage) + " sn" : copy.attrition}
         </p>}
@@ -282,7 +279,8 @@ export default function DotFront() {
               <h2 id="battle-dialog">{hud.result ? copy[hud.result] : copy.paused}</h2>
               {hud.result ? <>
                 <p>{copy.time} {timeLabel(hud.time)} · {copy.captured} {hud.report.captured}</p>
-                <p>{copy.fallen} {hud.report.fallen} · {copy.killed} {hud.report.killed}</p>
+                <ManpowerScoreboard hud={hud} result />
+                <p>{copy.remainingArmies}: {copy.player} {hud.manpower.blue.formations} · {copy.enemy} {hud.manpower.red.formations}</p>
                 <button className={styles.primary} onClick={() => newMatch(false, match.difficulty, match.map)}>{copy.replay}</button>
               </> : <>
                 <button className={styles.primary} onClick={() => pause(false)}>{copy.resume}</button>
@@ -313,7 +311,8 @@ export default function DotFront() {
           <button onClick={() => void fullscreen()}>{copy.full}</button>
         </div>
         <div className={styles.inspector}>
-          <span>{copy.selectedSoldiers} <b>{hud.selectedUnits}</b></span>
+          <span>{copy.selectedArmies} <b>{hud.selectedUnits}</b></span>
+          <span>{copy.selectedSoldiers} <b>{formatSoldiers(hud.selectedSoldiers)}</b></span>
           {hud.selectedStance && <span>{hud.selectedStance === "attack" ? copy.attackStance : hud.selectedStance === "defend" ? copy.defendStance : hud.selectedStance === "mixed" ? copy.mixedOrders : copy.manualOrders}</span>}
           <span>{copy.light} <b>{hud.light}</b> · {copy.heavy} <b>{hud.heavy}</b></span>
           {hud.selectedPocketed > 0 && <span className={styles.pocketStatus} role="status">

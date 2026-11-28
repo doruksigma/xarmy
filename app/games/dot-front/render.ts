@@ -6,6 +6,7 @@ import type { FrontField } from "./front";
 import { TERRITORY_COLS, TERRITORY_ROWS, TERRITORY_SPACING, suppliedCells } from "./territory";
 import { getMap } from "./terrain";
 import type { MapId } from "./terrain";
+import { formatSoldiers, soldiersInUnit } from "./manpower";
 
 export const colors = ["#858b8d", "#3700ff", "#ff0000"];
 const terrainColors = { field: "#a4c242", forest: "#38802f", rock: "#8c9089", water: "#2997f9", bridge: "#c5b57e" };
@@ -215,6 +216,49 @@ function drawVisible(ctx: CanvasRenderingContext2D, source: HTMLCanvasElement, b
     width * source.width / WIDTH, height * source.height / HEIGHT, bounds.left, bounds.top, width, height);
 }
 
+type StrengthLabel = { value: number; text: string; width: number };
+const strengthLabels = new WeakMap<Unit, StrengthLabel>();
+function strengthLabel(unit: Unit): StrengthLabel {
+  const value = soldiersInUnit(unit), cached = strengthLabels.get(unit);
+  if (cached?.value === value) return cached;
+  const text = formatSoldiers(value), label = { value, text, width: Math.ceil(text.length * 6.6 + 8) };
+  strengthLabels.set(unit, label); return label;
+}
+function drawStrengthLabels(ctx: CanvasRenderingContext2D, candidates: readonly Unit[], selected: Set<number>, view: View) {
+  if (!candidates.length) return;
+  type LabelBox = { left: number; top: number; right: number; bottom: number };
+  const occupied = new Map<number, LabelBox[]>(), columns = Math.ceil(view.width / 64) + 2;
+  ctx.font = `600 ${11 / view.scale}px monospace`;
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  // A small screen-space grid prevents label piles without an all-pairs scan.
+  // Selected formations claim their space first, even when drawn later in the army list.
+  for (const priority of [true, false]) for (const unit of candidates) {
+    if (selected.has(unit.id) !== priority || unit.hp <= 0) continue;
+    const centerX = unit.x * view.scale + view.x, centerY = unit.y * view.scale + view.y;
+    if (centerX < 0 || centerY < 0 || centerX > view.width || centerY > view.height) continue;
+    const label = strengthLabel(unit), height = 16;
+    const left = Math.round(centerX - label.width / 2), top = Math.round(centerY + troopRadius(unit, view.scale) * view.scale + 5);
+    if (left < 0 || top < 0 || left + label.width > view.width || top + height > view.height) continue;
+    const box = { left: left - 2, top: top - 1, right: left + label.width + 2, bottom: top + height + 1 };
+    const x0 = Math.floor(box.left / 64), x1 = Math.floor(box.right / 64), y0 = Math.floor(box.top / 24), y1 = Math.floor(box.bottom / 24);
+    let blocked = false;
+    for (let y = y0; y <= y1 && !blocked; y++) for (let x = x0; x <= x1 && !blocked; x++) {
+      blocked = occupied.get((y + 1) * columns + x + 1)?.some(other =>
+        box.left < other.right && box.right > other.left && box.top < other.bottom && box.bottom > other.top) ?? false;
+    }
+    if (blocked) continue;
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+      const key = (y + 1) * columns + x + 1, bucket = occupied.get(key);
+      if (bucket) bucket.push(box); else occupied.set(key, [box]);
+    }
+    const worldLeft = (left - view.x) / view.scale, worldTop = (top - view.y) / view.scale;
+    ctx.fillStyle = "#000000";
+    ctx.fillRect(worldLeft, worldTop, label.width / view.scale, height / view.scale);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText(label.text, worldLeft + label.width / view.scale / 2, worldTop + height / view.scale / 2);
+  }
+}
+
 type MiniCache = { match: Match; base: HTMLCanvasElement; baseKey: string; units: number; viewport: string };
 const minimaps = new WeakMap<HTMLCanvasElement, MiniCache>();
 function drawMinimap(mini: HTMLCanvasElement, terrain: HTMLCanvasElement, territory: HTMLCanvasElement | null, field: FrontField, match: Match, view: View) {
@@ -329,9 +373,11 @@ export function render(
     }
   }
   let paintedPaths = 0;
+  const labelCandidates: Unit[] = [];
   for (const unit of match.units) {
     if (!visible(unit, 7)) continue;
     const picked = selected.has(unit.id);
+    if (picked || view.scale >= 10) labelCandidates.push(unit);
     const radius = troopRadius(unit, view.scale);
     const stats = units[unit.kind];
     if (picked && unit.path[unit.waypoint] && paintedPaths++ < 16) {
@@ -387,6 +433,7 @@ export function render(
   }
   ctx.globalAlpha = 1;
   drawArrow(ctx, routePreview, view.scale, true);
+  drawStrengthLabels(ctx, labelCandidates, selected, view);
   ctx.restore();
   ctx.textAlign = "start"; ctx.textBaseline = "alphabetic";
   if (box) {

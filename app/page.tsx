@@ -323,7 +323,7 @@ const games = [
     eyebrow: "STRATEJİ · BOT & ONLINE",
     name: "Dot Front",
     description:
-      "50 şehirli cephede birliklerini yönet. Her şehrin 60 saniyede bir asker üretsin; botla veya oda koduyla arkadaşınla savaş.",
+      "50 şehirli cephede 10.000 kişilik ordularını yönet. Her şehirden yeni ordular çıkar; botla veya oda koduyla arkadaşınla savaş.",
     tags: ["Her şehirde üretim", "Oda koduyla oyna", "Yerel kayıt"],
     action: "Cepheye git",
   },

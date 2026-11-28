@@ -10,6 +10,7 @@ import { bindInput, clampCamera, MAX_ZOOM } from "./input";
 import { landscapeCanvas, render, resize, viewOf } from "./render";
 import type { Box, Camera } from "./render";
 import { isSupplied } from "./territory";
+import { manpower, soldiersInUnit } from "./manpower";
 
 export const GAME_SPEEDS = [0.5, 1, 2, 3] as const;
 const MAX_STEPS_PER_FRAME = 6;
@@ -45,6 +46,7 @@ export function summary(match: Match, picked: Set<number>, cityId: number | null
     playerPocketed: match.units.filter(unit => unit.team === localTeam && unit.pocketed).length,
     producingCities: producing.length, nextProductionIn,
     selectedUnits: selected.length, selectedStance,
+    manpower: manpower(match), selectedSoldiers: selected.reduce((total, unit) => total + soldiersInUnit(unit), 0),
     selectedPocketed: pocketed.length,
     selectedPocketGrace: pocketed.length ? Math.max(0, Math.ceil(POCKET_GRACE - Math.max(...pocketed.map(unit => unit.pocketTime)))) : null,
     routeDrawing: routeDrawing && selected.length > 0,

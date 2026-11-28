@@ -13,6 +13,8 @@ export const WIDTH = 144;
 export const HEIGHT = 90;
 /** Each owned supplied city independently recruits once per simulation minute. */
 export const CITY_PRODUCTION = 60;
+/** Personnel represented by one full-strength army dot; not extra entities. */
+export const SOLDIERS_PER_ARMY = 10_000;
 export const FRONT_INTERVAL = 1;
 export const FRONT_ATTACK_ADVANCE = 5;
 export const FRONT_REPLAN_DISTANCE = 0.75;

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { TestContext } from "node:test";
-import { HEIGHT, WIDTH } from "./config";
+import { HEIGHT, WIDTH, units } from "./config";
 import { createMatch } from "./engine";
 import { colors, landscapeCanvas, render, resize, toWorld, viewOf } from "./render";
 import { getMap } from "./terrain";
@@ -172,4 +172,37 @@ test("restored maps replace stale landscape inputs instead of painting the previ
   render(canvas.element(), null, stale, viewOf(960, 600, { x: 72, y: 45, zoom: 1 }), match, new Set(), null, [], null);
   const first = canvas.calls.find(call => call.method === "drawImage")!;
   assert.equal((first.args[0] as HTMLCanvasElement).dataset.dotFrontMap, "valley");
+});
+
+test("detail labels display surviving strength, update after damage and omit offscreen armies", t => {
+  environment(t);
+  const match = createMatch("normal", "army-strength", false, "plains"), canvas = new Canvas(), mini = new Canvas();
+  const first = { ...match.units[0], x: 68, y: 40 }, second = { ...match.units[1], x: 76, y: 50, hp: units.light.hp / 2 };
+  const offscreen = { ...match.units[2], x: 1, y: 1 };
+  match.units = [first, second, offscreen];
+  const terrain = landscapeCanvas(match.map), view = viewOf(960, 600, { x: 72, y: 45, zoom: 3 });
+  const paint = () => render(canvas.element(), mini.element(), terrain, view, match, new Set(), null, [], null);
+  paint();
+  const labels = canvas.calls.filter(call => call.method === "fillText");
+  assert.deepEqual(labels.map(call => call.args[0]), ["10.000", "5.000"]);
+  assert.ok(labels.every(call => call.fill === "#ffffff"));
+  assert.equal(mini.calls.some(call => call.method === "fillText"), false, "the overview remains label-free");
+  canvas.calls = []; first.hp = units.light.hp / 4; paint();
+  assert.deepEqual(canvas.calls.filter(call => call.method === "fillText").map(call => call.args[0]), ["2.500", "5.000"]);
+});
+
+test("zoomed-out maps show only selected strength labels and selected armies win overlap conflicts", t => {
+  environment(t);
+  const match = createMatch("normal", "army-label-priority", false, "plains"), canvas = new Canvas();
+  const ordinary = { ...match.units[0], x: 72, y: 45 }, picked = { ...match.units[1], x: 72.2, y: 45, hp: units.light.hp / 2 };
+  match.units = [ordinary, picked];
+  const terrain = landscapeCanvas(match.map), overview = viewOf(960, 600, { x: 72, y: 45, zoom: 1 });
+  render(canvas.element(), null, terrain, overview, match, new Set(), null, [], null);
+  assert.equal(canvas.calls.some(call => call.method === "fillText"), false);
+  canvas.calls = [];
+  render(canvas.element(), null, terrain, overview, match, new Set([picked.id]), null, [], null);
+  assert.deepEqual(canvas.calls.filter(call => call.method === "fillText").map(call => call.args[0]), ["5.000"]);
+  canvas.calls = [];
+  render(canvas.element(), null, terrain, viewOf(960, 600, { x: 72, y: 45, zoom: 3 }), match, new Set([picked.id]), null, [], null);
+  assert.deepEqual(canvas.calls.filter(call => call.method === "fillText").map(call => call.args[0]), ["5.000"], "selected strength takes priority over a nearby unselected label");
 });

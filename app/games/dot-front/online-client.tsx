@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { GAME_SPEEDS, recovery, startBattle, summary, timeLabel } from "./battle";
 import type { Summary } from "./battle";
+import { BattleHud, ManpowerScoreboard } from "./battle-hud";
+import { formatSoldiers } from "./manpower";
 import { CITY_PRODUCTION } from "./config";
 import { copy } from "./copy";
 import type { Match } from "./engine";
@@ -307,12 +309,7 @@ export default function OnlineClient({ initialMap, sound, onSoundChange, onBack 
         <span role="status">{room.status === "finished" ? copy.onlineFinished : connectionLabel}</span>
         <button disabled={leaving} onClick={() => void leave()}>{copy.leaveRoom}</button>
       </div>
-      <header className={styles.hud}>
-        <span className={styles.blue}>{copy.player} <b>{hud.blueCities}</b> {copy.cities} · <b>{hud.blue}</b> {copy.soldiers}</span>
-        <span className={styles.red}>{copy.enemy} <b>{hud.redCities}</b> {copy.cities} · <b>{hud.red}</b> {copy.soldiers}</span>
-        <span>{copy.supply} <b>{hud.logistics.used}/{hud.logistics.capacity}</b></span>
-        <time>{timeLabel(hud.time)}</time>
-      </header>
+      <BattleHud hud={hud} markLocalTeam />
       {hud.shortage > 0 && <p className={styles.warning} role="status">{copy.supplyWarning} · {recovery(hud.shortage) ? `${recovery(hud.shortage)} ${copy.seconds}` : copy.attrition}</p>}
       {hud.playerPocketed > 0 && <p className={styles.pocketWarning} role="status"><strong>{hud.playerPocketed} {copy.pocketWarning}.</strong> {copy.pocketRescue}</p>}
       <div className={styles.ordersPanel} aria-label={copy.orders}>
@@ -350,7 +347,8 @@ export default function OnlineClient({ initialMap, sound, onSoundChange, onBack 
             {hud.result ? <>
               <p>{copy.time}: {timeLabel(hud.time)}</p>
               <p>{hud.result === "draw" ? copy.draw : `${copy.winningSide}: ${match.result === "won" ? copy.player : copy.enemy}`}</p>
-              <p>{copy.remainingArmies}: {copy.player} {hud.blue} · {copy.enemy} {hud.red}</p>
+              <ManpowerScoreboard hud={hud} markLocalTeam result />
+              <p>{copy.remainingArmies}: {copy.player} {hud.manpower.blue.formations} · {copy.enemy} {hud.manpower.red.formations}</p>
               <p>{copy.cities}: {copy.player} {hud.blueCities} · {copy.enemy} {hud.redCities}</p>
             </> : <>
               {!connected && <p>{connectionMessage || copy.onlineReconnecting}</p>}
@@ -380,7 +378,8 @@ export default function OnlineClient({ initialMap, sound, onSoundChange, onBack 
         <button onClick={() => void fullscreen()}>{copy.full}</button>
       </div>
       <div className={styles.inspector}>
-        <span>{copy.selectedSoldiers} <b>{hud.selectedUnits}</b></span>
+        <span>{copy.selectedArmies} <b>{hud.selectedUnits}</b></span>
+        <span>{copy.selectedSoldiers} <b>{formatSoldiers(hud.selectedSoldiers)}</b></span>
         {hud.selectedStance && <span>{hud.selectedStance === "attack" ? copy.attackStance : hud.selectedStance === "defend" ? copy.defendStance : hud.selectedStance === "mixed" ? copy.mixedOrders : copy.manualOrders}</span>}
         <span>{copy.light} <b>{hud.light}</b> · {copy.heavy} <b>{hud.heavy}</b></span>
         {hud.selectedPocketed > 0 && <span className={styles.pocketStatus} role="status">{copy.pocketed} <b>{hud.selectedPocketed}/{hud.selectedUnits}</b> · {hud.selectedPocketGrace ? `${copy.pocketGrace} ${hud.selectedPocketGrace} ${copy.seconds}` : copy.pocketDamage}</span>}

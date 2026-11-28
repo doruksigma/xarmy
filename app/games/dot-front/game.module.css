@@ -70,7 +70,22 @@
 .wide { position: fixed; inset: 0; overflow: auto; z-index: 100; border-radius: 0; }
 .arena:fullscreen { border-radius: 0; overflow: auto; }
 .hud, .toolbar, .inspector { display: flex; align-items: center; flex-wrap: wrap; gap: 0.45rem 0.8rem; padding: 0.55rem; }
-.hud { justify-content: space-between; font-size: 0.94rem; font-variant-numeric: tabular-nums; }
+.hud { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 0.6rem; font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+.hudDetails { display: flex; flex-wrap: wrap; align-content: start; align-items: center; gap: 0.4rem 1rem; min-width: 0; padding-block: 0.25rem; }
+.hudDetails time { color: var(--accent); font-weight: 750; }
+.scoreboard { margin-inline-start: auto; max-width: 100%; border: 1px solid #4d6267; border-radius: 0.6rem; border-spacing: 0; background: #0e1c24; color: var(--paper); font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+.scoreboard th, .scoreboard td { padding: 0.3rem 0.5rem; text-align: right; white-space: nowrap; }
+.scoreboard th:first-child { text-align: left; }
+.scoreboard thead th { color: #b6c8ce; font-weight: 550; font-size: 0.7rem; border-bottom: 1px solid var(--line); }
+.scoreboard tbody th { font-weight: 650; }
+.scoreboard tbody td { font-weight: 800; }
+.scoreboard tbody tr + tr > * { border-top: 1px solid #ffffff0c; }
+.sideLabel { display: inline-flex; align-items: center; gap: 0.3rem; }
+.blueMarker, .redMarker { width: 0.45rem; height: 0.45rem; flex: 0 0 0.45rem; background: #3700ff; box-shadow: 0 0 0 1px #d5e8ffb3; }
+.blueMarker { border-radius: 50%; }
+.redMarker { background: #ff0000; box-shadow: 0 0 0 1px #ffe0ddb3; }
+.youMarker { color: var(--accent); font-size: 0.6rem; font-weight: 600; }
+.resultScoreboard { width: 100%; margin: 0.2rem 0; }
 .ordersPanel { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; padding: 0.7rem; border-block: 1px solid var(--line); background: #122129; min-width: 0; }
 .ordersTitle { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.3rem 0.8rem; }
 .ordersTitle strong { color: var(--accent); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; }
@@ -105,8 +120,8 @@
 .arena > .note, .wide > .note { padding: 0 0.55rem 0.55rem; }
 .warning, .tutorial { padding: 0.3rem 0.55rem; color: #ffda99; background: #3c3024; font-size: 0.88rem; }
 .tutorial { color: #bde8fc; background: #20394a; }
-.shade { position: absolute; inset: 0; z-index: 2; display: grid; place-items: center; background: #0b161edb; }
-.dialog { display: grid; gap: 0.38rem; text-align: center; width: min(320px, 90%); padding: 0.65rem; background: #1b2b33; border: 1px solid var(--line); border-radius: 0.8rem; }
+.shade { position: absolute; inset: 0; z-index: 2; display: grid; place-items: center; overflow-y: auto; padding: 0.5rem; box-sizing: border-box; background: #0b161edb; }
+.dialog { display: grid; gap: 0.38rem; text-align: center; width: min(320px, 100%); max-height: 100%; overflow-y: auto; box-sizing: border-box; padding: 0.65rem; background: #1b2b33; border: 1px solid var(--line); border-radius: 0.8rem; }
 .onlineGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; margin-block: 1.25rem; }
 .onlineCard { display: grid; align-content: start; gap: 0.8rem; min-width: 0; padding: 1rem; border: 1px solid var(--line); border-radius: 0.7rem; background: #122129; }
 .onlineCard h2, .onlineCard p, .onlineCard button { margin: 0; }
@@ -129,7 +144,12 @@
   .mapGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.6rem; }
   .mapThumbnail { height: 90px; }
   .landing { grid-template-columns: 1fr; gap: 1rem; }
-  .hud { justify-content: flex-start; font-size: 0.8rem; gap: 0.35rem 0.6rem; }
+  .hud { font-size: 0.72rem; gap: 0.35rem; padding: 0.45rem; }
+  .hudDetails { flex-direction: column; align-items: flex-start; gap: 0.3rem; }
+  .scoreboard { font-size: 0.72rem; }
+  .scoreboard th, .scoreboard td { padding: 0.3rem 0.35rem; }
+  .scoreboard thead th { font-size: 0.65rem; }
+  .sideLabel { gap: 0.2rem; }
   .toolbar { gap: 0.35rem; }
   .toolbar button, .inspector button { font-size: 0.77rem; padding-inline: 0.45rem; }
   .ordersPanel { padding: 0.5rem; }

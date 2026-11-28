@@ -446,7 +446,6 @@ function fight(match: Match, index: UnitIndex, dt: number, flashes: Flash[]) {
   }
   for (const unit of match.units) {
     unit.hp -= damage.get(unit.id) ?? 0;
-    if (damage.has(unit.id) && unit.hp <= 0 && unit.team === 2) match.report.killed++;
   }
 }
 
@@ -528,8 +527,15 @@ function supplyAndBuild(match: Match, dt: number, captured: ReadonlySet<number>)
 }
 
 function removeDead(match: Match) {
-  match.report.fallen += match.units.filter((unit) => unit.hp <= 0 && unit.team === 1).length;
-  match.units = match.units.filter((unit) => unit.hp > 0);
+  const survivors: Unit[] = [];
+  for (const unit of match.units) {
+    if (unit.hp > 0) survivors.push(unit);
+    else if (unit.team === 1) match.report.fallen++;
+    else match.report.killed++;
+  }
+  // The removal is the only accounting boundary for combat, enclosure and
+  // either kind of attrition. Later cleanup passes cannot count this dot again.
+  match.units = survivors;
   const ids = new Set(match.units.map((unit) => unit.id));
   for (const unit of match.units) {
     if (unit.order.mode === "attack" && !ids.has(unit.order.target)) orderUnit(unit, { mode: "hold" }, match.map);
@@ -545,7 +551,6 @@ function takeEnclosures(match: Match, capturedCities: Set<number>) {
     const cell = territoryCell(unit), owner = cell >= 0 ? captured[cell] : 0;
     if (!owner || owner === unit.team || unit.hp <= 0) continue;
     unit.hp = 0;
-    if (unit.team === 2) match.report.killed++;
   }
   for (const city of match.cities) {
     const cell = territoryCell(city), owner = cell >= 0 ? captured[cell] : 0;
@@ -568,7 +573,6 @@ function updatePockets(match: Match, dt: number) {
     unit.pocketTime = previous + dt;
     const exposed = Math.max(0, unit.pocketTime - POCKET_GRACE) - Math.max(0, previous - POCKET_GRACE);
     unit.hp -= exposed * POCKET_DAMAGE;
-    if (unit.hp <= 0 && unit.team === 2) match.report.killed++;
   }
 }
 
