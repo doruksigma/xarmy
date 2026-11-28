@@ -1,10 +1,10 @@
 import { units } from "./config";
-import type { Kind, Point } from "./config";
+import type { Kind, Point, Team } from "./config";
 import type { Match, Unit } from "./engine";
 import { clearShot } from "./terrain";
 
 type SoundView = { width: number; height: number; x: number; y: number; scale: number };
-export type CombatSound = { kind: Kind; from: Point; impact?: Point };
+export type CombatSound = { kind: Kind; from: Point; impact?: Point; team: Team; to?: Point; targetId?: number };
 const clamp = (value: number, low: number, high: number) => Math.max(low, Math.min(high, value));
 const finitePoint = (point: Point) => Number.isFinite(point.x) && Number.isFinite(point.y);
 const copyPoint = (point: Point): Point => ({ x: point.x, y: point.y });
@@ -37,8 +37,10 @@ function likelyTarget(previous: Match, next: Match, before: Unit, after: Unit,
     // short snapshot interval; both endpoints are conservative available evidence.
     for (const [source, target] of [[after, current], [before, old]] as const) {
       if (!target || target.hp <= 0 || target.team === source.team || !finitePoint(target)) continue;
+      if ((source.kind === "artillery" || source.kind === "aircraft") && target.kind === "aircraft") continue;
       const squared = (target.x - source.x) ** 2 + (target.y - source.y) ** 2;
-      if (squared > rangeSquared || (found && squared >= found.distance) || !clearShot(source, target, next.map)) continue;
+      if (squared > rangeSquared || (found && squared >= found.distance) ||
+        (source.kind !== "aircraft" && target.kind !== "aircraft" && !clearShot(source, target, next.map))) continue;
       found = { id, point: copyPoint(target), distance: squared, removed: Boolean(old && !current) };
     }
     return found;
@@ -81,8 +83,9 @@ export function combatSoundsBetween(previous: Match, next: Match): readonly Comb
     const expected = Math.max(0, before.cooldown - delta);
     if (after.cooldown <= expected + .1) continue;
     const target = likelyTarget(previous, next, before, after, oldUnits, newUnits);
-    const event: CombatSound = { kind: after.kind, from: copyPoint(after) };
-    if (target && (after.kind === "heavy" || target.removed)) event.impact = copyPoint(target.point);
+    const event: CombatSound = { kind: after.kind, from: copyPoint(after), team: after.team };
+    if (target) { event.to = copyPoint(target.point); event.targetId = target.id; }
+    if (target && (after.kind !== "light" || target.removed)) event.impact = copyPoint(target.point);
     events.push(event);
     if (events.length >= MAX_EVENTS) break;
   }

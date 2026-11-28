@@ -57,6 +57,31 @@ test("the initial army commits separate offensive lanes while keeping distribute
   assert.ok(Math.max(...destinations.map((point) => point.y)) - Math.min(...destinations.map((point) => point.y)) > HEIGHT * 0.65);
 });
 
+test("infantry AI leaves rear artillery and aircraft orders to their dedicated automatic tactics", () => {
+  const match = createMatch("normal", "ai-support-orders", false, "plains");
+  const artillery = soldier(match.nextId++, 2, 120.5, 30.5, "artillery");
+  const aircraft = soldier(match.nextId++, 2, 116.5, 31.5, "aircraft");
+  artillery.order = { mode: "move", point: { x: 100.5, y: 30.5 } };
+  aircraft.order = { mode: "attack", target: match.units.find(unit => unit.team === 1)!.id };
+  match.units.push(artillery, aircraft);
+  const before = structuredClone([artillery, aircraft]);
+  match.nextAi = 0; decide(match);
+  assert.deepEqual([artillery, aircraft], before);
+  assert.ok(match.units.some(unit => unit.team === 2 && unit.kind === "light" && unit.stance === "manual"));
+  match.units = [artillery, aircraft]; match.nextAi = 0;
+  decide(match); assert.deepEqual([artillery, aircraft], before, "support-only survivors are not sent to capture cities");
+});
+
+test("an aircraft passing over a city does not divert infantry from its ground operation", () => {
+  const baseline = createMatch("normal", "ai-air-threat", false, "plains");
+  const airborne = structuredClone(baseline);
+  const city = airborne.cities.find(item => item.owner === 2)!;
+  airborne.units.push(soldier(airborne.nextId++, 1, city.x, city.y, "aircraft"));
+  baseline.nextAi = airborne.nextAi = 0;
+  decide(baseline); decide(airborne);
+  assert.deepEqual(airborne.units.filter(unit => unit.team === 2), baseline.units.filter(unit => unit.team === 2));
+});
+
 test("equal local forces attack together and retain a shared live target across decisions", () => {
   const red = [soldier(1, 2, 78.5, 8.5), soldier(2, 2, 78.5, 10.5), soldier(3, 2, 80.5, 9.5)];
   const blue = [soldier(11, 1, 74.5, 8.5), soldier(12, 1, 74.5, 10.5), soldier(13, 1, 74.5, 12.5)];
@@ -180,7 +205,7 @@ test("tutorial AI waits for the interactive lessons to finish", () => {
   match.tutorial = 5; decide(match); assert.ok(match.nextAi > match.elapsed);
 });
 
-test("Normal AI attacks and occupies land by four minutes, then converts pressure into city gains by five", () => {
+test("Normal AI attacks and occupies land by four minutes, then converts support-backed pressure into city gains by six", () => {
   let cityGains = 0;
   for (const map of mapIds) {
     const match = createMatch("normal", `ai-${map}`, false, map);
@@ -193,13 +218,15 @@ test("Normal AI attacks and occupies land by four minutes, then converts pressur
     assert.ok(shots >= 25, `${map}: actual shots fired, not only an attack flag`);
     assert.ok(match.report.fallen >= 3, `${map}: attacks cause real blue casualties`);
     assert.ok(occupation >= 80, `${map}: physical enemy-land occupation advances`);
-    assert.ok(match.units.every(unit => passable(unit, map)), `${map}: all movement stays on legal terrain`);
+    assert.ok(match.units.every(unit => unit.kind === "aircraft"
+      ? unit.x >= 0 && unit.y >= 0 && unit.x < 144 && unit.y < HEIGHT
+      : passable(unit, map)), `${map}: ground remains on terrain and aircraft remain inside the world`);
     assert.ok(match.units.every(unit => unit.hp <= units[unit.kind].hp), `${map}: shared health limits`);
     assert.equal("commanders" in match, false);
-    // Starting armor and forward armor recruitment strengthen both defenses.
-    // Keep the four-minute activity checks unchanged, then allow one more slow
-    // minute for the real approach march and the 24-second city capture itself.
-    advance(match, 60);
+    // Both sides now reinforce with armor, rear batteries and aircraft. Keep
+    // the four-minute activity checks, then allow two more slow minutes for
+    // contested approaches and the 24-second city capture itself.
+    advance(match, 120);
     cityGains += Math.max(0, match.cities.filter(city => city.owner === 2).length - 25);
   }
   assert.ok(cityGains >= 4, "sustained attacks also turn into city captures rather than permanent front-line stalling");
@@ -287,12 +314,16 @@ test("isolated and neutral cities receive no AI production edits", () => {
 });
 
 test("all four AI cities produce once at their own minute boundary", () => {
-  const army = Array.from({ length: 8 }, (_, index) => soldier(index + 1, 2, 110.5, 10.5 + index * 2));
+  // Keep capacity available for the separate pair of automatic support units
+  // as well as this city wave; exhausted supply has its own blocking tests.
+  const army = Array.from({ length: 4 }, (_, index) => soldier(index + 1, 2, 110.5, 10.5 + index * 2));
   const match = fixture(army, [city(0, 2, 105.5, 5.5), city(1, 2, 115.5, 25.5),
     city(2, 2, 125.5, 45.5), city(3, 2, 135.5, 65.5), city(4, 1, 15.5, 75.5)]);
   advance(match, CITY_PRODUCTION - STEP);
-  assert.equal(match.units.filter(unit => unit.team === 2).length, 8);
+  assert.equal(match.units.filter(unit => unit.team === 2).length, 4);
   advance(match, STEP);
-  assert.equal(match.units.filter(unit => unit.team === 2).length, 12);
+  assert.equal(match.units.filter(unit => unit.team === 2 &&
+    (unit.kind === "light" || unit.kind === "heavy")).length, 8,
+  "all four independent city recruits arrive alongside the separate support wave");
   assert.ok(match.cities.filter(city => city.owner === 2).every(city => city.build?.elapsed === 0));
 });

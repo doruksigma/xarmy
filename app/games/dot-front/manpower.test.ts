@@ -17,8 +17,8 @@ test("each side starts with 250,000 soldiers represented by only 25 army entitie
   assert.equal(formatSoldiers(250_000), "250.000");
 });
 
-test("light and heavy armies both contain 10,000 people while retaining different combat durability", () => {
-  for (const kind of ["light", "heavy"] as const) {
+test("every army type represents 10,000 personnel while retaining different combat durability", () => {
+  for (const kind of ["light", "heavy", "artillery", "aircraft"] as const) {
     assert.equal(soldiersInUnit({ kind, hp: units[kind].hp }), 10_000);
     assert.equal(soldiersInUnit({ kind, hp: units[kind].hp / 2 }), 5_000);
     assert.equal(soldiersInUnit({ kind, hp: .000001 }), 1);
@@ -56,7 +56,7 @@ test("saved games and online packets preserve both partial and complete casualty
   for (const restored of [migrateMatch(match), unpackMatch(packMatch(match))]) {
     assert.ok(restored);
     assert.deepEqual(manpower(restored), expected);
-    assert.equal(restored.version, 6, "display strength needs no save-schema migration");
+    assert.equal(restored.version, 7, "the economy upgrade preserves personnel accounting");
   }
 });
 

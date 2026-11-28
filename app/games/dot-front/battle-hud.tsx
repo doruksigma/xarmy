@@ -5,6 +5,9 @@ import { formatSoldiers } from "./manpower";
 import styles from "./game.module.css";
 
 type ScoreboardProps = { hud: Summary; markLocalTeam?: boolean; result?: boolean };
+const moneyFormat = new Intl.NumberFormat("tr-TR", { maximumFractionDigits: 1 });
+const rateFormat = new Intl.NumberFormat("tr-TR", { maximumFractionDigits: 2 });
+const rate = (value: number) => rateFormat.format(Math.abs(value));
 
 export function ManpowerScoreboard({ hud, markLocalTeam = false, result = false }: ScoreboardProps) {
   return <table className={`${styles.scoreboard}${result ? ` ${styles.resultScoreboard}` : ""}`}
@@ -36,7 +39,39 @@ export function BattleHud({ hud, markLocalTeam = false }: Omit<ScoreboardProps, 
       <span>{copy.enemy}: <b>{hud.redCities}</b> {copy.cities}</span>
       <span>{copy.supply}: <b>{hud.logistics.used}/{hud.logistics.capacity}</b></span>
       <time aria-label={`${copy.time}: ${timeLabel(hud.time)}`}>{timeLabel(hud.time)}</time>
+      <div className={styles.economyRow} role="group" aria-label={copy.economy}>
+        <span className={hud.economy.shortage > 0 ? styles.budgetEmpty : styles.money}>
+          {copy.money}: <b>{moneyFormat.format(hud.economy.money)}</b>
+        </span>
+        <span>{copy.income} <b>+{rate(hud.economy.income)}</b>{copy.perSecond}</span>
+        <span>{copy.upkeep} <b>−{rate(hud.economy.upkeep)}</b>{copy.perSecond}</span>
+        <span className={hud.economy.net < 0 ? styles.budgetEmpty : undefined}>
+          {copy.netIncome} <b>{hud.economy.net < 0 ? "−" : "+"}{rate(hud.economy.net)}</b>{copy.perSecond}
+        </span>
+      </div>
     </div>
     <ManpowerScoreboard hud={hud} markLocalTeam={markLocalTeam} />
+    {hud.economy.shortage > 0 && <p className={styles.budgetWarning} role="status">{copy.budgetWarning}</p>}
   </header>;
+}
+
+export function SupportHud({ hud, onSourceClick, canPan = false }: Pick<ScoreboardProps, "hud"> & {
+  onSourceClick?(): void; canPan?: boolean;
+}) {
+  const next = (seconds: number) => seconds > 0 ? `${Math.ceil(seconds)} ${copy.seconds}` : copy.supportReady;
+  return <section className={styles.supportBar} aria-label={copy.support}>
+    <div className={styles.supportCounts} role="group" aria-label={copy.supportCounts}>
+      <strong>{copy.support}</strong>
+      <span>{copy.artillery}: <b>{hud.armyKinds.artillery}</b> · {copy.nextSupport}: <b>{next(hud.support.artilleryIn)}</b></span>
+      <span>{copy.aircraft}: <b>{hud.armyKinds.aircraft}</b> · {copy.nextSupport}: <b>{next(hud.support.aircraftIn)}</b></span>
+      <span>{copy.supportCity}: <b>{hud.support.cityId === null ? copy.supportNoCity : copy.placeNames[hud.support.cityId]}</b></span>
+      {onSourceClick && <button type="button" disabled={!canPan || hud.support.cityId === null}
+        onClick={onSourceClick}>{copy.supportLocate}</button>}
+    </div>
+    <p>{hud.support.blocked ? copy.supportWaiting : copy.supportRate}</p>
+    <details className={styles.supportInfo}>
+      <summary>{copy.supportDetails}</summary>
+      <p>{copy.artilleryRules}</p><p>{copy.aircraftRules}</p><p>{copy.supportRules}</p><p>{copy.economyRules}</p>
+    </details>
+  </section>;
 }

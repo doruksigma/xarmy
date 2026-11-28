@@ -1,10 +1,11 @@
-import { CAPTURE, CITY_PRODUCTION, FRONT_ATTACK_ADVANCE, FRONT_ATTACK_COMMIT_DISTANCE, FRONT_ATTACK_SEARCH, FRONT_INTERVAL, FRONT_REPLAN_DISTANCE, MAX_ROUTE_POINTS, GRACE, HEIGHT, INITIAL_ARMY_SIZE, INITIAL_HEAVY_ARMIES, INITIAL_HEAVY_CITIES, POCKET_DAMAGE, POCKET_FIREPOWER, POCKET_GRACE, POCKET_SPEED, RADIUS, SUPPLY, WIDTH, dist, units } from "./config";
-import type { Difficulty, Kind, Owner, Point, Team } from "./config";
+import { CAPTURE, CITY_PRODUCTION, FRONT_ATTACK_ADVANCE, FRONT_ATTACK_COMMIT_DISTANCE, FRONT_ATTACK_SEARCH, FRONT_INTERVAL, FRONT_REPLAN_DISTANCE, MAX_ROUTE_POINTS, GRACE, HEIGHT, INITIAL_ARMY_SIZE, INITIAL_HEAVY_ARMIES, INITIAL_HEAVY_CITIES, POCKET_DAMAGE, POCKET_FIREPOWER, POCKET_GRACE, POCKET_SPEED, RADIUS, SUPPLY, WIDTH, STARTING_MONEY, SUPPORT_PRODUCTION, ARTILLERY_BLAST_RADIUS, ARTILLERY_TARGET_LIMIT, ARTILLERY_REAR_DISTANCE, AIRCRAFT_BLAST_RADIUS, AIRCRAFT_TARGET_LIMIT, AIRCRAFT_DECAY, dist, units } from "./config";
+import type { Difficulty, GroundKind, Kind, Owner, Point, Team } from "./config";
 import { clearShot, getMap, nearestOpen, passable, route, tileAt } from "./terrain";
 import type { MapId } from "./terrain";
 import { frontDirection, frontSlots } from "./front";
 import { advanceTerritory, createTerritory, isSupplied, resolveEnclosures, suppliedCells, territoryCell, territoryOwner, TERRITORY_COLS, TERRITORY_ROWS, TERRITORY_SPACING } from "./territory";
 import type { Territory } from "./territory";
+import { advanceEconomy } from "./economy";
 
 export type Order =
   | { mode: "hold" }
@@ -19,25 +20,30 @@ export type Unit = Point & {
 };
 export type City = Point & {
   id: number; owner: Owner; capturing: Owner; progress: number; rally: Point | null;
-  build: { kind: Kind; elapsed: number } | null; repeat: boolean;
+  build: { kind: GroundKind; elapsed: number } | null; repeat: boolean;
 };
 export type Stance = "attack" | "defend";
 export type Result = "won" | "lost" | "draw";
+export type EconomyState = { money: number; shortage: number };
+export type SupportState = { artillery: number; aircraft: number };
 export type Match = {
-  version: 6; id: string; difficulty: Difficulty; map: MapId; elapsed: number; nextId: number; territory: Territory;
+  version: 7; id: string; difficulty: Difficulty; map: MapId; elapsed: number; nextId: number; territory: Territory;
   units: Unit[]; cities: City[]; shortage: [number, number]; nextAi: number;
   result: Result | null; report: { captured: number; killed: number; fallen: number };
   tutorial: number | null;
+  economy: [EconomyState, EconomyState]; support: [SupportState, SupportState];
 };
 export type Flash = { from: Point; to: Point; team: Team; kind: Kind; targetId: number; expires: number };
 
 export function createMatch(difficulty: Difficulty, id: string, tutorial: boolean, map: MapId = "valley"): Match {
   const match: Match = {
-    version: 6, id, difficulty, map, elapsed: 0, nextId: 1, territory: createTerritory(map),
+    version: 7, id, difficulty, map, elapsed: 0, nextId: 1, territory: createTerritory(map),
     units: [], cities: getMap(map).cities.map((city, id) => ({
       ...city, id, capturing: 0, progress: 0, rally: null,
       build: city.owner ? { kind: "light", elapsed: 0 } : null, repeat: !!city.owner,
     })),
+    economy: [{ money: STARTING_MONEY, shortage: 0 }, { money: STARTING_MONEY, shortage: 0 }],
+    support: [{ artillery: 0, aircraft: 0 }, { artillery: 0, aircraft: 0 }],
     shortage: [0, 0], nextAi: tutorial ? 45 : 2, result: null,
     report: { captured: 0, killed: 0, fallen: 0 }, tutorial: tutorial ? 0 : null,
   };
@@ -100,10 +106,93 @@ function spawn(match: Match, city: City, kind: Kind): Unit | undefined {
 
 /** Compatibility helper: nearest friendly slot on the living-army front. */
 export function frontlinePoint(match: Match, team: Team, origin: Point): Point {
-  const count = Math.max(INITIAL_ARMY_SIZE, match.units.filter((unit) => unit.team === team && unit.hp > 0).length);
+  const count = Math.max(INITIAL_ARMY_SIZE, match.units.filter((unit) => unit.team === team && unit.hp > 0 && (unit.kind === "light" || unit.kind === "heavy")).length);
   const slots = frontSlots(match, team, count);
   return slots.reduce((best, point) => dist(point, origin) < dist(best, origin) ? point : best,
     slots[0] ?? nearestOpen(origin, match.map));
+}
+
+const flightPoint = (point: Point): Point => ({
+  x: Math.max(0, Math.min(WIDTH - .001, point.x)), y: Math.max(0, Math.min(HEIGHT - .001, point.y)),
+});
+
+type RearCities = { map: MapId; revision: number; cities: City[]; owners: string; ranked: [{ city: City; depth: number }[], { city: City; depth: number }[]] };
+const rearCities = new WeakMap<Match, RearCities>();
+/** Safe connected staging cities sit behind the front, close enough that slow
+ * artillery reaches useful firing positions promptly. Rows rotate each minute.
+ * Topology/ranking is shared with the HUD; live enemy proximity is rechecked. */
+export function supportSourceCity(match: Match, team: Team): City | undefined {
+  const owners = match.cities.map(city => `${city.id}:${city.owner}:${city.x}:${city.y}`).join("|");
+  let cached = rearCities.get(match);
+  if (!cached || cached.map !== match.map || cached.revision !== match.territory.revision ||
+    cached.cities !== match.cities || cached.owners !== owners) {
+    const ranked = ([1, 2] as const).map(side => {
+      const slots = frontSlots(match, side, INITIAL_ARMY_SIZE);
+      const cities = match.cities.filter(city => city.owner === side && isSupplied(match, side, city));
+      const scored = cities.map(city => ({ city, depth: slots.reduce((best, slot) => Math.min(best, dist(city, slot)), Infinity) }))
+        .filter(item => item.depth >= ARTILLERY_REAR_DISTANCE)
+        .sort((a, b) => a.depth - b.depth || a.city.id - b.city.id);
+      return scored;
+    }) as RearCities["ranked"];
+    cached = { map: match.map, revision: match.territory.revision, cities: match.cities, owners, ranked };
+    rearCities.set(match, cached);
+  }
+  const safe = cached.ranked[team - 1].filter(({ city }) => !match.units.some(unit =>
+    unit.team !== team && unit.hp > 0 && dist(unit, city) < 6));
+  if (!safe.length) return;
+  const cities = safe.filter(item => item.depth <= safe[0].depth + 2);
+  return cities[Math.floor((match.elapsed + 1e-6) / SUPPORT_PRODUCTION) % cities.length].city;
+}
+
+function buildSupport(match: Match, dt: number, captured: ReadonlySet<number>) {
+  for (const team of [1, 2] as const) {
+    const source = supportSourceCity(match, team), clocks = match.support[team - 1];
+    if (!source || captured.has(source.id)) continue;
+    const logistics = supply(match, team);
+    let used = logistics.used;
+    for (const kind of ["artillery", "aircraft"] as const) {
+      clocks[kind] = Math.min(SUPPORT_PRODUCTION, clocks[kind] + dt);
+      if (clocks[kind] + 1e-6 < SUPPORT_PRODUCTION) continue;
+      clocks[kind] = SUPPORT_PRODUCTION;
+      if (used + units[kind].supply > logistics.capacity || match.units.length >= 600) continue;
+      const unit = makeUnit(match, team, kind, openSpawn(match, source, team));
+      // A ground city's rally belongs to its infantry, not to automatic support.
+      unit.nextOrder = match.elapsed;
+      clocks[kind] = 0;
+      used += units[kind].supply;
+    }
+  }
+}
+
+function autoSupport(match: Match) {
+  for (const unit of match.units) {
+    if (unit.hp <= 0 || unit.stance === "manual" || (unit.kind !== "artillery" && unit.kind !== "aircraft") ||
+      match.elapsed + 1e-6 < unit.nextOrder) continue;
+    unit.nextOrder = match.elapsed + 3;
+    let goal: Point | undefined;
+    if (unit.kind === "artillery") {
+      const front = frontlinePoint(match, unit.team, unit), direction = frontDirection(match, unit.team, front);
+      for (let offset = ARTILLERY_REAR_DISTANCE; offset <= ARTILLERY_REAR_DISTANCE + 6 && !goal; offset += 2) {
+        for (const lateral of [0, -2, 2, -4, 4]) {
+          const candidate = nearestOpen({ x: front.x - direction.x * offset - direction.y * lateral,
+            y: front.y - direction.y * offset + direction.x * lateral }, match.map);
+          if (isSupplied(match, unit.team, candidate) && dist(candidate, front) >= ARTILLERY_REAR_DISTANCE - 1) { goal = candidate; break; }
+        }
+      }
+      goal ??= supportSourceCity(match, unit.team);
+    } else {
+      const targets = match.units.filter(other => other.team !== unit.team && other.kind !== "aircraft" && other.hp > 0)
+        .sort((a, b) => dist(unit, a) - dist(unit, b) || a.id - b.id);
+      const target = targets[0] ?? frontlinePoint(match, unit.team, unit);
+      const phase = (Math.floor(match.elapsed / 6) + unit.id) % 4;
+      goal = flightPoint({ x: target.x + (phase === 0 ? 2.4 : phase === 2 ? -2.4 : 0),
+        y: target.y + (phase === 1 ? 2.4 : phase === 3 ? -2.4 : 0) });
+    }
+    if (!goal) continue;
+    if (unit.order.mode === "move" && dist(unit.order.point, goal) <= FRONT_REPLAN_DISTANCE) continue;
+    if (dist(unit, goal) < .4) continue;
+    orderUnit(unit, { mode: "move", point: goal }, match.map);
+  }
 }
 
 function copyOrder(order: Order): Order {
@@ -128,9 +217,11 @@ export function commandUnit(match: Match, id: number, order: Order): void {
   if (match.result) return;
   const unit = match.units.find((item) => item.id === id && item.hp > 0);
   if (!unit || !validOrder(match, unit.team, order)) return;
+  if ((unit.kind === "artillery" || unit.kind === "aircraft") && order.mode === "attack" &&
+    match.units.find(target => target.id === order.target)?.kind === "aircraft") return;
   unit.stance = "manual";
   unit.nextOrder = match.elapsed + FRONT_INTERVAL;
-  orderUnit(unit, order.mode === "move" ? { mode: "move", point: nearestOpen(order.point, match.map) } : order, match.map);
+  orderUnit(unit, order.mode === "move" ? { mode: "move", point: unit.kind === "aircraft" ? flightPoint(order.point) : nearestOpen(order.point, match.map) } : order, match.map);
 }
 
 /** Apply a stance in one batch, allocating the whole side once rather than per click. */
@@ -184,7 +275,8 @@ function autoFront(match: Match, forceTeam?: Team) {
     // Existing destinations preserve lane order. New troops enter beside the
     // nearest existing lane instead of moving the whole line toward their city.
     const lane = (unit: Unit) => unit.order.mode === "move" ? unit.order.point.y : unit.y;
-    const members = match.units.filter(unit => unit.team === team && unit.hp > 0 && unit.stance !== "manual")
+    const members = match.units.filter(unit => unit.team === team && unit.hp > 0 && unit.stance !== "manual" &&
+      (unit.kind === "light" || unit.kind === "heavy"))
       .sort((a, b) => lane(a) - lane(b) || a.id - b.id);
     if (!members.length || (forceTeam === undefined && !members.some(unit => match.elapsed + 1e-6 >= unit.nextOrder))) continue;
     const slots = frontSlots(match, team, members.length), occupied = new Set<string>();
@@ -219,7 +311,7 @@ function planRouteSegment(unit: Unit, map: MapId): boolean {
   // lock the simulation or shortcut later reachable drawn waypoints.
   let attempts = 0;
   while (unit.order.next < unit.order.points.length && attempts++ < MAX_ROUTE_POINTS) {
-    const goal = nearestOpen(unit.order.points[unit.order.next], map);
+    const goal = unit.kind === "aircraft" ? flightPoint(unit.order.points[unit.order.next]) : nearestOpen(unit.order.points[unit.order.next], map);
     if (dist(unit, goal) < 1e-7) { unit.order.next++; continue; }
     unit.path = route(unit, goal, unit.kind, map);
     unit.waypoint = 0;
@@ -231,7 +323,7 @@ function planRouteSegment(unit: Unit, map: MapId): boolean {
 }
 
 export function orderUnit(unit: Unit, order: Order, map: MapId = "valley") {
-  unit.order = copyOrder(order);
+  unit.order = copyOrder(unit.kind === "aircraft" && order.mode === "move" ? { mode: "move", point: flightPoint(order.point) } : order);
   unit.waypoint = 0;
   unit.replan = 0;
   unit.path = order.mode === "move" ? route(unit, order.point, unit.kind, map) : [];
@@ -241,6 +333,12 @@ export function orderUnit(unit: Unit, order: Order, map: MapId = "valley") {
 export function send(group: Unit[], point: Point, map: MapId = "valley") {
   if (!group.length) return;
   for (const unit of group) unit.stance = "manual";
+  const aircraft = group.filter(unit => unit.kind === "aircraft");
+  for (let index = 0; index < aircraft.length; index++) {
+    orderUnit(aircraft[index], { mode: "move", point: flightPoint({ x: point.x + index % 3, y: point.y + Math.floor(index / 3) }) }, map);
+  }
+  group = group.filter(unit => unit.kind !== "aircraft");
+  if (!group.length) return;
   const slots = [nearestOpen(point, map)];
   for (let radius = 1; slots.length < group.length && radius < 12; radius++) {
     const origin = slots[0];
@@ -334,7 +432,7 @@ export function canTraverse(from: Point, to: Point, map: MapId = "valley"): bool
 
 function walk(unit: Unit, dt: number, map: MapId) {
   const stats = units[unit.kind];
-  const speed = stats.speed * (tileAt(unit, map) === "forest" ? stats.forest : 1) * (unit.pocketed ? POCKET_SPEED : 1);
+  const speed = unit.kind === "aircraft" ? stats.speed : stats.speed * (tileAt(unit, map) === "forest" ? stats.forest : 1) * (unit.pocketed ? POCKET_SPEED : 1);
   let remaining = speed * dt;
   while (remaining > 0) {
     const point = unit.path[unit.waypoint];
@@ -351,7 +449,7 @@ function walk(unit: Unit, dt: number, map: MapId) {
     if (length < 1e-9) { unit.waypoint++; continue; }
     const travel = Math.min(remaining, length);
     const next = { x: unit.x + (point.x - unit.x) * travel / length, y: unit.y + (point.y - unit.y) * travel / length };
-    if (!canTraverse(unit, next, map)) {
+    if (unit.kind !== "aircraft" && !canTraverse(unit, next, map)) {
       // Soft separation or an old saved waypoint may change the initial
       // approach. Rebuild through the current tile center rather than teleport.
       const goal = unit.order.mode === "move" ? unit.order.point :
@@ -376,7 +474,7 @@ function separate(match: Match, dt: number) {
   const index = new UnitIndex(match.units);
   const displacement = new Map<number, number>();
   for (const unit of match.units) for (const other of index.nearby(unit, 1.2)) {
-    if (other.id <= unit.id) continue;
+    if (other.id <= unit.id || unit.kind === "aircraft" || other.kind === "aircraft") continue;
     let dx = unit.x - other.x;
     let dy = unit.y - other.y;
     let length = Math.hypot(dx, dy);
@@ -412,49 +510,98 @@ function fight(match: Match, index: UnitIndex, dt: number, flashes: Flash[]) {
   const damage = new Map<number, number>();
   for (const unit of match.units) {
     if (unit.hp <= 0) continue;
-    const stats = units[unit.kind];
+    const stats = units[unit.kind], support = unit.kind === "artillery" || unit.kind === "aircraft";
     unit.cooldown = Math.max(0, unit.cooldown - dt);
     let target = unit.order.mode === "attack" ? byId.get(unit.order.target) : undefined;
-    if (unit.order.mode === "attack" && (!target || target.team === unit.team)) {
+    if (unit.order.mode === "attack" && (!target || target.hp <= 0 || target.team === unit.team || (support && target.kind === "aircraft"))) {
       orderUnit(unit, { mode: "hold" }, match.map);
       target = undefined;
     }
-    const inRange = (other: Unit) => other.team !== unit.team && dist(unit, other) <= stats.range && clearShot(unit, other, match.map);
+    const visible = (other: Unit) => unit.kind === "aircraft" || other.kind === "aircraft" || clearShot(unit, other, match.map);
+    const inRange = (other: Unit) => other.hp > 0 && other.team !== unit.team && (!support || other.kind !== "aircraft") &&
+      dist(unit, other) <= stats.range && visible(other);
+    const candidates = index.nearby(unit, stats.range).filter(inRange);
     let victim = target && inRange(target) ? target : undefined;
     if (!victim) {
       let closest = Infinity;
-      for (const other of index.nearby(unit, stats.range)) {
-        if (other.team === unit.team) continue;
-        const squared = (other.x - unit.x) ** 2 + (other.y - unit.y) ** 2;
-        if (squared > closest || (squared === closest && victim && other.id > victim.id) || !clearShot(unit, other, match.map)) continue;
-        victim = other; closest = squared;
+      for (const candidate of candidates) {
+        const distance = dist(unit, candidate);
+        if (distance < closest || (distance === closest && candidate.id < victim!.id)) {
+          closest = distance; victim = candidate;
+        }
       }
     }
     if (victim && unit.cooldown <= 1e-6) {
+      let victims = [victim];
+      if (support) {
+        const radius = unit.kind === "artillery" ? ARTILLERY_BLAST_RADIUS : AIRCRAFT_BLAST_RADIUS;
+        const limit = unit.kind === "artillery" ? ARTILLERY_TARGET_LIMIT : AIRCRAFT_TARGET_LIMIT;
+        // Seek a dense valid cluster instead of wasting a salvo on one isolated
+        // nearest enemy. Explicit attack orders still choose their own center.
+        if (!(target && inRange(target))) {
+          candidates.sort((a, b) => dist(unit, a) - dist(unit, b) || a.id - b.id);
+          let best = -1;
+          for (const candidate of candidates) {
+            const score = Math.min(limit, candidates.filter(other => dist(candidate, other) <= radius).length);
+            if (score > best) { best = score; victim = candidate; }
+            if (best === limit) break;
+          }
+        }
+        victims = candidates.filter(other => dist(victim!, other) <= radius)
+          .sort((a, b) => dist(victim!, a) - dist(victim!, b) || a.id - b.id).slice(0, limit);
+      }
       unit.cooldown = stats.cooldown;
-      damage.set(victim.id, (damage.get(victim.id) ?? 0) + stats.damage * (unit.pocketed ? POCKET_FIREPOWER : 1));
-      flashes.push({ from: { x: unit.x, y: unit.y }, to: { x: victim.x, y: victim.y }, team: unit.team,
-        kind: unit.kind, targetId: victim.id, expires: match.elapsed + 0.18 });
+      for (const hit of victims) {
+        const amount = unit.kind === "artillery" ? hit.hp : stats.damage * (unit.pocketed ? POCKET_FIREPOWER : 1);
+        damage.set(hit.id, (damage.get(hit.id) ?? 0) + amount);
+        flashes.push({ from: { x: unit.x, y: unit.y }, to: { x: hit.x, y: hit.y }, team: unit.team,
+          kind: unit.kind, targetId: hit.id, expires: match.elapsed + (unit.kind === "artillery" ? .8 : unit.kind === "aircraft" ? .7 : .18) });
+      }
     }
     if (target && !inRange(target)) {
       const endpoint = unit.path.at(-1);
       if (unit.replan <= match.elapsed && (!endpoint || unit.waypoint >= unit.path.length ||
-          dist(endpoint, target) > stats.range || !clearShot(endpoint, target, match.map))) {
-        const choices = [
-          { x: target.x + 1, y: target.y }, { x: target.x - 1, y: target.y },
-          { x: target.x, y: target.y + 1 }, { x: target.x, y: target.y - 1 }, target,
-        ].map((point) => nearestOpen(point, match.map)).filter((point) => clearShot(point, target, match.map));
-        choices.sort((a, b) => dist(a, unit) - dist(b, unit));
-        unit.path = route(unit, choices[0] ?? target, unit.kind, match.map);
+          dist(endpoint, target) > stats.range || !(unit.kind === "aircraft" || target.kind === "aircraft" || clearShot(endpoint, target, match.map)))) {
+        let goal: Point, firingPath: Point[] | undefined;
+        if (unit.kind === "aircraft") goal = flightPoint(target);
+        else if (unit.kind === "artillery") {
+          const distance = dist(unit, target) || 1, standOff = stats.range - 1;
+          goal = nearestOpen({ x: target.x + (unit.x - target.x) * standOff / distance,
+            y: target.y + (unit.y - target.y) * standOff / distance }, match.map);
+          if (dist(goal, target) > stats.range || !clearShot(goal, target, match.map)) {
+            // A radial stand-off point can be the gun's current tile behind a
+            // ridge. First seek a nearby clear position at the same safe range.
+            const bearing = Math.atan2(unit.y - target.y, unit.x - target.x);
+            const choices = [.25, -.25, .5, -.5, .75, -.75, 1, -1, 1.5, -1.5, Math.PI].map(angle =>
+              nearestOpen({ x: target!.x + Math.cos(bearing + angle) * standOff,
+                y: target!.y + Math.sin(bearing + angle) * standOff }, match.map))
+              .filter(point => dist(point, target!) <= stats.range && clearShot(point, target!, match.map))
+              .sort((a, b) => dist(a, unit) - dist(b, unit));
+            if (choices[0]) firingPath = route(unit, choices[0], unit.kind, match.map);
+            // If no stand-off tile is reachable, take a legal ground approach
+            // only as far as its first clear firing position.
+            if (!firingPath?.length) {
+              const approach = route(unit, target, unit.kind, match.map);
+              const firing = approach.findIndex(point => dist(point, target!) <= stats.range - .5 && clearShot(point, target!, match.map));
+              firingPath = firing >= 0 ? approach.slice(0, firing + 1) : approach;
+            }
+          }
+        } else {
+          const choices = [
+            { x: target.x + 1, y: target.y }, { x: target.x - 1, y: target.y },
+            { x: target.x, y: target.y + 1 }, { x: target.x, y: target.y - 1 }, target,
+          ].map((point) => nearestOpen(point, match.map)).filter((point) => target!.kind === "aircraft" || clearShot(point, target!, match.map));
+          choices.sort((a, b) => dist(a, unit) - dist(b, unit));
+          goal = choices[0] ?? target;
+        }
+        unit.path = firingPath ?? route(unit, goal, unit.kind, match.map);
         unit.waypoint = 0;
-        unit.replan = match.elapsed + 0.8 + (unit.id % 7) * 0.07;
+        unit.replan = match.elapsed + .8 + (unit.id % 7) * .07;
       }
       walk(unit, dt, match.map);
-    } else if (!target && !(victim && unit.stance !== "manual")) walk(unit, dt, match.map);
+    } else if (!target && (support || !(victim && unit.stance !== "manual"))) walk(unit, dt, match.map);
   }
-  for (const unit of match.units) {
-    unit.hp -= damage.get(unit.id) ?? 0;
-  }
+  for (const unit of match.units) unit.hp -= damage.get(unit.id) ?? 0;
 }
 
 function captureCity(match: Match, city: City, owner: Team, captured: Set<number>) {
@@ -477,6 +624,7 @@ function takeCities(match: Match, index: UnitIndex, dt: number, captured: Set<nu
     let blue = false;
     let red = false;
     for (const unit of index.nearby(city, RADIUS)) {
+      if (unit.kind === "artillery" || unit.kind === "aircraft" || unit.hp <= 0) continue;
       if (unit.team === 1) blue = true;
       else red = true;
     }
@@ -578,6 +726,7 @@ function takeEnclosures(match: Match, capturedCities: Set<number>) {
   // Land changes hands, never soldiers. Apply both teams' losses before the
   // common cleanup so simultaneous elimination can still produce a draw.
   if (captured) for (const unit of match.units) {
+    if (unit.kind === "aircraft") continue;
     const cell = territoryCell(unit), owner = cell >= 0 ? captured[cell] : 0;
     if (!owner || owner === unit.team || unit.hp <= 0) continue;
     unit.hp = 0;
@@ -594,7 +743,7 @@ function takeEnclosures(match: Match, capturedCities: Set<number>) {
 function updatePockets(match: Match, dt: number) {
   for (const unit of match.units) {
     if (unit.hp <= 0) continue;
-    if (isSupplied(match, unit.team, unit)) {
+    if (unit.kind === "aircraft" || isSupplied(match, unit.team, unit)) {
       unit.pocketed = false;
       unit.pocketTime = 0;
       continue;
@@ -615,6 +764,13 @@ export function step(match: Match, dt: number, flashes: Flash[], decide: (match:
   updatePockets(match, 0);
   autoFront(match);
   decide(match);
+  autoSupport(match);
+  advanceEconomy(match, dt);
+  for (const unit of match.units) if (unit.kind === "aircraft") {
+    unit.hp = Math.max(0, unit.hp - AIRCRAFT_DECAY * dt);
+    if (unit.hp < 1e-7) unit.hp = 0;
+  }
+  removeDead(match);
   fight(match, new UnitIndex(match.units), dt, flashes);
   removeDead(match);
   separate(match, dt);
@@ -623,6 +779,7 @@ export function step(match: Match, dt: number, flashes: Flash[], decide: (match:
   updatePockets(match, dt);
   removeDead(match);
   takeCities(match, new UnitIndex(match.units), dt, captured);
+  buildSupport(match, dt, captured);
   supplyAndBuild(match, dt, captured);
   // New troops occupy their real spawn footprint; no timers advance twice.
   advanceTerritory(match);

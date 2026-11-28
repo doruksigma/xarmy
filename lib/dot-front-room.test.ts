@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { actInRoom, checkRoomOrigin, createRoom, getRoom, joinRoom, roomJson, roomResponse, roomToken, RoomError } from "./dot-front-room";
 import { packMatch, unpackMatch, MAX_ONLINE_BODY_BYTES } from "../app/games/dot-front/online-protocol";
+import { STARTING_MONEY } from "../app/games/dot-front/config";
 import { applyGameCommand } from "../app/games/dot-front/commands";
 import type { GameCommand } from "../app/games/dot-front/commands";
 import type { RoomView } from "../app/games/dot-front/online-types";
@@ -36,13 +37,16 @@ const upload = (room: RoomView, snapshot: unknown = room.snapshot, overrides = {
   action: "sync", present: true, snapshot, snapshotSeq: room.snapshotSeq + 1,
   controlVersion: room.controlVersion, ack: room.guestSeq, ...overrides,
 });
-async function storeLegacySnapshot(code: string) {
+async function storeLegacySnapshot(code: string, version: 5 | 6 = 5) {
   const path = join(directory, `${code}.json`);
   const record = JSON.parse(await readFile(path, "utf8"));
-  const snapshot = { ...record.snapshot, version: 5, recruitment: [17, 29] };
-  for (const city of snapshot.cities) if (city.build) city.build.elapsed = 0;
-  snapshot.cities.find((city: { owner: number }) => city.owner === 1).build.elapsed = 17;
-  snapshot.cities.find((city: { owner: number }) => city.owner === 2).build.elapsed = 29;
+  const { economy, support, ...previous } = record.snapshot; void economy; void support;
+  const snapshot = { ...previous, version, ...(version === 5 ? { recruitment: [17, 29] } : {}) };
+  if (version === 5) {
+    for (const city of snapshot.cities) if (city.build) city.build.elapsed = 0;
+    snapshot.cities.find((city: { owner: number }) => city.owner === 1).build.elapsed = 17;
+    snapshot.cities.find((city: { owner: number }) => city.owner === 2).build.elapsed = 29;
+  }
   record.snapshot = snapshot;
   await writeFile(path, JSON.stringify(record));
   return { snapshot, record, raw: await readFile(path, "utf8") };
@@ -79,7 +83,7 @@ test("only the host can start after a guest joins, and retrying start preserves 
   await assert.rejects(actInRoom(host.room.code, guest.token, { action: "start" }), status(403));
   const started = await actInRoom(host.room.code, host.token, { action: "start" });
   const match = world(started);
-  assert.equal(match.version, 6); assert.equal("recruitment" in match, false); assert.equal(match.map, "valley");
+  assert.equal(match.version, 7); assert.equal("recruitment" in match, false); assert.equal(match.map, "valley");
   assert.ok(match.cities.every(city => city.owner ? city.build?.elapsed === 0 : city.build === null));
   assert.equal(match.tutorial, null); assert.equal(match.units.length, 50);
   assert.equal(started.paused, false);
@@ -98,7 +102,7 @@ test("authenticated reads upgrade a stored v5 room once, pause it and preserve s
   await actInRoom(code, host.token, upload(queued, packMatch(progressed), { ack: 1 }));
   const legacy = await storeLegacySnapshot(code);
   const upgraded = await getRoom(code, host.token), match = world(upgraded);
-  assert.equal(match.version, 6); assert.equal("recruitment" in match, false);
+  assert.equal(match.version, 7); assert.equal("recruitment" in match, false);
   assert.equal(match.id, legacy.snapshot.id); assert.deepEqual(match.report, legacy.snapshot.report);
   assert.equal(upgraded.paused, true);
   assert.equal(upgraded.snapshotSeq, legacy.record.snapshotSeq + 1);
@@ -113,7 +117,7 @@ test("authenticated reads upgrade a stored v5 room once, pause it and preserve s
   assert.equal(again.revision, upgraded.revision); assert.equal(again.snapshotSeq, upgraded.snapshotSeq);
   assert.equal((await getRoom(code, guest.token)).snapshotSeq, upgraded.snapshotSeq);
   const stored = JSON.parse(await readFile(join(directory, `${code}.json`), "utf8"));
-  assert.equal(stored.snapshot.version, 6); assert.equal(stored.hostHash, legacy.record.hostHash);
+  assert.equal(stored.snapshot.version, 7); assert.equal(stored.hostHash, legacy.record.hostHash);
   assert.equal(stored.guestHash, legacy.record.guestHash); assert.equal(stored.expiresAt, legacy.record.expiresAt);
 });
 
@@ -134,7 +138,7 @@ test("legacy in-flight uploads cannot overwrite an upgrade and current clients c
   const { host, guest, room, code } = await pair();
   const legacy = await storeLegacySnapshot(code);
   const migrated = await actInRoom(code, host.token, upload(room, legacy.snapshot));
-  assert.equal(migrated.paused, true); assert.equal(world(migrated).version, 6);
+  assert.equal(migrated.paused, true); assert.equal(world(migrated).version, 7);
   const persisted = JSON.stringify(migrated.snapshot);
   await assert.rejects(actInRoom(code, host.token, upload(migrated, legacy.snapshot)), error =>
     status(409)(error) && (error as Error).message.includes("iki oyuncu da sayfayı yenilesin"));
@@ -146,7 +150,7 @@ test("legacy in-flight uploads cannot overwrite an upgrade and current clients c
   first.build!.elapsed += .05;
   const synced = await actInRoom(code, host.token, upload(resumed, packMatch(progressed)));
   assert.equal(world(synced).cities[first.id].build!.elapsed, 17.05);
-  assert.equal(world(await getRoom(code, guest.token)).version, 6);
+  assert.equal(world(await getRoom(code, guest.token)).version, 7);
 });
 
 test("guest commands relay once in sequence, apply as team two, and ack only with the host snapshot", async () => {
@@ -375,4 +379,70 @@ test("HTTP helpers bound input, reject cross-origin writes, and protect credenti
   assert.equal(response.headers.get("referrer-policy"), "no-referrer");
   const bad = await roomResponse(() => createRoom("bad-map")); assert.equal(bad.status, 400);
   assert.equal(typeof (await bad.json()).error, "string");
+});
+
+test("authenticated v6 room upgrades once with fresh wallets while retaining queues, city clocks and ground state", async () => {
+  const { host, guest, room, code } = await pair();
+  await actInRoom(code, guest.token, { action: "sync", present: true, commands: [
+    { seq: 1, command: guestMove(room) }, { seq: 2, command: guestMove(room) },
+  ] });
+  const queued = await getRoom(code, host.token), match = world(queued);
+  match.elapsed = 200; match.nextAi = 210;
+  applyGameCommand(match, 2, queued.commands[0].command);
+  match.cities[0].build!.elapsed = 59.75; match.cities[1].build!.elapsed = 12.5;
+  match.report = { captured: 4, fallen: 3, killed: 5 };
+  await actInRoom(code, host.token, upload(queued, packMatch(match), { ack: 1 }));
+  const legacy = await storeLegacySnapshot(code, 6);
+  const upgraded = await getRoom(code, guest.token), restored = world(upgraded);
+  assert.equal(restored.version, 7); assert.equal(upgraded.paused, true);
+  assert.deepEqual(restored.economy, [{ money: STARTING_MONEY, shortage: 0 }, { money: STARTING_MONEY, shortage: 0 }]);
+  assert.deepEqual(restored.support, [{ artillery: 0, aircraft: 0 }, { artillery: 0, aircraft: 0 }]);
+  const { economy, support, version, ...unchanged } = upgraded.snapshot!; void economy; void support; void version;
+  assert.deepEqual(unchanged, (({ version, ...fields }) => { void version; return fields; })(legacy.snapshot));
+  assert.equal(upgraded.snapshotSeq, legacy.record.snapshotSeq + 1);
+  assert.equal(upgraded.controlVersion, legacy.record.controlVersion + 1);
+  assert.equal(upgraded.revision, legacy.record.revision + 1);
+  assert.equal(upgraded.guestSeq, 2); assert.equal(upgraded.ack, 1);
+  const hostView = await getRoom(code, host.token);
+  assert.equal(hostView.commands.length, 1); assert.equal(hostView.commands[0].seq, 2);
+  assert.equal(hostView.snapshotSeq, upgraded.snapshotSeq); assert.equal(hostView.revision, upgraded.revision);
+  const stored = JSON.parse(await readFile(join(directory, `${code}.json`), "utf8"));
+  assert.equal(stored.snapshot.version, 7); assert.equal(stored.hostHash, legacy.record.hostHash);
+  assert.equal(stored.guestHash, legacy.record.guestHash); assert.equal(stored.expiresAt, legacy.record.expiresAt);
+});
+
+test("v6 room migration cannot be triggered by invalid credentials or smuggled new-system data", async () => {
+  const { host, code } = await pair();
+  const legacy = await storeLegacySnapshot(code, 6), path = join(directory, `${code}.json`);
+  await assert.rejects(getRoom(code, "A".repeat(43)), status(401));
+  await assert.rejects(actInRoom(code, "A".repeat(43), { action: "sync", present: true }), status(401));
+  assert.equal(await readFile(path, "utf8"), legacy.raw);
+  for (const snapshot of [
+    { ...legacy.snapshot, economy: [{ money: 500, shortage: 0 }, { money: 500, shortage: 0 }] },
+    { ...legacy.snapshot, support: [{ artillery: 60, aircraft: 60 }, { artillery: 60, aircraft: 60 }] },
+    { ...legacy.snapshot, units: legacy.snapshot.units.map((unit: { kind: string }, i: number) => i ? unit : { ...unit, kind: "aircraft" }) },
+  ]) {
+    const corrupt = JSON.stringify({ ...legacy.record, snapshot }); await writeFile(path, corrupt);
+    await assert.rejects(getRoom(code, host.token), status(409));
+    assert.equal(await readFile(path, "utf8"), corrupt);
+  }
+});
+
+test("a stale v6 host cannot overwrite v7 money or support progress after the authenticated upgrade", async () => {
+  const { host, guest, room, code } = await pair();
+  const legacy = await storeLegacySnapshot(code, 6);
+  const migrated = await actInRoom(code, host.token, upload(room, legacy.snapshot));
+  assert.equal(migrated.paused, true); assert.equal(world(migrated).version, 7);
+  await assert.rejects(actInRoom(code, host.token, upload(migrated, legacy.snapshot)), error =>
+    status(409)(error) && (error as Error).message.includes("iki oyuncu da sayfayı yenilesin"));
+  await actInRoom(code, guest.token, { action: "sync", present: true });
+  const resumed = await actInRoom(code, host.token, { action: "resume" }), next = world(resumed);
+  next.elapsed = 12.5; next.economy[0] = { money: 18.25, shortage: 3.5 };
+  next.support[0] = { artillery: 59.75, aircraft: 12.5 };
+  const accepted = await actInRoom(code, host.token, upload(resumed, packMatch(next)));
+  const persisted = JSON.stringify(accepted.snapshot);
+  await assert.rejects(actInRoom(code, host.token, upload(accepted, legacy.snapshot)), status(409));
+  const guestView = await getRoom(code, guest.token);
+  assert.equal(JSON.stringify(guestView.snapshot), persisted);
+  assert.deepEqual(world(guestView).economy, next.economy); assert.deepEqual(world(guestView).support, next.support);
 });

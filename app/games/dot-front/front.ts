@@ -1,11 +1,11 @@
 import { HEIGHT, WIDTH } from "./config";
-import type { Point, Team } from "./config";
+import type { Kind, Point, Team } from "./config";
 import { getMap, nearestOpen } from "./terrain";
 import type { MapId } from "./terrain";
 import { TERRITORY_COLS, TERRITORY_ROWS, TERRITORY_SPACING } from "./territory";
 import type { Territory, TerritorySource } from "./territory";
 
-export type FrontUnit = Point & { id: number; team: Team; hp: number };
+export type FrontUnit = Point & { id: number; team: Team; hp: number; kind?: Kind };
 export type FrontSource = TerritorySource & { elapsed: number; units: readonly FrontUnit[] };
 /** normal points from blue occupation toward red occupation. */
 export type FrontSegment = { a: Point; b: Point; normal?: Point };
@@ -219,7 +219,7 @@ export function frontSlots(match: FrontSource, team: Team, count: number): Point
   if (!count) return [];
   const field = frontField(match), cache = fields.get(match)!;
   const connectivity = components(match.map), accessible = new Set<number>();
-  for (const unit of match.units) if (unit.team === team && unit.hp > 0) {
+  for (const unit of match.units) if (unit.team === team && unit.hp > 0 && unit.kind !== "aircraft") {
     const x = Math.floor(unit.x), y = Math.floor(unit.y), component = connectivity[y * WIDTH + x];
     if (x >= 0 && y >= 0 && x < WIDTH && y < HEIGHT && component >= 0) accessible.add(component);
     else {

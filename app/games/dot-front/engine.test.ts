@@ -30,7 +30,7 @@ test("all six maps start with equally supplied mixed armies and five spread-out 
   assert.equal(WIDTH, 144); assert.equal(HEIGHT, 90);
   for (const map of mapIds) {
     const state = createMatch("normal", `initial-${map}`, false, map);
-    assert.equal(state.version, 6); assert.equal(state.cities.length, 50);
+    assert.equal(state.version, 7); assert.equal(state.cities.length, 50);
     assert.equal("recruitment" in state, false);
     assert.equal(getMap(map).tiles.length, WIDTH * HEIGHT);
     assert.equal(state.units.length, 50); assert.equal("commanders" in state, false);
@@ -68,18 +68,31 @@ test("all six maps start with equally supplied mixed armies and five spread-out 
 
 test("every owned city independently recruits one soldier every sixty seconds", () => {
   const state = createMatch("normal", "automatic-cities", true, "plains");
-  advance(state, CITY_PRODUCTION - STEP);
+  // Isolate city recruitment from the new support combat, while still allowing
+  // both independent support clocks to produce their real reinforcements.
+  const recruit = (seconds: number) => {
+    for (let tick = 0; tick < Math.round(seconds / STEP); tick++) {
+      for (const unit of state.units) if (unit.kind === "artillery" || unit.kind === "aircraft") {
+        unit.stance = "manual"; unit.order = { mode: "hold" }; unit.path = []; unit.cooldown = 100;
+      }
+      step(state, STEP, [], () => {});
+    }
+  };
+  const ordinary = () => state.units.filter(unit => unit.kind === "light" || unit.kind === "heavy");
+  recruit(CITY_PRODUCTION - STEP);
   assert.equal(state.units.length, 50);
-  advance(state, STEP);
-  assert.equal(state.units.length, 100);
+  recruit(STEP);
+  assert.equal(ordinary().length, 100); assert.equal(state.units.length, 104);
   for (const team of [1, 2] as const) assert.equal(state.units.filter(unit => unit.team === team && unit.kind === "heavy").length, 10);
   assert.ok(state.cities.every((item) => item.build?.elapsed === 0 && item.repeat));
-  advance(state, CITY_PRODUCTION);
-  assert.equal(state.units.length, 150);
+  recruit(CITY_PRODUCTION);
+  assert.equal(ordinary().length, 150); assert.equal(state.units.length, 158);
   for (const team of [1, 2] as const) {
-    assert.equal(state.units.filter(unit => unit.team === team).length, 75);
+    assert.equal(ordinary().filter(unit => unit.team === team).length, 75);
+    assert.equal(state.units.filter(unit => unit.team === team && unit.kind === "artillery").length, 2);
+    assert.equal(state.units.filter(unit => unit.team === team && unit.kind === "aircraft").length, 2);
     assert.equal(state.units.filter(unit => unit.team === team && unit.kind === "heavy").length, 15);
-    assert.deepEqual(supply(state, team), { used: 90, capacity: 125 });
+    assert.deepEqual(supply(state, team), { used: 102, capacity: 125 });
   }
   assert.ok(state.units.every(unit => !("commanderId" in unit)));
 });
@@ -144,11 +157,14 @@ test("a city's completed soldier waits at capacity and spawns after a supply poi
 
 test("heavy and light automatic recruitment use the same explicit sixty-second city clock", () => {
   const home = city(0, 1, 5.5, 20.5); home.build = { kind: "heavy", elapsed: 0 };
-  const state = fixture([soldier(1, 1, 6.5, 20.5)], [home, city(1, 2, 120.5, 70.5)]);
+  const state = fixture([soldier(1, 1, 6.5, 20.5)], [home, city(1, 2, 120.5, 70.5), city(2, 1, 20.5, 20.5)]);
   advance(state, CITY_PRODUCTION - STEP); assert.equal(state.units.filter((unit) => unit.team === 1).length, 1);
   advance(state, STEP);
   assert.equal(state.units.filter((unit) => unit.team === 1 && unit.kind === "heavy").length, 1);
-  assert.equal(supply(state, 1).used, 3);
+  assert.equal(state.units.filter((unit) => unit.team === 1 && unit.kind === "light").length, 2);
+  assert.equal(state.units.filter((unit) => unit.team === 1 && unit.kind === "artillery").length, 1);
+  assert.equal(state.units.filter((unit) => unit.team === 1 && unit.kind === "aircraft").length, 1);
+  assert.equal(supply(state, 1).used, 10);
 });
 
 test("supply attrition preserves its grace period and stable newest-unit penalty", () => {

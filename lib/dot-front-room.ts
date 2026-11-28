@@ -49,9 +49,9 @@ function roleOf(room: RoomRecord, token: string): OnlineRole {
   throw new RoomError(401, "Bu odaya erişim yetkiniz yok.");
 }
 function normalizeStoredSnapshot(room: RoomRecord): boolean {
-  if (!room.snapshot || (room.snapshot as { version?: unknown }).version === 6) return false;
+  if (!room.snapshot || (room.snapshot as { version?: unknown }).version === 7) return false;
   // This upgrade is for an authenticated, already-stored room only. New host
-  // payloads retain strict v6 validation and cannot use the legacy decoder.
+  // payloads retain strict v7 validation and cannot use the legacy decoder.
   const snapshot = unpackStoredMatch(room.snapshot);
   if (!snapshot || snapshot.map !== room.map || snapshot.tutorial !== null)
     throw new RoomError(409, "Bu odanın eski kaydı okunamadı. Lütfen yeni bir oda oluşturun.");
@@ -175,7 +175,7 @@ function acceptSnapshot(room: RoomRecord, body: Record<string, unknown>): void {
   // An obsolete upload must never undo a server-side pause or discard inputs.
   // Return current controls instead, allowing the host to restore the last state.
   if (body.controlVersion !== room.controlVersion || body.snapshotSeq <= room.snapshotSeq || room.status !== "playing") return;
-  if (object(body.snapshot) && body.snapshot.version === 5)
+  if (object(body.snapshot) && (body.snapshot.version === 5 || body.snapshot.version === 6))
     throw new RoomError(409, "Oyun güncellendi; iki oyuncu da sayfayı yenilesin.");
   const snapshot = unpackMatch(body.snapshot), previous = room.snapshot && unpackMatch(room.snapshot);
   if (!snapshot || !previous || snapshot.id !== previous.id || snapshot.map !== room.map || snapshot.tutorial !== null ||

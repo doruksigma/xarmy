@@ -1,5 +1,5 @@
 import type { Match } from "./engine";
-import { migrateV5Match, validMatch } from "./storage";
+import { migrateV5Match, migrateV6Match, validMatch } from "./storage";
 import { TERRITORY_SIZE } from "./territory";
 
 export const MAX_ONLINE_BODY_BYTES = 1024 * 1024;
@@ -43,7 +43,7 @@ export function unpackStoredMatch(value: unknown): Match | null {
   return decodeMatch(value, true);
 }
 
-function decodeMatch(value: unknown, allowStoredV5: boolean): Match | null {
+function decodeMatch(value: unknown, allowStoredLegacy: boolean): Match | null {
   try {
     if (!value || typeof value !== "object" || !withinBudget(value)) return null;
     const packed = value as PackedMatch;
@@ -65,6 +65,6 @@ function decodeMatch(value: unknown, allowStoredV5: boolean): Match | null {
     void encoding;
     const match = { ...structuredClone(state), territory: { revision: territory.revision, owners } };
     if (validMatch(match)) return match;
-    return allowStoredV5 ? migrateV5Match(match) : null;
+    return allowStoredLegacy ? migrateV6Match(match) ?? migrateV5Match(match) : null;
   } catch { return null; }
 }

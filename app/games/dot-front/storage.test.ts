@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { TestContext } from "node:test";
-import { CAPTURE, CITY_PRODUCTION, HEIGHT, MAX_ROUTE_POINTS, STEP, WIDTH } from "./config";
+import { CAPTURE, CITY_PRODUCTION, HEIGHT, MAX_ROUTE_POINTS, STARTING_MONEY, STEP, SUPPORT_PRODUCTION, WIDTH, units } from "./config";
 import { commandUnit, createMatch, step } from "./engine";
 import type { City, Match, Unit } from "./engine";
 import {
-  defaults, loadMatch, migrateMatch, migrateV2Match, migrateV3Match, migrateV4Match, migrateV5Match, readSettings, readStats, recordResult, saveMatch, saveSettings, validMatch,
+  defaults, loadMatch, migrateMatch, migrateV2Match, migrateV3Match, migrateV4Match, migrateV5Match, migrateV6Match, readSettings, readStats, recordResult, saveMatch, saveSettings, validMatch,
 } from "./storage";
 import { getMap, mapIds, passable } from "./terrain";
 import type { MapId } from "./terrain";
@@ -77,6 +77,16 @@ function memoryDatabase(stallTransactions = false) {
   return { entries, names, database, factory, get closed() { return closed; }, get aborted() { return aborted; } };
 }
 
+function groundState(current: Match) {
+  const { economy, support, ...record } = current;
+  void economy; void support;
+  return record;
+}
+function assertFreshSupport(state: Match) {
+  assert.deepEqual(state.economy, [{ money: STARTING_MONEY, shortage: 0 }, { money: STARTING_MONEY, shortage: 0 }]);
+  assert.deepEqual(state.support, [{ artillery: 0, aircraft: 0 }, { artillery: 0, aircraft: 0 }]);
+}
+
 function versionTwoMatch(map: MapId = "valley") {
   const current = createMatch("hard", `existing-v2-${map}`, false, map);
   const commanders: Array<{ id: number; team: 1 | 2; leaderId: number; order: typeof current.units[number]["order"]; autoFront: boolean; nextOrder: number }> = [];
@@ -89,7 +99,7 @@ function versionTwoMatch(map: MapId = "valley") {
       for (const unit of army.slice(start, start + 10)) membership.set(unit.id, id);
     }
   }
-  const { territory, ...record } = current;
+  const { territory, ...record } = groundState(current);
   void territory;
   return {
     ...record,
@@ -141,7 +151,7 @@ test("published v2 saves retain soldiers and each city's production and capture 
     db.entries.set("current", structuredClone(legacy));
     const migrated = await loadMatch();
     assert.ok(validMatch(migrated), map);
-    assert.equal(migrated.version, 6); assert.equal(migrated.id, legacy.id); assert.equal(migrated.elapsed, legacy.elapsed);
+    assert.equal(migrated.version, 7); assertFreshSupport(migrated); assert.equal(migrated.id, legacy.id); assert.equal(migrated.elapsed, legacy.elapsed);
     assert.equal(migrated.nextId, legacy.nextId); assert.equal(migrated.nextAi, legacy.nextAi);
     assert.equal(Object.hasOwn(migrated, "commanders"), false);
     assert.equal(Object.hasOwn(migrated, "nextCommanderId"), false);
@@ -174,7 +184,7 @@ test("published v2 saves retain soldiers and each city's production and capture 
 
 function versionThreeMatch(map: MapId = "plains") {
   const current = createMatch("normal", `existing-v3-${map}`, false, map);
-  const { territory, ...record } = current;
+  const { territory, ...record } = groundState(current);
   void territory;
   return {
     ...record, version: 3 as const,
@@ -202,8 +212,8 @@ test("v3 records preserve soldiers and all city clocks while initializing only c
     const before = structuredClone(legacy);
     const restored = migrateV3Match(legacy);
     assert.ok(restored && validMatch(restored), map);
-    assert.equal(restored.version, 6);
-    const { territory, units: restoredUnits, cities: restoredCities, version, ...fields } = restored;
+    assert.equal(restored.version, 7); assertFreshSupport(restored);
+    const { territory, units: restoredUnits, cities: restoredCities, version, ...fields } = groundState(restored);
     void version;
     const { units: priorUnits, cities: priorCities, version: priorVersion, ...priorFields } = legacy;
     void priorVersion;
@@ -241,7 +251,7 @@ test("corrupt v3 data is rejected before territory reconstruction", () => {
 });
 
 function versionFourMatch(map: MapId = "plains") {
-  return { ...createMatch("hard", `existing-v4-${map}`, false, map), version: 4 as const };
+  return { ...groundState(createMatch("hard", `existing-v4-${map}`, false, map)), version: 4 as const };
 }
 
 test("v4 migration preserves exact territory, pockets, routes, identity and every city production clock", async (context) => {
@@ -264,14 +274,14 @@ test("v4 migration preserves exact territory, pockets, routes, identity and ever
     assert.equal(validMatch(legacy), false);
     const migrated = migrateV4Match(legacy); assert.ok(migrated && validMatch(migrated));
     assertCityTimers(migrated, legacy.cities);
-    const { version, ...fields } = migrated;
+    const { version, ...fields } = groundState(migrated); assertFreshSupport(migrated);
     const { version: oldVersion, ...oldFields } = legacy;
     void version; void oldVersion;
     assert.deepEqual(fields, oldFields, "territory history and pocket clocks are not reconstructed or advanced");
     assert.deepEqual(legacy, before, "migration does not change the old in-memory record");
     db.entries.set("current", structuredClone(legacy));
     assert.deepEqual(await loadMatch(), migrated); assert.deepEqual(db.entries.get("current"), before);
-    await saveMatch(migrated); assert.deepEqual(await loadMatch(), migrated, "v6 does not repeat legacy clock conversion");
+    await saveMatch(migrated); assert.deepEqual(await loadMatch(), migrated, "v7 does not repeat legacy clock conversion");
   }
 });
 
@@ -306,7 +316,7 @@ test("corrupted v4 records are rejected before version conversion and remain int
 });
 
 function versionFiveMatch(map: MapId = "plains") {
-  const legacy = { ...createMatch("normal", `existing-v5-${map}`, false, map), version: 5 as const,
+  const legacy = { ...groundState(createMatch("normal", `existing-v5-${map}`, false, map)), version: 5 as const,
     recruitment: [37.5, 58.25] as [number, number] };
   for (const team of [1, 2] as const) {
     const source = legacy.cities.filter(city => city.owner === team)[2];
@@ -327,7 +337,8 @@ test("v5 migration preserves only the saved source progress and every other simu
     assert.ok(migrated && validMatch(migrated));
     const { recruitment, version, ...fields } = legacy;
     void recruitment; void version;
-    assert.deepEqual(migrated, { ...fields, version: 6 }, "positions, routes, pockets, territory and city clocks remain exact");
+    assertFreshSupport(migrated);
+    assert.deepEqual(groundState(migrated), { ...fields, version: 7 }, "positions, routes, pockets, territory and city clocks remain exact");
     assert.equal(Object.hasOwn(migrated, "recruitment"), false);
     assert.equal(migrated.cities.filter(city => (city.build?.elapsed ?? 0) > 0).length, 2);
     db.entries.set("current", before);
@@ -350,7 +361,7 @@ test("v5 inconsistent display queues keep one deterministic source and do not in
   assert.ok(migrated.cities.filter(city => city.owner === 2).every(city => city.build?.elapsed === 0));
 });
 
-test("v5 migration validates the old two-timer schema while v6 rejects obsolete shared clocks", async (context) => {
+test("v5 migration validates the old two-timer schema while v7 rejects obsolete shared clocks", async (context) => {
   const db = memoryDatabase(); replaceGlobal(context, "indexedDB", db.factory);
   const state = createMatch("normal", "recruitment-validation", false, "plains");
   for (const recruitment of [undefined, null, 1, [], [0], [0, 0, 0], [-1, 0], [0, 60.001],
@@ -464,7 +475,7 @@ test("all six maps save a commander-free current shape in the existing namespace
   const db = memoryDatabase(); replaceGlobal(context, "indexedDB", db.factory);
   for (const map of mapIds) {
     const state = createMatch("normal", `round-trip-${map}`, false, map);
-    assert.ok(validMatch(state), map); assert.equal(state.version, 6);
+    assert.ok(validMatch(state), map); assert.equal(state.version, 7);
     assert.equal(state.cities.length, 50); assert.equal(state.units.length, 50);
     assert.equal(Object.hasOwn(state, "commanders"), false);
     await saveMatch(state); const restored = await loadMatch();
@@ -791,4 +802,104 @@ test("storage denial rejects predictably so the client can keep the game playabl
   await assert.rejects(loadMatch(), /permission denied/);
   await assert.rejects(saveMatch(createMatch("normal", "denied", false)), /permission denied/);
   await assert.rejects(saveMatch({ ...createMatch("normal", "bad-map", false), map: "unknown" } as never), /Invalid Dot Front match/);
+});
+
+test("v6 ground-war saves gain only fresh economy and support clocks without replaying old time", async context => {
+  const db = memoryDatabase(); replaceGlobal(context, "indexedDB", db.factory);
+  for (const map of mapIds) {
+    const legacy = { ...groundState(createMatch("normal", `published-v6-${map}`, false, map)), version: 6 as const };
+    legacy.elapsed = 420; legacy.nextAi = 428; legacy.shortage = [8.25, 0];
+    legacy.cities[0].build!.elapsed = 59.95; legacy.cities[1].capturing = 2; legacy.cities[1].progress = 7.5;
+    legacy.units[0].hp -= 5; legacy.units[0].cooldown = 2.75;
+    legacy.units[0].order = { mode: "route", points: [{ x: WIDTH, y: HEIGHT }], next: 0 };
+    const before = structuredClone(legacy);
+    assert.equal(validMatch(legacy), false);
+    const migrated = migrateV6Match(legacy); assert.ok(migrated && validMatch(migrated));
+    assertFreshSupport(migrated);
+    assert.deepEqual(groundState(migrated), { ...before, version: 7 });
+    assert.deepEqual(legacy, before);
+    db.entries.set("current", before);
+    assert.deepEqual(await loadMatch(), migrated); assert.deepEqual(db.entries.get("current"), before);
+    await saveMatch(migrated); assert.deepEqual(await loadMatch(), migrated);
+    assert.deepEqual(migrateMatch(migrated), migrated, "loading current data does not refill money or reset support clocks");
+    migrated.economy[0].money = 0;
+    assert.equal(migrated.economy[1].money, STARTING_MONEY, "each side owns a separate wallet");
+    assert.equal(migrateV6Match(before)!.economy[0].money, STARTING_MONEY, "migration defaults never alias another match");
+  }
+});
+
+test("legacy v2-v6 schemas reject support kinds and injected new-system fields", () => {
+  const legacyRecords = [versionTwoMatch(), versionThreeMatch(), versionFourMatch(), versionFiveMatch(),
+    { ...groundState(createMatch("normal", "legacy-v6-validation", false, "plains")), version: 6 }];
+  for (const legacy of legacyRecords) {
+    for (const field of ["economy", "support"]) {
+      assert.equal(migrateMatch({ ...legacy, [field]: undefined }), null, `v${legacy.version} ${field}`);
+      assert.equal(migrateMatch({ ...legacy, [field]: [{ money: 1000, shortage: 0 }, { money: 1000, shortage: 0 }] }), null);
+    }
+    for (const kind of ["artillery", "aircraft"] as const) {
+      const units = legacy.units.map((unit, i) => i ? unit : { ...unit, kind, hp: 18 });
+      assert.equal(migrateMatch({ ...legacy, units }), null, `v${legacy.version} cannot smuggle ${kind}`);
+    }
+  }
+});
+
+test("version seven saves validate both wallets and bounded independent support clocks", () => {
+  const state = createMatch("normal", "new-systems-validation", false, "plains");
+  state.elapsed = 30;
+  state.economy = [{ money: 0, shortage: 12.125 }, { money: 1234.567, shortage: 0 }];
+  state.support = [{ artillery: 60, aircraft: 59.875 }, { artillery: 0, aircraft: 17.5 }];
+  assert.ok(validMatch(state));
+  const wallet = { money: 1000, shortage: 0 }, clocks = { artillery: 0, aircraft: 0 };
+  const invalidWallets: unknown[] = [undefined, null, {}, [], [wallet], [wallet, wallet, wallet],
+    [null, wallet], [[], wallet], [{ money: -1, shortage: 0 }, wallet], [{ money: NaN, shortage: 0 }, wallet],
+    [{ money: Infinity, shortage: 0 }, wallet], [{ money: Number.MAX_SAFE_INTEGER + 1, shortage: 0 }, wallet],
+    [{ money: "1000", shortage: 0 }, wallet], [{ money: 1, shortage: -1 }, wallet],
+    [{ money: 1, shortage: 30.01 }, wallet], [{ money: 1 }, wallet], new Array(2)];
+  for (const economy of invalidWallets) assert.equal(validMatch({ ...state, economy }), false);
+  const invalidClocks: unknown[] = [undefined, null, {}, [], [clocks], [clocks, clocks, clocks], [null, clocks], [[], clocks],
+    [{ artillery: -1, aircraft: 0 }, clocks], [{ artillery: SUPPORT_PRODUCTION + .01, aircraft: 0 }, clocks],
+    [{ artillery: 0, aircraft: Infinity }, clocks], [{ artillery: 0, aircraft: "20" }, clocks],
+    [{ artillery: NaN, aircraft: 0 }, clocks], [{ artillery: 0 }, clocks], new Array(2)];
+  for (const support of invalidClocks) assert.equal(validMatch({ ...state, support }), false);
+  for (const kind of ["artillery", "aircraft"]) {
+    const cities = state.cities.map((city, i) => i ? city : { ...city, build: { kind, elapsed: 10 } });
+    assert.equal(validMatch({ ...state, cities }), false, "support units cannot enter per-city ordinary queues");
+  }
+});
+
+test("aircraft positions, movement orders and paths cross blocked terrain but remain strictly in world", () => {
+  const state = createMatch("normal", "aircraft-save", false, "valley");
+  const terrain = getMap(state.map);
+  const blocked = terrain.tiles.flatMap((tile, i) => tile === "water" || tile === "rock"
+    ? [{ x: i % WIDTH + .5, y: Math.floor(i / WIDTH) + .5 }] : []).slice(0, 2);
+  assert.equal(blocked.length, 2);
+  const aircraft: Unit = { ...structuredClone(state.units[0]), id: state.nextId++, kind: "aircraft", hp: units.aircraft.hp,
+    ...blocked[0], order: { mode: "move", point: blocked[1] }, path: blocked, waypoint: 1,
+    pocketed: false, pocketTime: 0, stance: "manual" };
+  state.units.push(aircraft);
+  assert.ok(validMatch(state));
+  assert.equal(validMatch({ ...state, units: state.units.map(unit => unit === aircraft ? { ...unit, kind: "artillery", hp: 18 } : unit) }), false);
+  for (const replacement of [{ x: WIDTH }, { y: HEIGHT }, { x: -.1 }, { y: NaN },
+    { pocketed: true }, { pocketTime: 1 }, { order: { mode: "move", point: { x: WIDTH, y: 5 } } },
+    { path: [{ x: 5, y: HEIGHT }] }]) {
+    assert.equal(validMatch({ ...state, units: state.units.map(unit => unit === aircraft ? { ...unit, ...replacement } : unit) }), false);
+  }
+});
+
+test("v7 economy, aircraft health and support countdowns continue from the exact saved state", async context => {
+  const db = memoryDatabase(); replaceGlobal(context, "indexedDB", db.factory);
+  const state = createMatch("normal", "support-save-resume", false, "plains");
+  state.elapsed = 32; state.nextAi = 10000;
+  state.economy = [{ money: .25, shortage: 0 }, { money: 1450.75, shortage: 0 }];
+  state.support = [{ artillery: 59.9, aircraft: 59.95 }, { artillery: 43.25, aircraft: 21.5 }];
+  const aircraft: Unit = { ...structuredClone(state.units[0]), id: state.nextId++, kind: "aircraft", hp: 13.125,
+    x: 8.5, y: 8.5, cooldown: 4.25, stance: "manual", order: { mode: "hold" }, path: [], waypoint: 0 };
+  state.units.push(aircraft);
+  assert.ok(validMatch(state));
+  await saveMatch(state); const restored = await loadMatch(); assert.ok(validMatch(restored));
+  assert.deepEqual(restored, state);
+  for (let i = 0; i < 50; i++) { step(state, STEP, [], () => {}); step(restored, STEP, [], () => {}); }
+  assert.deepEqual(restored, state);
+  assert.ok(validMatch(restored));
+  assert.ok(restored.units.find(unit => unit.id === aircraft.id)!.hp < 13.125, "aircraft life resumes instead of refilling");
 });

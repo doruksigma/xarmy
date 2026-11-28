@@ -3,11 +3,12 @@ import test from "node:test";
 import type { TestContext } from "node:test";
 import { HEIGHT, WIDTH, units } from "./config";
 import { createMatch } from "./engine";
+import type { Flash } from "./engine";
 import { colors, landscapeCanvas, render, resize, toWorld, viewOf } from "./render";
 import { getMap } from "./terrain";
 import { TERRITORY_COLS } from "./territory";
 
-type Paint = { method: string; args: unknown[]; fill: unknown; stroke: unknown; width: unknown };
+type Paint = { method: string; args: unknown[]; fill: unknown; stroke: unknown; width: unknown; alpha: unknown };
 class Canvas {
   width = 300; height = 150; clientWidth = 960; clientHeight = 600;
   dataset: Record<string, string> = {};
@@ -16,7 +17,7 @@ class Canvas {
   private state: Record<string, unknown> = {};
   context = new Proxy(this.state, {
     get: (state, key: string) => state[key] ?? ((...args: unknown[]) => {
-      this.calls.push({ method: key, args, fill: state.fillStyle, stroke: state.strokeStyle, width: state.lineWidth });
+      this.calls.push({ method: key, args, fill: state.fillStyle, stroke: state.strokeStyle, width: state.lineWidth, alpha: state.globalAlpha });
     }),
     set: (state, key: string, value) => { state[key] = value; return true; },
   });
@@ -238,4 +239,108 @@ test("short mobile views clamp and separate regional badges instead of stacking 
   assert.ok(badges.length > 0 && badges.length <= 3);
   const positions = badges.map(call => Number(call.args[2]) * view.scale + view.y).sort((a, b) => a - b);
   for (let index = 1; index < positions.length; index++) assert.ok(positions[index] - positions[index - 1] >= 39);
+});
+
+
+test("support silhouettes keep team colors, aircraft overlay ground formations and health remains readable", t => {
+  environment(t);
+  const match = createMatch("normal", "support-glyphs", false, "plains"), canvas = new Canvas();
+  const plane = { ...match.units[0], kind: "aircraft" as const, x: 20.5, y: 25.5, hp: units.aircraft.hp / 2,
+    path: [{ x: 26.5, y: 25.5 }], waypoint: 0 };
+  const cannon = { ...match.units.find(unit => unit.team === 2)!, kind: "artillery" as const,
+    x: plane.x, y: plane.y, hp: units.artillery.hp };
+  match.cities = []; match.units = [plane, cannon];
+  const view = viewOf(960, 600, { x: 20.5, y: 25.5, zoom: 4 });
+  render(canvas.element(), null, landscapeCanvas(match.map), view, match, new Set([plane.id]), null, [], null);
+  const teamFills = canvas.calls.filter(call => call.method === "fill" && colors.slice(1).includes(String(call.fill)));
+  assert.equal(teamFills[0].fill, colors[2]);
+  assert.equal(teamFills.at(-1)!.fill, colors[1], "aircraft are above ground regardless of unit-array order");
+  assert.ok(canvas.calls.some(call => call.method === "fill" && call.fill === "#00000038"), "aircraft cast a separate light shadow");
+  assert.ok(canvas.calls.some(call => call.method === "stroke" && call.stroke === "#ffffff60"), "moving aircraft have bounded line trails");
+  assert.ok(canvas.calls.some(call => call.method === "strokeRect" && call.stroke === "#000000"), "the artillery barrel has a readable outline");
+  assert.ok(canvas.calls.some(call => call.method === "stroke" && call.stroke === "#ffffff"), "selected aircraft retain a white selection ring");
+  const health = canvas.calls.filter(call => call.method === "fillRect" && call.fill === colors[1]);
+  assert.ok(health.some(call => Math.abs(Number(call.args[2]) - Math.max(.95, 22 / view.scale) / 2) < 1e-8), "aircraft health uses its own low maximum");
+  assert.equal(canvas.calls.some(call => call.method === "fillText"), false, "support dots do not regain individual numeric labels");
+});
+
+test("aircraft remain visible above impassable water and support markers cull outside the camera", t => {
+  environment(t);
+  const match = createMatch("normal", "aircraft-water-render", false, "valley"), canvas = new Canvas();
+  const water = getMap(match.map).tiles.findIndex((tile, index) => tile === "water" && index > WIDTH * 30);
+  assert.ok(water >= 0);
+  const plane = { ...match.units[0], kind: "aircraft" as const, x: water % WIDTH + .5,
+    y: Math.floor(water / WIDTH) + .5, hp: units.aircraft.hp };
+  const far = { ...match.units[1], kind: "artillery" as const, x: 5, y: 5, hp: units.artillery.hp };
+  match.units = [plane, far]; match.cities = [];
+  render(canvas.element(), null, landscapeCanvas(match.map), viewOf(960, 600, { ...plane, zoom: 6 }), match, new Set(), null, [], null);
+  assert.ok(canvas.calls.some(call => call.method === "translate" && call.args[0] === plane.x && call.args[1] === plane.y), "a flight sprite is not rejected by ground passability");
+  assert.equal(canvas.calls.some(call => call.method === "translate" && call.args[0] === far.x && call.args[1] === far.y), false);
+});
+
+test("minimap type and support-heading changes repaint markers while reusing terrain and geometry", t => {
+  const env = environment(t), match = createMatch("normal", "support-minimap", false, "plains");
+  const canvas = new Canvas(), mini = new Canvas(); mini.width = 180; mini.height = 112;
+  match.cities = []; match.units = [{ ...match.units[0], x: 20.5, y: 25.5 }];
+  const unit = match.units[0], terrain = landscapeCanvas(match.map), view = viewOf(960, 600, { x: 72, y: 45, zoom: 1 });
+  const paint = () => render(canvas.element(), mini.element(), terrain, view, match, new Set(), null, [], null);
+  paint();
+  const base = [...env.canvases].reverse().find(value => value.width === mini.width && value.height === mini.height)!;
+  const baseCalls = base.calls.length, allocations = env.canvases.length;
+  let calls = mini.calls.length;
+  unit.kind = "artillery"; unit.hp = units.artillery.hp; paint();
+  assert.ok(mini.calls.length > calls, "a kind-only change cannot leave the old infantry marker cached");
+  assert.ok(mini.calls.some(call => call.method === "closePath"), "artillery uses a filled directional marker");
+  calls = mini.calls.length; unit.kind = "aircraft"; unit.hp = units.aircraft.hp; paint();
+  assert.ok(mini.calls.length > calls);
+  calls = mini.calls.length; unit.path = [{ x: unit.x, y: unit.y + 10 }]; unit.waypoint = 0; paint();
+  assert.ok(mini.calls.length > calls, "turning in place also refreshes the plane marker");
+  assert.ok(mini.calls.some(call => call.method === "rotate" && Math.abs(Number(call.args[0]) - Math.PI / 2) < 1e-8));
+  calls = mini.calls.length; paint(); assert.equal(mini.calls.length, calls, "unchanged support markers do no extra work");
+  assert.equal(base.calls.length, baseCalls); assert.equal(env.canvases.length, allocations);
+  assert.equal(mini.calls.some(call => call.method === "fillText"), false);
+});
+
+test("artillery arcs and aircraft bomb impacts stay visible across frames and expire without particle accumulation", t => {
+  environment(t);
+  const match = createMatch("normal", "support-effects", false, "plains"), canvas = new Canvas();
+  match.units = []; match.cities = [];
+  const flashes: Flash[] = [
+    { kind: "artillery", team: 1, targetId: 1, from: { x: 20, y: 20 }, to: { x: 30, y: 20 }, expires: .8 },
+    { kind: "aircraft", team: 2, targetId: 2, from: { x: 32, y: 20 }, to: { x: 32, y: 21 }, expires: .7 },
+    { kind: "artillery", team: 1, targetId: 3, from: { x: 140, y: 80 }, to: { x: 142, y: 80 }, expires: .8 },
+  ];
+  const view = viewOf(960, 600, { x: 25, y: 20, zoom: 4 });
+  const paint = () => render(canvas.element(), null, landscapeCanvas(match.map), view, match, new Set(), null, flashes, null);
+  match.elapsed = .1; paint();
+  const firstArcs = canvas.calls.filter(call => call.method === "quadraticCurveTo");
+  assert.equal(firstArcs.length, 2, "offscreen fire is culled while both support trajectories render");
+  assert.ok(canvas.calls.some(call => call.method === "stroke" && call.stroke === "#ffb33c"));
+  assert.ok(canvas.calls.some(call => call.method === "stroke" && call.stroke === "#ffea96"));
+  const firstCalls = canvas.calls.length;
+  canvas.calls = []; match.elapsed = .6; paint();
+  assert.equal(canvas.calls.filter(call => call.method === "quadraticCurveTo").length, 2, "support fire outlasts a brief rifle flash");
+  assert.ok(canvas.calls.length <= firstCalls, "each frame has a fixed small drawing cost");
+  assert.ok(canvas.calls.filter(call => call.method === "stroke" && (call.stroke === "#ffb33c" || call.stroke === "#ffea96"))
+    .every(call => Number(call.alpha) > 0 && Number(call.alpha) < 1));
+  canvas.calls = []; match.elapsed = .8; paint();
+  assert.equal(canvas.calls.some(call => call.method === "quadraticCurveTo"), false, "expired effects are not drawn even if a caller retained them");
+  assert.equal(canvas.context.globalAlpha, 1, "effects never leave the rest of the map translucent");
+});
+
+test("a guest effect clock animates and expires support fire without changing authoritative match time", t => {
+  environment(t);
+  const match = createMatch("normal", "guest-render-clock", false, "plains"), canvas = new Canvas();
+  match.units = []; match.cities = []; match.elapsed = 4;
+  const flash: Flash = { kind: "artillery", team: 1, targetId: 1, from: { x: 20, y: 20 }, to: { x: 30, y: 20 }, expires: 4.8 };
+  const view = viewOf(960, 600, { x: 25, y: 20, zoom: 4 });
+  const before = structuredClone(match);
+  const paint = (time: number) => render(canvas.element(), null, landscapeCanvas(match.map), view, match, new Set(), null, [flash], null, [], time);
+  paint(4.1);
+  const early = canvas.calls.find(call => call.method === "quadraticCurveTo")!;
+  canvas.calls = []; paint(4.5);
+  assert.notDeepEqual(canvas.calls.find(call => call.method === "quadraticCurveTo")!.args, early.args);
+  canvas.calls = []; paint(4.8);
+  assert.equal(canvas.calls.some(call => call.method === "quadraticCurveTo"), false);
+  assert.deepEqual(match, before, "visual interpolation never moves units or advances the battle");
 });

@@ -3,12 +3,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { GAME_SPEEDS, recovery, startBattle, summary, timeLabel } from "./battle";
 import type { Summary } from "./battle";
-import { BattleHud, ManpowerScoreboard } from "./battle-hud";
+import { BattleHud, ManpowerScoreboard, SupportHud } from "./battle-hud";
 import { formatSoldiers } from "./manpower";
 import { AudioControls } from "./audio-controls";
 import { unlockAudio } from "./audio";
 import type { SoundMix } from "./audio-types";
-import { CITY_PRODUCTION } from "./config";
+import { CITY_PRODUCTION, HEIGHT, WIDTH } from "./config";
 import { copy } from "./copy";
 import type { Match } from "./engine";
 import { clearRoomSession, connectRoom, createRoom, joinRoom, restoreRoomSession } from "./online-session";
@@ -314,6 +314,7 @@ export default function OnlineClient({ initialMap, sound, soundMix, onSoundChang
       {notice && <p className={styles.note} role="status">{notice}</p>}
       <p className={styles.note}>{copy.onlineRules}</p>
       <p className={styles.note}>{copy.openingComposition} · {copy.openingArmoredCities}</p>
+      <p className={styles.note}>{copy.openingSupport} · {copy.openingEconomy}</p>
       <p className={styles.note}>{copy.automaticRecruitment} · {copy.onlineSave}</p>
     </div>
   </section>;
@@ -404,6 +405,7 @@ export default function OnlineClient({ initialMap, sound, soundMix, onSoundChang
         <span>{copy.selectedSoldiers} <b>{formatSoldiers(hud.selectedSoldiers)}</b></span>
         {hud.selectedStance && <span>{hud.selectedStance === "attack" ? copy.attackStance : hud.selectedStance === "defend" ? copy.defendStance : hud.selectedStance === "mixed" ? copy.mixedOrders : copy.manualOrders}</span>}
         <span>{copy.light} <b>{hud.light}</b> · {copy.heavy} <b>{hud.heavy}</b></span>
+        <span>{copy.artillery} <b>{hud.artillery}</b> · {copy.aircraft} <b>{hud.aircraft}</b></span>
         {(!city || city.owner !== session.team) && <span className={styles.armoredHint}>{copy.armoredHint}</span>}
         {hud.selectedPocketed > 0 && <span className={styles.pocketStatus} role="status">{copy.pocketed} <b>{hud.selectedPocketed}/{hud.selectedUnits}</b> · {hud.selectedPocketGrace ? `${copy.pocketGrace} ${hud.selectedPocketGrace} ${copy.seconds}` : copy.pocketDamage}</span>}
         {city && <>
@@ -431,6 +433,10 @@ export default function OnlineClient({ initialMap, sound, soundMix, onSoundChang
           : `${copy.nextReinforcement}: ${hud.nextProductionIn} ${copy.seconds}`}</span>
         <span>{copy.productionEvery}</span>
       </div>
+      <SupportHud hud={hud} canPan={canCommand} onSourceClick={() => {
+        const source = match.cities.find(item => item.id === hud.support.cityId);
+        if (source) battle.current?.pan({ x: source.x / WIDTH, y: source.y / HEIGHT });
+      }} />
       {presence}
       {error && <p className={styles.warning} role="alert">{error}</p>}
       <p className={styles.note}>{copy.productionEvery} · {copy.hostControls}</p>

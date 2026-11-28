@@ -1,5 +1,5 @@
 import { HEIGHT, WIDTH } from "./config";
-import type { Owner, Point, Team } from "./config";
+import type { Kind, Owner, Point, Team } from "./config";
 import { getMap } from "./terrain";
 import type { MapId } from "./terrain";
 
@@ -10,7 +10,7 @@ export const TERRITORY_SIZE = TERRITORY_COLS * TERRITORY_ROWS;
 export const OCCUPATION_RADIUS = .6;
 export type Territory = { owners: number[]; revision: number };
 export type TerritorySource = { map: MapId; territory: Territory };
-export type OccupationSource = TerritorySource & { units: readonly (Point & { team: Team; hp: number })[] };
+export type OccupationSource = TerritorySource & { units: readonly (Point & { team: Team; hp: number; kind?: Kind })[] };
 
 const masks = new Map<MapId, Uint8Array>();
 const openCounts = new Map<MapId, number>();
@@ -59,7 +59,7 @@ export function advanceTerritory(source: OccupationSource): boolean {
   const { claims, visited, queue, touched } = scratch;
   const radiusSquared = OCCUPATION_RADIUS ** 2;
   for (const unit of source.units) {
-    if (unit.hp <= 0 || (unit.team !== 1 && unit.team !== 2)) continue;
+    if (unit.hp <= 0 || unit.kind === "aircraft" || (unit.team !== 1 && unit.team !== 2)) continue;
     const start = territoryCell(unit); if (start < 0 || !mask[start]) continue;
     scratch.generation = (scratch.generation + 1) >>> 0;
     if (!scratch.generation) { visited.fill(0); scratch.generation = 1; }

@@ -25,12 +25,28 @@ export const FRONT_REPLAN_DISTANCE = 0.75;
 export const FRONT_ATTACK_COMMIT_DISTANCE = 1.25;
 export const FRONT_ATTACK_SEARCH = 35;
 export const MAX_ROUTE_POINTS = 128;
+/** Support reinforcements use one clock per type and team, never per city. */
+export const SUPPORT_PRODUCTION = 60;
+export const ARTILLERY_BLAST_RADIUS = 3;
+export const ARTILLERY_TARGET_LIMIT = 5;
+export const ARTILLERY_REAR_DISTANCE = 8;
+export const AIRCRAFT_BLAST_RADIUS = 1.8;
+export const AIRCRAFT_TARGET_LIMIT = 3;
+export const AIRCRAFT_DECAY = .3;
+export const STARTING_MONEY = 1000;
+export const CITY_INCOME = 1;
+export const UNFUNDED_DAMAGE = .005;
+export const UPKEEP = { light: .18, heavy: .35, artillery: 2, aircraft: 3.5 } as const;
 
 export const units = {
   light: { hp: 48, damage: 4, range: 2.3, speed: 0.4, cooldown: 3, build: CITY_PRODUCTION, supply: 1, forest: 0.8 },
   heavy: { hp: 110, damage: 10, range: 3.1, speed: 0.25, cooldown: 4.5, build: CITY_PRODUCTION, supply: 2, forest: 0.49 },
+  artillery: { hp: 22, damage: 110, range: 14, speed: .2, cooldown: 24, build: SUPPORT_PRODUCTION, supply: 3, forest: .45 },
+  aircraft: { hp: 36, damage: 24, range: 3.2, speed: 1.4, cooldown: 8, build: SUPPORT_PRODUCTION, supply: 3, forest: 1 },
 };
 export type Kind = keyof typeof units;
+export type GroundKind = "light" | "heavy";
+export type SupportKind = "artillery" | "aircraft";
 export type Point = { x: number; y: number };
 export type Team = 1 | 2;
 export type Owner = 0 | Team;

@@ -25,7 +25,86 @@ export function viewOf(width: number, height: number, camera: Camera): View {
   return { width, height, scale, x: width / 2 - camera.x * scale, y: height / 2 - camera.y * scale };
 }
 export const toWorld = (view: View, point: Point) => ({ x: (point.x - view.x) / view.scale, y: (point.y - view.y) / view.scale });
-const troopRadius = (unit: Unit, scale: number) => Math.max(unit.kind === "heavy" ? .65 : .48, (unit.kind === "heavy" ? 7.5 : 5.5) / scale);
+const troopSizes = { light: [.48, 5.5], heavy: [.65, 7.5], artillery: [.68, 8], aircraft: [.82, 10] } as const;
+const troopRadius = (unit: Unit, scale: number) => {
+  const size = troopSizes[unit.kind];
+  return Math.max(size[0], size[1] / scale);
+};
+const kindCodes = { light: 0, heavy: 1, artillery: 2, aircraft: 3 };
+function heading(unit: Unit, match: Match): number {
+  const order = unit.order;
+  const destination = unit.path[unit.waypoint] ?? (order.mode === "move" ? order.point
+    : order.mode === "attack" ? match.units.find(target => target.id === order.target) : undefined);
+  return destination && Math.abs(destination.x - unit.x) + Math.abs(destination.y - unit.y) > .01
+    ? Math.atan2(destination.y - unit.y, destination.x - unit.x) : unit.team === 1 ? 0 : Math.PI;
+}
+
+// Fixed, inexpensive silhouette paths make support types recognizable even
+// without color. Local +x is the vehicle's nose/barrel direction.
+const aircraftOutline = [[1, 0], [.23, -.17], [-.08, -.9], [-.35, -.9], [-.22, -.14],
+  [-.7, -.11], [-.93, -.42], [-1, -.42], [-.87, 0], [-1, .42], [-.93, .42],
+  [-.7, .11], [-.22, .14], [-.35, .9], [-.08, .9], [.23, .17]] as const;
+function planePath(ctx: CanvasRenderingContext2D) {
+  ctx.beginPath(); ctx.moveTo(aircraftOutline[0][0], aircraftOutline[0][1]);
+  for (let i = 1; i < aircraftOutline.length; i++) ctx.lineTo(aircraftOutline[i][0], aircraftOutline[i][1]);
+  ctx.closePath();
+}
+function supportGlyph(ctx: CanvasRenderingContext2D, unit: Unit, match: Match, radius: number, scale: number) {
+  const angle = heading(unit, match);
+  if (unit.kind === "aircraft") {
+    // A short shadow and two static trails replace per-frame particle systems.
+    ctx.save(); ctx.translate(unit.x + .24, unit.y + .34); ctx.rotate(angle); ctx.scale(radius, radius);
+    planePath(ctx); ctx.fillStyle = "#00000038"; ctx.fill(); ctx.restore();
+  }
+  ctx.save(); ctx.translate(unit.x, unit.y); ctx.rotate(angle); ctx.scale(radius, radius);
+  ctx.fillStyle = colors[unit.team]; ctx.strokeStyle = "#000000"; ctx.lineWidth = Math.max(.09, 1.3 / (scale * radius));
+  if (unit.kind === "aircraft") {
+    if (unit.path[unit.waypoint]) {
+      ctx.beginPath(); ctx.moveTo(-1.1, -.32); ctx.lineTo(-1.85, -.32);
+      ctx.moveTo(-1.1, .32); ctx.lineTo(-1.85, .32);
+      ctx.strokeStyle = "#ffffff60"; ctx.lineWidth = Math.max(.06, 1 / (scale * radius)); ctx.stroke();
+      ctx.strokeStyle = "#000000"; ctx.lineWidth = Math.max(.09, 1.3 / (scale * radius));
+    }
+    planePath(ctx); ctx.fill(); ctx.stroke();
+    // The cockpit remains visible on both the blue and red silhouette.
+    ctx.beginPath(); ctx.moveTo(.18, 0); ctx.lineTo(.55, 0);
+    ctx.strokeStyle = "#ffffffc0"; ctx.lineWidth = .1; ctx.stroke();
+  } else {
+    ctx.beginPath(); ctx.moveTo(.25, 0); ctx.lineTo(-.75, -.65); ctx.lineTo(-.75, .65); ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    ctx.fillStyle = "#000000";
+    ctx.beginPath(); ctx.arc(-.45, -.58, .23, 0, Math.PI * 2); ctx.arc(-.45, .58, .23, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = colors[unit.team];
+    ctx.fillRect(-.25, -.16, 1.3, .32); ctx.strokeRect(-.25, -.16, 1.3, .32);
+  }
+  ctx.restore();
+}
+
+function supportFlash(ctx: CanvasRenderingContext2D, flash: Flash, remaining: number, scale: number) {
+  const artillery = flash.kind === "artillery", progress = 1 - remaining;
+  const dx = flash.to.x - flash.from.x, dy = flash.to.y - flash.from.y;
+  const arc = artillery ? Math.min(3.5, Math.max(.8, Math.hypot(dx, dy) * .16)) : .5;
+  const control = { x: (flash.from.x + flash.to.x) / 2, y: (flash.from.y + flash.to.y) / 2 - arc };
+  const travel = Math.min(1, progress / .55), inverse = 1 - travel;
+  const shell = { x: inverse * inverse * flash.from.x + 2 * inverse * travel * control.x + travel * travel * flash.to.x,
+    y: inverse * inverse * flash.from.y + 2 * inverse * travel * control.y + travel * travel * flash.to.y };
+  ctx.strokeStyle = colors[flash.team]; ctx.lineWidth = Math.max(.08, 1.2 / scale);
+  ctx.globalAlpha = remaining * .65;
+  ctx.beginPath(); ctx.moveTo(flash.from.x, flash.from.y);
+  ctx.quadraticCurveTo(flash.from.x + (control.x - flash.from.x) * travel,
+    flash.from.y + (control.y - flash.from.y) * travel, shell.x, shell.y); ctx.stroke();
+  ctx.globalAlpha = remaining;
+  circle(ctx, shell, Math.max(artillery ? .16 : .2, 2.3 / scale));
+  ctx.fillStyle = artillery ? "#ffe28a" : "#202020"; ctx.fill();
+  ctx.strokeStyle = "#000000"; ctx.stroke();
+  // Damage is authoritative at the shot; its destination flashes immediately.
+  // A bounded expanding ring communicates the area strike without particles.
+  const radius = (artillery ? .38 : .28) + progress * (artillery ? 1.4 : 1);
+  ctx.strokeStyle = artillery ? "#ffb33c" : "#ffea96";
+  ctx.lineWidth = Math.max(.11, 1.8 / scale); circle(ctx, flash.to, radius); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(flash.to.x - radius * .65, flash.to.y); ctx.lineTo(flash.to.x + radius * .65, flash.to.y);
+  ctx.moveTo(flash.to.x, flash.to.y - radius * .65); ctx.lineTo(flash.to.x, flash.to.y + radius * .65); ctx.stroke();
+}
 
 const landscapes = new Map<MapId, HTMLCanvasElement>();
 export function landscapeCanvas(mapId: MapId = "valley") {
@@ -297,7 +376,8 @@ function drawMinimap(mini: HTMLCanvasElement, terrain: HTMLCanvasElement, territ
   let ownership = 0, unitHash = 2166136261;
   for (const city of match.cities) ownership = Math.imul(ownership ^ city.owner, 16777619);
   for (const unit of match.units) {
-    unitHash = Math.imul(unitHash ^ unit.id ^ (unit.team << 20), 16777619);
+    unitHash = Math.imul(unitHash ^ unit.id ^ (unit.team << 20) ^ (kindCodes[unit.kind] << 24), 16777619);
+    if (unit.kind === "aircraft" || unit.kind === "artillery") unitHash = Math.imul(unitHash ^ Math.round(heading(unit, match) * 16), 16777619);
     unitHash = Math.imul(unitHash ^ Math.round(unit.x * 4), 16777619);
     unitHash = Math.imul(unitHash ^ Math.round(unit.y * 4), 16777619);
   }
@@ -322,9 +402,18 @@ function drawMinimap(mini: HTMLCanvasElement, terrain: HTMLCanvasElement, territ
   const map = mini.getContext("2d", { alpha: false })!;
   map.setTransform(1, 0, 0, 1, 0, 0); map.drawImage(cached.base, 0, 0);
   map.setTransform(mini.width / WIDTH, 0, 0, mini.height / HEIGHT, 0, 0);
-  for (const team of [1, 2] as const) {
-    map.fillStyle = colors[team];
-    for (const unit of match.units) if (unit.team === team) map.fillRect(unit.x - .55, unit.y - .55, 1.1, 1.1);
+  for (let layer = 0; layer < 2; layer++) for (const unit of match.units) {
+    if ((unit.kind === "aircraft") !== Boolean(layer)) continue;
+    map.fillStyle = colors[unit.team];
+    if (unit.kind === "light" || unit.kind === "heavy") { map.fillRect(unit.x - .55, unit.y - .55, 1.1, 1.1); continue; }
+    map.save(); map.translate(unit.x, unit.y); map.rotate(heading(unit, match));
+    map.strokeStyle = "#000000"; map.lineWidth = Math.max(.45, .8 / (mini.width / WIDTH));
+    if (unit.kind === "aircraft") {
+      map.scale(1.65, 1.65); planePath(map); map.fill(); map.stroke();
+    } else {
+      map.beginPath(); map.moveTo(1.15, 0); map.lineTo(-.9, -1); map.lineTo(-.9, 1); map.closePath(); map.fill(); map.stroke();
+    }
+    map.restore();
   }
   map.strokeStyle = "#ffffff"; map.lineWidth = Math.max(.45, 1 / (mini.width / WIDTH));
   map.strokeRect(-view.x / view.scale, -view.y / view.scale, view.width / view.scale, view.height / view.scale);
@@ -334,7 +423,7 @@ function drawMinimap(mini: HTMLCanvasElement, terrain: HTMLCanvasElement, territ
 export function render(
   canvas: HTMLCanvasElement, mini: HTMLCanvasElement | null, terrain: HTMLCanvasElement,
   view: View, match: Match, selected: Set<number>, selectedCity: number | null, flashes: Flash[], box: Box | null,
-  routePreview: readonly Point[] = [],
+  routePreview: readonly Point[] = [], effectTime = match.elapsed,
 ) {
   // A restored match always paints its own map, even if a caller supplies an old cache.
   if (terrain.dataset.dotFrontMap !== match.map) terrain = landscapeCanvas(match.map);
@@ -401,8 +490,10 @@ export function render(
     }
   }
   let paintedPaths = 0;
-  for (const unit of match.units) {
-    if (!visible(unit, 7)) continue;
+  // Two passes keep aircraft above every ground formation without allocating
+  // or sorting a fresh army list for every Canvas frame.
+  for (let layer = 0; layer < 2; layer++) for (const unit of match.units) {
+    if ((unit.kind === "aircraft") !== Boolean(layer) || !visible(unit, 7)) continue;
     const picked = selected.has(unit.id);
     const radius = troopRadius(unit, view.scale);
     const stats = units[unit.kind];
@@ -422,17 +513,17 @@ export function render(
       ctx.lineWidth = Math.max(.085, 1.5 / view.scale);
       ctx.stroke(); ctx.setLineDash([]);
     }
-    circle(ctx, unit, radius);
-    ctx.fillStyle = colors[unit.team];
-    ctx.fill();
-    ctx.strokeStyle = "#000000";
-    ctx.lineWidth = Math.max(unit.kind === "heavy" ? .18 : .07, (unit.kind === "heavy" ? 2.5 : 1) / view.scale);
-    ctx.stroke();
-    if (unit.kind === "heavy") {
-      circle(ctx, unit, radius + Math.max(.21, 2.5 / view.scale));
-      ctx.lineWidth = Math.max(.075, 1 / view.scale); ctx.stroke();
+    if (unit.kind === "artillery" || unit.kind === "aircraft") supportGlyph(ctx, unit, match, radius, view.scale);
+    else {
+      circle(ctx, unit, radius);
+      ctx.fillStyle = colors[unit.team]; ctx.fill(); ctx.strokeStyle = "#000000";
+      ctx.lineWidth = Math.max(unit.kind === "heavy" ? .18 : .07, (unit.kind === "heavy" ? 2.5 : 1) / view.scale); ctx.stroke();
+      if (unit.kind === "heavy") {
+        circle(ctx, unit, radius + Math.max(.21, 2.5 / view.scale));
+        ctx.lineWidth = Math.max(.075, 1 / view.scale); ctx.stroke();
+      }
     }
-    if (unit.team === 2) {
+    if (unit.team === 2 && unit.kind !== "aircraft") {
       ctx.fillStyle = "#ffffffbd";
       ctx.fillRect(unit.x - radius * .4, unit.y - radius * .1, radius * .8, radius * .2);
     }
@@ -446,9 +537,13 @@ export function render(
     }
   }
   for (const flash of flashes) {
-    if (!visible(flash.from) && !visible(flash.to)) continue;
+    if (flash.expires <= effectTime || (!visible(flash.from) && !visible(flash.to))) continue;
+    if (flash.kind === "artillery" || flash.kind === "aircraft") {
+      supportFlash(ctx, flash, Math.min(1, (flash.expires - effectTime) / (flash.kind === "artillery" ? .8 : .7)), view.scale);
+      continue;
+    }
     ctx.strokeStyle = colors[flash.team];
-    ctx.globalAlpha = Math.min(1, (flash.expires - match.elapsed) / 0.14);
+    ctx.globalAlpha = Math.min(1, (flash.expires - effectTime) / 0.14);
     ctx.lineWidth = Math.max(0.095, 1.3 / view.scale);
     ctx.beginPath();
     ctx.moveTo(flash.from.x, flash.from.y);

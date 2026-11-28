@@ -35,10 +35,13 @@ class FakeCanvas extends Surface {
   paints = 0;
   rectReads = 0;
   drawnView = { x: 0, y: 0, scale: 1 };
+  drawingDepth = 0;
   context = new Proxy<Record<string, unknown>>({
-    setTransform: () => { this.paints++; },
-    translate: (x: number, y: number) => { this.drawnView.x = x; this.drawnView.y = y; },
-    scale: (value: number) => { this.drawnView.scale = value; },
+    setTransform: () => { this.paints++; this.drawingDepth = 0; },
+    save: () => { this.drawingDepth++; },
+    restore: () => { this.drawingDepth--; },
+    translate: (x: number, y: number) => { if (this.drawingDepth === 1) { this.drawnView.x = x; this.drawnView.y = y; } },
+    scale: (value: number) => { if (this.drawingDepth === 1) this.drawnView.scale = value; },
     measureText: (text: string) => ({ width: text.length * 7 }),
   }, {
     get(target, key: string) { return target[key] ?? (() => {}); },
@@ -829,6 +832,74 @@ function audibleDuel() {
   return { match, blue, red };
 }
 
+test("support HUD uses the local team's treasury, force types and independent clocks", () => {
+  const match = createMatch("normal", "support-hud", false, "plains");
+  match.economy = [{ money: 998, shortage: 0 }, { money: 0, shortage: 4 }];
+  match.support = [{ artillery: 10, aircraft: 15 }, { artillery: 58, aircraft: 17 }];
+  const red = match.units.find(unit => unit.team === 2)!;
+  const artillery = { ...red, id: match.nextId++, kind: "artillery" as const, hp: units.artillery.hp };
+  const aircraft = { ...red, id: match.nextId++, kind: "aircraft" as const, hp: units.aircraft.hp };
+  match.units.push(artillery, aircraft);
+  const hud = summary(match, new Set([artillery.id, aircraft.id]), null, false, 2);
+  assert.equal(hud.economy.money, 0); assert.equal(hud.economy.shortage, 4);
+  assert.equal(hud.economy.income, 25);
+  assert.ok(hud.economy.upkeep > 10);
+  assert.deepEqual(hud.armyKinds, { light: 20, heavy: 5, artillery: 1, aircraft: 1 });
+  assert.equal(hud.support.artilleryIn, 2); assert.equal(hud.support.aircraftIn, 43);
+  assert.equal(match.cities.find(city => city.id === hud.support.cityId)?.owner, 2);
+  assert.equal(hud.selectedUnits, 2); assert.equal(hud.light + hud.heavy, 0);
+  assert.equal(hud.artillery, 1); assert.equal(hud.aircraft, 1);
+});
+
+test("an overlapping aircraft is selected above ground troops and survives HUD snapshots", t => {
+  const env = environment(t), canvas = new FakeCanvas();
+  const match = createMatch("normal", "aircraft-picking", false, "plains");
+  const ground = match.units.filter(unit => unit.team === 1).sort((a, b) => Math.abs(a.y - 45) - Math.abs(b.y - 45))[0];
+  const aircraft = { ...ground, id: match.nextId++, kind: "aircraft" as const, hp: units.aircraft.hp };
+  match.units.push(aircraft);
+  let hud = summary(match, new Set(), null);
+  const battle = startBattle(match, canvas.asCanvas(), new FakeCanvas().asCanvas(), value => { hud = value; }, () => {}, () => {}, () => {},
+    { bot: false, simulate: false });
+  env.cleanup(() => battle.dispose()); env.runFrame(1000);
+  canvas.emit("pointerdown", canvas.point(aircraft)); canvas.emit("pointerup", canvas.point(aircraft));
+  assert.equal(hud.selectedUnits, 1); assert.equal(hud.aircraft, 1); assert.equal(hud.heavy, 0);
+  const snapshot = structuredClone(match); snapshot.economy[0].money = 13;
+  snapshot.support[0] = { artillery: 59, aircraft: 32 }; snapshot.units.find(unit => unit.id === aircraft.id)!.hp -= 3;
+  battle.replaceSnapshot(snapshot);
+  assert.equal(hud.aircraft, 1); assert.equal(hud.economy.money, 13);
+  assert.equal(hud.support.artilleryIn, 1); assert.equal(hud.support.aircraftIn, 28);
+});
+
+test("touch selects an individual support formation parked exactly on its rear city", t => {
+  const env = environment(t), canvas = new FakeCanvas();
+  const match = createMatch("normal", "support-city-hit", false, "plains");
+  const city = match.cities.find(city => city.owner === 1 && city.x > 60)!;
+  const gun = match.units.find(unit => unit.team === 1)!;
+  Object.assign(gun, { x: city.x, y: city.y, kind: "artillery", hp: units.artillery.hp });
+  let hud = summary(match, new Set(), null);
+  const battle = startBattle(match, canvas.asCanvas(), new FakeCanvas().asCanvas(), value => { hud = value; },
+    () => {}, () => {}, () => {}, { bot: false, simulate: false });
+  env.cleanup(() => battle.dispose()); battle.pan({ x: city.x / WIDTH, y: city.y / HEIGHT }); env.runFrame(1000);
+  canvas.emit("pointerdown", { ...canvas.point(gun), pointerType: "touch" });
+  canvas.emit("pointerup", { ...canvas.point(gun), pointerType: "touch" });
+  assert.equal(hud.selectedUnits, 1); assert.equal(hud.artillery, 1); assert.equal(Boolean(hud.city), false);
+  const cityEdge = { x: city.x + 1, y: city.y };
+  canvas.emit("pointerdown", { ...canvas.point(cityEdge), pointerType: "touch" });
+  canvas.emit("pointerup", { ...canvas.point(cityEdge), pointerType: "touch" });
+  assert.equal(hud.city?.id, city.id, "the outer city circle remains touch-selectable beside the gun glyph");
+  const mouseEdge = { x: city.x + .72, y: city.y };
+  battle.deselect();
+  canvas.emit("pointerdown", canvas.point(gun)); canvas.emit("pointerup", canvas.point(gun));
+  assert.equal(hud.artillery, 1);
+  canvas.emit("pointerdown", canvas.point(mouseEdge)); canvas.emit("pointerup", canvas.point(mouseEdge));
+  assert.equal(hud.city?.id, city.id, "a mouse can also select the exposed outer city circle");
+  battle.deselect();
+  match.units = match.units.filter(unit => unit.id !== gun.id);
+  canvas.emit("pointerdown", { ...canvas.point(city), pointerType: "touch" });
+  canvas.emit("pointerup", { ...canvas.point(city), pointerType: "touch" });
+  assert.equal(hud.selectedUnits, 0); assert.equal(hud.city?.id, city.id, "the city remains selectable after the overlapping support moves away");
+});
+
 test("combat dispatches distinct spatial weapon sounds and pauses, mutes and disposes with the battle", t => {
   const env = environment(t), canvas = new FakeCanvas(), { match } = audibleDuel(), probe = audioProbe();
   const game = startBattle(match, canvas.asCanvas(), new FakeCanvas().asCanvas(), () => {}, () => {}, () => {}, () => {}, { bot: false, audio: probe.audio });
@@ -887,4 +958,62 @@ test("online guest sounds use new snapshots, skip duplicates and never replay pa
   afterUnmute.units[0].cooldown = 1.4; afterUnmute.units[1].cooldown = 2.9;
   game.replaceSnapshot(afterUnmute);
   assert.deepEqual(probe.state.shots.map(shot => shot.kind), ["heavy", "light", "light"], "only new shots after the unmuted baseline become audible");
+});
+
+test("muted guest support fire animates, expires and clears on snapshots without advancing authoritative combat", t => {
+  const env = environment(t), canvas = new FakeCanvas(), { match, blue, red } = audibleDuel(), probe = audioProbe();
+  blue.kind = "artillery"; blue.hp = units.artillery.hp; blue.cooldown = .3; red.cooldown = 2;
+  const aircraft = { ...red, id: match.nextId++, kind: "aircraft" as const, hp: units.aircraft.hp, cooldown: .3 };
+  match.units.push(aircraft);
+  const arcs: number[][] = [], impacts: string[] = [];
+  const setTransform = canvas.context.setTransform as (...args: number[]) => void;
+  canvas.context.setTransform = (...args: number[]) => { arcs.length = 0; impacts.length = 0; setTransform(...args); };
+  canvas.context.quadraticCurveTo = (...args: number[]) => { arcs.push(args); };
+  canvas.context.stroke = () => {
+    const color = canvas.context.strokeStyle;
+    if (color === "#ffb33c" || color === "#ffea96") impacts.push(color);
+  };
+  const game = startBattle(match, canvas.asCanvas(), new FakeCanvas().asCanvas(), () => {}, () => {}, () => {}, () => {},
+    { simulate: false, bot: false, team: 2, audio: probe.audio });
+  env.cleanup(() => game.dispose());
+  const baseline = structuredClone(match); baseline.elapsed = .1;
+  baseline.units[0].cooldown = .2; baseline.units[1].cooldown = 1.9; baseline.units[2].cooldown = .2;
+  game.replaceSnapshot(baseline); env.runFrame(1000);
+  assert.equal(arcs.length, 0, "the first snapshot establishes a visual baseline");
+  const fired = structuredClone(baseline); fired.elapsed = .6;
+  fired.units[0].cooldown = 23.8; fired.units[1].cooldown = 1.4; fired.units[2].cooldown = 7.8;
+  game.replaceSnapshot(fired); env.runFrame(1100);
+  assert.equal(arcs.length, 2); assert.ok(impacts.includes("#ffb33c") && impacts.includes("#ffea96"));
+  const initialArcs = structuredClone(arcs);
+  env.runFrame(1200);
+  assert.notDeepEqual(arcs, initialArcs, "projectiles progress between network snapshots even with audio muted");
+  assert.equal(probe.state.shots.length, 0); assert.equal(probe.state.impacts.length, 0);
+  assert.deepEqual(match, fired, "visual aging never moves armies or advances cooldowns, economy or simulation time");
+  const movingArcs = structuredClone(arcs);
+  game.pause(true); env.runFrame(1250);
+  assert.deepEqual(arcs, movingArcs, "pausing also freezes visual progress");
+  game.pause(false); env.runFrame(1300);
+  for (let now = 1400; now <= 2200; now += 100) env.runFrame(now);
+  assert.equal(arcs.length, 0); assert.equal(impacts.length, 0, "the final expired frame clears impact pixels without another snapshot");
+  assert.deepEqual(match, fired);
+  game.replaceSnapshot(fired); env.runFrame(2300);
+  assert.equal(arcs.length, 0, "an identical snapshot cannot replay a shot");
+  const later = structuredClone(fired); later.elapsed = 1.1;
+  later.units[0].cooldown = 23.7; later.units[1].cooldown = .9; later.units[2].cooldown = 7.7;
+  game.replaceSnapshot(later); env.runFrame(2400);
+  assert.equal(arcs.length, 2, "fresh cooldown resets still produce effects after the resumed baseline");
+  const quiet = structuredClone(later); quiet.elapsed = 1.6;
+  for (const unit of quiet.units) unit.cooldown = Math.max(0, unit.cooldown - .5);
+  game.replaceSnapshot(quiet); env.runFrame(2500);
+  assert.equal(arcs.length, 0, "a subsequent no-shot snapshot replaces the old flash list");
+  game.pause(true);
+  const paused = structuredClone(quiet); paused.elapsed = 2.1;
+  paused.units[0].cooldown = 23.8; paused.units[2].cooldown = 7.8;
+  game.replaceSnapshot(paused); env.runFrame(2600);
+  assert.equal(arcs.length, 0);
+  game.pause(false);
+  const resumed = structuredClone(paused); resumed.elapsed = 2.6;
+  resumed.units[0].cooldown = 23.8; resumed.units[2].cooldown = 7.8;
+  game.replaceSnapshot(resumed); env.runFrame(2700);
+  assert.equal(arcs.length, 0, "the first resumed snapshot never replays paused combat");
 });

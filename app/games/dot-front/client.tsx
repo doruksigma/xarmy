@@ -5,13 +5,13 @@ import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
 import { GAME_SPEEDS, recovery, startBattle, summary, timeLabel } from "./battle";
 import type { Summary } from "./battle";
-import { BattleHud, ManpowerScoreboard } from "./battle-hud";
+import { BattleHud, ManpowerScoreboard, SupportHud } from "./battle-hud";
 import { formatSoldiers } from "./manpower";
 import { AudioControls } from "./audio-controls";
 import { unlockAudio } from "./audio";
 import type { SoundMix } from "./audio-types";
 import { copy } from "./copy";
-import { CITY_PRODUCTION } from "./config";
+import { CITY_PRODUCTION, HEIGHT, WIDTH } from "./config";
 import type { Difficulty } from "./config";
 import { createMatch } from "./engine";
 import type { Match } from "./engine";
@@ -205,6 +205,7 @@ export default function DotFront() {
             <span>{copy.openingCities}</span><span>{copy.openingArmy}</span>
             <span>{copy.openingComposition}</span><span>{copy.openingArmoredCities}</span>
             <span>{copy.automaticRecruitment}</span><span>{copy.openingFront}</span>
+            <span>{copy.openingSupport}</span><span>{copy.openingEconomy}</span>
           </div>
           <p className={styles.selectedMap}><strong>{copy.maps[settings.map].name}</strong>{copy.maps[settings.map].detail}</p>
         </div>
@@ -230,7 +231,7 @@ export default function DotFront() {
       </fieldset>
       {saved && <p className={styles.note}>{copy.saveMap}: {copy.maps[saved.map].name} · {copy[saved.difficulty]} · {timeLabel(Math.floor(saved.elapsed))}</p>}
       {panel === "how" && <div className={styles.details}>
-        <h2>{copy.how}</h2><p>{copy.goal}</p><p>{copy.manpowerRules}</p><p>{copy.armoredRules}</p><p>{copy.logistics}</p><p>{copy.frontRules}</p><p>{copy.pocketRules}</p><p>{copy.routeRules}</p><p>{copy.paceRules}</p><p>{copy.terrainRules}</p><p>{copy.controls}</p><p>{copy.touch}</p>
+        <h2>{copy.how}</h2><p>{copy.goal}</p><p>{copy.manpowerRules}</p><p>{copy.armoredRules}</p><p>{copy.artilleryRules}</p><p>{copy.aircraftRules}</p><p>{copy.supportRules}</p><p>{copy.economyRules}</p><p>{copy.logistics}</p><p>{copy.frontRules}</p><p>{copy.pocketRules}</p><p>{copy.routeRules}</p><p>{copy.paceRules}</p><p>{copy.terrainRules}</p><p>{copy.controls}</p><p>{copy.touch}</p>
         <p className={styles.note}>{copy.tutorialMap}</p>
         <button onClick={() => newMatch(true)}>{copy.tutorial}</button>
       </div>}
@@ -247,7 +248,7 @@ export default function DotFront() {
 
   const city = hud.city;
   const canCommand = !paused && !hud.result;
-  const hasSelection = hud.light + hud.heavy > 0;
+  const hasSelection = hud.selectedUnits > 0;
   return (
     <section className={styles.shell} aria-labelledby="dot-front-title">
       <Link className={styles.back} href="/#oyunlar">{copy.back}</Link>
@@ -332,6 +333,7 @@ export default function DotFront() {
           <span>{copy.selectedSoldiers} <b>{formatSoldiers(hud.selectedSoldiers)}</b></span>
           {hud.selectedStance && <span>{hud.selectedStance === "attack" ? copy.attackStance : hud.selectedStance === "defend" ? copy.defendStance : hud.selectedStance === "mixed" ? copy.mixedOrders : copy.manualOrders}</span>}
           <span>{copy.light} <b>{hud.light}</b> · {copy.heavy} <b>{hud.heavy}</b></span>
+          <span>{copy.artillery} <b>{hud.artillery}</b> · {copy.aircraft} <b>{hud.aircraft}</b></span>
           {hud.selectedPocketed > 0 && <span className={styles.pocketStatus} role="status">
             {copy.pocketed} <b>{hud.selectedPocketed}/{hud.selectedUnits}</b> · {hud.selectedPocketGrace
               ? `${copy.pocketGrace} ${hud.selectedPocketGrace} ${copy.seconds}` : copy.pocketDamage}
@@ -366,6 +368,10 @@ export default function DotFront() {
             : `${copy.nextReinforcement}: ${hud.nextProductionIn} ${copy.seconds}`}</span>
           <span>{copy.productionEvery}</span>
         </div>
+        <SupportHud hud={hud} canPan={canCommand} onSourceClick={() => {
+          const source = match.cities.find(item => item.id === hud.support.cityId);
+          if (source) battle.current?.pan({ x: source.x / WIDTH, y: source.y / HEIGHT });
+        }} />
         {status && <p className={styles.note} role="status">{status}</p>}
       </section>
       <p className={styles.note}>{copy.touch}</p>

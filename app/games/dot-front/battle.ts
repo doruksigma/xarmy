@@ -2,17 +2,18 @@ import { decide } from "./ai";
 import { soundEffects, unlockAudio } from "./audio";
 import type { SoundMix } from "./audio-types";
 import { combatSoundsBetween, spatialSound } from "./combat-audio";
-import { CITY_PRODUCTION, GRACE, HEIGHT, MAX_ROUTE_POINTS, POCKET_GRACE, RADIUS, STEP, WIDTH, dist, units } from "./config";
-import type { Kind, Point, Team } from "./config";
+import { CITY_PRODUCTION, GRACE, HEIGHT, MAX_ROUTE_POINTS, POCKET_GRACE, RADIUS, STEP, SUPPORT_PRODUCTION, WIDTH, dist, units } from "./config";
+import type { GroundKind, Kind, Point, Team } from "./config";
 import { applyGameCommand, canApplyGameCommand } from "./commands";
 import type { GameCommand } from "./commands";
-import { step, supply } from "./engine";
+import { step, supply, supportSourceCity } from "./engine";
 import type { Flash, Match, Order, Unit } from "./engine";
 import { bindInput, clampCamera, MAX_ZOOM } from "./input";
 import { landscapeCanvas, render, resize, viewOf } from "./render";
 import type { Box, Camera } from "./render";
 import { isSupplied } from "./territory";
 import { manpower, soldiersInUnit } from "./manpower";
+import { economySummary } from "./economy";
 
 export const GAME_SPEEDS = [0.5, 1, 2, 3] as const;
 const MAX_STEPS_PER_FRAME = 6;
@@ -34,6 +35,9 @@ export function summary(match: Match, picked: Set<number>, cityId: number | null
   const cityIsolated = Boolean(city?.owner && !isSupplied(match, city.owner, city));
   const selectedStance: Unit["stance"] | "mixed" | null = !selected.length ? null
     : selected.every(unit => unit.stance === selected[0].stance) ? selected[0].stance : "mixed";
+  const armyKinds = { light: 0, heavy: 0, artillery: 0, aircraft: 0 };
+  for (const unit of match.units) if (unit.team === localTeam && unit.hp > 0) armyKinds[unit.kind]++;
+  const supportCity = supportSourceCity(match, localTeam), supportClocks = match.support[localTeam - 1];
   return {
     localTeam, time: Math.floor(match.elapsed), logistics, shortage: match.shortage[localTeam - 1],
     blue: match.units.filter((unit) => unit.team === 1).length,
@@ -47,12 +51,20 @@ export function summary(match: Match, picked: Set<number>, cityId: number | null
     enemyCities: match.cities.filter(item => item.owner && item.owner !== localTeam).length,
     playerPocketed: match.units.filter(unit => unit.team === localTeam && unit.pocketed).length,
     producingCities: producing.length, nextProductionIn,
+    armyKinds, economy: economySummary(match, localTeam),
+    support: {
+      artilleryIn: Math.max(0, Math.ceil(SUPPORT_PRODUCTION - supportClocks.artillery)),
+      aircraftIn: Math.max(0, Math.ceil(SUPPORT_PRODUCTION - supportClocks.aircraft)),
+      cityId: supportCity?.id ?? null,
+      blocked: !supportCity || logistics.used + Math.min(units.artillery.supply, units.aircraft.supply) > logistics.capacity || match.units.length >= 600,
+    },
     selectedUnits: selected.length, selectedStance,
     manpower: manpower(match), selectedSoldiers: selected.reduce((total, unit) => total + soldiersInUnit(unit), 0),
     selectedPocketed: pocketed.length,
     selectedPocketGrace: pocketed.length ? Math.max(0, Math.ceil(POCKET_GRACE - Math.max(...pocketed.map(unit => unit.pocketTime)))) : null,
     routeDrawing: routeDrawing && selected.length > 0,
     light: selected.filter((unit) => unit.kind === "light").length, heavy: selected.filter((unit) => unit.kind === "heavy").length,
+    artillery: selected.filter((unit) => unit.kind === "artillery").length, aircraft: selected.filter((unit) => unit.kind === "aircraft").length,
     city: city && { ...city, build: city.build && { ...city.build } },
     cityIsolated,
     blocked: Boolean(city?.build && cityLogistics && (cityIsolated || cityLogistics.used + units[city.build.kind].supply > cityLogistics.capacity)),
@@ -94,6 +106,8 @@ export function startBattle(
   let speed = 1;
   let muted = true;
   let snapshotAudioReady = false;
+  let snapshotVisualReady = false;
+  let guestVisualAge = 0;
   let frame = 0;
   let previous = 0;
   let accumulator = 0;
@@ -135,11 +149,14 @@ export function startBattle(
     if (muted || !active() || !events.length) return;
     const currentView = view();
     // Keep the closest battles audible when many armies fire in one update.
-    const nearby = events.map(event => ({ event, position: spatialSound(event.from, currentView) }))
-      .filter(item => item.position.distance < 1).sort((a, b) => a.position.distance - b.position.distance).slice(0, 12);
-    for (const { event, position } of nearby) {
+    const nearby = events.map(event => {
+      const position = spatialSound(event.from, currentView);
+      const impact = event.impact ? spatialSound(event.impact, currentView) : undefined;
+      return { event, position, impact, distance: Math.min(position.distance, impact?.distance ?? 1) };
+    }).filter(item => item.distance < 1).sort((a, b) => a.distance - b.distance).slice(0, 12);
+    for (const { event, position, impact } of nearby) {
       audio.shot({ kind: event.kind, ...position });
-      if (event.impact) audio.impact(spatialSound(event.impact, currentView));
+      if (impact) audio.impact(impact);
     }
   };
   const focus = () => { if (active()) canvas.focus({ preventScroll: true }); };
@@ -217,15 +234,26 @@ export function startBattle(
         update();
         return;
       }
-      const hits = match.units.filter((unit) => dist(unit, point) <= radius)
-        .sort((a, b) => dist(a, point) - dist(b, point));
+      const hits = match.units.filter((unit) => dist(unit, point) <= Math.max(radius,
+        unit.kind === "aircraft" ? 1.15 : unit.kind === "artillery" ? .8 : 0))
+        .sort((a, b) => {
+          const distance = dist(a, point) - dist(b, point);
+          // Aircraft are painted above ground units; honor that order only
+          // when their hit areas substantially overlap.
+          return Math.abs(distance) < .3 && (a.kind === "aircraft") !== (b.kind === "aircraft")
+            ? a.kind === "aircraft" ? -1 : 1 : distance;
+        });
       const enemy = hits.find((unit) => unit.team !== localTeam);
       const own = hits.find((unit) => unit.team === localTeam);
       const city = match.cities.find((item) => dist(item, point) < Math.min(RADIUS, Math.max(radius, 0.8)));
       if (command || (touch && enemy && (!own || dist(enemy, point) < dist(own, point)))) {
         if (enemy) attack(enemy);
         else move(point);
-      } else if (own && (!city || dist(own, point) < dist(city, point))) {
+      } else if (own && (!city || dist(own, point) < dist(city, point) ||
+        ((own.kind === "artillery" || own.kind === "aircraft") && dist(own, point) <= dist(city, point) + .05 &&
+          dist(own, point) <= (own.kind === "aircraft" ? .6 : .55)))) {
+        // Support glyphs are drawn above cities and may stay on their spawn
+        // city. A tied tap must still make that individual unit selectable.
         pick([own], add);
       } else if (city) {
         cityId = city.id;
@@ -250,6 +278,13 @@ export function startBattle(
     if (active() && !document.hidden) {
       controls.moveCamera(delta);
       if (simulate) accumulator += delta * speed;
+      else if (flashes.length) {
+        // Animate guest effects between network snapshots without advancing
+        // the authoritative battle, production or economy clocks.
+        guestVisualAge += delta * speed;
+        flashes = flashes.filter(flash => flash.expires > match.elapsed + guestVisualAge);
+        dirty = true;
+      }
       let steps = 0;
       const simulationStart = performance.now();
       const dueSteps = Math.floor((accumulator + 1e-10) / STEP);
@@ -267,7 +302,7 @@ export function startBattle(
         if (!muted && flashes.length > before) {
           const living = new Set(match.units.map(unit => unit.id));
           playCombat(flashes.slice(before).map(flash => ({ kind: flash.kind, from: flash.from,
-            impact: flash.kind === "heavy" || !living.has(flash.targetId) ? flash.to : undefined })));
+            impact: flash.kind !== "light" || !living.has(flash.targetId) ? flash.to : undefined })));
         }
       }
       if (steps) {
@@ -295,7 +330,8 @@ export function startBattle(
     if (changed && (!active() || now - lastPaint + .1 >= renderInterval)) {
       resize(canvas);
       const paintMini = resized || !active() || now - lastMiniPaint >= MINIMAP_INTERVAL_MS;
-      render(canvas, paintMini ? mini : null, terrain, currentView, match, picked, cityId, flashes, box, routePreview);
+      render(canvas, paintMini ? mini : null, terrain, currentView, match, picked, cityId, flashes, box, routePreview,
+        match.elapsed + (simulate ? 0 : guestVisualAge));
       if (paintMini) lastMiniPaint = now;
       paintedView = currentView;
       paintedRatio = ratio;
@@ -325,6 +361,7 @@ export function startBattle(
     if (paused) { routeDrawing = false; routePreview = []; }
     if (paused) {
       snapshotAudioReady = false;
+      snapshotVisualReady = false;
       audio.stop();
       if (simulate && changed && !match.result) {
         lastSave = performance.now();
@@ -413,7 +450,7 @@ export function startBattle(
     },
     rally() { exitRoute(); rally = Boolean(myCity()) && active(); focus(); return rally; },
     rallyPending() { return rally; },
-    build(kind: Kind = "light") {
+    build(kind: GroundKind = "light") {
       const city = myCity();
       if (!active() || !city) return;
       dispatch({ kind: "build", city: city.id, unit: kind });
@@ -438,11 +475,18 @@ export function startBattle(
     },
     replaceSnapshot(snapshot: Match) {
       if (disposed) return;
-      const sounds = snapshotAudioReady && !simulate && !muted && active() ? combatSoundsBetween(match, snapshot) : [];
+      const events = snapshotVisualReady && !simulate && active() ? combatSoundsBetween(match, snapshot) : [];
+      const sounds = snapshotAudioReady && !muted ? events : [];
       const copy = structuredClone(snapshot);
       if (copy.map !== match.map) terrain = landscapeCanvas(copy.map);
       Object.assign(match, copy);
-      flashes = [];
+      guestVisualAge = 0;
+      // The guest does not simulate combat. Reconstruct brief visual events
+      // from fresh authoritative cooldown resets, even when sound is muted.
+      flashes = events.flatMap(event => event.to && event.targetId !== undefined ? [{
+        kind: event.kind, from: event.from, to: event.to, team: event.team, targetId: event.targetId,
+        expires: match.elapsed + (event.kind === "artillery" ? .8 : event.kind === "aircraft" ? .7 : .18),
+      }] : []);
       accumulator = 0;
       previous = 0;
       syncSelection();
@@ -452,6 +496,7 @@ export function startBattle(
       update();
       playCombat(sounds);
       snapshotAudioReady = !simulate && !muted && active();
+      snapshotVisualReady = !simulate && active();
       finish();
     },
     dispose() {

@@ -361,6 +361,20 @@ test("simultaneous rifle/heavy fire is audible together and distant events canno
   assert.deepEqual(env.contexts[0].sources.filter(source => !source.loop).map(source => source.buffer?.id), [2, 4]);
 });
 
+test("artillery and aircraft use explosion samples with distinct pitches and independent gates", async t => {
+  const env = environment(t), bus = env.bus();
+  unlockAudio(); await bus.enable();
+  for (const kind of ["light", "heavy", "artillery", "aircraft"] as const) bus.shot({ kind, pan: 0, distance: 0 });
+  const shots = env.contexts[0].sources.filter(source => !source.loop);
+  assert.equal(shots.length, 4);
+  assert.ok(shots.slice(1).every(source => source.buffer?.id === 4 || source.buffer?.id === 5));
+  assert.ok(shots[2].playbackRate.value < shots[3].playbackRate.value);
+  assert.ok(shots[3].playbackRate.value < shots[1].playbackRate.value);
+  bus.shot({ kind: "artillery", pan: 0, distance: 0 });
+  assert.equal(env.contexts[0].sources.filter(source => !source.loop).length, 4, "a five-target salvo does not multiply its launch sound");
+  assert.equal(env.requests.length, 6, "supports reuse the same local sound bank");
+});
+
 test("turning ambience back on at the effect voice limit never creates a thirteenth voice", async t => {
   const env = environment(t), bus = env.bus();
   bus.configure({ ambienceVolume: 0 }); unlockAudio(); await bus.enable();

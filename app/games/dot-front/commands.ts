@@ -1,5 +1,5 @@
 import { HEIGHT, MAX_ROUTE_POINTS, WIDTH } from "./config";
-import type { Kind, Point, Team } from "./config";
+import type { GroundKind, Point, Team } from "./config";
 import { commandUnit, setGroupStance } from "./engine";
 import type { Match, Order } from "./engine";
 import { nearestOpen } from "./terrain";
@@ -9,7 +9,7 @@ export type GameCommand =
   | { kind: "move"; ids: number[]; point: Point }
   | { kind: "order"; ids: number[]; order: Order }
   | { kind: "stance"; ids: number[]; stance: "attack" | "defend" }
-  | { kind: "build"; city: number; unit: Kind }
+  | { kind: "build"; city: number; unit: GroundKind }
   | { kind: "rally"; city: number; point: Point | null };
 
 const record = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -77,10 +77,14 @@ export function applyGameCommand(match: Match, team: Team, cmd: GameCommand): bo
     const selected = match.units.filter(unit => requested.has(unit.id));
     const columns = Math.ceil(Math.sqrt(selected.length));
     selected.forEach((unit, index) => {
-      const destination = nearestOpen({
+      const point = {
         x: cmd.point.x + index % columns - (columns - 1) / 2,
         y: cmd.point.y + Math.floor(index / columns) - (Math.ceil(selected.length / columns) - 1) / 2,
-      }, match.map);
+      };
+      const destination = unit.kind === "aircraft" ? {
+        x: Math.max(0, Math.min(WIDTH - .001, point.x)),
+        y: Math.max(0, Math.min(HEIGHT - .001, point.y)),
+      } : nearestOpen(point, match.map);
       commandUnit(match, unit.id, { mode: "move", point: destination });
     });
     if (match.tutorial === 1) match.tutorial = 2;

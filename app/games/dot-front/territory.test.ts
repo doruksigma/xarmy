@@ -33,6 +33,24 @@ test("the opponent must physically return to retake visited ground", () => {
   assert.equal(territoryOwner(state, point), 2);
 });
 
+test("aircraft never occupy territory or contest a ground unit's physical claim", () => {
+  const state = source(), point = { x: 72.75, y: 45.25 };
+  const before = [...state.territory.owners], revision = state.territory.revision;
+  state.units = [{ ...point, hp: 36, team: 1, kind: "aircraft" }];
+  assert.equal(advanceTerritory(state), false);
+  assert.deepEqual(state.territory.owners, before);
+  assert.equal(state.territory.revision, revision);
+  state.units = [
+    { ...point, hp: 36, team: 2, kind: "aircraft" },
+    { ...point, hp: 48, team: 1, kind: "light" },
+  ];
+  assert.equal(advanceTerritory(state), true);
+  assert.equal(territoryOwner(state, point), 1, "an airborne opponent cannot hold the old ground color");
+  state.units = [{ ...point, hp: 22, team: 2, kind: "artillery" }];
+  assert.equal(advanceTerritory(state), true);
+  assert.equal(territoryOwner(state, point), 2, "a grounded battery remains subject to actual occupation and supply");
+});
+
 test("opposing simultaneous claims leave contested ownership unchanged regardless of iteration order", () => {
   for (const x of [71.75, 72.25]) {
     const first = source(), second = source();

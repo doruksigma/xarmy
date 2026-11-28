@@ -29,8 +29,10 @@ test("all six maps produce one soldier at every owned city, including cities far
     const firstId = state.nextId;
     advance(state, CITY_PRODUCTION - STEP); assert.equal(state.units.length, 50, map);
     advance(state, STEP);
-    const recruits = state.units.filter(unit => unit.id >= firstId);
+    const allRecruits = state.units.filter(unit => unit.id >= firstId);
+    const recruits = allRecruits.filter(unit => unit.kind === "light" || unit.kind === "heavy");
     assert.equal(recruits.length, 50, map);
+    assert.equal(allRecruits.length, 54, map);
     for (const city of state.cities) {
       assert.equal(recruits.filter(unit => unit.team === city.owner && dist(unit, city) <= 1.5).length, 1, `${map}: city ${city.id}`);
       assert.equal(recruits.find(unit => unit.team === city.owner && dist(unit, city) <= 1.5)?.kind, city.build?.kind);
@@ -42,7 +44,9 @@ test("all six maps produce one soldier at every owned city, including cities far
     for (const team of [1, 2] as const) {
       assert.equal(recruits.filter(unit => unit.team === team && unit.kind === "heavy").length, 5);
       assert.equal(recruits.filter(unit => unit.team === team && unit.kind === "light").length, 20);
-      assert.deepEqual(supply(state, team), { used: 60, capacity: 125 });
+      assert.equal(allRecruits.filter(unit => unit.team === team && unit.kind === "artillery").length, 1);
+      assert.equal(allRecruits.filter(unit => unit.team === team && unit.kind === "aircraft").length, 1);
+      assert.deepEqual(supply(state, team), { used: 66, capacity: 125 });
     }
   }
 });
@@ -51,6 +55,8 @@ test("a simultaneous fifty-soldier wave receives distinct whole-front orders on 
   const state = createMatch("normal", "full-city-wave", false, "plains");
   step(state, 1, [], () => {});
   state.elapsed = CITY_PRODUCTION - STEP;
+  // Only city clocks are made ready here; independent support clocks retain
+  // their one second of genuine simulation progress.
   for (const city of state.cities) city.build!.elapsed = CITY_PRODUCTION - STEP;
   for (const unit of state.units) unit.nextOrder = CITY_PRODUCTION + 1;
   const firstId = state.nextId;
@@ -177,7 +183,10 @@ test("neutral cities never recruit and a large time step never produces more tha
   neutral.owner = 0; neutral.build = { kind: "heavy", elapsed: 59.95 };
   step(state, 180, [], () => {});
   assert.equal(neutral.build, null); assert.equal(neutral.repeat, false);
-  assert.equal(state.units.length, 99);
+  assert.equal(state.units.filter(unit => unit.kind === "light" || unit.kind === "heavy").length, 99);
+  assert.equal(state.units.filter(unit => unit.kind === "artillery").length, 2);
+  assert.equal(state.units.filter(unit => unit.kind === "aircraft").length, 2);
+  assert.equal(state.units.length, 103);
   assert.ok(state.cities.filter(city => city.owner).every(city => city.build?.elapsed === 0));
 });
 

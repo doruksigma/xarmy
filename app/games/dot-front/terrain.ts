@@ -133,6 +133,13 @@ const directions = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], 
 
 /** Bounded grid A*; a binary heap avoids rescanning a large frontier per node. */
 export function route(from: Point, to: Point, kind: Kind, mapId: MapId = "valley"): Point[] {
+  // Aircraft have a direct in-bounds flight path; terrain still constrains all
+  // ground formations, including the slower artillery batteries.
+  if (kind === "aircraft") {
+    if (![from.x, from.y, to.x, to.y].every(Number.isFinite) ||
+      from.x < 0 || from.y < 0 || from.x >= WIDTH || from.y >= HEIGHT) return [];
+    return [{ x: Math.max(0, Math.min(WIDTH - .001, to.x)), y: Math.max(0, Math.min(HEIGHT - .001, to.y)) }];
+  }
   if (!Number.isFinite(from.x) || !Number.isFinite(from.y) || !passable(from, mapId)) return [];
   const goal = nearestOpen(to, mapId), mapTiles = getMap(mapId).tiles;
   const start = tileId(Math.floor(from.x), Math.floor(from.y));

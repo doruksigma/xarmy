@@ -109,8 +109,12 @@ export function decide(match: Match) {
   const options = difficulty[match.difficulty];
   match.nextAi = match.elapsed + options.period;
   const home = match.cities.filter(city => city.owner === 2);
-  const red = match.units.filter(unit => unit.team === 2 && unit.hp > 0).sort((a, b) => a.id - b.id);
-  const blue = match.units.filter(unit => unit.team === 1 && unit.hp > 0);
+  // Dedicated support logic owns batteries and aircraft. Infantry operations
+  // must not drag a rear battery into a city assault or chase aircraft across
+  // a river. Nearby air targets can still be engaged by the combat engine.
+  const red = match.units.filter(unit => unit.team === 2 && unit.hp > 0 &&
+    (unit.kind === "light" || unit.kind === "heavy")).sort((a, b) => a.id - b.id);
+  const blue = match.units.filter(unit => unit.team === 1 && unit.hp > 0 && unit.kind !== "aircraft");
   chooseProduction(match, red);
   if (!red.length) return;
   const targets = match.cities.filter(city => city.owner !== 2);

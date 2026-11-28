@@ -21,6 +21,23 @@ const later = (previous: Match, delta = .5) => {
   return next;
 };
 
+test("online support volleys infer one explosion per source and decay alone remains silent", () => {
+  const artillery = soldier(1, 1, 64.5, 45.5, "artillery");
+  const aircraft = soldier(2, 1, 71.5, 45.5, "aircraft");
+  const targets = Array.from({ length: 5 }, (_, i) => soldier(i + 3, 2, 73 + i * .2, 45.5));
+  const previous = fixture([artillery, aircraft, ...targets]);
+  const decayed = later(previous);
+  decayed.units[1].hp -= .15;
+  assert.deepEqual(combatSoundsBetween(previous, decayed), [], "fuel or maintenance losses are not bombing events");
+  const next = later(previous);
+  next.units = next.units.slice(0, 2);
+  next.units[0].cooldown = units.artillery.cooldown - .2;
+  next.units[1].cooldown = units.aircraft.cooldown - .2;
+  const sounds = combatSoundsBetween(previous, next);
+  assert.deepEqual(sounds.map(sound => sound.kind), ["artillery", "aircraft"]);
+  assert.ok(sounds.every(sound => sound.impact), "nearby lethal support fire includes an impact");
+});
+
 test("spatial audio follows the CSS camera transform with centered and symmetric panning", () => {
   const view = { width: 1000, height: 600, x: 0, y: 0, scale: 10 };
   assert.deepEqual(spatialSound({ x: 50, y: 30 }, view), { pan: 0, distance: 0 });

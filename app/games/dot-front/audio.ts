@@ -1,9 +1,10 @@
 import { DEFAULT_SOUND_MIX } from "./audio-types";
 import type { SoundMix } from "./audio-types";
+import type { Kind } from "./config";
 
 export type { SoundMix } from "./audio-types";
 export type SpatialSound = { pan: number; distance: number };
-export type ShotSound = SpatialSound & { kind: "light" | "heavy" };
+export type ShotSound = SpatialSound & { kind: Kind };
 
 const FILES = {
   ambience: "ambience.mp3", light: "light-shot.mp3", light2: "light-shot-2.mp3",
@@ -109,7 +110,8 @@ export function soundEffects(assetBase = "/dot-front/audio/") {
   let loop: AudioBufferSourceNode | undefined;
   const samples: Partial<Record<Sample, AudioBuffer>> = {};
   const voices = new Map<AudioBufferSourceNode, AudioNode[]>();
-  let lastLight = -Infinity, lastHeavy = -Infinity, lastImpact = -Infinity;
+  const lastShot: Record<Kind, number> = { light: -Infinity, heavy: -Infinity, artillery: -Infinity, aircraft: -Infinity };
+  let lastImpact = -Infinity;
   let serial = 0, lightVariant = 0, heavyVariant = 0;
 
   function ready() {
@@ -129,7 +131,8 @@ export function soundEffects(assetBase = "/dot-front/audio/") {
       try { source.stop(); } catch { /* Already ended. */ }
       remove(source);
     }
-    lastLight = lastHeavy = lastImpact = -Infinity;
+    for (const kind of Object.keys(lastShot) as Kind[]) lastShot[kind] = -Infinity;
+    lastImpact = -Infinity;
   }
   function setMix() {
     if (!hub || !master || !ambienceGain || !effectsGain) return;
@@ -234,7 +237,7 @@ export function soundEffects(assetBase = "/dot-front/audio/") {
     silence();
     deactivate();
   }
-  function spatial(sample: AudioBuffer, position: SpatialSound, amplitude: number) {
+  function spatial(sample: AudioBuffer, position: SpatialSound, amplitude: number, pitch = 1) {
     if (!ready() || !hub || !effectsGain || mix.effectsVolume <= 0 || voices.size >= MAX_VOICES) return;
     const distance = Number.isFinite(position.distance) ? Math.max(0, Math.min(1, position.distance)) : 1;
     if (distance >= 1) return;
@@ -243,7 +246,7 @@ export function soundEffects(assetBase = "/dot-front/audio/") {
       const context = hub.context, gain = context.createGain();
       source = context.createBufferSource();
       source.buffer = sample;
-      source.playbackRate.value = 0.97 + (serial++ % 5) * 0.015;
+      source.playbackRate.value = pitch * (0.97 + (serial++ % 5) * 0.015);
       gain.gain.value = amplitude * (1 - distance) ** 2;
       const nodes: AudioNode[] = [source, gain];
       source.connect(gain);
@@ -261,16 +264,17 @@ export function soundEffects(assetBase = "/dot-front/audio/") {
   }
   function shot(position: ShotSound) {
     if (!ready() || !hub || mix.effectsVolume <= 0 || !Number.isFinite(position.distance) || position.distance >= 1) return;
-    const now = hub.context.currentTime, heavy = position.kind === "heavy";
+    const now = hub.context.currentTime, heavy = position.kind !== "light";
     // Each weapon has its own gate: a nearby rifle must not mask a heavy shot
     // that happened during the same frame. The shared voice cap still applies.
-    if (now - (heavy ? lastHeavy : lastLight) < (heavy ? 0.18 : 0.075)) return;
+    if (now - lastShot[position.kind] < (heavy ? 0.18 : 0.075)) return;
     const alternative = heavy ? heavyVariant++ % 2 : lightVariant++ % 2;
     const sample = heavy ? (alternative ? samples.heavy2 ?? samples.heavy : samples.heavy ?? samples.heavy2)
       : (alternative ? samples.light2 ?? samples.light : samples.light ?? samples.light2);
     if (!sample) return;
-    if (heavy) lastHeavy = now; else lastLight = now;
-    spatial(sample, position, heavy ? 0.58 : 0.42);
+    lastShot[position.kind] = now;
+    const artillery = position.kind === "artillery", aircraft = position.kind === "aircraft";
+    spatial(sample, position, artillery ? .7 : heavy ? .58 : .42, artillery ? .72 : aircraft ? .88 : 1);
   }
   function impact(position: SpatialSound) {
     if (!ready() || !hub || !samples.impact || mix.effectsVolume <= 0 || !Number.isFinite(position.distance) || position.distance >= 1) return;

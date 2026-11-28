@@ -101,3 +101,20 @@ test("invalid and obstructed route requests terminate without an unbounded searc
   assert.ok(path.length && passable(path.at(-1)!, "fronts"));
   assert.ok(route(cities[0], cities[1], "light").every(passable));
 });
+
+test("air routes cross water and mountains directly while artillery retains bounded ground A star", () => {
+  for (const map of ["valley", "fronts"] as const) {
+    const blocked = { x: 71.5, y: 35.5 };
+    assert.equal(passable(blocked, map), false);
+    const target = { x: 77.25, y: 35.75 };
+    assert.deepEqual(route(blocked, target, "aircraft", map), [target]);
+    assert.deepEqual(route(blocked, target, "artillery", map), []);
+    const path = route(nearestOpen(blocked, map), target, "artillery", map);
+    assert.ok(path.length > 0);
+    assert.ok(path.every(point => passable(point, map)));
+  }
+  const edge = route({ x: 2, y: 2 }, { x: WIDTH + 20, y: -10 }, "aircraft", "plains")[0];
+  assert.ok(edge.x < WIDTH && edge.x >= 0); assert.equal(edge.y, 0);
+  assert.deepEqual(route({ x: -1, y: 2 }, { x: 3, y: 2 }, "aircraft"), []);
+  assert.deepEqual(route({ x: 1, y: 2 }, { x: NaN, y: 2 }, "aircraft"), []);
+});

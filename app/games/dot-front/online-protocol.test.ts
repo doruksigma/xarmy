@@ -5,7 +5,7 @@ import { mapIds } from "./terrain";
 import { MAX_ONLINE_BODY_BYTES, packMatch, unpackMatch, unpackStoredMatch } from "./online-protocol";
 import { TERRITORY_SIZE } from "./territory";
 
-for (const map of mapIds) test(`${map}: the online snapshot preserves the entire v6 simulation and independent city clocks losslessly`, () => {
+for (const map of mapIds) test(`${map}: the online snapshot preserves the entire v7 simulation and independent city clocks losslessly`, () => {
   const match = createMatch("normal", `online-${map}`, false, map);
   commandUnit(match, match.units[0].id, { mode: "route", points: [{ x: 60.5, y: 20.5 }, { x: 70.5, y: 20.5 }], next: 0 });
   for (let i = 0; i < 20; i++) step(match, .05, [], () => {});
@@ -61,7 +61,8 @@ test("only stored-room decoding upgrades validated v5, preserving source progres
   blueSource.build = { kind: "heavy", elapsed: 36.5 };
   redSource.build = { kind: "light", elapsed: 59.75 };
   const packet = packMatch(match);
-  const legacy = { ...packet, version: 5, recruitment: [36.5, 59.75] };
+  const { economy, support, ...priorPacket } = packet; void economy; void support;
+  const legacy = { ...priorPacket, version: 5, recruitment: [36.5, 59.75] };
   const before = structuredClone(legacy);
   assert.equal(unpackMatch(legacy), null, "the live host upload path cannot silently migrate an old simulation");
   const restored = unpackStoredMatch(legacy);
@@ -75,7 +76,8 @@ test("only stored-room decoding upgrades validated v5, preserving source progres
 test("stored-room migration rejects other legacy versions and malformed v5 payloads", () => {
   const packet = packMatch(createMatch("normal", "stored-invalid", false, "plains"));
   for (const version of [1, 2, 3, 4]) assert.equal(unpackStoredMatch({ ...packet, version }), null);
-  const legacy = { ...packet, version: 5, recruitment: [12, 24] };
+  const { economy, support, ...priorPacket } = packet; void economy; void support;
+  const legacy = { ...priorPacket, version: 5, recruitment: [12, 24] };
   for (const recruitment of [undefined, [0], [0, 0, 0], [61, 0], [NaN, 0]]) {
     assert.equal(unpackStoredMatch({ ...legacy, recruitment }), null);
   }
@@ -98,4 +100,48 @@ test("encoding limits are bounded and malicious/cyclic input never escapes unpac
   assert.equal(unpackStoredMatch({ ...packMatch(createMatch("normal", "oversized-v5", false, "plains")),
     version: 5, recruitment: [0, 0], id: match.id }), null);
   assert.equal(unpackStoredMatch(cycle), null);
+});
+
+test("only trusted stored-room decoding upgrades v6 without changing the saved ground war", () => {
+  const match = createMatch("normal", "stored-v6-room", false, "plains");
+  match.elapsed = 217.5; match.nextAi = 220;
+  match.cities[0].build!.elapsed = 49.5; match.cities[1].build!.elapsed = 8.125;
+  match.units[0].hp -= 5; match.units[0].cooldown = 2.25;
+  const { economy, support, ...previous } = packMatch(match); void economy; void support;
+  const legacy = { ...previous, version: 6 }, before = structuredClone(legacy);
+  assert.equal(unpackMatch(legacy), null);
+  assert.deepEqual(unpackStoredMatch(legacy), match);
+  assert.deepEqual(legacy, before);
+  assert.equal(unpackStoredMatch({ ...legacy, economy: match.economy }), null);
+  assert.equal(unpackStoredMatch({ ...legacy, support: match.support }), null);
+  const invalid = structuredClone(legacy); invalid.units[0].kind = "aircraft";
+  assert.equal(unpackStoredMatch(invalid), null);
+});
+
+test("v7 wire snapshots preserve support units, wallet deficits and both minute clocks without aliasing", () => {
+  const match = createMatch("normal", "support-wire", false, "plains");
+  match.elapsed = 70;
+  match.economy = [{ money: 0, shortage: 8.75 }, { money: 17.625, shortage: 0 }];
+  match.support = [{ artillery: 60, aircraft: 59.975 }, { artillery: 12, aircraft: 7.5 }];
+  match.units.push({ ...structuredClone(match.units[0]), id: match.nextId++, kind: "artillery", hp: 18, cooldown: 13.5 });
+  match.units.push({ ...structuredClone(match.units[1]), id: match.nextId++, kind: "aircraft", hp: 22.125, cooldown: 2.75 });
+  const expected = structuredClone(match), packed = packMatch(match), decoded = unpackMatch(packed)!;
+  assert.deepEqual(decoded, expected);
+  match.economy[0].money = 500; match.support[0].aircraft = 0; match.units.at(-1)!.hp--;
+  decoded.economy[1].money = 99; decoded.support[1].artillery = 0;
+  assert.deepEqual(unpackMatch(packed), expected);
+  assert.equal(unpackMatch({ ...packed, economy: [{ money: 0, shortage: 71 }, { money: 0, shortage: 0 }] }), null);
+  assert.equal(unpackMatch({ ...packed, support: [{ artillery: 60.01, aircraft: 0 }, { artillery: 0, aircraft: 0 }] }), null);
+});
+
+test("a full 600-unit support army remains within the online byte limit", () => {
+  const match = createMatch("normal", "support-capacity", false, "plains");
+  const source = structuredClone(match.units[0]);
+  while (match.units.length < 600) match.units.push({ ...structuredClone(source), id: match.nextId++,
+    kind: match.units.length % 2 ? "artillery" : "aircraft", hp: 18 });
+  const packed = packMatch(match);
+  assert.ok(new TextEncoder().encode(JSON.stringify(packed)).byteLength < MAX_ONLINE_BODY_BYTES);
+  assert.deepEqual(unpackMatch(packed), match);
+  match.units.push({ ...source, id: match.nextId++ });
+  assert.throws(() => packMatch(match), /Invalid online match/);
 });

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { applyGameCommand, canApplyGameCommand, isGameCommand } from "./commands";
 import type { GameCommand } from "./commands";
-import { HEIGHT, MAX_ROUTE_POINTS, WIDTH } from "./config";
+import { HEIGHT, MAX_ROUTE_POINTS, WIDTH, units } from "./config";
 import { createMatch } from "./engine";
 import { nearestOpen, passable } from "./terrain";
 
@@ -20,6 +20,7 @@ test("wire command guards bound IDs, coordinates and route arrays before any gam
     { kind: "order", ids: [1], order: { mode: "route", points: [point], next: 2 } },
     { kind: "order", ids: [1], order: { mode: "attack", target: -1 } },
     { kind: "build", city: -1, unit: "light" }, { kind: "build", city: 0, unit: "tank" },
+    { kind: "build", city: 0, unit: "artillery" }, { kind: "build", city: 0, unit: "aircraft" },
     { kind: "rally", city: 0, point: undefined }, { kind: "stance", ids: [1], stance: "manual" },
   ]) assert.equal(isGameCommand(value), false, JSON.stringify(value));
   for (const value of [
@@ -28,6 +29,54 @@ test("wire command guards bound IDs, coordinates and route arrays before any gam
     { kind: "stance", ids: [1], stance: "defend" }, { kind: "build", city: 0, unit: "heavy" },
     { kind: "rally", city: 0, point: null },
   ]) assert.equal(isGameCommand(value), true);
+});
+
+test("automatic support cannot be manufactured through a forged city command", () => {
+  const match = createMatch("normal", "support-command-guard", false, "plains");
+  const city = match.cities.find(item => item.owner === 1)!;
+  const before = structuredClone(match);
+  for (const unit of ["artillery", "aircraft"]) {
+    const cmd = { kind: "build", city: city.id, unit } as unknown as GameCommand;
+    assert.equal(canApplyGameCommand(match, 1, cmd), false);
+    assert.equal(applyGameCommand(match, 1, cmd), false);
+    assert.deepEqual(match, before);
+  }
+});
+
+test("manual aircraft destinations remain over water while ground artillery uses legal land", () => {
+  const match = createMatch("normal", "air-command", false, "valley");
+  const [aircraft, artillery] = match.units.filter(unit => unit.team === 1);
+  Object.assign(aircraft, { kind: "aircraft", hp: units.aircraft.hp, x: 71.5, y: 35.5 });
+  Object.assign(artillery, { kind: "artillery", hp: units.artillery.hp });
+  const water = { x: 72.5, y: 35.5 };
+  assert.equal(passable(water, match.map), false);
+  assert.equal(applyGameCommand(match, 1, { kind: "move", ids: [aircraft.id], point: water }), true);
+  assert.deepEqual(aircraft.order, { mode: "move", point: water });
+  assert.deepEqual(aircraft.path, [water]);
+  assert.equal(applyGameCommand(match, 1, { kind: "move", ids: [artillery.id], point: water }), true);
+  assert.equal(artillery.order.mode, "move");
+  if (artillery.order.mode === "move") assert.ok(passable(artillery.order.point, match.map));
+  assert.ok(artillery.path.every(point => passable(point, match.map)));
+  assert.equal(applyGameCommand(match, 1, { kind: "move", ids: [aircraft.id], point: { x: WIDTH, y: HEIGHT } }), true);
+  assert.equal(aircraft.order.mode, "move");
+  if (aircraft.order.mode === "move") {
+    assert.ok(aircraft.order.point.x < WIDTH && aircraft.order.point.y < HEIGHT);
+    assert.ok(aircraft.order.point.x >= 0 && aircraft.order.point.y >= 0);
+  }
+});
+
+test("a mixed formation can engage aircraft without ordering ground-only support to chase them", () => {
+  const match = createMatch("normal", "mixed-air-target", false, "plains");
+  const [infantry, artillery] = match.units.filter(unit => unit.team === 1);
+  const aircraft = match.units.find(unit => unit.team === 2)!;
+  Object.assign(artillery, { kind: "artillery", hp: units.artillery.hp });
+  Object.assign(aircraft, { kind: "aircraft", hp: units.aircraft.hp });
+  const before = structuredClone(artillery);
+  assert.equal(applyGameCommand(match, 1, {
+    kind: "order", ids: [infantry.id, artillery.id], order: { mode: "attack", target: aircraft.id },
+  }), true);
+  assert.deepEqual(infantry.order, { mode: "attack", target: aircraft.id });
+  assert.deepEqual(artillery, before, "a battery retains its safe order instead of taking an invalid target");
 });
 
 test("authorization rejects enemy, mixed, stale and dead selections atomically", () => {
