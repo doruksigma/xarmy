@@ -529,6 +529,9 @@ test("HUD distinguishes an isolated city from normal capacity shortage and clear
 
 test("each city's HUD keeps its own clock and excludes capacity-blocked types from the next reinforcement", () => {
   const match = createMatch("normal", "independent-city-hud", true, "plains");
+  // This capacity fixture deliberately has one armored queue and 24 light
+  // queues, independently of a new match's mixed recruitment defaults.
+  for (const city of match.cities) if (city.owner === 1) city.build = { kind: "light", elapsed: 0 };
   const [heavy, light] = match.cities.filter(city => city.owner === 1);
   heavy.build = { kind: "heavy", elapsed: 58 }; light.build = { kind: "light", elapsed: 12 };
   const unit = match.units.find(item => item.team === 1)!;

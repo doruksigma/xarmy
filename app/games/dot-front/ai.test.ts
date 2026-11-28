@@ -118,6 +118,14 @@ test("a soldier already occupying a city remains until the in-progress capture c
   const unit = soldier(1, 2, 100.5, 5.5);
   const target = city(0, 1, 100.5, 5.5); target.capturing = 2; target.progress = 10;
   const match = fixture([unit], [target, city(1, 1, 15.5, 5.5)]);
+  // Keep the city's wider area blue with a connection to the blue rear. The
+  // red capturer has only a narrow approach, so ordinary timed capture applies.
+  for (let y = 2.5; y <= 8.5; y += .5) for (let x = 71; x <= 103.5; x += .5) {
+    const cell = territoryCell({ x, y });
+    if (match.territory.owners[cell]) match.territory.owners[cell] = 1;
+  }
+  for (let x = unit.x; x < 144; x += .5) match.territory.owners[territoryCell({ x, y: unit.y })] = 2;
+  match.territory.revision++;
   decide(match); advance(match, CAPTURE - 10 + STEP);
   assert.equal(target.owner, 2);
   assert.ok(dist(unit, target) <= 1.45);
@@ -172,7 +180,7 @@ test("tutorial AI waits for the interactive lessons to finish", () => {
   match.tutorial = 5; decide(match); assert.ok(match.nextAi > match.elapsed);
 });
 
-test("Normal AI really attacks and occupies enemy land on all six maps during four slow minutes", () => {
+test("Normal AI attacks and occupies land by four minutes, then converts pressure into city gains by five", () => {
   let cityGains = 0;
   for (const map of mapIds) {
     const match = createMatch("normal", `ai-${map}`, false, map);
@@ -182,14 +190,17 @@ test("Normal AI really attacks and occupies enemy land on all six maps during fo
       shots += effects.filter(effect => effect.team === 2).length;
     }
     const occupation = match.territory.owners.reduce((sum, owner, cell) => sum + Number(owner === 2 && cell % TERRITORY_COLS < TERRITORY_COLS / 2), 0);
-    const redCities = match.cities.filter(city => city.owner === 2).length;
-    cityGains += Math.max(0, redCities - 25);
     assert.ok(shots >= 25, `${map}: actual shots fired, not only an attack flag`);
     assert.ok(match.report.fallen >= 3, `${map}: attacks cause real blue casualties`);
     assert.ok(occupation >= 80, `${map}: physical enemy-land occupation advances`);
     assert.ok(match.units.every(unit => passable(unit, map)), `${map}: all movement stays on legal terrain`);
     assert.ok(match.units.every(unit => unit.hp <= units[unit.kind].hp), `${map}: shared health limits`);
     assert.equal("commanders" in match, false);
+    // Starting armor and forward armor recruitment strengthen both defenses.
+    // Keep the four-minute activity checks unchanged, then allow one more slow
+    // minute for the real approach march and the 24-second city capture itself.
+    advance(match, 60);
+    cityGains += Math.max(0, match.cities.filter(city => city.owner === 2).length - 25);
   }
   assert.ok(cityGains >= 4, "sustained attacks also turn into city captures rather than permanent front-line stalling");
 });
@@ -217,6 +228,24 @@ test("AI plans all supplied cities while preserving every independent production
   assert.deepEqual(match.cities.filter(city => city.owner === 1), blueBefore);
   assert.ok(owned.filter(city => city.build!.kind === "heavy").length > 1, "multiple cities independently choose heavy troops");
   assert.ok(owned.some(city => city.build!.kind === "light"), "the simultaneous production wave remains mixed");
+  const logistics = supply(match, 2);
+  assert.ok(logistics.used + owned.reduce((sum, city) => sum + units[city.build!.kind].supply, 0) <= logistics.capacity);
+});
+
+test("AI sends its heavy production quota to forward cities instead of stranding armor in the rear", () => {
+  const match = createMatch("normal", "forward-armor-production", false, "plains");
+  match.nextAi = 0;
+  const owned = match.cities.filter(city => city.owner === 2);
+  for (const city of owned) city.build = { kind: "light", elapsed: 40 };
+  const clocks = owned.map(city => city.build!.elapsed);
+  const blue = structuredClone(match.cities.filter(city => city.owner === 1));
+  decide(match);
+  const forward = owned.filter(city => city.x < 90), rear = owned.filter(city => city.x > 130);
+  assert.equal(forward.length, 5);
+  assert.ok(forward.every(city => city.build?.kind === "heavy"), "slow armor starts close to all five approach lanes");
+  assert.ok(rear.every(city => city.build?.kind === "light"), "faster infantry covers the longer rear-to-front march");
+  assert.deepEqual(owned.map(city => city.build!.elapsed), clocks);
+  assert.deepEqual(match.cities.filter(city => city.owner === 1), blue);
   const logistics = supply(match, 2);
   assert.ok(logistics.used + owned.reduce((sum, city) => sum + units[city.build!.kind].supply, 0) <= logistics.capacity);
 });

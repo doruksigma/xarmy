@@ -1,9 +1,9 @@
-import { CAPTURE, CITY_PRODUCTION, FRONT_ATTACK_ADVANCE, FRONT_ATTACK_COMMIT_DISTANCE, FRONT_ATTACK_SEARCH, FRONT_INTERVAL, FRONT_REPLAN_DISTANCE, MAX_ROUTE_POINTS, GRACE, HEIGHT, POCKET_DAMAGE, POCKET_FIREPOWER, POCKET_GRACE, POCKET_SPEED, RADIUS, SUPPLY, WIDTH, dist, units } from "./config";
+import { CAPTURE, CITY_PRODUCTION, FRONT_ATTACK_ADVANCE, FRONT_ATTACK_COMMIT_DISTANCE, FRONT_ATTACK_SEARCH, FRONT_INTERVAL, FRONT_REPLAN_DISTANCE, MAX_ROUTE_POINTS, GRACE, HEIGHT, INITIAL_ARMY_SIZE, INITIAL_HEAVY_ARMIES, INITIAL_HEAVY_CITIES, POCKET_DAMAGE, POCKET_FIREPOWER, POCKET_GRACE, POCKET_SPEED, RADIUS, SUPPLY, WIDTH, dist, units } from "./config";
 import type { Difficulty, Kind, Owner, Point, Team } from "./config";
 import { clearShot, getMap, nearestOpen, passable, route, tileAt } from "./terrain";
 import type { MapId } from "./terrain";
 import { frontDirection, frontSlots } from "./front";
-import { advanceTerritory, createTerritory, isSupplied, resolveEnclosures, territoryCell, territoryOwner } from "./territory";
+import { advanceTerritory, createTerritory, isSupplied, resolveEnclosures, suppliedCells, territoryCell, territoryOwner, TERRITORY_COLS, TERRITORY_ROWS, TERRITORY_SPACING } from "./territory";
 import type { Territory } from "./territory";
 
 export type Order =
@@ -41,11 +41,18 @@ export function createMatch(difficulty: Difficulty, id: string, tutorial: boolea
     shortage: [0, 0], nextAi: tutorial ? 45 : 2, result: null,
     report: { captured: 0, killed: 0, fallen: 0 }, tutorial: tutorial ? 0 : null,
   };
+  const armorSlots = new Set(Array.from({ length: INITIAL_HEAVY_ARMIES }, (_, index) =>
+    Math.floor((index + 0.5) * INITIAL_ARMY_SIZE / INITIAL_HEAVY_ARMIES)));
   for (const team of [1, 2] as const) {
-    for (let index = 0; index < 25; index++) {
-      const y = 2.5 + index * (HEIGHT - 5) / 24;
+    // The mirrored city layout has one front-facing city in each of five
+    // separated rows. Armor therefore reinforces every approach automatically.
+    const armorCities = match.cities.filter(city => city.owner === team).sort((a, b) =>
+      Math.abs(a.x - WIDTH / 2) - Math.abs(b.x - WIDTH / 2) || a.id - b.id).slice(0, INITIAL_HEAVY_CITIES);
+    for (const city of armorCities) city.build = { kind: "heavy", elapsed: 0 };
+    for (let index = 0; index < INITIAL_ARMY_SIZE; index++) {
+      const y = 2.5 + index * (HEIGHT - 5) / (INITIAL_ARMY_SIZE - 1);
       const point = openSpawn(match, { x: WIDTH / 2 + (team === 1 ? -5 : 5), y });
-      makeUnit(match, team, "light", point).nextOrder = FRONT_INTERVAL;
+      makeUnit(match, team, armorSlots.has(index) ? "heavy" : "light", point).nextOrder = FRONT_INTERVAL;
     }
   }
   advanceTerritory(match);
@@ -93,7 +100,7 @@ function spawn(match: Match, city: City, kind: Kind): Unit | undefined {
 
 /** Compatibility helper: nearest friendly slot on the living-army front. */
 export function frontlinePoint(match: Match, team: Team, origin: Point): Point {
-  const count = Math.max(25, match.units.filter((unit) => unit.team === team && unit.hp > 0).length);
+  const count = Math.max(INITIAL_ARMY_SIZE, match.units.filter((unit) => unit.team === team && unit.hp > 0).length);
   const slots = frontSlots(match, team, count);
   return slots.reduce((best, point) => dist(point, origin) < dist(best, origin) ? point : best,
     slots[0] ?? nearestOpen(origin, match.map));
@@ -543,21 +550,44 @@ function removeDead(match: Match) {
   }
 }
 
+/** A city can outlive the land beneath it: an earlier occupation footprint may
+ * already have painted its center before the surrounding pocket is closed.
+ * Require its entire walkable capture area, not one soldier's small footprint,
+ * to belong to the grounded opponent. This also repairs saved completed pockets.
+ */
+function engulfedCityOwner(match: Match, city: City): Owner {
+  const center = territoryCell(city), owner = center >= 0 ? match.territory.owners[center] : 0;
+  if (!city.owner || (owner !== 1 && owner !== 2) || owner === city.owner) return 0;
+  const supplied = suppliedCells(match);
+  if (supplied[center] !== owner) return 0;
+  const minX = Math.max(0, Math.floor((city.x - RADIUS) / TERRITORY_SPACING));
+  const maxX = Math.min(TERRITORY_COLS - 1, Math.floor((city.x + RADIUS) / TERRITORY_SPACING));
+  const minY = Math.max(0, Math.floor((city.y - RADIUS) / TERRITORY_SPACING));
+  const maxY = Math.min(TERRITORY_ROWS - 1, Math.floor((city.y + RADIUS) / TERRITORY_SPACING));
+  for (let y = minY; y <= maxY; y++) for (let x = minX; x <= maxX; x++) {
+    const point = { x: (x + .5) * TERRITORY_SPACING, y: (y + .5) * TERRITORY_SPACING };
+    if ((point.x - city.x) ** 2 + (point.y - city.y) ** 2 > RADIUS ** 2 || !passable(point, match.map)) continue;
+    const cell = y * TERRITORY_COLS + x;
+    if (match.territory.owners[cell] !== owner || supplied[cell] !== owner) return 0;
+  }
+  return owner;
+}
+
 function takeEnclosures(match: Match, capturedCities: Set<number>) {
   const captured = resolveEnclosures(match);
-  if (!captured) return;
   // Land changes hands, never soldiers. Apply both teams' losses before the
   // common cleanup so simultaneous elimination can still produce a draw.
-  for (const unit of match.units) {
+  if (captured) for (const unit of match.units) {
     const cell = territoryCell(unit), owner = cell >= 0 ? captured[cell] : 0;
     if (!owner || owner === unit.team || unit.hp <= 0) continue;
     unit.hp = 0;
   }
   for (const city of match.cities) {
-    const cell = territoryCell(city), owner = cell >= 0 ? captured[cell] : 0;
+    const cell = territoryCell(city);
+    const owner = (cell >= 0 ? captured?.[cell] : 0) || engulfedCityOwner(match, city);
     if (owner === 1 || owner === 2) captureCity(match, city, owner, capturedCities);
   }
-  removeDead(match);
+  if (captured) removeDead(match);
 }
 
 /** Supply follows physically connected occupation; reconnection removes every penalty. */

@@ -93,7 +93,7 @@ test("autonomous paths are not rebuilt every frame and manual hold never chases"
 });
 
 test("captured ground persists after departure and death until an enemy physically arrives", () => {
-  const state = fixture(), unit = state.units[12];
+  const state = fixture(), unit = state.units.find(unit => unit.team === 1 && unit.kind === "light" && Math.abs(unit.y - HEIGHT / 2) < 5)!;
   for (const enemy of state.units.filter(item => item.team === 2)) enemy.x = 120.5;
   const captured = { x: 75.5, y: unit.y };
   assert.equal(territoryOwner(state, captured), 2);

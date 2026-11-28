@@ -203,6 +203,7 @@ export default function DotFront() {
           <p className={styles.lead}>{copy.description}</p>
           <div className={styles.briefing}>
             <span>{copy.openingCities}</span><span>{copy.openingArmy}</span>
+            <span>{copy.openingComposition}</span><span>{copy.openingArmoredCities}</span>
             <span>{copy.automaticRecruitment}</span><span>{copy.openingFront}</span>
           </div>
           <p className={styles.selectedMap}><strong>{copy.maps[settings.map].name}</strong>{copy.maps[settings.map].detail}</p>
@@ -229,7 +230,7 @@ export default function DotFront() {
       </fieldset>
       {saved && <p className={styles.note}>{copy.saveMap}: {copy.maps[saved.map].name} · {copy[saved.difficulty]} · {timeLabel(Math.floor(saved.elapsed))}</p>}
       {panel === "how" && <div className={styles.details}>
-        <h2>{copy.how}</h2><p>{copy.goal}</p><p>{copy.manpowerRules}</p><p>{copy.logistics}</p><p>{copy.frontRules}</p><p>{copy.pocketRules}</p><p>{copy.routeRules}</p><p>{copy.paceRules}</p><p>{copy.terrainRules}</p><p>{copy.controls}</p><p>{copy.touch}</p>
+        <h2>{copy.how}</h2><p>{copy.goal}</p><p>{copy.manpowerRules}</p><p>{copy.armoredRules}</p><p>{copy.logistics}</p><p>{copy.frontRules}</p><p>{copy.pocketRules}</p><p>{copy.routeRules}</p><p>{copy.paceRules}</p><p>{copy.terrainRules}</p><p>{copy.controls}</p><p>{copy.touch}</p>
         <p className={styles.note}>{copy.tutorialMap}</p>
         <button onClick={() => newMatch(true)}>{copy.tutorial}</button>
       </div>}
@@ -336,6 +337,7 @@ export default function DotFront() {
               ? `${copy.pocketGrace} ${hud.selectedPocketGrace} ${copy.seconds}` : copy.pocketDamage}
           </span>}
           <span className={styles.note}>{copy.liveFront}</span>
+          {(!city || city.owner !== 1) && <span className={styles.armoredHint}>{copy.armoredHint}</span>}
           {city && <>
             <strong>{copy.placeNames[city.id]} · {city.owner ? copy[city.owner === 1 ? "player" : "enemy"] : copy.neutral}</strong>
             {hud.cityIsolated && <span className={styles.pocketStatus}>{copy.isolatedCity}</span>}
@@ -349,7 +351,7 @@ export default function DotFront() {
               <span>{copy.productionKind}: {copy[city.build?.kind ?? "light"]}</span>
               <button disabled={!canCommand} aria-pressed={city.build?.kind === "light"}
                 onClick={() => battle.current?.build("light")}>{copy.chooseLight}</button>
-              <button disabled={!canCommand} aria-pressed={city.build?.kind === "heavy"}
+              <button disabled={!canCommand} aria-pressed={city.build?.kind === "heavy"} title={copy.armoredProductionHint}
                 onClick={() => battle.current?.build("heavy")}>{copy.chooseHeavy}</button>
               <button disabled={!canCommand} aria-pressed={battle.current?.rallyPending() ?? false}
                 onClick={() => { battle.current?.rally(); setHud({ ...hud }); }}>{copy.rally}</button>

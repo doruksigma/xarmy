@@ -15,6 +15,10 @@ export const HEIGHT = 90;
 export const CITY_PRODUCTION = 60;
 /** Personnel represented by one full-strength army dot; not extra entities. */
 export const SOLDIERS_PER_ARMY = 10_000;
+/** New matches deploy armor throughout the front without adding formations. */
+export const INITIAL_ARMY_SIZE = 25;
+export const INITIAL_HEAVY_ARMIES = 5;
+export const INITIAL_HEAVY_CITIES = 5;
 export const FRONT_INTERVAL = 1;
 export const FRONT_ATTACK_ADVANCE = 5;
 export const FRONT_REPLAN_DISTANCE = 0.75;

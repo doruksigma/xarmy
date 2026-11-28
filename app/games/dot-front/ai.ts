@@ -19,17 +19,25 @@ function move(match: Match, unit: Unit, point: Point) {
 // wave together so many simultaneous heavy choices cannot consume the same
 // spare supply, and never reset or advance a city's elapsed production time.
 function chooseProduction(match: Match, red: Unit[]) {
-  const active = match.cities.filter(city => city.owner === 2 && city.build && isSupplied(match, 2, city))
-    .sort((a, b) => b.build!.elapsed - a.build!.elapsed || a.id - b.id);
+  const active = match.cities.filter(city => city.owner === 2 && city.build && isSupplied(match, 2, city));
   if (!active.length) return;
   const { used, capacity } = supply(match, 2);
   const targets = match.cities.filter(candidate => candidate.owner !== 2);
+  const approaches = new Map(active.map(city => {
+    const target = targets.reduce<City | undefined>((best, candidate) =>
+      !best || dist(city, candidate) < dist(city, best) ? candidate : best, undefined) ?? city;
+    return [city.id, { target, distance: dist(city, target) }] as const;
+  }));
+  // Slow armor belongs near its objective. With equal production clocks, rear
+  // city IDs previously consumed the armor quota while forward cities made
+  // light troops; those tanks could spend several minutes just reaching combat.
+  active.sort((a, b) => b.build!.elapsed - a.build!.elapsed ||
+    approaches.get(a.id)!.distance - approaches.get(b.id)!.distance || a.id - b.id);
   let extraSupply = capacity - used - active.length;
   let heavyCount = red.filter(unit => unit.kind === "heavy").length;
   const plannedSize = red.length + active.length;
   for (const city of active) {
-    const target = targets.reduce<City | undefined>((best, candidate) =>
-      !best || dist(city, candidate) < dist(city, best) ? candidate : best, undefined) ?? city;
+    const target = approaches.get(city.id)!.target;
     const samples = [city, target, { x: (city.x + target.x) / 2, y: (city.y + target.y) / 2 }];
     const forest = samples.reduce((sum, point) => sum + [-2, -1, 0, 1, 2]
       .filter(offset => tileAt({ x: point.x + offset, y: point.y + 1 }, match.map) === "forest").length, 0);

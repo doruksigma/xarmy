@@ -33,11 +33,17 @@ test("all six maps produce one soldier at every owned city, including cities far
     assert.equal(recruits.length, 50, map);
     for (const city of state.cities) {
       assert.equal(recruits.filter(unit => unit.team === city.owner && dist(unit, city) <= 1.5).length, 1, `${map}: city ${city.id}`);
+      assert.equal(recruits.find(unit => unit.team === city.owner && dist(unit, city) <= 1.5)?.kind, city.build?.kind);
       assert.equal(city.build?.elapsed, 0); assert.equal(city.repeat, true);
     }
     assert.ok(recruits.every(unit => passable(unit, map)));
     assert.equal(recruits.filter(unit => unit.team === 1).length, 25);
     assert.equal(recruits.filter(unit => unit.team === 2).length, 25);
+    for (const team of [1, 2] as const) {
+      assert.equal(recruits.filter(unit => unit.team === team && unit.kind === "heavy").length, 5);
+      assert.equal(recruits.filter(unit => unit.team === team && unit.kind === "light").length, 20);
+      assert.deepEqual(supply(state, team), { used: 60, capacity: 125 });
+    }
   }
 });
 
@@ -100,7 +106,7 @@ test("capturing a ready city cancels its old soldier and requires a full new min
 test("ready cities wait at full capacity, then take freed slots in stable order without starving other ready cities", () => {
   const state = fixture(), first = state.cities[0], second = state.cities[1];
   for (const city of state.cities) if (city.owner === 1 && city !== first && city !== second) city.owner = 0;
-  const army = state.units.filter(unit => unit.team === 1).slice(0, 10);
+  const army = state.units.filter(unit => unit.team === 1 && unit.kind === "light").slice(0, 10);
   state.units = [...army, state.units.find(unit => unit.team === 2)!];
   first.build = { kind: "heavy", elapsed: 58 }; second.build = { kind: "heavy", elapsed: 58 };
   state.cities.reverse();
@@ -124,7 +130,7 @@ test("ready cities wait at full capacity, then take freed slots in stable order 
 test("a heavy city's capacity wait cannot block a different city's affordable light soldier", () => {
   const state = fixture(), heavy = state.cities[0], light = state.cities[1];
   for (const city of state.cities) if (city.owner === 1 && city !== heavy && city !== light) city.owner = 0;
-  state.units = [...state.units.filter(unit => unit.team === 1).slice(0, 9), state.units.find(unit => unit.team === 2)!];
+  state.units = [...state.units.filter(unit => unit.team === 1 && unit.kind === "light").slice(0, 9), state.units.find(unit => unit.team === 2)!];
   heavy.build = { kind: "heavy", elapsed: CITY_PRODUCTION - STEP };
   light.build = { kind: "light", elapsed: CITY_PRODUCTION - STEP };
   const nextId = state.nextId;
@@ -186,6 +192,6 @@ test("all independent city clocks, unit types and completion order survive save 
   assert.deepEqual(saved, state); assert.ok(validMatch(state));
   assert.equal(state.units.filter(unit => unit.team === 1).length, 26);
   assert.equal(state.units.filter(unit => unit.team === 2).length, 26);
-  assert.equal(state.units.filter(unit => unit.kind === "heavy").length, 1);
+  assert.equal(state.units.filter(unit => unit.kind === "heavy").length, 11);
   assert.equal(state.units.find(unit => unit.kind === "heavy")?.hp, units.heavy.hp);
 });

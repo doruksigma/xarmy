@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { CAPTURE, CITY_PRODUCTION, GRACE, HEIGHT, STEP, WIDTH, dist, units } from "./config";
+import { CAPTURE, CITY_PRODUCTION, GRACE, HEIGHT, INITIAL_ARMY_SIZE, INITIAL_HEAVY_ARMIES, INITIAL_HEAVY_CITIES, STEP, WIDTH, dist, units } from "./config";
 import type { Kind, Owner, Point, Team } from "./config";
 import { canTraverse, createMatch, send, step, supply } from "./engine";
 import type { City, Match, Unit } from "./engine";
@@ -26,7 +26,7 @@ const fixture = (army: Unit[], cities: City[], map: Match["map"] = "plains") => 
   return state;
 };
 
-test("all six expanded maps start with fifty owned cities and fifty frontline soldiers", () => {
+test("all six maps start with equally supplied mixed armies and five spread-out armor cities per side", () => {
   assert.equal(WIDTH, 144); assert.equal(HEIGHT, 90);
   for (const map of mapIds) {
     const state = createMatch("normal", `initial-${map}`, false, map);
@@ -37,8 +37,18 @@ test("all six expanded maps start with fifty owned cities and fifty frontline so
     for (const team of [1, 2] as const) {
       assert.equal(state.cities.filter((item) => item.owner === team).length, 25);
       assert.equal(state.units.filter((unit) => unit.team === team).length, 25);
-      assert.deepEqual(supply(state, team), { used: 25, capacity: 125 });
+      assert.deepEqual(supply(state, team), { used: 30, capacity: 125 });
       const army = state.units.filter(unit => unit.team === team);
+      const armor = army.filter(unit => unit.kind === "heavy");
+      assert.equal(armor.length, INITIAL_HEAVY_ARMIES);
+      assert.equal(army.filter(unit => unit.kind === "light").length, INITIAL_ARMY_SIZE - INITIAL_HEAVY_ARMIES);
+      assert.ok(army.every(unit => unit.hp === units[unit.kind].hp));
+      assert.deepEqual(army.flatMap((unit, index) => unit.kind === "heavy" ? [index] : []), [2, 7, 12, 17, 22]);
+      assert.ok(Math.max(...armor.map(unit => unit.y)) - Math.min(...armor.map(unit => unit.y)) > 65);
+      const armorCities = state.cities.filter(city => city.owner === team && city.build?.kind === "heavy");
+      assert.equal(armorCities.length, INITIAL_HEAVY_CITIES);
+      assert.ok(Math.max(...armorCities.map(city => city.y)) - Math.min(...armorCities.map(city => city.y)) > 70);
+      assert.ok(armorCities.every(city => Math.abs(city.x - WIDTH / 2) < 11));
       assert.ok(Math.max(...army.map(unit => unit.y)) - Math.min(...army.map(unit => unit.y)) > 75);
       assert.equal(new Set(army.map(unit => `${unit.x}:${unit.y}`)).size, 25);
       assert.ok(army.every(unit => unit.stance === "defend" && !("commanderId" in unit)));
@@ -48,7 +58,11 @@ test("all six expanded maps start with fifty owned cities and fifty frontline so
     for (const blue of state.units.filter((unit) => unit.team === 1)) for (const red of state.units.filter((unit) => unit.team === 2)) {
       assert.ok(dist(blue, red) > units.heavy.range, `${map}: no immediate spawn combat`);
     }
-    assert.ok(state.cities.every((item) => item.build?.kind === "light" && item.build.elapsed === 0 && item.repeat));
+    assert.ok(state.cities.every((item) => item.build?.elapsed === 0 && item.repeat));
+    for (const blue of state.cities.filter(city => city.owner === 1)) {
+      const red = state.cities.find(city => city.owner === 2 && city.x === WIDTH - blue.x && city.y === HEIGHT - blue.y);
+      assert.equal(red?.build?.kind, blue.build?.kind, `${map}: mirrored production type`);
+    }
   }
 });
 
@@ -58,19 +72,46 @@ test("every owned city independently recruits one soldier every sixty seconds", 
   assert.equal(state.units.length, 50);
   advance(state, STEP);
   assert.equal(state.units.length, 100);
+  for (const team of [1, 2] as const) assert.equal(state.units.filter(unit => unit.team === team && unit.kind === "heavy").length, 10);
   assert.ok(state.cities.every((item) => item.build?.elapsed === 0 && item.repeat));
   advance(state, CITY_PRODUCTION);
   assert.equal(state.units.length, 150);
-  for (const team of [1, 2] as const) assert.equal(state.units.filter(unit => unit.team === team).length, 75);
+  for (const team of [1, 2] as const) {
+    assert.equal(state.units.filter(unit => unit.team === team).length, 75);
+    assert.equal(state.units.filter(unit => unit.team === team && unit.kind === "heavy").length, 15);
+    assert.deepEqual(supply(state, team), { used: 90, capacity: 125 });
+  }
   assert.ok(state.units.every(unit => !("commanderId" in unit)));
 });
 
+test("resuming an existing all-light save never converts its armies, city choices or manual orders", () => {
+  const state = createMatch("normal", "existing-light-save", true, "plains");
+  for (const unit of state.units) { unit.kind = "light"; unit.hp = units.light.hp; unit.stance = "manual"; }
+  for (const city of state.cities) if (city.build) city.build.kind = "light";
+  const restored: unknown = JSON.parse(JSON.stringify(state));
+  assert.ok(validMatch(restored));
+  const before = structuredClone(restored.units);
+  advance(restored, STEP);
+  assert.deepEqual(restored.units.map(unit => ({ id: unit.id, kind: unit.kind, order: unit.order, hp: unit.hp })),
+    before.map(unit => ({ id: unit.id, kind: unit.kind, order: unit.order, hp: unit.hp })));
+  assert.ok(restored.cities.every(city => city.build?.kind === "light"));
+});
+
 test("capture pauses when contested and clears the captured city's old orders and production clock", () => {
-  const blue = soldier(1, 1, 20.5, 20.5), red = soldier(2, 2, 100.5, 20.5);
-  const target = city(2, 2, 20.5, 20.5);
+  const blue = soldier(1, 1, 80.5, 20.5), red = soldier(2, 2, 100.5, 20.5);
+  const target = city(2, 2, 80.5, 20.5);
   target.build = { kind: "heavy", elapsed: 0 };
   target.rally = { x: 30.5, y: 20.5 };
   const state = fixture([blue, red], [city(0, 1, 5.5, 20.5), city(1, 2, 100.5, 20.5), target]);
+  // A narrow occupied approach supplies the attacker, but the whole capture
+  // area still belongs to red. This tests ordinary timed capture, not a city
+  // that was already engulfed by supplied blue territory before the test.
+  const approachRow = Math.floor(blue.y / TERRITORY_SPACING);
+  for (let x = 0; x <= Math.floor(blue.x / TERRITORY_SPACING); x++) {
+    const cell = approachRow * TERRITORY_COLS + x;
+    if (state.territory.owners[cell]) state.territory.owners[cell] = 1;
+  }
+  state.territory.revision++;
   advance(state, 2); assert.ok(target.progress > 1.9);
   Object.assign(red, { x: target.x + 0.5, y: target.y });
   const row = Math.floor(red.y / TERRITORY_SPACING);

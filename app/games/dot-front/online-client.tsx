@@ -313,6 +313,7 @@ export default function OnlineClient({ initialMap, sound, soundMix, onSoundChang
       {error && <p className={styles.warning} role="alert">{error}</p>}
       {notice && <p className={styles.note} role="status">{notice}</p>}
       <p className={styles.note}>{copy.onlineRules}</p>
+      <p className={styles.note}>{copy.openingComposition} · {copy.openingArmoredCities}</p>
       <p className={styles.note}>{copy.automaticRecruitment} · {copy.onlineSave}</p>
     </div>
   </section>;
@@ -403,6 +404,7 @@ export default function OnlineClient({ initialMap, sound, soundMix, onSoundChang
         <span>{copy.selectedSoldiers} <b>{formatSoldiers(hud.selectedSoldiers)}</b></span>
         {hud.selectedStance && <span>{hud.selectedStance === "attack" ? copy.attackStance : hud.selectedStance === "defend" ? copy.defendStance : hud.selectedStance === "mixed" ? copy.mixedOrders : copy.manualOrders}</span>}
         <span>{copy.light} <b>{hud.light}</b> · {copy.heavy} <b>{hud.heavy}</b></span>
+        {(!city || city.owner !== session.team) && <span className={styles.armoredHint}>{copy.armoredHint}</span>}
         {hud.selectedPocketed > 0 && <span className={styles.pocketStatus} role="status">{copy.pocketed} <b>{hud.selectedPocketed}/{hud.selectedUnits}</b> · {hud.selectedPocketGrace ? `${copy.pocketGrace} ${hud.selectedPocketGrace} ${copy.seconds}` : copy.pocketDamage}</span>}
         {city && <>
           <strong>{copy.placeNames[city.id]} · {city.owner ? copy[city.owner === 1 ? "player" : "enemy"] : copy.neutral}</strong>
@@ -415,7 +417,7 @@ export default function OnlineClient({ initialMap, sound, soundMix, onSoundChang
             </label>
             <span>{copy.productionKind}: {copy[city.build?.kind ?? "light"]}</span>
             <button disabled={!canCommand} aria-pressed={city.build?.kind === "light"} onClick={() => battle.current?.build("light")}>{copy.chooseLight}</button>
-            <button disabled={!canCommand} aria-pressed={city.build?.kind === "heavy"} onClick={() => battle.current?.build("heavy")}>{copy.chooseHeavy}</button>
+            <button disabled={!canCommand} aria-pressed={city.build?.kind === "heavy"} title={copy.armoredProductionHint} onClick={() => battle.current?.build("heavy")}>{copy.chooseHeavy}</button>
             <button disabled={!canCommand} aria-pressed={battle.current?.rallyPending() ?? false}
               onClick={() => { battle.current?.rally(); setHud({ ...hud }); }}>{copy.rally}</button>
             {battle.current?.rallyPending() && <span className={styles.note}>{copy.rallyHint}</span>}

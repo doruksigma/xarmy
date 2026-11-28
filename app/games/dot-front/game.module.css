@@ -129,6 +129,7 @@
 .pocketWarning { padding: 0.45rem 0.7rem; color: #ffe1ac; background: #493026; border-top: 1px solid #b27855; font-size: 0.85rem; }
 .pocketStatus { color: #ffd09b; font-size: 0.85rem; }
 .inspector { border-top: 1px solid var(--line); }
+.armoredHint { flex-basis: 100%; color: #c9d8d5; font-size: 0.78rem; line-height: 1.5; }
 .field { display: inline-flex; align-items: center; gap: 0.45rem; }
 .inspector .field { flex-wrap: wrap; }
 .field progress { width: min(120px, 25vw); accent-color: #69c7ff; }
