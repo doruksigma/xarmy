@@ -1,10 +1,10 @@
 import { decide } from "./ai";
 import { soundEffects } from "./audio";
-import { GRACE, HEIGHT, MAX_ROUTE_POINTS, POCKET_GRACE, RADIUS, STEP, WIDTH, dist, units } from "./config";
+import { CITY_PRODUCTION, GRACE, HEIGHT, MAX_ROUTE_POINTS, POCKET_GRACE, RADIUS, STEP, WIDTH, dist, units } from "./config";
 import type { Kind, Point, Team } from "./config";
 import { applyGameCommand, canApplyGameCommand } from "./commands";
 import type { GameCommand } from "./commands";
-import { recruitmentCity, step, supply } from "./engine";
+import { step, supply } from "./engine";
 import type { Flash, Match, Order, Unit } from "./engine";
 import { bindInput, clampCamera, MAX_ZOOM } from "./input";
 import { landscapeCanvas, render, resize, viewOf } from "./render";
@@ -21,9 +21,12 @@ export function summary(match: Match, picked: Set<number>, cityId: number | null
   const city = cityId === null ? null : match.cities.find(item => item.id === cityId);
   const logistics = supply(match, localTeam);
   const selected = match.units.filter((unit) => unit.team === localTeam && picked.has(unit.id) && unit.hp > 0);
-  const source = recruitmentCity(match, localTeam);
-  const citySource = city?.owner === localTeam ? source : city?.owner ? recruitmentCity(match, city.owner) : undefined;
-  const isRecruitmentCity = Boolean(city && citySource?.id === city.id);
+  const ownedCities = match.cities.filter(item => item.owner === localTeam);
+  const producing = ownedCities.filter(item => item.build && isSupplied(match, localTeam, item) &&
+    logistics.used + units[item.build.kind].supply <= logistics.capacity);
+  const nextProductionIn = producing.length
+    ? Math.max(0, Math.ceil(CITY_PRODUCTION - Math.max(...producing.map(item => item.build!.elapsed)))) : null;
+  const cityLogistics = city?.owner ? city.owner === localTeam ? logistics : supply(match, city.owner) : null;
   const pocketed = selected.filter(unit => unit.pocketed);
   const cityIsolated = Boolean(city?.owner && !isSupplied(match, city.owner, city));
   const selectedStance: Unit["stance"] | "mixed" | null = !selected.length ? null
@@ -37,18 +40,18 @@ export function summary(match: Match, picked: Set<number>, cityId: number | null
     bluePocketed: match.units.filter(unit => unit.team === 1 && unit.pocketed).length,
     player: match.units.filter(unit => unit.team === localTeam).length,
     enemy: match.units.filter(unit => unit.team !== localTeam).length,
-    playerCities: match.cities.filter(item => item.owner === localTeam).length,
+    playerCities: ownedCities.length,
     enemyCities: match.cities.filter(item => item.owner && item.owner !== localTeam).length,
     playerPocketed: match.units.filter(unit => unit.team === localTeam && unit.pocketed).length,
-    recruitmentCityId: source?.id ?? null, recruitmentProgress: match.recruitment[localTeam - 1], isRecruitmentCity,
+    producingCities: producing.length, nextProductionIn,
     selectedUnits: selected.length, selectedStance,
     selectedPocketed: pocketed.length,
     selectedPocketGrace: pocketed.length ? Math.max(0, Math.ceil(POCKET_GRACE - Math.max(...pocketed.map(unit => unit.pocketTime)))) : null,
     routeDrawing: routeDrawing && selected.length > 0,
     light: selected.filter((unit) => unit.kind === "light").length, heavy: selected.filter((unit) => unit.kind === "heavy").length,
-    city: city && { ...city, build: city.build && { ...city.build, elapsed: isRecruitmentCity && city.owner ? match.recruitment[city.owner - 1] : 0 } },
+    city: city && { ...city, build: city.build && { ...city.build } },
     cityIsolated,
-    blocked: Boolean(city?.build && (cityIsolated || logistics.used + units[city.build.kind].supply > logistics.capacity)),
+    blocked: Boolean(city?.build && cityLogistics && (cityIsolated || cityLogistics.used + units[city.build.kind].supply > cityLogistics.capacity)),
     tutorial: match.tutorial,
     result: localTeam === 2 && match.result && match.result !== "draw" ? match.result === "won" ? "lost" as const : "won" as const : match.result,
     report: { ...match.report },

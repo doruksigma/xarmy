@@ -1,6 +1,5 @@
 import { CAPTURE, CITY_PRODUCTION, HEIGHT, MAX_ROUTE_POINTS, WIDTH, difficulty, units } from "./config";
 import type { Point } from "./config";
-import { recruitmentCity } from "./engine";
 import type { Match, Order, Result, Unit } from "./engine";
 import { getMap, mapIds, passable } from "./terrain";
 import type { MapId } from "./terrain";
@@ -34,7 +33,7 @@ type StoredUnit = Omit<Unit, "stance" | "nextOrder" | "pocketed" | "pocketTime">
 type StoredMatch = Omit<Match, "version" | "units" | "territory" | "recruitment"> & {
   version: number; units: StoredUnit[]; commanders?: LegacyCommander[]; nextCommanderId?: number; territory?: unknown; recruitment?: unknown;
 };
-type VersionFourMatch = Omit<Match, "version" | "recruitment"> & { version: 4 };
+type VersionFiveMatch = Omit<Match, "version"> & { version: 5; recruitment: [number, number] };
 
 const blockedMasks = new Map<MapId, Uint8Array>();
 function validTerritory(value: unknown, map: MapId): boolean {
@@ -55,7 +54,7 @@ function validTerritory(value: unknown, map: MapId): boolean {
   return true;
 }
 
-function validVersion(value: unknown, version: 2 | 3 | 4 | 5): boolean {
+function validVersion(value: unknown, version: 2 | 3 | 4 | 5 | 6): boolean {
   try {
     const m = value as StoredMatch;
     if (!m || m.version !== version || !isMapId(m.map) || typeof m.id !== "string" || !m.id ||
@@ -133,15 +132,15 @@ function validVersion(value: unknown, version: 2 | 3 | 4 | 5): boolean {
 
 /** Accept the current runtime shape only; old save data must be migrated first. */
 export function validMatch(value: unknown): value is Match {
-  return validVersion(value, 5);
+  return validVersion(value, 6);
 }
 
-function initializeTerritory(legacy: StoredMatch, oldVersion: 2 | 3): VersionFourMatch | null {
+function initializeTerritory(legacy: StoredMatch, oldVersion: 2 | 3): Match | null {
   const { commanders, nextCommanderId, ...record } = legacy;
   void nextCommanderId;
   const migrated = {
     ...record,
-    version: 4,
+    version: 6,
     territory: createTerritory(legacy.map),
     units: legacy.units.map(unit => {
       const { commanderId, ...soldier } = unit;
@@ -158,60 +157,57 @@ function initializeTerritory(legacy: StoredMatch, oldVersion: 2 | 3): VersionFou
       build: city.build ? { ...city.build, elapsed: oldVersion === 2
         ? city.build.elapsed * CITY_PRODUCTION / LEGACY_PRODUCTION : city.build.elapsed } : null,
     })),
-  } as VersionFourMatch;
+  } as Match;
   // Older versions did not store land history. Keep the original split and
   // claim only the current living army's footprint, never inferred past paths.
   advanceTerritory(migrated);
   for (const unit of migrated.units) unit.pocketed = !isSupplied(migrated, unit.team, unit);
-  return validVersion(migrated, 4) ? migrated : null;
-}
-
-function initializeRecruitment(legacy: VersionFourMatch): Match {
-  const migrated: Match = { ...legacy, version: 5, recruitment: [0, 0] };
-  // Parallel city queues become one shared clock per side. Taking the most
-  // advanced queue preserves its progress without granting a mass-spawn burst.
-  for (const city of migrated.cities) {
-    if (!city.build) continue;
-    if (city.owner) migrated.recruitment[city.owner - 1] = Math.max(migrated.recruitment[city.owner - 1], city.build.elapsed);
-    city.build.elapsed = 0;
-  }
-  for (const team of [1, 2] as const) {
-    const city = recruitmentCity(migrated, team);
-    if (city) city.build = { kind: city.build?.kind ?? "light", elapsed: migrated.recruitment[team - 1] };
-  }
-  return migrated;
+  return validMatch(migrated) ? migrated : null;
 }
 
 /** Validate published v2 before discarding the obsolete command layer. */
 export function migrateV2Match(value: unknown): Match | null {
   if (!validVersion(value, 2)) return null;
-  try {
-    const legacy = initializeTerritory(structuredClone(value) as StoredMatch, 2);
-    return legacy ? initializeRecruitment(legacy) : null;
-  }
+  try { return initializeTerritory(structuredClone(value) as StoredMatch, 2); }
   catch { return null; }
 }
 
 /** Version three already uses individual soldiers and the slow timing values. */
 export function migrateV3Match(value: unknown): Match | null {
   if (!validVersion(value, 3)) return null;
-  try {
-    const legacy = initializeTerritory(structuredClone(value) as StoredMatch, 3);
-    return legacy ? initializeRecruitment(legacy) : null;
-  }
+  try { return initializeTerritory(structuredClone(value) as StoredMatch, 3); }
   catch { return null; }
 }
 
 /** Version four has authoritative territory and pocket timers; retain both. */
 export function migrateV4Match(value: unknown): Match | null {
   if (!validVersion(value, 4)) return null;
-  try { return initializeRecruitment(structuredClone(value) as VersionFourMatch); }
+  try { return { ...structuredClone(value) as Omit<Match, "version">, version: 6 }; }
   catch { return null; }
+}
+
+/** The previous shared clock was mirrored in one city per team. Keep that
+ * city's saved progress; never duplicate one minute of work into 25 queues. */
+export function migrateV5Match(value: unknown): Match | null {
+  if (!validVersion(value, 5)) return null;
+  try {
+    const { recruitment, ...record } = structuredClone(value) as VersionFiveMatch;
+    void recruitment;
+    const migrated: Match = { ...record, version: 6 };
+    for (const team of [1, 2] as const) {
+      const candidates = migrated.cities.filter(city => city.owner === team && city.build);
+      const source = candidates.reduce<typeof candidates[number] | undefined>((best, city) =>
+        !best || city.build!.elapsed > best.build!.elapsed ||
+        city.build!.elapsed === best.build!.elapsed && city.id < best.id ? city : best, undefined);
+      for (const city of candidates) if (city !== source) city.build!.elapsed = 0;
+    }
+    return migrated;
+  } catch { return null; }
 }
 
 export function migrateMatch(value: unknown): Match | null {
   if (validMatch(value)) return structuredClone(value);
-  return migrateV4Match(value) ?? migrateV3Match(value) ?? migrateV2Match(value);
+  return migrateV5Match(value) ?? migrateV4Match(value) ?? migrateV3Match(value) ?? migrateV2Match(value);
 }
 
 const STORAGE_TIMEOUT = 5000;

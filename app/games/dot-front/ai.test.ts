@@ -3,10 +3,10 @@ import test from "node:test";
 import { decide } from "./ai";
 import { CAPTURE, CITY_PRODUCTION, HEIGHT, STEP, difficulty, dist, units } from "./config";
 import type { Kind, Owner, Team } from "./config";
-import { commandUnit, createMatch, recruitmentCity, step } from "./engine";
+import { commandUnit, createMatch, step, supply } from "./engine";
 import type { City, Match, Unit } from "./engine";
 import { mapIds, nearestOpen, passable } from "./terrain";
-import { TERRITORY_COLS, isSupplied, territoryCell } from "./territory";
+import { TERRITORY_COLS, createTerritory, isSupplied, territoryCell } from "./territory";
 
 const soldier = (id: number, team: Team, x: number, y: number, kind: Kind = "light"): Unit => ({
   ...nearestOpen({ x, y }, "plains"), id, team, stance: "defend", nextOrder: 0, kind, hp: units[kind].hp, cooldown: 0,
@@ -30,12 +30,10 @@ test("difficulty changes decisions without accelerating production or increasing
   assert.equal(CITY_PRODUCTION, 60);
   for (const level of ["easy", "normal", "hard"] as const) {
     const match = fixture([soldier(1, 2, 110.5, 16.5)], [city(0, 2, 110.5, 16.5), city(1, 1, 90.5, 16.5)], level);
-    match.recruitment[1] = 30;
     match.cities[0].build!.elapsed = 30;
     decide(match);
     assert.equal(match.nextAi, difficulty[level].period);
     assert.equal(match.cities[0].build!.elapsed, 30);
-    assert.equal(match.recruitment[1], 30);
     assert.equal(match.units[0].hp, units.light.hp);
     const snapshot = JSON.stringify(match); decide(match);
     assert.equal(JSON.stringify(match), snapshot);
@@ -206,15 +204,66 @@ test("saved tactical orders and occupation restore deterministic AI decisions ac
 });
 
 
-test("AI plans just the current recruitment city without changing the shared timer", () => {
-  const match = createMatch("normal", "single-ai-recruitment", false, "plains");
+test("AI plans all supplied cities while preserving every independent production clock", () => {
+  const match = createMatch("normal", "all-city-production", false, "plains");
   match.nextAi = 0;
-  match.recruitment[1] = 37;
-  const source = recruitmentCity(match, 2)!;
-  const inactive = match.cities.filter(city => city.owner === 2 && city.id !== source.id);
-  const before = structuredClone(inactive.map(city => city.build));
+  const owned = match.cities.filter(city => city.owner === 2);
+  owned.forEach((city, index) => { city.build!.elapsed = index * 2 + .25; });
+  const clocks = owned.map(city => city.build!.elapsed);
+  const blueBefore = structuredClone(match.cities.filter(city => city.owner === 1));
   decide(match);
-  assert.equal(match.recruitment[1], 37);
-  assert.deepEqual(inactive.map(city => city.build), before);
-  assert.equal(source.build!.kind, "heavy");
+  assert.equal("recruitment" in match, false);
+  assert.deepEqual(owned.map(city => city.build!.elapsed), clocks);
+  assert.deepEqual(match.cities.filter(city => city.owner === 1), blueBefore);
+  assert.ok(owned.filter(city => city.build!.kind === "heavy").length > 1, "multiple cities independently choose heavy troops");
+  assert.ok(owned.some(city => city.build!.kind === "light"), "the simultaneous production wave remains mixed");
+  const logistics = supply(match, 2);
+  assert.ok(logistics.used + owned.reduce((sum, city) => sum + units[city.build!.kind].supply, 0) <= logistics.capacity);
+});
+
+test("AI reserves supply for the full city wave instead of overbooking simultaneous heavy orders", () => {
+  const army = Array.from({ length: 8 }, (_, index) => soldier(index + 1, 2, 105.5, 10.5 + index * 2));
+  const match = fixture(army, [city(0, 2, 110.5, 10.5), city(1, 2, 110.5, 30.5), city(2, 1, 15.5, 70.5)]);
+  match.cities[0].build = { kind: "heavy", elapsed: 59 };
+  match.cities[1].build = { kind: "heavy", elapsed: 41 };
+  decide(match);
+  assert.deepEqual(match.cities.slice(0, 2).map(city => city.build), [
+    { kind: "light", elapsed: 59 }, { kind: "light", elapsed: 41 },
+  ]);
+  assert.ok(army.every(unit => unit.hp === units[unit.kind].hp));
+});
+
+test("a forest approach favors a light unit while the same open approach permits a heavy", () => {
+  for (const map of ["plains", "forest"] as const) {
+    const army = Array.from({ length: 4 }, (_, index) => soldier(index + 1, 2, 110.5, 30.5 + index * 2, index ? "light" : "heavy"));
+    const match = fixture(army, [city(0, 2, 85.5, 55.5), city(1, 2, 120.5, 10.5), city(2, 1, 61.5, 55.5)]);
+    match.map = map; match.territory = createTerritory(map);
+    match.cities[0].build!.elapsed = 59;
+    decide(match);
+    assert.equal(match.cities[0].build!.kind, map === "forest" ? "light" : "heavy");
+    assert.equal(match.cities[0].build!.elapsed, 59);
+  }
+});
+
+test("isolated and neutral cities receive no AI production edits", () => {
+  const match = createMatch("normal", "isolated-city-production", false, "plains"); match.nextAi = 0;
+  const isolated = match.cities.find(city => city.owner === 2)!;
+  isolated.build = { kind: "heavy", elapsed: 37 };
+  match.territory.owners[territoryCell(isolated)] = 1; match.territory.revision++;
+  const neutral = match.cities.find(city => city.owner === 2 && city.id !== isolated.id)!;
+  neutral.owner = 0; neutral.build = null; neutral.repeat = false;
+  decide(match);
+  assert.deepEqual(isolated.build, { kind: "heavy", elapsed: 37 });
+  assert.equal(neutral.build, null);
+});
+
+test("all four AI cities produce once at their own minute boundary", () => {
+  const army = Array.from({ length: 8 }, (_, index) => soldier(index + 1, 2, 110.5, 10.5 + index * 2));
+  const match = fixture(army, [city(0, 2, 105.5, 5.5), city(1, 2, 115.5, 25.5),
+    city(2, 2, 125.5, 45.5), city(3, 2, 135.5, 65.5), city(4, 1, 15.5, 75.5)]);
+  advance(match, CITY_PRODUCTION - STEP);
+  assert.equal(match.units.filter(unit => unit.team === 2).length, 8);
+  advance(match, STEP);
+  assert.equal(match.units.filter(unit => unit.team === 2).length, 12);
+  assert.ok(match.cities.filter(city => city.owner === 2).every(city => city.build?.elapsed === 0));
 });

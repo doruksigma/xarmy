@@ -3,7 +3,7 @@ import test from "node:test";
 import type { TestContext } from "node:test";
 import { bindInput, clampCamera } from "./input";
 import { GAME_SPEEDS, startBattle, summary } from "./battle";
-import { createMatch, recruitmentCity } from "./engine";
+import { createMatch } from "./engine";
 import type { GameCommand } from "./commands";
 import { toWorld, viewOf } from "./render";
 import type { Box, Camera, View } from "./render";
@@ -411,23 +411,21 @@ test("mobile battle shows individual front soldiers and production type changes 
   assert.ok(match.units.some(unit => {
     const p = canvas.point(unit); return unit.team === 1 && p.clientX > 100 && p.clientX < 490 && p.clientY > 50 && p.clientY < 550;
   }));
-  const city = recruitmentCity(match, 1)!;
-  match.recruitment[0] = 4;
+  const city = match.cities.find(item => item.owner === 1)!;
   city.build = { kind: "light", elapsed: 4 };
   battle.pan({ x: city.x / WIDTH, y: city.y / HEIGHT }); env.runFrame(1100);
   const pointer = canvas.point(city); canvas.emit("pointerdown", pointer); canvas.emit("pointerup", pointer);
-  const progress = match.recruitment[0];
+  const progress = city.build.elapsed;
   battle.build("heavy"); assert.deepEqual(city.build, { kind: "heavy", elapsed: progress }); assert.equal(city.repeat, true);
   battle.build("light"); assert.deepEqual(city.build, { kind: "light", elapsed: progress });
   const hud = summary(match, new Set(), city.id);
-  assert.equal(hud.isRecruitmentCity, true); assert.equal(hud.recruitmentCityId, city.id);
-  assert.equal(hud.recruitmentProgress, progress); assert.equal(hud.city?.build?.elapsed, progress);
-  assert.equal(match.recruitment[0], progress, "switching type must preserve the shared team clock");
-  const inactive = match.cities.find(item => item.owner === 1 && item.id !== city.id)!;
-  inactive.build!.elapsed = 58;
-  const waiting = summary(match, new Set(), inactive.id);
-  assert.equal(waiting.isRecruitmentCity, false); assert.equal(waiting.city?.build?.elapsed, 0);
-  assert.equal(waiting.recruitmentProgress, progress);
+  assert.equal(hud.producingCities, 25); assert.equal(hud.city?.build?.elapsed, progress);
+  assert.equal(city.build.elapsed, progress, "switching type must preserve this city's clock");
+  const other = match.cities.find(item => item.owner === 1 && item.id !== city.id)!;
+  other.build!.elapsed = 58;
+  const second = summary(match, new Set(), other.id);
+  assert.equal(second.city?.build?.elapsed, 58); assert.equal(second.nextProductionIn, 2);
+  assert.equal(second.producingCities, 25); assert.equal(city.build.elapsed, progress);
 });
 
 test("every offered speed advances the fixed-step simulation by its wall-time multiplier", t => {
@@ -519,11 +517,48 @@ test("HUD distinguishes an isolated city from normal capacity shortage and clear
   match.territory.revision++;
   const cut = summary(match, new Set(), city.id);
   assert.equal(cut.cityIsolated, true); assert.equal(cut.blocked, true);
+  assert.equal(cut.producingCities, 24);
   assert.ok(cut.logistics.used < cut.logistics.capacity);
   for (const id of ring) match.territory.owners[id] = 1;
   match.territory.revision++;
   const open = summary(match, new Set(), city.id);
   assert.equal(open.cityIsolated, false); assert.equal(open.blocked, false);
+  assert.equal(open.producingCities, 25);
+});
+
+test("each city's HUD keeps its own clock and excludes capacity-blocked types from the next reinforcement", () => {
+  const match = createMatch("normal", "independent-city-hud", true, "plains");
+  const [heavy, light] = match.cities.filter(city => city.owner === 1);
+  heavy.build = { kind: "heavy", elapsed: 58 }; light.build = { kind: "light", elapsed: 12 };
+  const unit = match.units.find(item => item.team === 1)!;
+  match.units = [...match.units.filter(item => item.team === 2), ...Array.from({ length: 124 }, () => ({ ...unit, id: match.nextId++ }))];
+  const heavyHud = summary(match, new Set(), heavy.id);
+  assert.equal(heavyHud.logistics.used, 124); assert.equal(heavyHud.logistics.capacity, 125);
+  assert.equal(heavyHud.blocked, true); assert.equal(heavyHud.city?.build?.elapsed, 58);
+  assert.equal(heavyHud.producingCities, 24); assert.equal(heavyHud.nextProductionIn, 48);
+  const lightHud = summary(match, new Set(), light.id);
+  assert.equal(lightHud.blocked, false); assert.equal(lightHud.city?.build?.elapsed, 12);
+  match.units.push({ ...unit, id: match.nextId++ });
+  const full = summary(match, new Set(), light.id);
+  assert.equal(full.producingCities, 0); assert.equal(full.nextProductionIn, null);
+  assert.equal(full.city?.build?.elapsed, 12, "capacity warnings must not overwrite the selected queue's progress");
+});
+
+test("foreign-city production warnings use that city's owner supply rather than the local player's", () => {
+  for (const limitedTeam of [1, 2] as const) {
+    const match = createMatch("normal", `foreign-production-${limitedTeam}`, true, "plains");
+    const city = match.cities.find(item => item.owner === 2)!;
+    const retained = match.cities.find(item => item.owner === limitedTeam)!;
+    for (const item of match.cities) if (item.owner === limitedTeam && item.id !== retained.id) {
+      item.owner = 0; item.build = null; item.repeat = false;
+    }
+    city.build!.elapsed = 31;
+    const hud = summary(match, new Set(), city.id, false, 1);
+    assert.equal(hud.cityIsolated, false);
+    assert.equal(hud.blocked, limitedTeam === 2);
+    assert.equal(hud.city?.build?.elapsed, 31);
+    assert.equal(hud.producingCities, limitedTeam === 1 ? 0 : 25);
+  }
 });
 
 test("guest selection and direct orders control actual red soldiers without mirroring the map", t => {
@@ -627,14 +662,16 @@ test("guest snapshots replace stable match contents and refresh selection, suppl
   env.cleanup(() => battle.dispose()); env.runFrame(1000); battle.selectAll(); battle.routeMode(true);
   assert.equal(hud.selectedUnits, 25);
   const snapshot = structuredClone(match);
-  snapshot.elapsed = 81; snapshot.recruitment = [12, 43]; snapshot.shortage[1] = 8;
+  snapshot.elapsed = 81; snapshot.shortage[1] = 8;
+  snapshot.cities[0].build!.elapsed = 43;
   snapshot.units = snapshot.units.filter(unit => unit.team !== 2);
   snapshot.cities = snapshot.cities.map(city => ({ ...city, owner: city.owner === 2 ? 1 : city.owner }));
   battle.replaceSnapshot(snapshot);
   assert.equal(match, originalReference); assert.equal(match.elapsed, 81);
   assert.equal(hud.localTeam, 2); assert.equal(hud.selectedUnits, 0); assert.equal(hud.routeDrawing, false);
   assert.equal(hud.logistics.capacity, 0); assert.equal(hud.logistics.used, 0); assert.equal(hud.shortage, 8);
-  assert.equal(hud.recruitmentProgress, 43); assert.equal(hud.recruitmentCityId, null);
+  assert.equal(hud.producingCities, 0); assert.equal(hud.nextProductionIn, null);
+  assert.equal(match.cities[0].build?.elapsed, 43);
   assert.equal(env.frames.size, 1); assert.equal(finished, 0);
   snapshot.elapsed = 99;
   assert.equal(match.elapsed, 81, "later transport mutations cannot alias the live match");
@@ -649,15 +686,16 @@ test("guest HUD uses red capacity, shortages and pockets while preserving canoni
   const match = createMatch("normal", "red-hud", false, "plains");
   const red = match.units.find(unit => unit.team === 2)!, blue = match.units.find(unit => unit.team === 1)!;
   red.pocketed = true; red.pocketTime = POCKET_GRACE - 4;
-  match.shortage = [2, 7]; match.recruitment = [3, 23]; match.cities.find(city => city.owner === 2)!.owner = 1;
+  match.shortage = [2, 7]; match.cities.find(city => city.owner === 2)!.owner = 1;
   match.report = { fallen: 3, captured: 2, killed: 1 }; match.result = "won";
-  const source = recruitmentCity(match, 2)!;
-  const hud = summary(match, new Set([red.id, blue.id]), source.id, false, 2);
+  const city = match.cities.find(item => item.owner === 2)!;
+  city.build!.elapsed = 23;
+  const hud = summary(match, new Set([red.id, blue.id]), city.id, false, 2);
   assert.equal(hud.logistics.capacity, 24 * 5); assert.equal(hud.shortage, 7);
   assert.equal(hud.playerCities, 24); assert.equal(hud.enemyCities, 26);
   assert.equal(hud.playerPocketed, 1); assert.equal(hud.bluePocketed, 0);
   assert.equal(hud.selectedUnits, 1); assert.equal(hud.selectedPocketGrace, 4);
-  assert.equal(hud.recruitmentProgress, 23); assert.equal(hud.city?.build?.elapsed, 23);
+  assert.equal(hud.producingCities, 24); assert.equal(hud.nextProductionIn, 37); assert.equal(hud.city?.build?.elapsed, 23);
   assert.equal(hud.result, "lost"); assert.deepEqual(hud.report, match.report);
 });
 

@@ -71,15 +71,15 @@ test("one open friendly corridor prevents capture until an enemy physically seal
   assert.equal(red.team, 2); assert.equal(state.report.fallen, 1);
 });
 
-test("supply isolation without a grounded captor retains its grace period and paused team timer", () => {
-  const { state, blue, red } = fixture();
+test("supply isolation without a grounded captor retains its grace period and paused city timer", () => {
+  const { state, city, blue, red } = fixture();
   state.territory.owners = state.territory.owners.map(owner => owner ? 3 - owner : 0);
   state.territory.revision++;
   Object.assign(blue, { x: 100.5, y: 45.5 }); Object.assign(red, { x: 40.5, y: 45.5 });
-  state.recruitment[0] = CITY_PRODUCTION - 5;
+  city.build!.elapsed = CITY_PRODUCTION - 5;
   advance(state, POCKET_GRACE);
   assert.equal(state.units.includes(blue), true); assert.ok(Math.abs(blue.hp - units.light.hp) < 1e-7);
-  assert.equal(state.recruitment[0], CITY_PRODUCTION - 5);
+  assert.equal(city.build!.elapsed, CITY_PRODUCTION - 5);
   advance(state, 2);
   assert.ok(Math.abs(blue.hp - units.light.hp + POCKET_DAMAGE * 2) < 1e-7);
   const hp = blue.hp;

@@ -1,5 +1,5 @@
 import type { Match } from "./engine";
-import { validMatch } from "./storage";
+import { migrateV5Match, validMatch } from "./storage";
 import { TERRITORY_SIZE } from "./territory";
 
 export const MAX_ONLINE_BODY_BYTES = 1024 * 1024;
@@ -34,6 +34,16 @@ export function packMatch(match: Match): PackedMatch {
 
 /** Reject malformed/oversized input before allocating the fixed occupation grid. */
 export function unpackMatch(value: unknown): Match | null {
+  return decodeMatch(value, false);
+}
+
+/** Only trusted, already-stored room snapshots may use this upgrade path.
+ * New host uploads must continue to go through strict unpackMatch validation. */
+export function unpackStoredMatch(value: unknown): Match | null {
+  return decodeMatch(value, true);
+}
+
+function decodeMatch(value: unknown, allowStoredV5: boolean): Match | null {
   try {
     if (!value || typeof value !== "object" || !withinBudget(value)) return null;
     const packed = value as PackedMatch;
@@ -54,6 +64,7 @@ export function unpackMatch(value: unknown): Match | null {
     const { encoding, territory, ...state } = packed;
     void encoding;
     const match = { ...structuredClone(state), territory: { revision: territory.revision, owners } };
-    return validMatch(match) ? match : null;
+    if (validMatch(match)) return match;
+    return allowStoredV5 ? migrateV5Match(match) : null;
   } catch { return null; }
 }

@@ -35,7 +35,7 @@ test("a direct order changes exactly one soldier and remains manual across auton
   assert.equal(unit.stance, "manual");
   assert.deepEqual(state.units.filter(other => other.id !== unit.id).map(other => other.order), others);
   const order = structuredClone(unit.order);
-  state.recruitment[0] = CITY_PRODUCTION - STEP;
+  state.cities[0].build!.elapsed = CITY_PRODUCTION - STEP;
   advance(state, 3);
   assert.deepEqual(unit.order, order);
   assert.equal(unit.stance, "manual");

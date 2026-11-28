@@ -63,9 +63,11 @@ test("red commands use actual red IDs and canonical world coordinates, without r
   assert.ok(red.every(unit => unit.path.every(p => passable(p, match.map))));
   assert.deepEqual(match.units.filter(unit => unit.team === 1), blueBefore);
   const city = match.cities.find(city => city.owner === 2)!;
-  match.recruitment[1] = 37;
+  city.build!.elapsed = 37;
+  const other = match.cities.find(candidate => candidate.owner === 2 && candidate.id !== city.id)!;
+  other.build!.elapsed = 44;
   assert.equal(applyGameCommand(match, 2, { kind: "build", city: city.id, unit: "heavy" }), true);
-  assert.equal(match.recruitment[1], 37); assert.equal(city.build?.kind, "heavy");
+  assert.equal(city.build!.elapsed, 37); assert.equal(other.build!.elapsed, 44); assert.equal(city.build?.kind, "heavy");
   assert.equal(applyGameCommand(match, 2, { kind: "rally", city: city.id, point }), true);
   assert.deepEqual(city.rally, nearestOpen(point, match.map));
   assert.equal(applyGameCommand(match, 2, { kind: "rally", city: city.id, point: null }), true);

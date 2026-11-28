@@ -1,7 +1,7 @@
 import { HEIGHT, RADIUS, WIDTH, difficulty, dist, units } from "./config";
 import type { Point } from "./config";
 import type { City, Match, Unit } from "./engine";
-import { commandUnit, recruitmentCity, setGroupStance, supply } from "./engine";
+import { commandUnit, setGroupStance, supply } from "./engine";
 import { nearestOpen, passable, route, tileAt } from "./terrain";
 import { isSupplied } from "./territory";
 
@@ -15,21 +15,29 @@ function move(match: Match, unit: Unit, point: Point) {
   commandUnit(match, unit.id, { mode: "move", point: goal });
 }
 
-// Both teams use the same single minute-long recruitment clock. Only its
-// current frontier city needs a unit choice; inactive city slots are not orders.
+// Every supplied city keeps its own minute clock. Plan the whole production
+// wave together so many simultaneous heavy choices cannot consume the same
+// spare supply, and never reset or advance a city's elapsed production time.
 function chooseProduction(match: Match, red: Unit[]) {
-  const city = recruitmentCity(match, 2);
-  if (!city?.build) return;
+  const active = match.cities.filter(city => city.owner === 2 && city.build && isSupplied(match, 2, city))
+    .sort((a, b) => b.build!.elapsed - a.build!.elapsed || a.id - b.id);
+  if (!active.length) return;
   const { used, capacity } = supply(match, 2);
   const targets = match.cities.filter(candidate => candidate.owner !== 2);
-  const target = targets.reduce<City | undefined>((best, candidate) =>
-    !best || dist(city, candidate) < dist(city, best) ? candidate : best, undefined) ?? city;
-  const samples = [city, target, { x: (city.x + target.x) / 2, y: (city.y + target.y) / 2 }];
-  const forest = samples.reduce((sum, point) => sum + [-2, -1, 0, 1, 2]
-    .filter(offset => tileAt({ x: point.x + offset, y: point.y + 1 }, match.map) === "forest").length, 0);
-  const heavyCount = red.filter(unit => unit.kind === "heavy").length;
-  city.build.kind = capacity - used >= 2 && red.length >= 4 &&
-    heavyCount / Math.max(1, red.length + 1) < (forest >= 4 ? .14 : .24) ? "heavy" : "light";
+  let extraSupply = capacity - used - active.length;
+  let heavyCount = red.filter(unit => unit.kind === "heavy").length;
+  const plannedSize = red.length + active.length;
+  for (const city of active) {
+    const target = targets.reduce<City | undefined>((best, candidate) =>
+      !best || dist(city, candidate) < dist(city, best) ? candidate : best, undefined) ?? city;
+    const samples = [city, target, { x: (city.x + target.x) / 2, y: (city.y + target.y) / 2 }];
+    const forest = samples.reduce((sum, point) => sum + [-2, -1, 0, 1, 2]
+      .filter(offset => tileAt({ x: point.x + offset, y: point.y + 1 }, match.map) === "forest").length, 0);
+    const heavy = extraSupply >= 1 && red.length >= 4 &&
+      heavyCount / Math.max(1, plannedSize) < (forest >= 4 ? .14 : .24);
+    city.build!.kind = heavy ? "heavy" : "light";
+    if (heavy) { extraSupply--; heavyCount++; }
+  }
 }
 
 function attackTarget(match: Match, unit: Unit, target: Unit) {

@@ -6,7 +6,7 @@ import { isGameCommand } from "../app/games/dot-front/commands";
 import type { GameCommand } from "../app/games/dot-front/commands";
 import { mapIds } from "../app/games/dot-front/terrain";
 import type { MapId } from "../app/games/dot-front/terrain";
-import { packMatch, unpackMatch, MAX_ONLINE_BODY_BYTES } from "../app/games/dot-front/online-protocol";
+import { packMatch, unpackMatch, unpackStoredMatch, MAX_ONLINE_BODY_BYTES } from "../app/games/dot-front/online-protocol";
 import type { PackedMatch } from "../app/games/dot-front/online-protocol";
 import type { OnlineRole, OnlineSpeed, QueuedCommand, RoomAccess, RoomView } from "../app/games/dot-front/online-types";
 import { transactRoom, RoomError } from "./dot-front-room-store";
@@ -47,6 +47,18 @@ function roleOf(room: RoomRecord, token: string): OnlineRole {
   if (timingSafeEqual(hash, Buffer.from(room.hostHash, "hex"))) return "host";
   if (room.guestHash && timingSafeEqual(hash, Buffer.from(room.guestHash, "hex"))) return "guest";
   throw new RoomError(401, "Bu odaya erişim yetkiniz yok.");
+}
+function normalizeStoredSnapshot(room: RoomRecord): boolean {
+  if (!room.snapshot || (room.snapshot as { version?: unknown }).version === 6) return false;
+  // This upgrade is for an authenticated, already-stored room only. New host
+  // payloads retain strict v6 validation and cannot use the legacy decoder.
+  const snapshot = unpackStoredMatch(room.snapshot);
+  if (!snapshot || snapshot.map !== room.map || snapshot.tutorial !== null)
+    throw new RoomError(409, "Bu odanın eski kaydı okunamadı. Lütfen yeni bir oda oluşturun.");
+  room.snapshot = packMatch(snapshot);
+  room.snapshotSeq++; room.controlVersion++; room.revision++;
+  room.paused = true;
+  return true;
 }
 const present = (state: Presence, now: number) => state.present && now - state.seen <= HEARTBEAT;
 function touch(room: RoomRecord, role: OnlineRole, visible: boolean, now: number): void {
@@ -105,7 +117,8 @@ export async function getRoom(input: unknown, token: string): Promise<RoomView> 
   const code = codeOf(input), now = Date.now();
   return transactRoom<RoomRecord, RoomView>(code, current => {
     const room = requireRoom(current), role = roleOf(room, token);
-    const changed = pauseDisconnected(room, now);
+    const migrated = normalizeStoredSnapshot(room);
+    const changed = pauseDisconnected(room, now) || migrated;
     return { ...(changed ? { record: room } : {}), result: view(room, role, now) };
   });
 }
@@ -162,6 +175,8 @@ function acceptSnapshot(room: RoomRecord, body: Record<string, unknown>): void {
   // An obsolete upload must never undo a server-side pause or discard inputs.
   // Return current controls instead, allowing the host to restore the last state.
   if (body.controlVersion !== room.controlVersion || body.snapshotSeq <= room.snapshotSeq || room.status !== "playing") return;
+  if (object(body.snapshot) && body.snapshot.version === 5)
+    throw new RoomError(409, "Oyun güncellendi; iki oyuncu da sayfayı yenilesin.");
   const snapshot = unpackMatch(body.snapshot), previous = room.snapshot && unpackMatch(room.snapshot);
   if (!snapshot || !previous || snapshot.id !== previous.id || snapshot.map !== room.map || snapshot.tutorial !== null ||
       snapshot.elapsed < previous.elapsed) throw new RoomError(400, "Geçersiz maç durumu.");
@@ -193,6 +208,7 @@ export async function actInRoom(input: unknown, token: string, body: unknown): P
   if (!object(body) || typeof body.action !== "string") throw new RoomError(400, "Geçersiz oda işlemi.");
   return transactRoom<RoomRecord, RoomView>(code, current => {
     const room = requireRoom(current), role = roleOf(room, token);
+    normalizeStoredSnapshot(room);
     pauseDisconnected(room, now);
     const host = role === "host";
     if (body.action === "sync") {

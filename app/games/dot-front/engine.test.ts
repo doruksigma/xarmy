@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { CAPTURE, CITY_PRODUCTION, GRACE, HEIGHT, STEP, WIDTH, dist, units } from "./config";
 import type { Kind, Owner, Point, Team } from "./config";
-import { canTraverse, createMatch, recruitmentCity, send, step, supply } from "./engine";
+import { canTraverse, createMatch, send, step, supply } from "./engine";
 import type { City, Match, Unit } from "./engine";
 import { validMatch } from "./storage";
 import { clearShot, getMap, mapIds, nearestOpen, passable, route } from "./terrain";
@@ -30,8 +30,8 @@ test("all six expanded maps start with fifty owned cities and fifty frontline so
   assert.equal(WIDTH, 144); assert.equal(HEIGHT, 90);
   for (const map of mapIds) {
     const state = createMatch("normal", `initial-${map}`, false, map);
-    assert.equal(state.version, 5); assert.equal(state.cities.length, 50);
-    assert.deepEqual(state.recruitment, [0, 0]);
+    assert.equal(state.version, 6); assert.equal(state.cities.length, 50);
+    assert.equal("recruitment" in state, false);
     assert.equal(getMap(map).tiles.length, WIDTH * HEIGHT);
     assert.equal(state.units.length, 50); assert.equal("commanders" in state, false);
     for (const team of [1, 2] as const) {
@@ -52,21 +52,20 @@ test("all six expanded maps start with fifty owned cities and fifty frontline so
   }
 });
 
-test("each team recruits exactly one soldier at sixty-second intervals regardless of city count", () => {
+test("every owned city independently recruits one soldier every sixty seconds", () => {
   const state = createMatch("normal", "automatic-cities", true, "plains");
   advance(state, CITY_PRODUCTION - STEP);
   assert.equal(state.units.length, 50);
   advance(state, STEP);
-  assert.equal(state.units.length, 52);
-  assert.deepEqual(state.recruitment, [0, 0]);
+  assert.equal(state.units.length, 100);
   assert.ok(state.cities.every((item) => item.build?.elapsed === 0 && item.repeat));
   advance(state, CITY_PRODUCTION);
-  assert.equal(state.units.length, 54);
-  for (const team of [1, 2] as const) assert.equal(state.units.filter(unit => unit.team === team).length, 27);
+  assert.equal(state.units.length, 150);
+  for (const team of [1, 2] as const) assert.equal(state.units.filter(unit => unit.team === team).length, 75);
   assert.ok(state.units.every(unit => !("commanderId" in unit)));
 });
 
-test("capture pauses when contested and clears old city orders while keeping the team's recruitment clock", () => {
+test("capture pauses when contested and clears the captured city's old orders and production clock", () => {
   const blue = soldier(1, 1, 20.5, 20.5), red = soldier(2, 2, 100.5, 20.5);
   const target = city(2, 2, 20.5, 20.5);
   target.build = { kind: "heavy", elapsed: 0 };
@@ -83,27 +82,26 @@ test("capture pauses when contested and clears old city orders while keeping the
   target.build = { kind: "heavy", elapsed: 0 };
   Object.assign(blue, { x: target.x, y: target.y }); advance(state, CAPTURE);
   assert.equal(target.owner, 1); assert.equal(target.build?.kind, "light");
-  assert.equal(recruitmentCity(state, 1), target);
-  assert.ok(Math.abs(target.build!.elapsed - state.elapsed) < 1e-7);
-  assert.equal(target.build!.elapsed, state.recruitment[0]);
+  assert.equal(target.build!.elapsed, 0);
   assert.equal(target.repeat, true); assert.equal(target.rally, null); assert.equal(state.report.captured, 1);
-  advance(state, CITY_PRODUCTION - state.recruitment[0] - STEP); assert.ok(target.build!.elapsed > CITY_PRODUCTION - 0.1);
+  advance(state, CITY_PRODUCTION - STEP); assert.ok(target.build!.elapsed > CITY_PRODUCTION - 0.1);
   const count = state.units.filter(unit => unit.team === 1).length; advance(state, STEP);
   assert.equal(state.units.filter(unit => unit.team === 1).length, count + 1); assert.equal(target.build!.elapsed, 0);
 });
 
-test("automatic recruitment pauses at supply capacity and resumes without discarding elapsed progress", () => {
+test("a city's completed soldier waits at capacity and spawns after a supply point becomes free", () => {
   const army = Array.from({ length: 5 }, (_, id) => soldier(id + 1, 1, 5.5 + id, 20.5));
   const home = city(0, 1, 5.5, 20.5);
   const state = fixture(army, [home, city(1, 2, 120.5, 70.5)]);
-  state.recruitment[0] = 4;
-  advance(state, 12); assert.equal(home.build!.elapsed, 4);
+  home.build!.elapsed = 4;
+  advance(state, 12); assert.ok(Math.abs(home.build!.elapsed - 16) < 1e-7);
+  advance(state, CITY_PRODUCTION - 16); assert.equal(home.build!.elapsed, CITY_PRODUCTION);
+  assert.equal(supply(state, 1).used, 5);
   state.units = state.units.filter((unit) => unit.id !== 5);
-  advance(state, CITY_PRODUCTION - 4 - STEP); assert.equal(supply(state, 1).used, 4);
   advance(state, STEP); assert.equal(supply(state, 1).used, 5); assert.equal(home.build!.elapsed, 0);
 });
 
-test("heavy and light automatic recruitment use the same explicit sixty-second team clock", () => {
+test("heavy and light automatic recruitment use the same explicit sixty-second city clock", () => {
   const home = city(0, 1, 5.5, 20.5); home.build = { kind: "heavy", elapsed: 0 };
   const state = fixture([soldier(1, 1, 6.5, 20.5)], [home, city(1, 2, 120.5, 70.5)]);
   advance(state, CITY_PRODUCTION - STEP); assert.equal(state.units.filter((unit) => unit.team === 1).length, 1);

@@ -66,7 +66,9 @@ test("host applies queued guest commands once and publishes their ack with the a
 });
 
 test("host rolls back rejected control-version uploads and replays only unacknowledged commands after resume", async () => {
-  const match = createMatch("normal", "rollback", false, "plains"), remote = view(match);
+  const match = createMatch("normal", "rollback", false, "plains");
+  match.cities[0].build!.elapsed = 17; match.cities[1].build!.elapsed = 43;
+  const remote = view(match);
   const enemy = match.units.find(unit => unit.team === 2)!;
   const replacements: Match[] = [], pauses: boolean[] = [];
   let reject = false;
@@ -80,11 +82,14 @@ test("host rolls back rejected control-version uploads and replays only unacknow
   controller.attach(match); await h.poll();
   remote.commands = [{ seq: 1, command: { kind: "order", ids: [enemy.id], order: { mode: "hold" } } }]; remote.guestSeq = 1;
   await h.poll(); // Apply intent after the previous snapshot was accepted.
-  match.elapsed = 42; reject = true; await h.poll();
+  match.elapsed = 42; match.cities[0].build!.elapsed = 54; match.cities[1].build!.elapsed = 59;
+  reject = true; await h.poll();
   assert.equal(match.elapsed, 0, "rejected simulation progress is restored to server state");
+  assert.equal(match.cities[0].build!.elapsed, 17); assert.equal(match.cities[1].build!.elapsed, 43);
   assert.equal(match.units.find(unit => unit.id === enemy.id)!.stance, "defend", "unacknowledged intent waits while paused");
   assert.equal(pauses.at(-1), true); assert.ok(replacements.length >= 2);
   const resumed = controller.action({ action: "resume" }); await h.poll(); await resumed;
+  assert.equal(match.cities[0].build!.elapsed, 17); assert.equal(match.cities[1].build!.elapsed, 43);
   assert.equal(match.units.find(unit => unit.id === enemy.id)!.stance, "manual", "intent replays from server ack after resume");
   await h.poll();
   const body = h.requests.at(-1)!.body;

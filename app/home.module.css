@@ -309,30 +309,6 @@
   }
 }
 
-.dots {
-  --accent: #9df0cc;
-}
-.dotsArtwork {
-  display: grid;
-  grid-template-columns: repeat(3, min(16%, 78px));
-  place-content: center;
-  height: 100%;
-  background: radial-gradient(circle at 50% 50%, #224447, #121f29);
-}
-.dotsArtwork div {
-  aspect-ratio: 1;
-  border: 2px solid #6e9298;
-  transform: rotate(-12deg) skewX(8deg);
-}
-.dotsArtwork div:first-child {
-  border-color: #9df0cc;
-  background: #346857;
-}
-.dotsArtwork div:last-child {
-  border-color: #ffa68b;
-  background: #673f3d;
-}
-
 .front {
   --accent: #9ed8fc;
 }
@@ -340,36 +316,36 @@
   position: relative;
   height: 100%;
   background:
-    linear-gradient(90deg, transparent 46%, #354e60 47% 53%, transparent 54%),
-    repeating-linear-gradient(16deg, transparent 0 27px, #9ca58733 29px 30px, transparent 32px 50px),
-    linear-gradient(115deg, #29413e, #526255 56%, #414249);
+    linear-gradient(96deg, transparent 49%, #000000 49% 50%, transparent 50%),
+    radial-gradient(ellipse at 12% 85%, #38802f 0 30%, transparent 30%),
+    radial-gradient(ellipse at 85% 15%, #38802f 0 28%, transparent 28%),
+    #a4c242;
 }
 .frontArtwork::before,
 .frontArtwork::after {
   content: "";
   position: absolute;
-  left: 44%;
-  width: 12%;
-  height: 8%;
+  left: 18%;
+  width: 3%;
+  aspect-ratio: 1;
   top: 28%;
-  background: #ab9c80;
-  box-shadow: 0 2px #17191aaf;
+  background: #ffff00;
+  border-radius: 50%;
 }
-.frontArtwork::after { top: 70%; }
+.frontArtwork::after { left: 83%; top: 70%; }
 .frontArtwork span {
   position: absolute;
   left: 25%;
   top: 47%;
   width: 3%;
   aspect-ratio: 1;
-  background: #86d5ff;
-  border: 2px solid #1b3949;
+  background: #3700ff;
+  border: 2px solid #000000;
   border-radius: 50%;
-  box-shadow: 0 0 0 3px #9ed8fc31;
 }
 .frontArtwork span:nth-child(2) { left: 33%; top: 53%; }
-.frontArtwork span:nth-child(3) { left: 31%; top: 36%; background: #23343d; border-color: #86d5ff; width: 4.5%; }
-.frontArtwork span:nth-child(n + 4) { left: 65%; top: 64%; background: #ffa192; border-color: #503a37; box-shadow: 0 0 0 3px #ffa19230; }
+.frontArtwork span:nth-child(3) { left: 31%; top: 36%; outline: 2px solid #000000; outline-offset: 2px; width: 4.5%; }
+.frontArtwork span:nth-child(n + 4) { left: 65%; top: 64%; background: #ff0000; }
 .frontArtwork span:nth-child(5) { left: 69%; top: 51%; }
-.frontArtwork span:nth-child(6) { left: 76%; top: 61%; background: #403a3b; border-color: #ffa192; width: 4.5%; }
-.frontArtwork span:nth-child(7) { left: 57%; top: 22%; background: #acb2a6; border-radius: 0; border-color: #324144; }
+.frontArtwork span:nth-child(6) { left: 76%; top: 61%; outline: 2px solid #000000; outline-offset: 2px; width: 4.5%; }
+.frontArtwork span:nth-child(7) { left: 57%; top: 22%; }

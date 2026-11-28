@@ -326,11 +326,11 @@ export default function DotFront() {
             {hud.cityIsolated && <span className={styles.pocketStatus}>{copy.isolatedCity}</span>}
             <button disabled={!canCommand || !hasSelection} onClick={() => battle.current?.sendToCity()}>{copy.send}</button>
             {city.owner === 1 && <>
-              {hud.isRecruitmentCity ? <label className={styles.field}>{copy.recruitmentActive}
-                <progress aria-label={copy.recruitmentTimer} value={hud.recruitmentProgress} max={CITY_PRODUCTION} />
-              </label> : <span className={styles.note}>{copy.recruitmentInactive}</span>}
-              <span className={styles.note}>{hud.recruitmentCityId === null ? copy.recruitmentWaiting
-                : `${copy.recruitmentSource}: ${copy.placeNames[hud.recruitmentCityId]}`} · {copy.productionEvery}</span>
+              <label className={styles.field}>{copy.production}
+                <progress aria-label={copy.cityProductionTimer} value={city.build?.elapsed ?? 0} max={CITY_PRODUCTION} />
+                <span>{Math.floor(city.build?.elapsed ?? 0)}/{CITY_PRODUCTION} {copy.seconds}</span>
+              </label>
+              <span className={styles.note}>{copy.productionEvery}</span>
               <span>{copy.productionKind}: {copy[city.build?.kind ?? "light"]}</span>
               <button disabled={!canCommand} aria-pressed={city.build?.kind === "light"}
                 onClick={() => battle.current?.build("light")}>{copy.chooseLight}</button>
@@ -339,15 +339,15 @@ export default function DotFront() {
               <button disabled={!canCommand} aria-pressed={battle.current?.rallyPending() ?? false}
                 onClick={() => { battle.current?.rally(); setHud({ ...hud }); }}>{copy.rally}</button>
               {battle.current?.rallyPending() && <span className={styles.note}>{copy.rallyHint}</span>}
-              {hud.isRecruitmentCity && hud.blocked && <span className={styles.warning}>{hud.cityIsolated ? copy.isolatedProduction : copy.supplyWarning}</span>}
+              {hud.blocked && <span className={styles.warning}>{hud.cityIsolated ? copy.isolatedProduction : copy.supplyWarning}</span>}
             </>}
           </>}
         </div>
         <div className={styles.recruitmentBar}>
-          <span>{hud.recruitmentCityId === null ? copy.recruitmentWaiting
-            : `${copy.recruitmentSource}: ${copy.placeNames[hud.recruitmentCityId]}`}</span>
-          <progress aria-label={copy.recruitmentTimer} value={hud.recruitmentProgress} max={CITY_PRODUCTION} />
-          <span>{Math.floor(hud.recruitmentProgress)}/{CITY_PRODUCTION} {copy.seconds}</span>
+          <span>{copy.producingCities}: <b>{hud.producingCities}/{hud.playerCities}</b></span>
+          <span>{hud.nextProductionIn === null ? hud.playerCities ? copy.productionWaiting : copy.productionNoCities
+            : `${copy.nextReinforcement}: ${hud.nextProductionIn} ${copy.seconds}`}</span>
+          <span>{copy.productionEvery}</span>
         </div>
         {status && <p className={styles.note} role="status">{status}</p>}
       </section>

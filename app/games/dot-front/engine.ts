@@ -2,7 +2,7 @@ import { CAPTURE, CITY_PRODUCTION, FRONT_ATTACK_ADVANCE, FRONT_ATTACK_COMMIT_DIS
 import type { Difficulty, Kind, Owner, Point, Team } from "./config";
 import { clearShot, getMap, nearestOpen, passable, route, tileAt } from "./terrain";
 import type { MapId } from "./terrain";
-import { frontDirection, frontField, frontSlots } from "./front";
+import { frontDirection, frontSlots } from "./front";
 import { advanceTerritory, createTerritory, isSupplied, resolveEnclosures, territoryCell, territoryOwner } from "./territory";
 import type { Territory } from "./territory";
 
@@ -24,8 +24,8 @@ export type City = Point & {
 export type Stance = "attack" | "defend";
 export type Result = "won" | "lost" | "draw";
 export type Match = {
-  version: 5; id: string; difficulty: Difficulty; map: MapId; elapsed: number; nextId: number; territory: Territory;
-  units: Unit[]; cities: City[]; shortage: [number, number]; recruitment: [number, number]; nextAi: number;
+  version: 6; id: string; difficulty: Difficulty; map: MapId; elapsed: number; nextId: number; territory: Territory;
+  units: Unit[]; cities: City[]; shortage: [number, number]; nextAi: number;
   result: Result | null; report: { captured: number; killed: number; fallen: number };
   tutorial: number | null;
 };
@@ -33,12 +33,12 @@ export type Flash = { from: Point; to: Point; team: Team; expires: number };
 
 export function createMatch(difficulty: Difficulty, id: string, tutorial: boolean, map: MapId = "valley"): Match {
   const match: Match = {
-    version: 5, id, difficulty, map, elapsed: 0, nextId: 1, territory: createTerritory(map),
+    version: 6, id, difficulty, map, elapsed: 0, nextId: 1, territory: createTerritory(map),
     units: [], cities: getMap(map).cities.map((city, id) => ({
       ...city, id, capturing: 0, progress: 0, rally: null,
       build: city.owner ? { kind: "light", elapsed: 0 } : null, repeat: !!city.owner,
     })),
-    shortage: [0, 0], recruitment: [0, 0], nextAi: tutorial ? 45 : 2, result: null,
+    shortage: [0, 0], nextAi: tutorial ? 45 : 2, result: null,
     report: { captured: 0, killed: 0, fallen: 0 }, tutorial: tutorial ? 0 : null,
   };
   for (const team of [1, 2] as const) {
@@ -60,28 +60,6 @@ export function supply(match: Match, team: Team) {
   };
 }
 
-/** One reinforcement source per side, following the actual occupied frontier. */
-export function recruitmentCity(match: Match, team: Team): City | undefined {
-  const segments = frontField(match).segments;
-  let source: City | undefined, nearest = Infinity;
-  for (const city of match.cities) {
-    if (city.owner !== team || !isSupplied(match, team, city)) continue;
-    let distance = Infinity;
-    for (const { a, b } of segments) {
-      const dx = b.x - a.x, dy = b.y - a.y, length = dx * dx + dy * dy;
-      const along = length ? Math.max(0, Math.min(1, ((city.x - a.x) * dx + (city.y - a.y) * dy) / length)) : 0;
-      distance = Math.min(distance, (city.x - a.x - along * dx) ** 2 + (city.y - a.y - along * dy) ** 2);
-    }
-    // When one side owns all territory there is no shared frontier. All valid
-    // cities tie, giving a stable source while surviving enemy troops remain.
-    if (!source || distance < nearest - 1e-9 || (Math.abs(distance - nearest) <= 1e-9 || distance === nearest) && city.id < source.id) {
-      source = city;
-      nearest = distance;
-    }
-  }
-  return source;
-}
-
 function makeUnit(match: Match, team: Team, kind: Kind, point: Point): Unit {
   const unit: Unit = {
     ...point, id: match.nextId++, team, kind, hp: units[kind].hp, cooldown: 0,
@@ -93,19 +71,22 @@ function makeUnit(match: Match, team: Team, kind: Kind, point: Point): Unit {
   return unit;
 }
 
-function openSpawn(match: Match, origin: Point): Point {
+function openSpawn(match: Match, origin: Point, team?: Team): Point {
   const center = nearestOpen(origin, match.map);
   for (let ring = 0; ring <= 8; ring++) for (let y = -ring; y <= ring; y++) for (let x = -ring; x <= ring; x++) {
     if (Math.max(Math.abs(x), Math.abs(y)) !== ring) continue;
     const point = { x: center.x + x, y: center.y + y };
-    if (passable(point, match.map) && match.units.every((unit) => dist(unit, point) > 0.5)) return point;
+    if (passable(point, match.map) && (!team || isSupplied(match, team, point)) &&
+      match.units.every((unit) => dist(unit, point) > 0.5)) return point;
   }
   return center;
 }
 
 function spawn(match: Match, city: City, kind: Kind): Unit | undefined {
   if (!city.owner) return;
-  const unit = makeUnit(match, city.owner, kind, openSpawn(match, city));
+  // Captured cities may be connected by a very thin corridor. A new soldier
+  // must not appear in an isolated enemy cell and die before its first order.
+  const unit = makeUnit(match, city.owner, kind, openSpawn(match, city, city.owner));
   if (city.rally) commandUnit(match, unit.id, { mode: "move", point: city.rally });
   return unit;
 }
@@ -469,8 +450,9 @@ function fight(match: Match, index: UnitIndex, dt: number, flashes: Flash[]) {
   }
 }
 
-function captureCity(match: Match, city: City, owner: Team) {
+function captureCity(match: Match, city: City, owner: Team, captured: Set<number>) {
   if (city.owner === owner) return;
+  captured.add(city.id);
   city.owner = owner;
   city.progress = 0;
   city.capturing = 0;
@@ -483,8 +465,7 @@ function captureCity(match: Match, city: City, owner: Team) {
   }
 }
 
-function takeCities(match: Match, index: UnitIndex, dt: number) {
-  const captured = new Set<number>();
+function takeCities(match: Match, index: UnitIndex, dt: number, captured: Set<number>) {
   for (const city of match.cities) {
     let blue = false;
     let red = false;
@@ -503,21 +484,11 @@ function takeCities(match: Match, index: UnitIndex, dt: number) {
     city.capturing = contender;
     city.progress += dt;
     if (city.progress + 1e-6 < CAPTURE) continue;
-    captureCity(match, city, contender);
-    captured.add(city.id);
+    captureCity(match, city, contender, captured);
   }
-  return captured;
 }
 
-function supplyAndBuild(match: Match, dt: number) {
-  // City queues are display mirrors only. Never resume independent queues from
-  // a previous source, captured city or legacy save.
-  for (const city of match.cities) {
-    if (!city.owner) { city.build = null; city.repeat = false; continue; }
-    if (!city.build) city.build = { kind: "light", elapsed: 0 };
-    city.build.elapsed = 0;
-    city.repeat = true;
-  }
+function supplyAndBuild(match: Match, dt: number, captured: ReadonlySet<number>) {
   for (const team of [1, 2] as const) {
     const { used, capacity } = supply(match, team);
     let excess = used - capacity;
@@ -528,19 +499,32 @@ function supplyAndBuild(match: Match, dt: number) {
       excess -= units[unit.kind].supply;
       if (match.shortage[team - 1] + 1e-6 >= GRACE) unit.hp -= 3 * dt;
     }
-    const city = recruitmentCity(match, team);
-    if (!city?.build) continue;
-    const timer = team - 1;
-    const stats = units[city.build.kind];
-    if (used + stats.supply <= capacity) match.recruitment[timer] = Math.min(CITY_PRODUCTION, match.recruitment[timer] + dt);
-    if (used + stats.supply <= capacity && match.recruitment[timer] + 1e-6 >= CITY_PRODUCTION) {
-      spawn(match, city, city.build.kind);
-      if (team === 1 && match.tutorial === 3) match.tutorial = 4;
-      // Discard overshoot rather than catch up with a burst after a pause.
-      match.recruitment[timer] = 0;
+    const ready: City[] = [];
+    for (const city of match.cities) {
+      if (city.owner !== team) continue;
+      if (!city.build) city.build = { kind: "light", elapsed: 0 };
+      city.repeat = true;
+      if (captured.has(city.id) || !isSupplied(match, team, city)) continue;
+      // Each city keeps its own minute. A completed soldier can wait for army
+      // capacity, but disconnected cities cannot continue recruitment work.
+      city.build.elapsed = Math.min(CITY_PRODUCTION, city.build.elapsed + dt);
+      if (city.build.elapsed + 1e-6 >= CITY_PRODUCTION) {
+        city.build.elapsed = CITY_PRODUCTION;
+        ready.push(city);
+      }
     }
-    city.build.elapsed = match.recruitment[timer];
+    let current = used;
+    ready.sort((a, b) => b.build!.elapsed - a.build!.elapsed || a.id - b.id);
+    for (const city of ready) {
+      const build = city.build!, cost = units[build.kind].supply;
+      if (current + cost > capacity) continue;
+      spawn(match, city, build.kind);
+      current += cost;
+      build.elapsed = 0;
+      if (team === 1 && match.tutorial === 3) match.tutorial = 4;
+    }
   }
+  for (const city of match.cities) if (!city.owner) { city.build = null; city.repeat = false; }
 }
 
 function removeDead(match: Match) {
@@ -552,7 +536,7 @@ function removeDead(match: Match) {
   }
 }
 
-function takeEnclosures(match: Match) {
+function takeEnclosures(match: Match, capturedCities: Set<number>) {
   const captured = resolveEnclosures(match);
   if (!captured) return;
   // Land changes hands, never soldiers. Apply both teams' losses before the
@@ -565,7 +549,7 @@ function takeEnclosures(match: Match) {
   }
   for (const city of match.cities) {
     const cell = territoryCell(city), owner = cell >= 0 ? captured[cell] : 0;
-    if (owner === 1 || owner === 2) captureCity(match, city, owner);
+    if (owner === 1 || owner === 2) captureCity(match, city, owner, capturedCities);
   }
   removeDead(match);
 }
@@ -591,7 +575,8 @@ function updatePockets(match: Match, dt: number) {
 export function step(match: Match, dt: number, flashes: Flash[], decide: (match: Match) => void) {
   if (match.result || !Number.isFinite(dt) || dt <= 0) return;
   match.elapsed += dt;
-  takeEnclosures(match);
+  const captured = new Set<number>();
+  takeEnclosures(match, captured);
   updatePockets(match, 0);
   autoFront(match);
   decide(match);
@@ -599,14 +584,14 @@ export function step(match: Match, dt: number, flashes: Flash[], decide: (match:
   removeDead(match);
   separate(match, dt);
   advanceTerritory(match);
-  takeEnclosures(match);
+  takeEnclosures(match, captured);
   updatePockets(match, dt);
   removeDead(match);
-  takeCities(match, new UnitIndex(match.units), dt);
-  supplyAndBuild(match, dt);
+  takeCities(match, new UnitIndex(match.units), dt, captured);
+  supplyAndBuild(match, dt, captured);
   // New troops occupy their real spawn footprint; no timers advance twice.
   advanceTerritory(match);
-  takeEnclosures(match);
+  takeEnclosures(match, captured);
   updatePockets(match, 0);
   removeDead(match);
   const survives = (team: Team) => match.cities.some((city) => city.owner === team) ||

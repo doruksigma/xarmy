@@ -55,7 +55,7 @@ test("flat terrain uses bounded raster memory and preserves every original terra
   const terrain = landscapeCanvas("plains") as unknown as Canvas;
   assert.equal(terrain.width, WIDTH * 4); assert.equal(terrain.height, HEIGHT * 4);
   assert.ok(terrain.width * terrain.height * 4 * 2 < 1_700_000, "two cached maps fit within 1.7 MB");
-  const palette = { field: "#a3c746", forest: "#398336", rock: "#92958f", water: "#2998f5", bridge: "#c5b57e" };
+  const palette = { field: "#a4c242", forest: "#38802f", rock: "#8c9089", water: "#2997f9", bridge: "#c5b57e" };
   const painted: unknown[] = new Array(WIDTH * HEIGHT);
   const fills = terrain.calls.filter(call => call.method === "fillRect");
   for (const call of fills) {
@@ -63,7 +63,7 @@ test("flat terrain uses bounded raster memory and preserves every original terra
     assert.equal(height, 1);
     for (let dx = 0; dx < width; dx++) painted[y * WIDTH + x + dx] = call.fill;
   }
-  assert.deepEqual(painted, getMap("plains").tiles.map(tile => palette[tile]));
+  assert.deepEqual(painted.map(color => color === "#6e736d" ? palette.rock : color), getMap("plains").tiles.map(tile => palette[tile]));
   assert.ok(fills.length < WIDTH * HEIGHT / 4, "contiguous flat spans replace noisy per-tile painting");
   assert.equal(terrain.calls.some(call => call.method === "arc" || call.method === "stroke"), false);
   assert.equal(landscapeCanvas("plains"), terrain.element(), "the map raster is reused");
@@ -81,7 +81,7 @@ test("high-density tablet canvases respect the pixel budget without changing inp
   assert.deepEqual([canvas.width, canvas.height], dimensions);
 });
 
-test("zoomed rendering crops both raster layers and culls distant soldiers", t => {
+test("zoomed rendering crops visible terrain, skips an empty overlay and culls distant soldiers", t => {
   environment(t);
   const match = createMatch("normal", "render-crop", false, "plains"), canvas = new Canvas();
   match.cities = [];
@@ -90,7 +90,7 @@ test("zoomed rendering crops both raster layers and culls distant soldiers", t =
   render(canvas.element(), null, terrain, view, match, new Set(), null, [], null);
   assert.equal(canvas.contextOptions[0]?.alpha, false, "the fully repainted battle canvas requests an opaque surface");
   const blits = canvas.calls.filter(call => call.method === "drawImage");
-  assert.equal(blits.length, 2);
+  assert.equal(blits.length, 1, "normal supplied territory needs no color-changing overlay blit");
   for (const call of blits) {
     const source = call.args[0] as HTMLCanvasElement;
     assert.equal(call.args.length, 9);
@@ -132,8 +132,38 @@ test("persistent pocket loops use cached black curves whose smoothing stays with
   const curves = env.paths.flatMap(path => path.calls.filter(call => call.method === "quadraticCurveTo"));
   assert.ok(curves.length >= 4); assert.ok(env.paths.some(path => path.calls.some(call => call.method === "closePath")));
   for (const { args: [cx, cy, x, y] } of curves) assert.ok(Math.hypot(x - cx, y - cy) <= .350001);
-  assert.ok(canvas.calls.some(call => call.method === "stroke" && call.stroke === "#111111" && Number(call.width) * view.scale >= 4.5));
-  assert.ok(canvas.calls.some(call => call.method === "fill" && call.fill === "#ffed28"), "cities are yellow markers");
+  assert.ok(canvas.calls.some(call => call.method === "stroke" && call.stroke === "#000000" && Number(call.width) * view.scale >= 4.5));
+  assert.ok(canvas.calls.some(call => call.method === "fill" && call.fill === "#ffff00"), "cities are pure yellow markers");
+});
+
+test("team ownership never washes terrain colors on the map or minimap and markers use the explicit palette", t => {
+  const env = environment(t), match = createMatch("normal", "render-palette", false, "plains");
+  const canvas = new Canvas(), mini = new Canvas(); mini.width = 180; mini.height = 112;
+  render(canvas.element(), mini.element(), landscapeCanvas(match.map), viewOf(960, 600, { x: 72, y: 45, zoom: 1 }), match, new Set(), null, [], null);
+  const overlay = env.canvases.find(value => value.width === TERRITORY_COLS && value.height === HEIGHT * 2)!;
+  assert.ok(overlay);
+  assert.equal(overlay.calls.some(call => call.method === "fillRect" || call.method === "fill"), false, "ownership adds no filled tint");
+  const base = [...env.canvases].reverse().find(value => value.width === mini.width && value.height === mini.height)!;
+  assert.equal(base.calls.filter(call => call.method === "drawImage").length, 1, "overview also shows the original terrain colors");
+  for (const color of ["#3700ff", "#ff0000", "#ffff00"]) {
+    assert.ok(canvas.calls.some(call => call.method === "fill" && call.fill === color), `map marker retains ${color}`);
+  }
+});
+
+test("dark rock interiors stay strictly inside existing rock masses", t => {
+  environment(t);
+  const tiles = getMap("passes").tiles, original = [...tiles], terrain = landscapeCanvas("passes") as unknown as Canvas;
+  const interiors = terrain.calls.filter(call => call.method === "fillRect" && call.fill === "#6e736d");
+  assert.ok(interiors.length > 0);
+  for (const call of interiors) {
+    const [start, y, width] = call.args as number[];
+    for (let x = start; x < start + width; x++) {
+      for (const index of [y * WIDTH + x, y * WIDTH + x - 1, y * WIDTH + x + 1, (y - 1) * WIDTH + x, (y + 1) * WIDTH + x]) {
+        assert.equal(tiles[index], "rock", "a dark inset cannot recolor a passable tile or rock edge");
+      }
+    }
+  }
+  assert.deepEqual(tiles, original);
 });
 
 test("restored maps replace stale landscape inputs instead of painting the previous match terrain", t => {

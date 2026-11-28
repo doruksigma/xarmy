@@ -1,7 +1,7 @@
 import Link from "next/link";
 import styles from "./home.module.css";
 
-type ArtworkKind = "battle" | "chess" | "europa" | "hide" | "dots" | "front";
+type ArtworkKind = "battle" | "chess" | "europa" | "hide" | "front";
 
 // Original, lightweight vector artwork; playable renderers load on game routes.
 function Artwork({ kind }: { kind: ArtworkKind }) {
@@ -9,12 +9,6 @@ function Artwork({ kind }: { kind: ArtworkKind }) {
     return (
       <div className={styles.frontArtwork} aria-hidden="true">
         <span /><span /><span /><span /><span /><span /><span />
-      </div>
-    );
-  if (kind === "dots")
-    return (
-      <div className={styles.dotsArtwork} aria-hidden="true">
-        <div /><div /><div />
       </div>
     );
   if (kind === "battle")
@@ -324,23 +318,13 @@ const games = [
     action: "Tahtaya geç",
   },
   {
-    id: "dots" as const,
-    href: "/dots-of-war.html",
-    eyebrow: "TAKTİK · TEK OYUNCULU",
-    name: "Nokta Cephesi",
-    description:
-      "Noktaları birleştir, kareleri kapat ve bilgisayardan daha fazla alan kazan.",
-    tags: ["3 tahta boyutu", "Bilgisayara karşı"],
-    action: "Tahtayı aç",
-  },
-  {
     id: "front" as const,
     href: "/games/dot-front",
-    eyebrow: "STRATEJİ · TEK OYUNCULU",
+    eyebrow: "STRATEJİ · BOT & ONLINE",
     name: "Dot Front",
     description:
-      "Birliklerini gerçek zamanlı yönet. Köprüleri aş, şehirleri ele geçir ve ikmal hattını koru.",
-    tags: ["Gerçek zamanlı strateji", "Bilgisayara karşı", "Yerel kayıt"],
+      "50 şehirli cephede birliklerini yönet. Her şehrin 60 saniyede bir asker üretsin; botla veya oda koduyla arkadaşınla savaş.",
+    tags: ["Her şehirde üretim", "Oda koduyla oyna", "Yerel kayıt"],
     action: "Cepheye git",
   },
 ];
@@ -372,7 +356,7 @@ export default function HomePage() {
             X
           </span>
           <span>
-            Altı farklı deneyim.
+            Beş farklı deneyim.
             <br />
             <strong>Tek bir arena.</strong>
           </span>
@@ -385,12 +369,12 @@ export default function HomePage() {
       >
         <div className={styles.collectionHeading}>
           <h2 id="collection-title">Oyunlar</h2>
-          <span>01 — 06</span>
+          <span>01 — 05</span>
         </div>
         <div className={styles.grid}>
           {games.map((game) => (
             <Link
-              prefetch={game.id === "dots" || game.id === "front" ? false : undefined}
+              prefetch={game.id === "front" ? false : undefined}
               key={game.id}
               href={game.href}
               className={`${styles.card} ${styles[game.id]}`}

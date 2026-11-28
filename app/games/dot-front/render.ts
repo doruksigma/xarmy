@@ -7,9 +7,10 @@ import { TERRITORY_COLS, TERRITORY_ROWS, TERRITORY_SPACING, suppliedCells } from
 import { getMap } from "./terrain";
 import type { MapId } from "./terrain";
 
-export const colors = ["#858b8d", "#0754ff", "#f3232d"];
-const terrainColors = { field: "#a3c746", forest: "#398336", rock: "#92958f", water: "#2998f5", bridge: "#c5b57e" };
-const CITY_COLOR = "#ffed28";
+export const colors = ["#858b8d", "#3700ff", "#ff0000"];
+const terrainColors = { field: "#a4c242", forest: "#38802f", rock: "#8c9089", water: "#2997f9", bridge: "#c5b57e" };
+const ROCK_INTERIOR = "#6e736d";
+const CITY_COLOR = "#ffff00";
 const RASTER_SCALE = 4;
 export type Camera = Point & { zoom: number };
 export type View = { width: number; height: number; scale: number; x: number; y: number };
@@ -46,26 +47,41 @@ export function landscapeCanvas(mapId: MapId = "valley") {
       x = end;
     }
   }
+  // A solid inset distinguishes the interior of larger rock masses, without
+  // adding texture noise or changing any passable tile or obstacle boundary.
+  ctx.fillStyle = ROCK_INTERIOR;
+  const rockInterior = (x: number, y: number) => tiles[y * WIDTH + x] === "rock" &&
+    tiles[y * WIDTH + x - 1] === "rock" && tiles[y * WIDTH + x + 1] === "rock" &&
+    tiles[(y - 1) * WIDTH + x] === "rock" && tiles[(y + 1) * WIDTH + x] === "rock";
+  for (let y = 1; y < HEIGHT - 1; y++) {
+    let x = 1;
+    while (x < WIDTH - 1) {
+      if (!rockInterior(x, y)) { x++; continue; }
+      let end = x + 1;
+      while (end < WIDTH - 1 && rockInterior(end, y)) end++;
+      ctx.fillRect(x, y, end - x, 1); x = end;
+    }
+  }
   landscapes.set(mapId, canvas);
   // Two recent maps retain about 1.7 MB instead of the old 27 MB textures.
   if (landscapes.size > 2) landscapes.delete(landscapes.keys().next().value!);
   return canvas;
 }
 
-type Territory = { key: string; canvas: HTMLCanvasElement };
+type Territory = { key: string; canvas: HTMLCanvasElement; painted: boolean };
 const territories = new WeakMap<Match, Territory>();
 function territoryCanvas(match: Match, field: FrontField) {
   let cached = territories.get(match);
-  if (cached?.key === field.key) return cached.canvas;
+  if (cached?.key === field.key) return cached.painted ? cached.canvas : null;
   if (!cached) {
     const canvas = document.createElement("canvas"); canvas.width = TERRITORY_COLS; canvas.height = TERRITORY_ROWS;
-    cached = { key: "", canvas }; territories.set(match, cached);
+    cached = { key: "", canvas, painted: false }; territories.set(match, cached);
   }
   const ctx = cached.canvas.getContext("2d")!;
   ctx.setTransform(1 / TERRITORY_SPACING, 0, 0, 1 / TERRITORY_SPACING, 0, 0); ctx.clearRect(0, 0, WIDTH, HEIGHT);
   const owners = match.territory.owners, supplied = suppliedCells(match);
-  // Draw actual occupied cells, not a proximity field. Run-length batches keep
-  // unchanged broad territories inexpensive even at half-cell resolution.
+  // Ownership is shown by the black front and team markers, never a color wash
+  // over the terrain. Only disconnected pockets add a sparse warning hatch.
   const isolatedRuns: Array<{ x: number; y: number; length: number }> = [];
   for (let y = 0; y < TERRITORY_ROWS; y++) {
     let x = 0;
@@ -74,11 +90,7 @@ function territoryCanvas(match: Match, field: FrontField) {
       let end = x + 1;
       while (end < TERRITORY_COLS && owners[y * TERRITORY_COLS + end] === owner &&
         (owner !== 0 && supplied[y * TERRITORY_COLS + end] !== owner) === isolated) end++;
-      if (owner) {
-        ctx.fillStyle = colors[owner] + "09";
-        ctx.fillRect(x * TERRITORY_SPACING, y * TERRITORY_SPACING, (end - x) * TERRITORY_SPACING, TERRITORY_SPACING);
-        if (isolated) isolatedRuns.push({ x, y, length: end - x });
-      }
+      if (isolated) isolatedRuns.push({ x, y, length: end - x });
       x = end;
     }
   }
@@ -91,8 +103,8 @@ function territoryCanvas(match: Match, field: FrontField) {
     }
   }
   ctx.strokeStyle = "#8d4b0090"; ctx.lineWidth = .2; ctx.stroke();
-  cached.key = field.key;
-  return cached.canvas;
+  cached.key = field.key; cached.painted = isolatedRuns.length > 0;
+  return cached.painted ? cached.canvas : null;
 }
 
 type FrontDrawing = { path: Path2D | null; chains: Point[][] };
@@ -150,7 +162,7 @@ function frontDrawing(field: FrontField): FrontDrawing {
 }
 function drawFront(ctx: CanvasRenderingContext2D, field: FrontField, scale: number, minPixels = 4.5) {
   const drawing = frontDrawing(field);
-  ctx.strokeStyle = "#111111"; ctx.lineWidth = Math.max(.62, minPixels / scale);
+  ctx.strokeStyle = "#000000"; ctx.lineWidth = Math.max(.62, minPixels / scale);
   ctx.lineCap = "round"; ctx.lineJoin = "round";
   if (drawing.path) ctx.stroke(drawing.path);
   else { ctx.beginPath(); for (const chain of drawing.chains) roundedChain(ctx, chain); ctx.stroke(); }
@@ -205,7 +217,7 @@ function drawVisible(ctx: CanvasRenderingContext2D, source: HTMLCanvasElement, b
 
 type MiniCache = { match: Match; base: HTMLCanvasElement; baseKey: string; units: number; viewport: string };
 const minimaps = new WeakMap<HTMLCanvasElement, MiniCache>();
-function drawMinimap(mini: HTMLCanvasElement, terrain: HTMLCanvasElement, territory: HTMLCanvasElement, field: FrontField, match: Match, view: View) {
+function drawMinimap(mini: HTMLCanvasElement, terrain: HTMLCanvasElement, territory: HTMLCanvasElement | null, field: FrontField, match: Match, view: View) {
   let cached = minimaps.get(mini);
   if (!cached || cached.match !== match) {
     cached = { match, base: document.createElement("canvas"), baseKey: "", units: -1, viewport: "" }; minimaps.set(mini, cached);
@@ -226,7 +238,8 @@ function drawMinimap(mini: HTMLCanvasElement, terrain: HTMLCanvasElement, territ
     if (cached.base.height !== mini.height) cached.base.height = mini.height;
     const base = cached.base.getContext("2d", { alpha: false })!;
     base.setTransform(mini.width / WIDTH, 0, 0, mini.height / HEIGHT, 0, 0);
-    base.drawImage(terrain, 0, 0, WIDTH, HEIGHT); base.drawImage(territory, 0, 0, WIDTH, HEIGHT);
+    base.drawImage(terrain, 0, 0, WIDTH, HEIGHT);
+    if (territory) base.drawImage(territory, 0, 0, WIDTH, HEIGHT);
     drawFront(base, field, mini.width / WIDTH, 1.1);
     for (const city of match.cities) {
       base.fillStyle = colors[city.owner]; base.fillRect(city.x - 1, city.y - 1, 2, 2);
@@ -265,7 +278,7 @@ export function render(
   ctx.translate(view.x, view.y);
   ctx.scale(view.scale, view.scale);
   drawVisible(ctx, terrain, bounds);
-  drawVisible(ctx, territory, bounds);
+  if (territory) drawVisible(ctx, territory, bounds);
   drawFront(ctx, field, view.scale);
   for (const city of match.cities) {
     if (!visible(city)) continue;
@@ -287,7 +300,7 @@ export function render(
     circle(ctx, city, ownerRadius);
     ctx.fillStyle = colors[city.owner]; ctx.fill();
     circle(ctx, city, cityRadius);
-    ctx.fillStyle = CITY_COLOR; ctx.fill(); ctx.strokeStyle = "#1b2414";
+    ctx.fillStyle = CITY_COLOR; ctx.fill(); ctx.strokeStyle = "#000000";
     ctx.lineWidth = Math.max(.075, 1 / view.scale); ctx.stroke();
     ctx.beginPath();
     if (city.owner === 1) {
@@ -340,7 +353,7 @@ export function render(
     circle(ctx, unit, radius);
     ctx.fillStyle = colors[unit.team];
     ctx.fill();
-    ctx.strokeStyle = "#101510";
+    ctx.strokeStyle = "#000000";
     ctx.lineWidth = Math.max(unit.kind === "heavy" ? .18 : .07, (unit.kind === "heavy" ? 2.5 : 1) / view.scale);
     ctx.stroke();
     if (unit.kind === "heavy") {
