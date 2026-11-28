@@ -63,6 +63,18 @@ Depolama adları korunur:
 
 Bot maçı yaklaşık 15 saniyede bir ve sekme gizlenince kayıt alır. Gizli sekmede maç duraklar; geri dönünce birikmiş süre uygulanmaz ve kullanıcı devam eder. IndexedDB açılışı ve işlemleri zaman aşımıyla korunur. Depolama kullanılamadığında bot maçı oynanabilir kalır, arayüz kayıt hatasını bildirir. Tamamlanan bot sonuçları maç kimliğiyle yalnızca bir kez sayılır.
 
+## Savaş sesleri
+
+Hafif silahlarda kayıtlı tüfeklerden hazırlanmış iki atış varyantı, ağır birliklerde katmanlı patlamalar ve ayrı darbe efekti kullanılır. Arka planda rüzgâr ve uzaktaki çatışmalardan oluşan 24 saniyelik bir ortam döngüsü çalar. Ağır efektlerin kaynağı kayıtlı havai fişeklerdir; gerçek topçu kaydı olarak sunulmaz. Sesler Web Audio ile çalınan yerel MP3 örnekleridir; eski kısa osilatör sesi kaldırılmıştır.
+
+Menüde **Ayarlar**, savaşta **Ses ayarları** üzerinden açma/kapatma, **Genel ses**, **Savaş atmosferi** ve **Çatışma efektleri** ayrı değiştirilir. Yeni kullanıcıda ses açık, seviyeler sırasıyla %70 / %35 / %80'dir. Önceden kaydedilmiş sessiz tercih korunur; bu durumda oyuncu **Sesi aç** düğmesine basar. Seviyeler mevcut localStorage ayarlarına eklenir; maç biçimi sürüm 6 kalır. Eksik veya bozuk seviyeler alan bazında varsayılana döner; sıfır geçerli bir tercihtir.
+
+Ses bağlamı yalnız kullanıcının başlatma, devam, katılma veya ses kontrolü etkileşiminde açılır. Menü yüklenmesi otomatik ses başlatmaz. Bot ve online host gerçek saldırı olaylarını, online misafir yeni durum paketlerindeki doğrulanmış saldırı bekleme süresi yenilenmesini kullanır. Yinelenen/eski paketler, üretim, ikmal hasarı ve duraklatma sırasındaki eski atışlar yeniden seslendirilmez. Seslerin sağ/sol yönü ve uzaklığı kameraya bağlıdır. Savaş sesleri bir sonraki ağ paketini veya yeni sunucu özelliğini gerektirmez.
+
+Aynı anda ortam dahil en fazla 12 ses çalar; hafif ve ağır silahların ayrı kısa sıklık sınırları vardır. Altı ses dosyası toplam **356.205 bayt** tutar, gerektiğinde bir kez indirilip çözülür ve yeniden oyunlarda önbellekten kullanılır. Ortam dosyasındaki 1–25 saniyelik iç döngü MP3 kenar dolgusunu dışarıda bırakır. Ses duraklatmada, sekme gizlenmesinde, maç sonunda ve sayfadan çıkarken durur; görünür olmak tek başına maçı veya sesi sürdürmez. Ses indirme/çözme hatası oyunu durdurmaz. Yeni çalışma zamanı paketi veya harici ses servisi eklenmemiştir.
+
+Dosyalar `public/dot-front/audio/` altındadır. Kaynak/lisans bilgisi `CREDITS.md`, kaynak arşivindeki bildirim `source-license.txt`, boyut/hash/ölçümler `manifest.json` içindedir. Tüfek kayıtları Vincent Sevedge'e ait CC BY 3.0; patlama ve rüzgâr kaynakları CC0'dır. Oyundaki **Ses kaynakları ve lisanslar** bağlantısı yeniden dağıtımda korunmalıdır. `scripts/build-dot-front-audio.py` kaynak hash'lerini sabitler ve dosyaları yeniden üretebilir; normal site derlemesinde çalışmaz.
+
 ## Çalıştırma ve doğrulama
 
 Mevcut Node.js 24 gereksinimi ve npm kilit dosyası kullanılır.
@@ -96,9 +108,15 @@ Sürüm 6 değişikliğinin **41 kayıt ve paketleme testi geçti**; bu iki test
 
 **Cephe toplamları güncellemesi:** 232 oyun/istemci ve 32 oda/depolama testi geçti (264 toplam); Next.js üretim derlemesi, TypeScript ve lint başarılıdır. 13 yeni hesaplama testi altı haritada tekil sayımı, en yakın sınır bölümünü, menzil sınırını, can/hareket/yeni birlik değişimlerini, kesik cepheleri ve önbellek kullanımını doğrular. Renderer testleri seçili ordular dahil tekil sayıların çizilmemesini, bölgesel toplamları ve dar ekranda görünür cephe parçasına yerleşmeyi kapsar.
 
-Güncel Chromium üretim sunucusu kontrolünde mavi genel toplam 35.000 iken sınırdaki 25.000'in gösterildiği ve 10.000 kişilik arka ordunun yalnız genel toplamda kaldığı doğrulandı. Kırmızı cephe ve genel toplam 17.500 olarak eşleşti. Seçim, yakınlaştırma, sayfa içi tam ekran, IndexedDB Devam Et ve 390 × 844 / 844 × 390 dokunmatik yön değişimleri geçti; yatay taşma veya JavaScript hatası görülmedi. İki ayrı online oturumda bölgesel etiketler ve sağ üst toplamlar görünür kaldı; oda/katılma, tek ordu rotası, 60 saniyelik üretim, duraklatma, bağlantı kesintisi, yenileme, sonuç ve bot kaydına dönme yeniden geçti. Fiziksel tablet ve Safari denenmedi.
+Cephe toplamları sürümünün Chromium üretim sunucusu kontrolünde mavi genel toplam 35.000 iken sınırdaki 25.000'in gösterildiği ve 10.000 kişilik arka ordunun yalnız genel toplamda kaldığı doğrulandı. Kırmızı cephe ve genel toplam 17.500 olarak eşleşti. Seçim, yakınlaştırma, sayfa içi tam ekran, IndexedDB Devam Et ve 390 × 844 / 844 × 390 dokunmatik yön değişimleri geçti; yatay taşma veya JavaScript hatası görülmedi. İki ayrı online oturumda bölgesel etiketler ve sağ üst toplamlar görünür kaldı; oda/katılma, tek ordu rotası, 60 saniyelik üretim, duraklatma, bağlantı kesintisi, yenileme, sonuç ve bot kaydına dönme yeniden geçti. Fiziksel tablet ve Safari denenmedi.
 
 Telefon kontrolü tarayıcı benzetimidir; fiziksel cihaz, farklı operatör ağları ve uzun maçların insan oynanışıyla denge testi bu güncellemede ayrıca yapılmadı. Oda aktarımı HTTP üzerinden yaklaşık yarım saniyelik aralıklarla çalışır; gerçek bağlantı gecikmesi oyuncuların ağına bağlıdır.
+
+**Ses güncellemesi:** 275 oyun/istemci testi ve 32 oda/depolama testi geçti (307 toplam). Next.js üretim derlemesi, TypeScript ve lint başarılıdır. Ses bağlamı yaşam döngüsü, eşzamanlı yükleme/kapatma yarışları, 12 ses sınırı, ses seviyeleri, bozuk ayarlar, host ve misafir saldırı olayları kapsanır. Altı yerel MP3 yeniden çözümlendi; hash, sessiz olmayan içerik, tepe seviyesi, hızlı başlangıç ve ortam döngüsü sınırı kontrolleri geçti.
+
+Yerel üretim sunucusunda Chromium ile kullanıcı etkileşiminden önce ses bağlamı/indirme olmaması, gerçek atış/patlama/darbe örnekleri, ölçülen sıfırdan farklı ses sinyali, bağımsız kanallar, kaydedilen sessiz tercih, duraklatma/devam, simüle edilen gizli sekme olayı, çevrim dışı bot sesi ve tekrar oynamada tek etkin ses bağlamı/döngüsü doğrulandı. 390 × 844 ve 844 × 390 dokunmatik görünümde ses kontrolleri ve lisans bağlantısı taşmadı. Bu kontroller fiziksel cihazda dinleme veya Safari testi değildir.
+
+İki ayrı Chromium oturumunda online bekleme odasının sessiz kalması, önceki katılma etkileşimiyle misafirde sesin maç başlayınca açılması ve aynı gerçek çatışmanın her iki tarafta farklı tüfek/ağır/darbe örnekleri üretmesi doğrulandı. Misafirin ses ayarı hostu etkilemedi; ortak duraklatma iki tarafta sesi ve maç saatini durdurdu.
 
 ## Tablet performansı ve değişen dosyalar
 
@@ -119,9 +137,13 @@ Her iki sürüm aynı başlangıç kayıtlarını ve saldırı emirlerini kullan
 
 10.000 kişilik ordu etiketleri ve yeni tabloyla aynı 4× işlemci yavaşlatmalı tablet benzetimi tekrarlandı: 50 orduyla başlayan 3× senaryo **29,2 FPS**, 250 orduyla başlayan senaryo **23,2 FPS** verdi (10 saniyelik ölçüm; kare aralığı p95 49,1 / 81,8 ms). Maç yaklaşık 30 oyun saniyesi ilerledi; çatışmalarda kayıplar sürdü. Canvas 990 × 543 piksel kaldı, taşma ve JavaScript hatası olmadı. Bunlar fiziksel tablet ölçümü veya her cihazda sabit FPS garantisi değildir.
 
-Güncel bölgesel cephe etiketleriyle aynı 1024 × 768 dokunmatik / DPR 2 / 4× işlemci yavaşlatması / 3× oyun hızı senaryoları **28,9 FPS** (50 başlangıç ordusu) ve **22,9 FPS** (250 başlangıç ordusu) verdi. 10 gerçek saniyede yaklaşık 30 oyun saniyesi ilerledi; ordu kayıpları sürdü. Kare aralığı p95 49,8 / 70,6 ms, Canvas 990 × 543 piksel; taşma veya JavaScript hatası yok. Bölgesel hesaplama cephe geometrisini önbelleğe alır ve birlik başına yalnız yakın sınır parçalarını tarar; tüm arazi veya bütün cephe her karede her asker için taranmaz. Fiziksel cihaz performansı ayrıca ölçülmedi.
+Önceki bölgesel cephe etiketleri güncellemesinde aynı 1024 × 768 dokunmatik / DPR 2 / 4× işlemci yavaşlatması / 3× oyun hızı senaryoları **28,9 FPS** (50 başlangıç ordusu) ve **22,9 FPS** (250 başlangıç ordusu) verdi. 10 gerçek saniyede yaklaşık 30 oyun saniyesi ilerledi; ordu kayıpları sürdü. Kare aralığı p95 49,8 / 70,6 ms, Canvas 990 × 543 piksel; taşma veya JavaScript hatası yok. Bölgesel hesaplama cephe geometrisini önbelleğe alır ve birlik başına yalnız yakın sınır parçalarını tarar; tüm arazi veya bütün cephe her karede her asker için taranmaz. Fiziksel cihaz performansı ayrıca ölçülmedi.
 
-Cephe toplamları güncellemesi yalnız `app/games/dot-front/front-strength.ts` ve testleri, renderer/testleri, ortak oyun sözlüğü ve bu belgeyi değiştirir. Sağ üstteki ortak tablo “Toplam asker” başlığını kullanır. Oyun motoru, kayıt şeması, online uçlar, ana sayfa ve diğer oyun dosyaları değişmez. Önceki teslimde kaldırılan `public/dots-of-war.html` geri eklenmez. Yeni çalışma zamanı bağımlılığı veya varlık indirmesi yoktur; diğer dört oyun ve ortak yerleşim korunur.
+Önceki cephe toplamları güncellemesi yalnız `app/games/dot-front/front-strength.ts` ve testleri, renderer/testleri, ortak oyun sözlüğü ve bu belgeyi değiştirir. Sağ üstteki ortak tablo “Toplam asker” başlığını kullanır. Oyun motoru, kayıt şeması, online uçlar, ana sayfa ve diğer oyun dosyaları değişmez. Önceki teslimde kaldırılan `public/dots-of-war.html` geri eklenmez. Yeni çalışma zamanı bağımlılığı veya varlık indirmesi yoktur; diğer dört oyun ve ortak yerleşim korunur.
+
+Sesler açıkken aynı 1024 × 768 / DPR 2 / 4× işlemci yavaşlatmalı tablet benzetiminde 3× hızla 10 saniye ölçüldü: 50 başlangıç ordusunda **28,9 FPS**, 250 başlangıç ordusunda **22,5 FPS**; kare aralığı p95 **49,6 / 71,7 ms** oldu. Her iki maç yaklaşık 30 oyun saniyesi ilerledi; çatışmalarda birlik kayıpları sürdü. Ölçüm sonunda 8 / 12 etkin ses vardı ve ses sınırı aşılmadı. Canvas 990 × 543 piksel kaldı; yatay taşma veya JavaScript hatası yoktu. Bu sonuç fiziksel tablet/Safari ölçümü veya bütün cihazlarda sabit FPS garantisi değildir.
+
+Ses teslimi `audio.ts`, ortak ses türleri/ayar bileşeni, `combat-audio.ts` ve testleri, iki oyun istemcisi, savaş entegrasyonu, geçici atış olayı, ayar depolaması/testleri, sözlük/CSS ve bu belgeyi günceller. Yerel MP3'ler, lisans/manifest dosyaları ve geliştirme amaçlı üretim betiği eklenir. Diğer oyunlar, ana sayfa, çevrim içi API ve maç kayıt şeması korunur.
 
 ## Yayına alma
 

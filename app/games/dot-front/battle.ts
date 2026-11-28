@@ -1,5 +1,7 @@
 import { decide } from "./ai";
-import { soundEffects } from "./audio";
+import { soundEffects, unlockAudio } from "./audio";
+import type { SoundMix } from "./audio-types";
+import { combatSoundsBetween, spatialSound } from "./combat-audio";
 import { CITY_PRODUCTION, GRACE, HEIGHT, MAX_ROUTE_POINTS, POCKET_GRACE, RADIUS, STEP, WIDTH, dist, units } from "./config";
 import type { Kind, Point, Team } from "./config";
 import { applyGameCommand, canApplyGameCommand } from "./commands";
@@ -63,6 +65,7 @@ export function summary(match: Match, picked: Set<number>, cityId: number | null
 export type Summary = ReturnType<typeof summary>;
 export type BattleOptions = {
   team?: Team; simulate?: boolean; bot?: boolean; command?: (cmd: GameCommand) => void;
+  audio?: ReturnType<typeof soundEffects>;
 };
 
 export function startBattle(
@@ -90,6 +93,7 @@ export function startBattle(
   let routePreview: Point[] = [];
   let speed = 1;
   let muted = true;
+  let snapshotAudioReady = false;
   let frame = 0;
   let previous = 0;
   let accumulator = 0;
@@ -106,7 +110,7 @@ export function startBattle(
   let paintedView: ReturnType<typeof viewOf> | null = null;
   let paintedRatio = 0;
   const renderInterval = window.matchMedia?.("(pointer: coarse)").matches ? 1000 / 30 : 1000 / 60;
-  const audio = soundEffects();
+  const audio = options.audio ?? soundEffects();
   const view = () => viewOf(Math.max(1, canvas.clientWidth), Math.max(1, canvas.clientHeight), camera);
   function requestPaint() { dirty = true; schedule(); }
   const update = () => { hudReady = true; requestPaint(); notify(summary(match, picked, cityId, routeDrawing, localTeam)); };
@@ -122,6 +126,22 @@ export function startBattle(
     else applyGameCommand(match, localTeam, command);
   };
   const active = () => !disposed && !paused && !pageHidden && !match.result && !document.hidden;
+  const unlock = () => {
+    if (muted || !active()) return;
+    unlockAudio();
+    void audio.enable().catch(() => {});
+  };
+  const playCombat = (events: readonly { kind: Kind; from: Point; impact?: Point }[]) => {
+    if (muted || !active() || !events.length) return;
+    const currentView = view();
+    // Keep the closest battles audible when many armies fire in one update.
+    const nearby = events.map(event => ({ event, position: spatialSound(event.from, currentView) }))
+      .filter(item => item.position.distance < 1).sort((a, b) => a.position.distance - b.position.distance).slice(0, 12);
+    for (const { event, position } of nearby) {
+      audio.shot({ kind: event.kind, ...position });
+      if (event.impact) audio.impact(spatialSound(event.impact, currentView));
+    }
+  };
   const focus = () => { if (active()) canvas.focus({ preventScroll: true }); };
   function exitRoute() {
     routeDrawing = false;
@@ -244,7 +264,11 @@ export function startBattle(
         steps++;
         const before = flashes.length;
         step(match, STEP, flashes, bot ? decide : () => {});
-        if (!muted && flashes.length > before) audio.hit();
+        if (!muted && flashes.length > before) {
+          const living = new Set(match.units.map(unit => unit.id));
+          playCombat(flashes.slice(before).map(flash => ({ kind: flash.kind, from: flash.from,
+            impact: flash.kind === "heavy" || !living.has(flash.targetId) ? flash.to : undefined })));
+        }
       }
       if (steps) {
         if (flashes.length) flashes = flashes.filter((flash) => flash.expires > match.elapsed);
@@ -300,6 +324,7 @@ export function startBattle(
     box = null;
     if (paused) { routeDrawing = false; routePreview = []; }
     if (paused) {
+      snapshotAudioReady = false;
       audio.stop();
       if (simulate && changed && !match.result) {
         lastSave = performance.now();
@@ -336,6 +361,8 @@ export function startBattle(
   window.addEventListener("pagehide", pagehide);
   window.addEventListener("pageshow", pageshow);
   window.addEventListener("resize", requestPaint);
+  canvas.addEventListener("pointerdown", unlock);
+  canvas.addEventListener("keydown", unlock);
   const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(requestPaint);
   observer?.observe(canvas);
 
@@ -344,10 +371,12 @@ export function startBattle(
     pause: setPaused,
     speed(value: number) { speed = (GAME_SPEEDS as readonly number[]).includes(value) ? value : 1; },
     sound(value: boolean) {
+      if (muted === value) snapshotAudioReady = false;
       muted = !value;
       if (value && active()) void audio.enable().catch(() => {});
       else audio.stop();
     },
+    soundMix(mix: Partial<SoundMix>) { if (!disposed) audio.configure(mix); },
     multi(value: boolean) { multi = value; controls.reset(); focus(); },
     selectAll() { if (active()) { pick(match.units.filter((unit) => unit.team === localTeam), false); focus(); } },
     stance(value: "attack" | "defend") {
@@ -409,6 +438,7 @@ export function startBattle(
     },
     replaceSnapshot(snapshot: Match) {
       if (disposed) return;
+      const sounds = snapshotAudioReady && !simulate && !muted && active() ? combatSoundsBetween(match, snapshot) : [];
       const copy = structuredClone(snapshot);
       if (copy.map !== match.map) terrain = landscapeCanvas(copy.map);
       Object.assign(match, copy);
@@ -420,6 +450,8 @@ export function startBattle(
       if (!myCity()) rally = false;
       if (match.result) { routeDrawing = false; routePreview = []; box = null; controls.reset(); }
       update();
+      playCombat(sounds);
+      snapshotAudioReady = !simulate && !muted && active();
       finish();
     },
     dispose() {
@@ -428,6 +460,8 @@ export function startBattle(
       stopFrame();
       controls.dispose();
       audio.dispose();
+      canvas.removeEventListener("pointerdown", unlock);
+      canvas.removeEventListener("keydown", unlock);
       observer?.disconnect();
       document.removeEventListener("visibilitychange", visibility);
       window.removeEventListener("pagehide", pagehide);

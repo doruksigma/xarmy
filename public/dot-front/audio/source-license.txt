@@ -1,0 +1,10 @@
+Original notice included in Gunshot Sounds, sounds/creativecommons.txt:
+
+Copyright (c) 2009 Vincent Sevedge
+
+Audio and Visual content is covered under the Creative Commons Attribution 3.0 Unported License
+http://creativecommons.org/licenses/by/3.0/
+
+Source archive: https://opengameart.org/sites/default/files/sounds.zip
+Source page: https://opengameart.org/content/gunshot-sounds
+See CREDITS.md for modifications and the other source licenses.

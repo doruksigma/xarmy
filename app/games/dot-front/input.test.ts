@@ -7,7 +7,8 @@ import { createMatch } from "./engine";
 import type { GameCommand } from "./commands";
 import { toWorld, viewOf } from "./render";
 import type { Box, Camera, View } from "./render";
-import { HEIGHT, MAX_ROUTE_POINTS, POCKET_GRACE, STEP, WIDTH } from "./config";
+import { HEIGHT, MAX_ROUTE_POINTS, POCKET_GRACE, STEP, WIDTH, units } from "./config";
+import type { ShotSound, SpatialSound, soundEffects } from "./audio";
 import type { Point } from "./config";
 import { mapIds, nearestOpen, passable } from "./terrain";
 import { TERRITORY_COLS, TERRITORY_SPACING } from "./territory";
@@ -806,4 +807,81 @@ test("instant enclosure death clears the selected soldier and route mode in that
   assert.equal(match.elapsed, STEP); assert.equal(match.units.some(unit => unit.id === trapped.id), false);
   assert.equal(trapped.team, 1); assert.equal(city.owner, 2);
   assert.equal(hud.selectedUnits, 0); assert.equal(hud.routeDrawing, false); assert.equal(hud.selectedPocketGrace, null);
+});
+
+function audioProbe() {
+  const state = { enabled: 0, stopped: 0, disposed: 0, shots: [] as ShotSound[], impacts: [] as SpatialSound[], mixes: 0 };
+  const audio: ReturnType<typeof soundEffects> = {
+    async enable() { state.enabled++; }, stop() { state.stopped++; }, dispose() { state.disposed++; },
+    configure() { state.mixes++; }, shot(value) { state.shots.push(value); }, impact(value) { state.impacts.push(value); },
+  };
+  return { state, audio };
+}
+function audibleDuel() {
+  const match = createMatch("normal", "audio-battle", false, "plains");
+  const blue = match.units[0], red = match.units.find(unit => unit.team === 2)!;
+  Object.assign(blue, { x: 71.2, y: 45.5, stance: "manual", kind: "heavy", hp: units.heavy.hp });
+  Object.assign(red, { x: 72.8, y: 45.5, stance: "manual" });
+  match.units = [blue, red];
+  return { match, blue, red };
+}
+
+test("combat dispatches distinct spatial weapon sounds and pauses, mutes and disposes with the battle", t => {
+  const env = environment(t), canvas = new FakeCanvas(), { match } = audibleDuel(), probe = audioProbe();
+  const game = startBattle(match, canvas.asCanvas(), new FakeCanvas().asCanvas(), () => {}, () => {}, () => {}, () => {}, { bot: false, audio: probe.audio });
+  env.cleanup(() => game.dispose());
+  game.sound(true); game.soundMix({ effectsVolume: .4 });
+  assert.equal(probe.state.mixes, 1); assert.equal(env.document.activeElement, null, "volume must not steal a slider's keyboard focus");
+  env.runFrame(1000); env.runFrame(1050);
+  assert.deepEqual(probe.state.shots.map(shot => shot.kind).sort(), ["heavy", "light"]);
+  assert.ok(probe.state.shots.every(shot => Math.abs(shot.pan) <= 1 && shot.distance < 1));
+  assert.equal(probe.state.impacts.length, 1);
+  game.pause(true); const count = probe.state.shots.length; env.runFrame(2000);
+  assert.equal(probe.state.shots.length, count); assert.ok(probe.state.stopped > 0);
+  game.sound(false); const enabled = probe.state.enabled; game.pause(false);
+  assert.equal(probe.state.enabled, enabled, "a muted battle cannot resume ambience");
+  game.sound(true); env.document.hidden = true; env.document.emit("visibilitychange");
+  const stopped = probe.state.stopped; env.document.hidden = false; env.document.emit("visibilitychange");
+  assert.equal(probe.state.stopped, stopped); assert.equal(probe.state.shots.length, count);
+  game.dispose(); assert.equal(probe.state.disposed, 1);
+  const after = probe.state.enabled; canvas.emit("pointerdown"); assert.equal(probe.state.enabled, after);
+});
+
+test("distant off-camera battles do not flood the sound bus", t => {
+  const env = environment(t), { match } = audibleDuel(), probe = audioProbe();
+  const game = startBattle(match, new FakeCanvas().asCanvas(), new FakeCanvas().asCanvas(), () => {}, () => {}, () => {}, () => {}, { bot: false, audio: probe.audio });
+  env.cleanup(() => game.dispose()); game.sound(true); game.pan({ x: 0, y: 0 });
+  env.runFrame(1000); env.runFrame(1050);
+  assert.equal(probe.state.shots.length, 0); assert.equal(probe.state.impacts.length, 0);
+});
+
+test("online guest sounds use new snapshots, skip duplicates and never replay paused or muted backlog", t => {
+  const env = environment(t), { match, blue, red } = audibleDuel(), probe = audioProbe();
+  blue.cooldown = .3; red.cooldown = 2;
+  const game = startBattle(match, new FakeCanvas().asCanvas(), new FakeCanvas().asCanvas(), () => {}, () => {}, () => {}, () => {}, { simulate: false, bot: false, team: 2, audio: probe.audio });
+  env.cleanup(() => game.dispose()); game.sound(true);
+  const baseline = structuredClone(match); baseline.elapsed = .1; baseline.units[0].cooldown = .2; baseline.units[1].cooldown = 1.9;
+  game.replaceSnapshot(baseline); assert.equal(probe.state.shots.length, 0);
+  const next = structuredClone(baseline); next.elapsed = .6; next.units[0].cooldown = 4.3; next.units[1].cooldown = 1.4;
+  game.replaceSnapshot(next); assert.equal(probe.state.shots.length, 1); assert.equal(probe.state.shots[0].kind, "heavy");
+  game.replaceSnapshot(next); assert.equal(probe.state.shots.length, 1);
+  game.pause(true); const paused = structuredClone(next); paused.elapsed = 1.1; paused.units[0].cooldown = 4.4;
+  game.replaceSnapshot(paused); assert.equal(probe.state.shots.length, 1);
+  game.pause(false); const resumed = structuredClone(paused); resumed.elapsed = 1.6; resumed.units[0].cooldown = 4.4;
+  game.replaceSnapshot(resumed); assert.equal(probe.state.shots.length, 1, "first restored snapshot is only a fresh baseline");
+  const afterResume = structuredClone(resumed); afterResume.elapsed = 3.1;
+  afterResume.units[0].cooldown = 2.9; afterResume.units[1].cooldown = 2.9;
+  game.replaceSnapshot(afterResume);
+  assert.deepEqual(probe.state.shots.map(shot => shot.kind), ["heavy", "light"], "a new shot after the resumed baseline remains audible");
+
+  game.sound(false); const muted = structuredClone(afterResume); muted.elapsed = 3.6;
+  muted.units[0].cooldown = 2.4; muted.units[1].cooldown = 2.4;
+  game.replaceSnapshot(muted); assert.equal(probe.state.shots.length, 2, "muted snapshots stay silent");
+  game.sound(true); const unmuted = structuredClone(muted); unmuted.elapsed = 6.1;
+  unmuted.units[0].cooldown = 4.4; unmuted.units[1].cooldown = 2.9;
+  game.replaceSnapshot(unmuted); assert.equal(probe.state.shots.length, 2, "unmuting uses the first snapshot as a baseline even when both weapons reset");
+  const afterUnmute = structuredClone(unmuted); afterUnmute.elapsed = 9.1;
+  afterUnmute.units[0].cooldown = 1.4; afterUnmute.units[1].cooldown = 2.9;
+  game.replaceSnapshot(afterUnmute);
+  assert.deepEqual(probe.state.shots.map(shot => shot.kind), ["heavy", "light", "light"], "only new shots after the unmuted baseline become audible");
 });

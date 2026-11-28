@@ -556,7 +556,7 @@ test("incompatible v1 records remain intact and do not erase statistics or setti
   assert.deepEqual(await loadMatch(), current); assert.deepEqual(await readStats(), { won: 1, lost: 0, draw: 0 });
   const settings = memorySettings([["xarmy:dot-front:settings", JSON.stringify({ sound: true, difficulty: "hard" })]]);
   replaceGlobal(context, "localStorage", settings);
-  assert.deepEqual(readSettings(), { sound: true, difficulty: "hard", map: "valley" });
+  assert.deepEqual(readSettings(), { ...defaults, sound: true, difficulty: "hard", map: "valley" });
   saveSettings({ ...readSettings(), map: "forest" }); assert.equal(readSettings().map, "forest");
   assert.equal(settings.entries.size, 1);
 });
@@ -669,18 +669,79 @@ test("disconnected supply timers resume exactly when neither side has a grounded
 test("new settings default to Plains and invalid stored map data safely falls back", (context) => {
   const settings = memorySettings();
   replaceGlobal(context, "localStorage", settings);
-  assert.deepEqual(readSettings(), { sound: false, difficulty: "normal", map: "plains" });
+  assert.deepEqual(readSettings(), { sound: true, difficulty: "normal", map: "plains",
+    masterVolume: .7, ambienceVolume: .35, effectsVolume: .8 });
   for (const map of mapIds) {
-    saveSettings({ sound: true, difficulty: "easy", map });
+    saveSettings({ ...defaults, sound: true, difficulty: "easy", map });
     assert.equal(readSettings().map, map);
   }
   settings.setItem("xarmy:dot-front:settings", JSON.stringify({ sound: true, difficulty: "hard", map: "unknown" }));
-  assert.deepEqual(readSettings(), { sound: true, difficulty: "hard", map: "plains" });
+  assert.deepEqual(readSettings(), { ...defaults, sound: true, difficulty: "hard", map: "plains" });
   settings.setItem("xarmy:dot-front:settings", "{broken");
   const recovered = readSettings();
   assert.deepEqual(recovered, defaults);
   recovered.map = "valley";
   assert.equal(defaults.map, "plains");
+});
+
+test("legacy three-field settings preserve explicit mute and selections while adding independent volume defaults", context => {
+  const settings = memorySettings(); replaceGlobal(context, "localStorage", settings);
+  for (const sound of [false, true]) {
+    const legacy = { sound, difficulty: "hard", map: "forest" };
+    const encoded = JSON.stringify(legacy);
+    settings.setItem("xarmy:dot-front:settings", encoded);
+    assert.deepEqual(readSettings(), { ...defaults, ...legacy });
+    assert.equal(settings.entries.get("xarmy:dot-front:settings"), encoded, "reading old preferences never overwrites them");
+  }
+  settings.setItem("xarmy:dot-front:settings", JSON.stringify({ sound: false, difficulty: "easy" }));
+  assert.deepEqual(readSettings(), { ...defaults, sound: false, difficulty: "easy", map: "valley" },
+    "the older two-field Valley preference remains compatible and muted");
+  assert.equal(settings.entries.size, 1);
+});
+
+test("volume boundaries including zero persist in the existing namespace without changing the mute toggle", context => {
+  const settings = memorySettings(); replaceGlobal(context, "localStorage", settings);
+  for (const sound of [false, true]) for (const value of [0, .125, 1]) {
+    const saved = { ...defaults, sound, masterVolume: value, ambienceVolume: value, effectsVolume: value };
+    saveSettings(saved);
+    assert.deepEqual(readSettings(), saved);
+    assert.deepEqual(JSON.parse(settings.entries.get("xarmy:dot-front:settings")!), saved);
+  }
+  assert.deepEqual([...settings.entries.keys()], ["xarmy:dot-front:settings"]);
+});
+
+test("missing or invalid volume fields fall back separately and never coerce strings or discard valid channels", context => {
+  const settings = memorySettings(); replaceGlobal(context, "localStorage", settings);
+  const saved = { ...defaults, sound: false, map: "center" as const, difficulty: "hard" as const,
+    masterVolume: .25, ambienceVolume: .5, effectsVolume: .875 };
+  for (const key of ["masterVolume", "ambienceVolume", "effectsVolume"] as const) {
+    for (const invalid of [undefined, null, -.001, 1.001, NaN, Infinity, -Infinity, "0", "0.5", true, {}, []]) {
+      settings.setItem("xarmy:dot-front:settings", JSON.stringify({ ...saved, [key]: invalid }));
+      assert.deepEqual(readSettings(), { ...saved, [key]: defaults[key] }, `${key}: ${String(invalid)}`);
+    }
+  }
+});
+
+test("an unrelated damaged setting cannot turn an explicitly muted player back on or erase valid volume levels", context => {
+  const settings = memorySettings(); replaceGlobal(context, "localStorage", settings);
+  settings.setItem("xarmy:dot-front:settings", JSON.stringify({ sound: false, difficulty: "unknown", map: "passes",
+    masterVolume: 0, ambienceVolume: .3, effectsVolume: .6 }));
+  assert.deepEqual(readSettings(), { sound: false, difficulty: "normal", map: "passes",
+    masterVolume: 0, ambienceVolume: .3, effectsVolume: .6 });
+  for (const malformed of ["null", "[]", "true", "17", '"settings"', "{broken"]) {
+    settings.setItem("xarmy:dot-front:settings", malformed);
+    const value = readSettings(); assert.deepEqual(value, defaults);
+    value.masterVolume = 0;
+    assert.equal(defaults.masterVolume, .7, "fallback results do not share mutable default objects");
+  }
+});
+
+test("settings storage failures still propagate so the interface can show its existing save warning", context => {
+  const denied = new Error("settings permission denied");
+  replaceGlobal(context, "localStorage", { getItem() { throw denied; }, setItem() { throw denied; } });
+  assert.throws(readSettings, error => error === denied);
+  assert.throws(() => saveSettings({ ...defaults, masterVolume: 0 }), error => error === denied);
+  assert.equal(defaults.sound, true); assert.equal(defaults.masterVolume, .7);
 });
 
 test("saving captures the current state immediately and completed results stay idempotent", async (context) => {

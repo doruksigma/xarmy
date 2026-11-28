@@ -110,6 +110,22 @@
 .toolbar button, .inspector button { font-size: 0.85rem; }
 .speedControl { display: inline-flex; align-items: center; gap: 0.4rem; color: var(--muted); font-size: 0.8rem; }
 .speedControl select { min-width: 4.8rem; font-size: 0.85rem; color: var(--paper); }
+.audioControls { min-width: 0; max-width: 100%; }
+.audioControls[open] { flex: 1 0 100%; }
+.audioControls > summary { display: flex; align-items: center; gap: 0.5rem; min-height: 42px; padding: 0.4rem 0.75rem; border: 1px solid #4d6267; border-radius: 0.5rem; background: #202f37; font-size: 0.85rem; cursor: pointer; box-sizing: border-box; }
+.audioControls > summary::before { content: "+"; color: var(--accent); }
+.audioControls[open] > summary::before { content: "−"; }
+.audioControls > summary::-webkit-details-marker { display: none; }
+.audioControls > summary > span { margin-inline-start: auto; color: var(--muted); font-size: 0.75rem; }
+.audioPanel { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 0.7rem 1rem; min-width: 0; padding: 0.8rem; border: 1px solid var(--line); border-radius: 0.6rem; background: #122129; }
+.audioControls .audioPanel { margin-top: 0.4rem; }
+.audioPanel > button { margin: 0; font-size: 0.85rem; }
+.audioSliders { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.75rem; min-width: 0; }
+.audioSlider { display: grid; gap: 0.2rem; min-width: 0; font-size: 0.78rem; }
+.audioSlider > span { display: flex; justify-content: space-between; gap: 0.5rem; }
+.audioSlider output { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.audioSlider input { width: 100%; min-width: 0; height: 32px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+.audioCredits { grid-column: 1 / -1; color: var(--muted); font-size: 0.75rem; text-decoration: underline; text-underline-offset: 0.18em; width: fit-content; }
 .pocketWarning { padding: 0.45rem 0.7rem; color: #ffe1ac; background: #493026; border-top: 1px solid #b27855; font-size: 0.85rem; }
 .pocketStatus { color: #ffd09b; font-size: 0.85rem; }
 .inspector { border-top: 1px solid var(--line); }
@@ -151,6 +167,10 @@
   .scoreboard thead th { font-size: 0.65rem; }
   .sideLabel { gap: 0.2rem; }
   .toolbar { gap: 0.35rem; }
+  .audioPanel { grid-template-columns: minmax(0, 1fr); padding: 0.65rem; }
+  .audioPanel > button { justify-self: start; }
+  .audioSliders { grid-template-columns: minmax(0, 1fr); gap: 0.35rem; }
+  .audioControls > summary { font-size: 0.77rem; padding-inline: 0.45rem; }
   .toolbar button, .inspector button { font-size: 0.77rem; padding-inline: 0.45rem; }
   .ordersPanel { padding: 0.5rem; }
   .ordersTitle > span { display: none; }

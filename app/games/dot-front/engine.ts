@@ -29,7 +29,7 @@ export type Match = {
   result: Result | null; report: { captured: number; killed: number; fallen: number };
   tutorial: number | null;
 };
-export type Flash = { from: Point; to: Point; team: Team; expires: number };
+export type Flash = { from: Point; to: Point; team: Team; kind: Kind; targetId: number; expires: number };
 
 export function createMatch(difficulty: Difficulty, id: string, tutorial: boolean, map: MapId = "valley"): Match {
   const match: Match = {
@@ -426,7 +426,8 @@ function fight(match: Match, index: UnitIndex, dt: number, flashes: Flash[]) {
     if (victim && unit.cooldown <= 1e-6) {
       unit.cooldown = stats.cooldown;
       damage.set(victim.id, (damage.get(victim.id) ?? 0) + stats.damage * (unit.pocketed ? POCKET_FIREPOWER : 1));
-      flashes.push({ from: { x: unit.x, y: unit.y }, to: { x: victim.x, y: victim.y }, team: unit.team, expires: match.elapsed + 0.18 });
+      flashes.push({ from: { x: unit.x, y: unit.y }, to: { x: victim.x, y: victim.y }, team: unit.team,
+        kind: unit.kind, targetId: victim.id, expires: match.elapsed + 0.18 });
     }
     if (target && !inRange(target)) {
       const endpoint = unit.path.at(-1);

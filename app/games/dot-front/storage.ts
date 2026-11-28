@@ -1,5 +1,7 @@
 import { CAPTURE, CITY_PRODUCTION, HEIGHT, MAX_ROUTE_POINTS, WIDTH, difficulty, units } from "./config";
 import type { Point } from "./config";
+import { DEFAULT_SOUND_MIX } from "./audio-types";
+import type { SoundMix } from "./audio-types";
 import type { Match, Order, Result, Unit } from "./engine";
 import { getMap, mapIds, passable } from "./terrain";
 import type { MapId } from "./terrain";
@@ -291,17 +293,28 @@ export function saveMatch(match: Match) {
   return transaction("readwrite", (store) => store.put(snapshot, "current"));
 }
 
-export type Settings = { sound: boolean; difficulty: Match["difficulty"]; map: MapId };
-export const defaults: Settings = { sound: false, difficulty: "normal", map: "plains" };
+export type Settings = SoundMix & { sound: boolean; difficulty: Match["difficulty"]; map: MapId };
+export const defaults: Settings = { sound: true, difficulty: "normal", map: "plains", ...DEFAULT_SOUND_MIX };
+const volume = (value: unknown, fallback: number) => numeric(value) && value <= 1 ? value : fallback;
 export function readSettings(): Settings {
   const raw = localStorage.getItem(prefix + "settings");
-  let value;
+  let value: unknown;
   try { value = JSON.parse(raw ?? "null"); } catch { return { ...defaults }; }
-  if (!value || !Object.hasOwn(difficulty, value.difficulty) || typeof value.sound !== "boolean") return { ...defaults };
+  if (!value || typeof value !== "object" || Array.isArray(value)) return { ...defaults };
+  const settings = value as Record<string, unknown>;
+  const validDifficulty = typeof settings.difficulty === "string" && Object.hasOwn(difficulty, settings.difficulty);
   // Existing installations had only Valley. Preserve that selection when their
   // pre-map-selector settings are read; new visitors start on the open plains.
-  const map = !Object.hasOwn(value, "map") ? "valley" : isMapId(value.map) ? value.map : defaults.map;
-  return { sound: value.sound, difficulty: value.difficulty, map };
+  const legacyMap = !Object.hasOwn(settings, "map") && validDifficulty && typeof settings.sound === "boolean";
+  const map = legacyMap ? "valley" : isMapId(settings.map) ? settings.map : defaults.map;
+  return {
+    sound: typeof settings.sound === "boolean" ? settings.sound : defaults.sound,
+    difficulty: validDifficulty ? settings.difficulty as Match["difficulty"] : defaults.difficulty,
+    map,
+    masterVolume: volume(settings.masterVolume, defaults.masterVolume),
+    ambienceVolume: volume(settings.ambienceVolume, defaults.ambienceVolume),
+    effectsVolume: volume(settings.effectsVolume, defaults.effectsVolume),
+  };
 }
 export function saveSettings(value: Settings) {
   localStorage.setItem(prefix + "settings", JSON.stringify(value));

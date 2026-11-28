@@ -1,0 +1,133 @@
+{
+  "generatedBy": "scripts/build-dot-front-audio.py",
+  "sourceRecordings": [
+    {
+      "file": "gunshots.zip",
+      "url": "https://opengameart.org/sites/default/files/sounds.zip",
+      "sha256": "5b3960083a94e18ee47bc84376615a476debc884b18f25b93ea4b6ab3f278e4f"
+    },
+    {
+      "file": "fireworks.zip",
+      "url": "https://opengameart.org/sites/default/files/25-CC0-bang-sfx.zip",
+      "sha256": "c0c9ecc11e2dc0d190f0cced755569858234b8528286bc83becb6314c663407f"
+    },
+    {
+      "file": "wind.wav",
+      "url": "https://opengameart.org/sites/default/files/wind%20background%20noise%202.wav",
+      "sha256": "9f1fd5c8b37949e6889a7f6acbd822f66e0ab4e918d72bda58d8d8c2c7e85a80"
+    }
+  ],
+  "assets": [
+    {
+      "file": "light-shot.mp3",
+      "url": "/dot-front/audio/light-shot.mp3",
+      "bytes": 13209,
+      "decodedSeconds": 1.045964,
+      "sampleRate": 44100,
+      "channels": 1,
+      "peakDbFS": -2.53,
+      "truePeak4xDbFS": -2.53,
+      "rmsDbFS": -16.21,
+      "first20msRms": 0.200749,
+      "loop": false,
+      "license": "CC-BY-3.0",
+      "loopSeamAmplitude": 0.0011722,
+      "sha256": "65afdb2618b3fe39e0530eb5edcc178422c8e79b3091705af7c9c42fcef68213"
+    },
+    {
+      "file": "light-shot-2.mp3",
+      "url": "/dot-front/audio/light-shot-2.mp3",
+      "bytes": 13209,
+      "decodedSeconds": 1.045964,
+      "sampleRate": 44100,
+      "channels": 1,
+      "peakDbFS": -2.36,
+      "truePeak4xDbFS": -2.35,
+      "rmsDbFS": -17.52,
+      "first20msRms": 0.185799,
+      "loop": false,
+      "license": "CC-BY-3.0",
+      "loopSeamAmplitude": 0.0024248,
+      "sha256": "883fe74cd4f1b78bda7fde91858ed95ce95703f795bbe6d2a16dbd756b8aeadd"
+    },
+    {
+      "file": "heavy-shot.mp3",
+      "url": "/dot-front/audio/heavy-shot.mp3",
+      "bytes": 34839,
+      "decodedSeconds": 2.848413,
+      "sampleRate": 44100,
+      "channels": 1,
+      "peakDbFS": -2.4,
+      "truePeak4xDbFS": -2.39,
+      "rmsDbFS": -26.6,
+      "first20msRms": 0.238795,
+      "loop": false,
+      "license": "CC0-1.0",
+      "loopSeamAmplitude": 7.87e-05,
+      "sha256": "9c35f1cc609ab46cef899a61ff7bfa7cf80cdc101341edbfaefcc02a2cae291a"
+    },
+    {
+      "file": "heavy-shot-2.mp3",
+      "url": "/dot-front/audio/heavy-shot-2.mp3",
+      "bytes": 27315,
+      "decodedSeconds": 2.221474,
+      "sampleRate": 44100,
+      "channels": 1,
+      "peakDbFS": -2.49,
+      "truePeak4xDbFS": -2.48,
+      "rmsDbFS": -27.22,
+      "first20msRms": 0.238371,
+      "loop": false,
+      "license": "CC0-1.0",
+      "loopSeamAmplitude": 0.0005692,
+      "sha256": "4d43b6394ff97471cbf0cffe3b188457c41bf7cfb49871f419b3b260b6bec01b"
+    },
+    {
+      "file": "impact.mp3",
+      "url": "/dot-front/audio/impact.mp3",
+      "bytes": 6626,
+      "decodedSeconds": 0.497392,
+      "sampleRate": 44100,
+      "channels": 1,
+      "peakDbFS": -3.57,
+      "truePeak4xDbFS": -3.56,
+      "rmsDbFS": -20.82,
+      "first20msRms": 0.183431,
+      "loop": false,
+      "license": "CC0-1.0",
+      "loopSeamAmplitude": 9.74e-05,
+      "sha256": "445cd93d45478288df6cd37426fdc6fcde50f589875850a6425d05c046ecbf4e"
+    },
+    {
+      "file": "ambience.mp3",
+      "url": "/dot-front/audio/ambience.mp3",
+      "bytes": 261007,
+      "decodedSeconds": 26.020091,
+      "sampleRate": 22050,
+      "channels": 2,
+      "peakDbFS": -3.55,
+      "truePeak4xDbFS": -3.54,
+      "rmsDbFS": -25.41,
+      "first20msRms": 0.030662,
+      "loop": true,
+      "loopStart": 1,
+      "loopEnd": 25,
+      "loopSeconds": 24,
+      "minimumLoop100msRms": 0.017692,
+      "license": "CC-BY-3.0",
+      "loopSeamAmplitude": 0.0029886,
+      "sha256": "95404687b9a9bb99b148e426cfebed50b18009bcbb58f93573e135f025e2388e"
+    }
+  ],
+  "totalBytes": 356205,
+  "checks": {
+    "allDecoded": true,
+    "peakBelow098": true,
+    "truePeak4xBelow098": true,
+    "nonSilent": true,
+    "effectAttackWithin20ms": true,
+    "ambienceLoopCrossfaded": true,
+    "ambienceSeamBelow0025": true,
+    "ambienceHasNoSilent100msBlocks": true
+  }
+}

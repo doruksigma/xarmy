@@ -7,6 +7,9 @@ import { GAME_SPEEDS, recovery, startBattle, summary, timeLabel } from "./battle
 import type { Summary } from "./battle";
 import { BattleHud, ManpowerScoreboard } from "./battle-hud";
 import { formatSoldiers } from "./manpower";
+import { AudioControls } from "./audio-controls";
+import { unlockAudio } from "./audio";
+import type { SoundMix } from "./audio-types";
 import { copy } from "./copy";
 import { CITY_PRODUCTION } from "./config";
 import type { Difficulty } from "./config";
@@ -108,6 +111,9 @@ export default function DotFront() {
     };
   }, [match]);
 
+  useEffect(() => {
+    battle.current?.soundMix({ masterVolume: settings.masterVolume, ambienceVolume: settings.ambienceVolume, effectsVolume: settings.effectsVolume });
+  }, [settings.masterVolume, settings.ambienceVolume, settings.effectsVolume, match]);
   useEffect(() => { battle.current?.sound(settings.sound); }, [settings.sound, match]);
   useEffect(() => { battle.current?.speed(speed); }, [speed, match]);
   useEffect(() => { battle.current?.multi(multi); }, [multi, match]);
@@ -119,7 +125,18 @@ export default function DotFront() {
     setSettings(value);
     try { saveSettings(value); } catch { setStatus(copy.noSave); }
   }
+  function changeSound(enabled: boolean) {
+    if (enabled) unlockAudio();
+    battle.current?.sound(enabled);
+    updateSettings({ ...settings, sound: enabled });
+  }
+  function changeMix(mix: SoundMix) {
+    if (settings.sound && battle.current) unlockAudio();
+    battle.current?.soundMix(mix);
+    updateSettings({ ...settings, ...mix });
+  }
   function start(value: Match) {
+    if (settings.sound) unlockAudio();
     const fresh = structuredClone(value);
     setStatus("");
     setHud(summary(fresh, new Set(), null));
@@ -135,6 +152,7 @@ export default function DotFront() {
     start(createMatch(level, id, tutorial, tutorial ? "plains" : map));
   }
   function pause(value: boolean) {
+    if (!value && settings.sound) unlockAudio();
     battle.current?.pause(value);
     setPaused(value);
     if (!value) battle.current?.focus();
@@ -170,8 +188,10 @@ export default function DotFront() {
     </label>
   );
 
-  if (online) return <OnlineClient initialMap={settings.map} sound={settings.sound}
-    onSoundChange={(sound) => updateSettings({ ...settings, sound })} onBack={() => setOnline(false)} />;
+  const soundMix: SoundMix = { masterVolume: settings.masterVolume, ambienceVolume: settings.ambienceVolume, effectsVolume: settings.effectsVolume };
+  if (online) return <OnlineClient initialMap={settings.map} sound={settings.sound} soundMix={soundMix}
+    onSoundChange={(sound) => updateSettings({ ...settings, sound })}
+    onMixChange={(mix) => updateSettings({ ...settings, ...mix })} onBack={() => setOnline(false)} />;
 
   if (!match || !hud) return (
     <section className={styles.shell} aria-labelledby="dot-front-title">
@@ -218,8 +238,7 @@ export default function DotFront() {
         <p>{copy.won} {stats.won} · {copy.lost} {stats.lost} · {copy.draw} {stats.draw}</p>
       </div>}
       {panel === "settings" && <div className={styles.details}><h2>{copy.settings}</h2>
-        <label><input type="checkbox" checked={settings.sound} onChange={(event) =>
-          updateSettings({ ...settings, sound: event.target.checked })} /> {copy.sound}</label>
+        <AudioControls sound={settings.sound} mix={soundMix} onSoundChange={changeSound} onMixChange={changeMix} />
       </div>}
       <p className={styles.note} role="status">{status || (loaded ? copy.saved : copy.loading)}</p>
     </section>
@@ -304,10 +323,7 @@ export default function DotFront() {
               {GAME_SPEEDS.map((value) => <option key={value} value={value}>{value}×</option>)}
             </select>
           </label>
-          <button aria-pressed={settings.sound} onClick={() => {
-            battle.current?.sound(!settings.sound);
-            updateSettings({ ...settings, sound: !settings.sound });
-          }}>{copy.sound}</button>
+          <AudioControls compact sound={settings.sound} mix={soundMix} onSoundChange={changeSound} onMixChange={changeMix} />
           <button onClick={() => void fullscreen()}>{copy.full}</button>
         </div>
         <div className={styles.inspector}>

@@ -5,6 +5,9 @@ import { GAME_SPEEDS, recovery, startBattle, summary, timeLabel } from "./battle
 import type { Summary } from "./battle";
 import { BattleHud, ManpowerScoreboard } from "./battle-hud";
 import { formatSoldiers } from "./manpower";
+import { AudioControls } from "./audio-controls";
+import { unlockAudio } from "./audio";
+import type { SoundMix } from "./audio-types";
 import { CITY_PRODUCTION } from "./config";
 import { copy } from "./copy";
 import type { Match } from "./engine";
@@ -18,10 +21,10 @@ import styles from "./game.module.css";
 type Game = ReturnType<typeof startBattle>;
 type Connection = "connected" | "reconnecting" | "closed";
 type Action = Exclude<RoomAction, { action: "sync" }>;
-type Props = { initialMap: MapId; sound: boolean; onSoundChange(value: boolean): void; onBack(): void };
+type Props = { initialMap: MapId; sound: boolean; soundMix: SoundMix; onSoundChange(value: boolean): void; onMixChange(mix: SoundMix): void; onBack(): void };
 const message = (error: unknown) => error instanceof Error ? error.message : copy.onlineError;
 
-export default function OnlineClient({ initialMap, sound, onSoundChange, onBack }: Props) {
+export default function OnlineClient({ initialMap, sound, soundMix, onSoundChange, onMixChange, onBack }: Props) {
   const [map, setMap] = useState(initialMap);
   const [code, setCode] = useState("");
   const [session, setSession] = useState<RoomSession | null>(null);
@@ -54,6 +57,7 @@ export default function OnlineClient({ initialMap, sound, onSoundChange, onBack 
   const pauseRequested = useRef(false);
   const leavingRoom = useRef(false);
   const invalidSnapshot = useRef(false);
+  const soundEnabled = useRef(sound);
 
   useEffect(() => {
     mounted.current = true;
@@ -65,6 +69,7 @@ export default function OnlineClient({ initialMap, sound, onSoundChange, onBack 
   const control = useCallback(async (value: Action) => {
     const active = controller.current;
     if (!active) return;
+    if ((value.action === "start" || value.action === "resume") && soundEnabled.current) unlockAudio();
     setError(""); setBusy(true);
     if (value.action === "pause" || value.action === "resign") {
       pauseRequested.current = true; appliedPause.current = true;
@@ -165,7 +170,10 @@ export default function OnlineClient({ initialMap, sound, onSoundChange, onBack 
     };
   }, [match, session, control]);
 
-  useEffect(() => { battle.current?.sound(sound); }, [sound, match]);
+  useEffect(() => {
+    battle.current?.soundMix({ masterVolume: soundMix.masterVolume, ambienceVolume: soundMix.ambienceVolume, effectsVolume: soundMix.effectsVolume });
+  }, [soundMix.masterVolume, soundMix.ambienceVolume, soundMix.effectsVolume, match]);
+  useEffect(() => { soundEnabled.current = sound; battle.current?.sound(sound); }, [sound, match]);
   useEffect(() => { battle.current?.multi(multi); }, [multi, match]);
   useEffect(() => {
     if (paused || hud?.result) dialog.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
@@ -174,6 +182,7 @@ export default function OnlineClient({ initialMap, sound, onSoundChange, onBack 
   async function enter(kind: "create" | "join") {
     if (pending || session) return;
     if (kind === "join" && !/^\d{6}$/.test(code)) { setError(copy.invalidCode); return; }
+    if (sound) unlockAudio();
     setError(""); setNotice(""); setPending(kind);
     invalidSnapshot.current = false;
     const abort = new AbortController(); accessAbort.current = abort;
@@ -188,6 +197,18 @@ export default function OnlineClient({ initialMap, sound, onSoundChange, onBack 
       if (accessAbort.current === abort) accessAbort.current = null;
       if (mounted.current) setPending(null);
     }
+  }
+
+  function changeSound(enabled: boolean) {
+    if (enabled) unlockAudio();
+    soundEnabled.current = enabled;
+    battle.current?.sound(enabled);
+    onSoundChange(enabled);
+  }
+  function changeMix(mix: SoundMix) {
+    if (sound && battle.current) unlockAudio();
+    battle.current?.soundMix(mix);
+    onMixChange(mix);
   }
 
   async function leave() {
@@ -374,7 +395,7 @@ export default function OnlineClient({ initialMap, sound, onSoundChange, onBack 
             {GAME_SPEEDS.map(value => <option key={value} value={value}>{value}×</option>)}
           </select>
         </label>
-        <button aria-pressed={sound} onClick={() => { battle.current?.sound(!sound); onSoundChange(!sound); }}>{copy.sound}</button>
+        <AudioControls compact sound={sound} mix={soundMix} onSoundChange={changeSound} onMixChange={changeMix} />
         <button onClick={() => void fullscreen()}>{copy.full}</button>
       </div>
       <div className={styles.inspector}>

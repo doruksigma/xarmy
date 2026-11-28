@@ -50,6 +50,8 @@ export const copy = {
   send: "Buraya Gönder", rally: "Toplanma noktası seç", rallyHint: "Haritada toplanma noktasına dokun.",
   repeat: "Tekrar üret", cancel: "Üretimi iptal et", light: "Hafif", heavy: "Ağır", idle: "Üretim yuvası boş",
   full: "Tam ekran", sound: "Ses", speed: "Oyun hızı", legend: "Orman · Dağ · Su · Köprü",
+  soundSettings: "Ses ayarları", soundEnable: "Sesi aç", soundDisable: "Sesi kapat", soundOn: "Açık", soundOff: "Kapalı",
+  masterVolume: "Genel ses", ambienceVolume: "Savaş atmosferi", effectsVolume: "Çatışma efektleri", audioCredits: "Ses kaynakları ve lisanslar",
   supplyWarning: "İkmal yetersiz", attrition: "Ordular asker kaybediyor",
   noSave: "Kayıt depolaması kullanılamıyor. Maça devam edebilirsin.",
   badSave: "Kayıt okunamadı. Yeni bir savaş başlatabilirsin; ayarların ve istatistiklerin korunur.",
