@@ -1,7 +1,7 @@
 import { HEIGHT, WIDTH, difficulty, dist, units } from "./config";
 import type { Point } from "./config";
 import type { City, Match, Unit } from "./engine";
-import { commandUnit, setGroupStance, supply } from "./engine";
+import { commandUnit, recruitmentCity, setGroupStance, supply } from "./engine";
 import { nearestOpen, passable, route, tileAt } from "./terrain";
 import { isSupplied } from "./territory";
 
@@ -15,28 +15,21 @@ function move(match: Match, unit: Unit, point: Point) {
   commandUnit(match, unit.id, { mode: "move", point: goal });
 }
 
-// Player and AI cities share this same minute-long engine clock. Choosing a type
-// cannot reset or advance production, add supply or change health.
-function chooseProduction(match: Match, home: City[], red: Unit[]) {
+// Both teams use the same single minute-long recruitment clock. Only its
+// current frontier city needs a unit choice; inactive city slots are not orders.
+function chooseProduction(match: Match, red: Unit[]) {
+  const city = recruitmentCity(match, 2);
+  if (!city?.build) return;
   const { used, capacity } = supply(match, 2);
-  const active = home.filter((city) => city.build);
-  let free = capacity - used - active.reduce((sum, city) => sum + units[city.build!.kind].supply, 0);
-  let heavyCount = red.filter((unit) => unit.kind === "heavy").length + active.filter((city) => city.build!.kind === "heavy").length;
-  const plannedSize = red.length + active.length;
-  const targets = match.cities.filter((city) => city.owner !== 2);
-  for (const city of active) {
-    const build = city.build!;
-    free += units[build.kind].supply;
-    if (build.kind === "heavy") heavyCount--;
-    const target = targets.reduce<City | undefined>((best, candidate) => !best || dist(city, candidate) < dist(city, best) ? candidate : best, undefined) ?? city;
-    const samples = [city, target, { x: (city.x + target.x) / 2, y: (city.y + target.y) / 2 }];
-    const forest = samples.reduce((sum, point) => sum + [-2, -1, 0, 1, 2]
-      .filter((offset) => tileAt({ x: point.x + offset, y: point.y + 1 }, match.map) === "forest").length, 0);
-    const heavy = free >= 2 && red.length >= 4 && heavyCount / Math.max(1, plannedSize) < (forest >= 4 ? 0.14 : 0.24);
-    build.kind = heavy ? "heavy" : "light";
-    free -= units[build.kind].supply;
-    if (heavy) heavyCount++;
-  }
+  const targets = match.cities.filter(candidate => candidate.owner !== 2);
+  const target = targets.reduce<City | undefined>((best, candidate) =>
+    !best || dist(city, candidate) < dist(city, best) ? candidate : best, undefined) ?? city;
+  const samples = [city, target, { x: (city.x + target.x) / 2, y: (city.y + target.y) / 2 }];
+  const forest = samples.reduce((sum, point) => sum + [-2, -1, 0, 1, 2]
+    .filter(offset => tileAt({ x: point.x + offset, y: point.y + 1 }, match.map) === "forest").length, 0);
+  const heavyCount = red.filter(unit => unit.kind === "heavy").length;
+  city.build.kind = capacity - used >= 2 && red.length >= 4 &&
+    heavyCount / Math.max(1, red.length + 1) < (forest >= 4 ? .14 : .24) ? "heavy" : "light";
 }
 
 function attackTarget(match: Match, unit: Unit, target: Unit) {
@@ -89,7 +82,7 @@ export function decide(match: Match) {
   const home = match.cities.filter(city => city.owner === 2);
   const red = match.units.filter(unit => unit.team === 2 && unit.hp > 0).sort((a, b) => a.id - b.id);
   const blue = match.units.filter(unit => unit.team === 1 && unit.hp > 0);
-  chooseProduction(match, home, red);
+  chooseProduction(match, red);
   if (!red.length) return;
   const targets = match.cities.filter(city => city.owner !== 2);
   const reserved = new Set<number>(), claimed = new Set<number>();

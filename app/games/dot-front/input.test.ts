@@ -3,7 +3,8 @@ import test from "node:test";
 import type { TestContext } from "node:test";
 import { bindInput, clampCamera } from "./input";
 import { GAME_SPEEDS, startBattle, summary } from "./battle";
-import { createMatch } from "./engine";
+import { createMatch, recruitmentCity } from "./engine";
+import type { GameCommand } from "./commands";
 import { toWorld, viewOf } from "./render";
 import type { Box, Camera, View } from "./render";
 import { HEIGHT, MAX_ROUTE_POINTS, POCKET_GRACE, STEP, WIDTH } from "./config";
@@ -407,12 +408,22 @@ test("mobile battle shows individual front soldiers and production type changes 
   assert.ok(match.units.some(unit => {
     const p = canvas.point(unit); return unit.team === 1 && p.clientX > 100 && p.clientX < 490 && p.clientY > 50 && p.clientY < 550;
   }));
-  const city = match.cities.find(item => item.owner === 1)!;
+  const city = recruitmentCity(match, 1)!;
+  match.recruitment[0] = 4;
   city.build = { kind: "light", elapsed: 4 };
   battle.pan({ x: city.x / WIDTH, y: city.y / HEIGHT }); env.runFrame(1000);
   const pointer = canvas.point(city); canvas.emit("pointerdown", pointer); canvas.emit("pointerup", pointer);
   battle.build("heavy"); assert.deepEqual(city.build, { kind: "heavy", elapsed: 4 }); assert.equal(city.repeat, true);
   battle.build("light"); assert.deepEqual(city.build, { kind: "light", elapsed: 4 });
+  const hud = summary(match, new Set(), city.id);
+  assert.equal(hud.isRecruitmentCity, true); assert.equal(hud.recruitmentCityId, city.id);
+  assert.equal(hud.recruitmentProgress, 4); assert.equal(hud.city?.build?.elapsed, 4);
+  assert.equal(match.recruitment[0], 4, "switching type must preserve the shared team clock");
+  const inactive = match.cities.find(item => item.owner === 1 && item.id !== city.id)!;
+  inactive.build!.elapsed = 58;
+  const waiting = summary(match, new Set(), inactive.id);
+  assert.equal(waiting.isRecruitmentCity, false); assert.equal(waiting.city?.build?.elapsed, 0);
+  assert.equal(waiting.recruitmentProgress, 4);
 });
 
 test("every offered speed advances the fixed-step simulation by its wall-time multiplier", t => {
@@ -509,4 +520,139 @@ test("HUD distinguishes an isolated city from normal capacity shortage and clear
   match.territory.revision++;
   const open = summary(match, new Set(), city.id);
   assert.equal(open.cityIsolated, false); assert.equal(open.blocked, false);
+});
+
+test("guest selection and direct orders control actual red soldiers without mirroring the map", t => {
+  const env = environment(t), canvas = new FakeCanvas();
+  const match = createMatch("normal", "red-player", false, "plains");
+  const red = match.units.filter(unit => unit.team === 2)[12], blue = match.units.find(unit => unit.team === 1)!;
+  let hud = summary(match, new Set(), null, false, 2);
+  const battle = startBattle(match, canvas.asCanvas(), new FakeCanvas().asCanvas(), value => { hud = value; }, () => {}, () => {}, () => {}, { team: 2, simulate: false, bot: false });
+  env.cleanup(() => battle.dispose()); env.runFrame(1000);
+  const redPointer = canvas.point(red);
+  assert.ok(redPointer.clientX >= 100 && redPointer.clientX <= 1060, "the guest camera initially shows its own red frontline");
+  canvas.emit("pointerdown", redPointer); canvas.emit("pointerup", redPointer);
+  assert.equal(hud.localTeam, 2); assert.equal(hud.selectedUnits, 1);
+  const blueBefore = structuredClone(match.units.filter(unit => unit.team === 1));
+  const target = nearestOpen({ x: red.x + 6, y: red.y + 2 }, match.map);
+  canvas.emit("pointerdown", { ...canvas.point(target), button: 2 });
+  assert.equal(red.order.mode, "move");
+  if (red.order.mode === "move") assert.deepEqual(red.order.point, target);
+  assert.equal(red.stance, "manual");
+  assert.deepEqual(match.units.filter(unit => unit.team === 1), blueBefore);
+  battle.selectAll(); assert.equal(hud.selectedUnits, 25);
+  battle.stance("attack"); assert.equal(hud.selectedStance, "attack");
+  assert.ok(match.units.filter(unit => unit.team === 2).every(unit => unit.stance === "attack"));
+  assert.deepEqual(match.units.filter(unit => unit.team === 1), blueBefore);
+  battle.deselect();
+  canvas.emit("pointerdown", canvas.point(blue)); canvas.emit("pointerup", canvas.point(blue));
+  assert.equal(hud.selectedUnits, 0, "a left click cannot select the opponent");
+  const city = match.cities.find(item => item.owner === 2)!;
+  battle.pan({ x: city.x / WIDTH, y: city.y / HEIGHT }); env.runFrame(1100);
+  canvas.emit("pointerdown", canvas.point(city)); canvas.emit("pointerup", canvas.point(city));
+  battle.build("heavy"); assert.equal(city.build?.kind, "heavy");
+  assert.equal(battle.rally(), true);
+  canvas.emit("pointerdown", canvas.point(target)); canvas.emit("pointerup", canvas.point(target));
+  assert.deepEqual(city.rally, target);
+  battle.surrender(); assert.equal(match.result, "won"); assert.equal(hud.result, "lost");
+});
+
+test("online dispatch emits intent for every control without optimistically mutating guest state", t => {
+  const env = environment(t), canvas = new FakeCanvas();
+  const match = createMatch("normal", "network-intent", false, "plains");
+  const sent: GameCommand[] = [];
+  const battle = startBattle(match, canvas.asCanvas(), new FakeCanvas().asCanvas(), () => {}, () => {}, () => {}, () => {},
+    { team: 2, simulate: false, bot: false, command: cmd => sent.push(cmd) });
+  env.cleanup(() => battle.dispose()); env.runFrame(1000);
+  const before = structuredClone(match);
+  const red = match.units.filter(unit => unit.team === 2)[12];
+  canvas.emit("pointerdown", canvas.point(red)); canvas.emit("pointerup", canvas.point(red));
+  const target = { x: red.x + 5, y: red.y + 1 };
+  canvas.emit("pointerdown", { ...canvas.point(target), button: 2 });
+  battle.hold(); battle.stance("attack");
+  battle.routeMode(true);
+  canvas.emit("pointerdown", canvas.point(red)); canvas.emit("pointerup", canvas.point(target));
+  const city = match.cities.find(item => item.owner === 2)!;
+  battle.pan({ x: city.x / WIDTH, y: city.y / HEIGHT }); env.runFrame(1100);
+  canvas.emit("pointerdown", canvas.point(city)); canvas.emit("pointerup", canvas.point(city));
+  battle.build("heavy"); battle.rally();
+  canvas.emit("pointerdown", canvas.point(target)); canvas.emit("pointerup", canvas.point(target));
+  assert.deepEqual(sent.map(command => command.kind), ["move", "order", "stance", "order", "build", "rally"]);
+  assert.deepEqual(sent[0], { kind: "move", ids: [red.id], point: target });
+  const route = sent[3];
+  assert.equal(route.kind, "order");
+  if (route.kind === "order") assert.equal(route.order.mode, "route");
+  assert.deepEqual(match, before, "only authoritative snapshots or host command application may change guest state");
+});
+
+test("host bot=false never makes AI decisions while guest simulate=false never advances any simulation", t => {
+  const env = environment(t);
+  for (const simulate of [true, false]) {
+    const canvas = new FakeCanvas(), match = createMatch("hard", `no-ai-${simulate}`, false, "plains");
+    match.nextAi = 0;
+    const before = structuredClone(match);
+    let saved = 0, pauses = 0;
+    const battle = startBattle(match, canvas.asCanvas(), new FakeCanvas().asCanvas(), () => {}, () => { pauses++; }, () => { saved++; }, () => {},
+      { team: simulate ? 1 : 2, simulate, bot: false });
+    try {
+      battle.speed(3); env.runFrame(1000);
+      canvas.focus(); canvas.emit("keydown", { key: "d" });
+      const initialCameraX = canvas.drawnView.x;
+      for (let frame = 1; frame <= 30; frame++) env.runFrame(1000 + frame * 100);
+      assert.notEqual(canvas.drawnView.x, initialCameraX, "guests still pan the camera locally");
+      assert.equal(match.nextAi, 0, "neither online peer should run the solo AI");
+      if (simulate) assert.ok(match.elapsed > 8);
+      else { assert.deepEqual(match, before); assert.equal(saved, 0); }
+      env.document.hidden = true; env.document.emit("visibilitychange");
+      assert.equal(pauses, 1); assert.equal(env.frames.size, 0);
+      env.document.hidden = false; env.document.emit("visibilitychange");
+      env.runFrame(90000); env.runFrame(90100);
+      const pausedAt = match.elapsed;
+      env.runFrame(90200); assert.equal(match.elapsed, pausedAt);
+      if (!simulate) assert.equal(saved, 0);
+    } finally { battle.dispose(); }
+  }
+});
+
+test("guest snapshots replace stable match contents and refresh selection, supply, recruitment and terminal results once", t => {
+  const env = environment(t), canvas = new FakeCanvas();
+  const match = createMatch("normal", "snapshot-state", false, "plains"), originalReference = match;
+  let finished = 0, hud = summary(match, new Set(), null, false, 2);
+  const battle = startBattle(match, canvas.asCanvas(), new FakeCanvas().asCanvas(), value => { hud = value; }, () => {}, () => {}, () => { finished++; },
+    { team: 2, simulate: false, bot: false });
+  env.cleanup(() => battle.dispose()); env.runFrame(1000); battle.selectAll(); battle.routeMode(true);
+  assert.equal(hud.selectedUnits, 25);
+  const snapshot = structuredClone(match);
+  snapshot.elapsed = 81; snapshot.recruitment = [12, 43]; snapshot.shortage[1] = 8;
+  snapshot.units = snapshot.units.filter(unit => unit.team !== 2);
+  snapshot.cities = snapshot.cities.map(city => ({ ...city, owner: city.owner === 2 ? 1 : city.owner }));
+  battle.replaceSnapshot(snapshot);
+  assert.equal(match, originalReference); assert.equal(match.elapsed, 81);
+  assert.equal(hud.localTeam, 2); assert.equal(hud.selectedUnits, 0); assert.equal(hud.routeDrawing, false);
+  assert.equal(hud.logistics.capacity, 0); assert.equal(hud.logistics.used, 0); assert.equal(hud.shortage, 8);
+  assert.equal(hud.recruitmentProgress, 43); assert.equal(hud.recruitmentCityId, null);
+  assert.equal(env.frames.size, 1); assert.equal(finished, 0);
+  snapshot.elapsed = 99;
+  assert.equal(match.elapsed, 81, "later transport mutations cannot alias the live match");
+  snapshot.result = "lost";
+  battle.replaceSnapshot(snapshot); battle.replaceSnapshot(snapshot);
+  assert.equal(hud.result, "won"); assert.equal(finished, 1); assert.equal(env.frames.size, 1);
+  env.runFrame(50000); env.runFrame(50100);
+  assert.equal(match.elapsed, 99); assert.equal(finished, 1);
+});
+
+test("guest HUD uses red capacity, shortages and pockets while preserving canonical colors and report totals", () => {
+  const match = createMatch("normal", "red-hud", false, "plains");
+  const red = match.units.find(unit => unit.team === 2)!, blue = match.units.find(unit => unit.team === 1)!;
+  red.pocketed = true; red.pocketTime = POCKET_GRACE - 4;
+  match.shortage = [2, 7]; match.recruitment = [3, 23]; match.cities.find(city => city.owner === 2)!.owner = 1;
+  match.report = { fallen: 3, captured: 2, killed: 1 }; match.result = "won";
+  const source = recruitmentCity(match, 2)!;
+  const hud = summary(match, new Set([red.id, blue.id]), source.id, false, 2);
+  assert.equal(hud.logistics.capacity, 24 * 5); assert.equal(hud.shortage, 7);
+  assert.equal(hud.playerCities, 24); assert.equal(hud.enemyCities, 26);
+  assert.equal(hud.playerPocketed, 1); assert.equal(hud.bluePocketed, 0);
+  assert.equal(hud.selectedUnits, 1); assert.equal(hud.selectedPocketGrace, 4);
+  assert.equal(hud.recruitmentProgress, 23); assert.equal(hud.city?.build?.elapsed, 23);
+  assert.equal(hud.result, "lost"); assert.deepEqual(hud.report, match.report);
 });

@@ -3,7 +3,7 @@ import test from "node:test";
 import { decide } from "./ai";
 import { CAPTURE, CITY_PRODUCTION, HEIGHT, STEP, difficulty, dist, units } from "./config";
 import type { Kind, Owner, Team } from "./config";
-import { commandUnit, createMatch, step } from "./engine";
+import { commandUnit, createMatch, recruitmentCity, step } from "./engine";
 import type { City, Match, Unit } from "./engine";
 import { mapIds, nearestOpen, passable } from "./terrain";
 import { TERRITORY_COLS, isSupplied, territoryCell } from "./territory";
@@ -30,10 +30,12 @@ test("difficulty changes decisions without accelerating production or increasing
   assert.equal(CITY_PRODUCTION, 60);
   for (const level of ["easy", "normal", "hard"] as const) {
     const match = fixture([soldier(1, 2, 110.5, 16.5)], [city(0, 2, 110.5, 16.5), city(1, 1, 90.5, 16.5)], level);
+    match.recruitment[1] = 30;
     match.cities[0].build!.elapsed = 30;
     decide(match);
     assert.equal(match.nextAi, difficulty[level].period);
     assert.equal(match.cities[0].build!.elapsed, 30);
+    assert.equal(match.recruitment[1], 30);
     assert.equal(match.units[0].hp, units.light.hp);
     const snapshot = JSON.stringify(match); decide(match);
     assert.equal(JSON.stringify(match), snapshot);
@@ -197,4 +199,18 @@ test("saved tactical orders and occupation restore deterministic AI decisions ac
   advance(match, 20); advance(restored, 20);
   assert.deepEqual(restored, match);
   assert.ok(match.report.killed + match.report.fallen > 0, "slow combat still resolves losses");
+});
+
+
+test("AI plans just the current recruitment city without changing the shared timer", () => {
+  const match = createMatch("normal", "single-ai-recruitment", false, "plains");
+  match.nextAi = 0;
+  match.recruitment[1] = 37;
+  const source = recruitmentCity(match, 2)!;
+  const inactive = match.cities.filter(city => city.owner === 2 && city.id !== source.id);
+  const before = structuredClone(inactive.map(city => city.build));
+  decide(match);
+  assert.equal(match.recruitment[1], 37);
+  assert.deepEqual(inactive.map(city => city.build), before);
+  assert.equal(source.build!.kind, "heavy");
 });

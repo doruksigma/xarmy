@@ -101,7 +101,25 @@
 .tutorial { color: #bde8fc; background: #20394a; }
 .shade { position: absolute; inset: 0; z-index: 2; display: grid; place-items: center; background: #0b161edb; }
 .dialog { display: grid; gap: 0.38rem; text-align: center; width: min(320px, 90%); padding: 0.65rem; background: #1b2b33; border: 1px solid var(--line); border-radius: 0.8rem; }
+.onlineGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; margin-block: 1.25rem; }
+.onlineCard { display: grid; align-content: start; gap: 0.8rem; min-width: 0; padding: 1rem; border: 1px solid var(--line); border-radius: 0.7rem; background: #122129; }
+.onlineCard h2, .onlineCard p, .onlineCard button { margin: 0; }
+.onlineField { display: grid; gap: 0.4rem; min-width: 0; }
+.onlineField input, .roomCode { color: var(--paper); background: #0b1820; border: 1px solid #61767a; border-radius: 0.5rem; min-height: 44px; max-width: 100%; padding: 0.5rem 0.7rem; font: inherit; }
+.onlineField input { width: 100%; box-sizing: border-box; }
+.shell .onlineBack { margin-bottom: 0.7rem; background: transparent; color: var(--muted); border-color: transparent; }
+.codeRow { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+.roomCode { width: 8.5ch; min-width: 0; font-family: ui-monospace, monospace; font-size: 1.5rem; font-weight: 800; letter-spacing: 0.12em; text-align: center; }
+.onlineHeader { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.9rem; padding: 0.65rem; border-bottom: 1px solid var(--line); background: #10212b; font-size: 0.85rem; }
+.onlineHeader > button { margin-left: auto; font-size: 0.8rem; }
+.presence { display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem 1rem; padding: 0.55rem; font-size: 0.8rem; }
+.onlineCard .presence { padding: 0; }
+.recruitmentBar { display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem 0.65rem; padding: 0.6rem; border-top: 1px solid var(--line); color: var(--muted); font-size: 0.8rem; }
+.recruitmentBar progress { width: min(120px, 25vw); accent-color: #8bd2ae; }
 @media (max-width: 560px) {
+  .onlineGrid { grid-template-columns: minmax(0, 1fr); }
+  .onlineHeader { gap: 0.4rem; }
+  .onlineHeader > button { margin-left: 0; }
   .mapGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.6rem; }
   .mapThumbnail { height: 90px; }
   .landing { grid-template-columns: 1fr; gap: 1rem; }

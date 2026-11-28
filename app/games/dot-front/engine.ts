@@ -2,7 +2,7 @@ import { CAPTURE, CITY_PRODUCTION, FRONT_ATTACK_ADVANCE, FRONT_ATTACK_COMMIT_DIS
 import type { Difficulty, Kind, Owner, Point, Team } from "./config";
 import { clearShot, getMap, nearestOpen, passable, route, tileAt } from "./terrain";
 import type { MapId } from "./terrain";
-import { frontDirection, frontSlots } from "./front";
+import { frontDirection, frontField, frontSlots } from "./front";
 import { advanceTerritory, createTerritory, isSupplied, territoryOwner } from "./territory";
 import type { Territory } from "./territory";
 
@@ -24,8 +24,8 @@ export type City = Point & {
 export type Stance = "attack" | "defend";
 export type Result = "won" | "lost" | "draw";
 export type Match = {
-  version: 4; id: string; difficulty: Difficulty; map: MapId; elapsed: number; nextId: number; territory: Territory;
-  units: Unit[]; cities: City[]; shortage: [number, number]; nextAi: number;
+  version: 5; id: string; difficulty: Difficulty; map: MapId; elapsed: number; nextId: number; territory: Territory;
+  units: Unit[]; cities: City[]; shortage: [number, number]; recruitment: [number, number]; nextAi: number;
   result: Result | null; report: { captured: number; killed: number; fallen: number };
   tutorial: number | null;
 };
@@ -33,12 +33,12 @@ export type Flash = { from: Point; to: Point; team: Team; expires: number };
 
 export function createMatch(difficulty: Difficulty, id: string, tutorial: boolean, map: MapId = "valley"): Match {
   const match: Match = {
-    version: 4, id, difficulty, map, elapsed: 0, nextId: 1, territory: createTerritory(map),
+    version: 5, id, difficulty, map, elapsed: 0, nextId: 1, territory: createTerritory(map),
     units: [], cities: getMap(map).cities.map((city, id) => ({
       ...city, id, capturing: 0, progress: 0, rally: null,
       build: city.owner ? { kind: "light", elapsed: 0 } : null, repeat: !!city.owner,
     })),
-    shortage: [0, 0], nextAi: tutorial ? 45 : 2, result: null,
+    shortage: [0, 0], recruitment: [0, 0], nextAi: tutorial ? 45 : 2, result: null,
     report: { captured: 0, killed: 0, fallen: 0 }, tutorial: tutorial ? 0 : null,
   };
   for (const team of [1, 2] as const) {
@@ -58,6 +58,28 @@ export function supply(match: Match, team: Team) {
     used: match.units.reduce((total, unit) => total + (unit.team === team ? units[unit.kind].supply : 0), 0),
     capacity: match.cities.filter((city) => city.owner === team).length * SUPPLY,
   };
+}
+
+/** One reinforcement source per side, following the actual occupied frontier. */
+export function recruitmentCity(match: Match, team: Team): City | undefined {
+  const segments = frontField(match).segments;
+  let source: City | undefined, nearest = Infinity;
+  for (const city of match.cities) {
+    if (city.owner !== team || !isSupplied(match, team, city)) continue;
+    let distance = Infinity;
+    for (const { a, b } of segments) {
+      const dx = b.x - a.x, dy = b.y - a.y, length = dx * dx + dy * dy;
+      const along = length ? Math.max(0, Math.min(1, ((city.x - a.x) * dx + (city.y - a.y) * dy) / length)) : 0;
+      distance = Math.min(distance, (city.x - a.x - along * dx) ** 2 + (city.y - a.y - along * dy) ** 2);
+    }
+    // When one side owns all territory there is no shared frontier. All valid
+    // cities tie, giving a stable source while surviving enemy troops remain.
+    if (!source || distance < nearest - 1e-9 || (Math.abs(distance - nearest) <= 1e-9 || distance === nearest) && city.id < source.id) {
+      source = city;
+      nearest = distance;
+    }
+  }
+  return source;
 }
 
 function makeUnit(match: Match, team: Team, kind: Kind, point: Point): Unit {
@@ -468,11 +490,18 @@ function takeCities(match: Match, index: UnitIndex, dt: number) {
   return captured;
 }
 
-function supplyAndBuild(match: Match, dt: number, captured: ReadonlySet<number>) {
+function supplyAndBuild(match: Match, dt: number) {
+  // City queues are display mirrors only. Never resume independent queues from
+  // a previous source, captured city or legacy save.
+  for (const city of match.cities) {
+    if (!city.owner) { city.build = null; city.repeat = false; continue; }
+    if (!city.build) city.build = { kind: "light", elapsed: 0 };
+    city.build.elapsed = 0;
+    city.repeat = true;
+  }
   for (const team of [1, 2] as const) {
     const { used, capacity } = supply(match, team);
     let excess = used - capacity;
-    let current = used;
     match.shortage[team - 1] = excess > 0 ? match.shortage[team - 1] + dt : 0;
     for (const unit of match.units.filter((unit) => unit.team === team).sort((a, b) => b.id - a.id)) {
       unit.marked = excess > 0;
@@ -480,21 +509,18 @@ function supplyAndBuild(match: Match, dt: number, captured: ReadonlySet<number>)
       excess -= units[unit.kind].supply;
       if (match.shortage[team - 1] + 1e-6 >= GRACE) unit.hp -= 3 * dt;
     }
-    for (const city of match.cities) {
-      if (city.owner !== team) continue;
-      if (!city.build) city.build = { kind: "light", elapsed: 0 };
-      city.repeat = true;
-      if (captured.has(city.id)) continue;
-      if (!isSupplied(match, team, city)) continue;
-      const stats = units[city.build.kind];
-      if (current + stats.supply > capacity) continue;
-      city.build.elapsed += dt;
-      if (city.build.elapsed + 1e-6 < CITY_PRODUCTION) continue;
+    const city = recruitmentCity(match, team);
+    if (!city?.build) continue;
+    const timer = team - 1;
+    const stats = units[city.build.kind];
+    if (used + stats.supply <= capacity) match.recruitment[timer] = Math.min(CITY_PRODUCTION, match.recruitment[timer] + dt);
+    if (used + stats.supply <= capacity && match.recruitment[timer] + 1e-6 >= CITY_PRODUCTION) {
       spawn(match, city, city.build.kind);
       if (team === 1 && match.tutorial === 3) match.tutorial = 4;
-      current += stats.supply;
-      city.build = { kind: city.build.kind, elapsed: 0 };
+      // Discard overshoot rather than catch up with a burst after a pause.
+      match.recruitment[timer] = 0;
     }
+    city.build.elapsed = match.recruitment[timer];
   }
 }
 
@@ -537,8 +563,8 @@ export function step(match: Match, dt: number, flashes: Flash[], decide: (match:
   advanceTerritory(match);
   updatePockets(match, dt);
   removeDead(match);
-  const captured = takeCities(match, new UnitIndex(match.units), dt);
-  supplyAndBuild(match, dt, captured);
+  takeCities(match, new UnitIndex(match.units), dt);
+  supplyAndBuild(match, dt);
   // New troops occupy their real spawn footprint; no timers advance twice.
   advanceTerritory(match);
   updatePockets(match, 0);

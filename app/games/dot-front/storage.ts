@@ -1,5 +1,6 @@
 import { CAPTURE, CITY_PRODUCTION, HEIGHT, MAX_ROUTE_POINTS, WIDTH, difficulty, units } from "./config";
 import type { Point } from "./config";
+import { recruitmentCity } from "./engine";
 import type { Match, Order, Result, Unit } from "./engine";
 import { getMap, mapIds, passable } from "./terrain";
 import type { MapId } from "./terrain";
@@ -17,6 +18,10 @@ const owner = (value: unknown) => [0, 1, 2].includes(Number(value)) && typeof va
 const kind = (value: unknown) => value === "light" || value === "heavy";
 const result = (value: unknown) => value === "won" || value === "lost" || value === "draw";
 const stance = (value: unknown) => value === "attack" || value === "defend" || value === "manual";
+const denseEvery = <T>(values: T[], predicate: (value: T) => boolean) => {
+  for (const value of values) if (!predicate(value)) return false;
+  return true;
+};
 
 const LEGACY_PRODUCTION = 10;
 const LEGACY_CAPTURE = 8;
@@ -26,9 +31,10 @@ type LegacyCommander = {
 type StoredUnit = Omit<Unit, "stance" | "nextOrder" | "pocketed" | "pocketTime"> & {
   stance?: unknown; nextOrder?: unknown; commanderId?: unknown; independent?: unknown; pocketed?: unknown; pocketTime?: unknown;
 };
-type StoredMatch = Omit<Match, "version" | "units" | "territory"> & {
-  version: number; units: StoredUnit[]; commanders?: LegacyCommander[]; nextCommanderId?: number; territory?: unknown;
+type StoredMatch = Omit<Match, "version" | "units" | "territory" | "recruitment"> & {
+  version: number; units: StoredUnit[]; commanders?: LegacyCommander[]; nextCommanderId?: number; territory?: unknown; recruitment?: unknown;
 };
+type VersionFourMatch = Omit<Match, "version" | "recruitment"> & { version: 4 };
 
 const blockedMasks = new Map<MapId, Uint8Array>();
 function validTerritory(value: unknown, map: MapId): boolean {
@@ -49,17 +55,22 @@ function validTerritory(value: unknown, map: MapId): boolean {
   return true;
 }
 
-function validVersion(value: unknown, version: 2 | 3 | 4): boolean {
+function validVersion(value: unknown, version: 2 | 3 | 4 | 5): boolean {
   try {
     const m = value as StoredMatch;
     if (!m || m.version !== version || !isMapId(m.map) || typeof m.id !== "string" || !m.id ||
       !Object.hasOwn(difficulty, m.difficulty) || !numeric(m.elapsed) || !integer(m.nextId) || m.nextId < 1 ||
       (m.result !== null && !result(m.result)) || !(m.tutorial === null || (integer(m.tutorial) && m.tutorial <= 5)) ||
-      !numeric(m.nextAi) || !Array.isArray(m.shortage) || m.shortage.length !== 2 || !m.shortage.every(numeric) ||
+      !numeric(m.nextAi) || !Array.isArray(m.shortage) || m.shortage.length !== 2 || !denseEvery(m.shortage, numeric) ||
       !m.report || ![m.report.captured, m.report.killed, m.report.fallen].every(integer) ||
       !Array.isArray(m.cities) || !Array.isArray(m.units) || m.units.length > 600) return false;
     if (version >= 3 && (Object.hasOwn(m, "commanders") || Object.hasOwn(m, "nextCommanderId"))) return false;
-    if (version === 4 ? !validTerritory(m.territory, m.map) : Object.hasOwn(m, "territory")) return false;
+    if (version >= 4 ? !validTerritory(m.territory, m.map) : Object.hasOwn(m, "territory")) return false;
+    if (version === 5) {
+      if (!Array.isArray(m.recruitment) || m.recruitment.length !== 2 ||
+        !numeric(m.recruitment[0]) || m.recruitment[0] > CITY_PRODUCTION ||
+        !numeric(m.recruitment[1]) || m.recruitment[1] > CITY_PRODUCTION) return false;
+    } else if (Object.hasOwn(m, "recruitment")) return false;
     if (version === 2 && (!Array.isArray(m.commanders) || m.commanders.length > 600 ||
       !integer(m.nextCommanderId) || m.nextCommanderId < 1)) return false;
     const layout = getMap(m.map).cities;
@@ -69,7 +80,7 @@ function validVersion(value: unknown, version: 2 | 3 | 4): boolean {
       order.mode === "hold" || (order.mode === "move" && validPoint(order.point)) ||
       (order.mode === "attack" && integer(order.target) && order.target >= 1 && order.target < m.nextId) ||
       (version >= 3 && order.mode === "route" && Array.isArray(order.points) && order.points.length > 0 &&
-        order.points.length <= MAX_ROUTE_POINTS && order.points.every(guidePoint) && integer(order.next) && order.next <= order.points.length)
+        order.points.length <= MAX_ROUTE_POINTS && denseEvery(order.points, guidePoint) && integer(order.next) && order.next <= order.points.length)
     ));
     const ids = new Set<number>();
     const membership = new Map<number, StoredUnit[]>();
@@ -77,10 +88,10 @@ function validVersion(value: unknown, version: 2 | 3 | 4): boolean {
       if (!validPoint(u) || !integer(u.id) || u.id < 1 || u.id >= m.nextId || ids.has(u.id) || (u.team !== 1 && u.team !== 2) ||
         !kind(u.kind) || !numeric(u.hp) || u.hp <= 0 || u.hp > units[u.kind].hp ||
         !numeric(u.cooldown) || !numeric(u.replan) || typeof u.marked !== "boolean" ||
-        !Array.isArray(u.path) || u.path.length > WIDTH * HEIGHT || !u.path.every(validPoint) ||
+        !Array.isArray(u.path) || u.path.length > WIDTH * HEIGHT || !denseEvery(u.path, validPoint) ||
         !integer(u.waypoint) || u.waypoint > u.path.length || !validOrder(u.order)) return false;
       ids.add(u.id);
-      if (version === 4) {
+      if (version >= 4) {
         if (typeof u.pocketed !== "boolean" || !numeric(u.pocketTime) || u.pocketTime > m.elapsed + 1e-6 ||
           (!u.pocketed && u.pocketTime !== 0)) return false;
       } else if (Object.hasOwn(u, "pocketed") || Object.hasOwn(u, "pocketTime")) return false;
@@ -110,7 +121,7 @@ function validVersion(value: unknown, version: 2 | 3 | 4): boolean {
       }
       if (commanderIds.size !== membership.size || [...membership.keys()].some(id => !commanderIds.has(id))) return false;
     }
-    return m.cities.every((c, i) => c.id === i && c.x === layout[i].x && c.y === layout[i].y &&
+    return [...m.cities].every((c, i) => c && c.id === i && c.x === layout[i].x && c.y === layout[i].y &&
       owner(c.owner) && owner(c.capturing) && numeric(c.progress) && c.progress <= (version === 2 ? LEGACY_CAPTURE : CAPTURE) &&
       typeof c.repeat === "boolean" && (c.rally === null || validPoint(c.rally)) &&
       (c.build === null || (c.owner !== 0 && kind(c.build.kind) && numeric(c.build.elapsed) &&
@@ -122,10 +133,10 @@ function validVersion(value: unknown, version: 2 | 3 | 4): boolean {
 
 /** Accept the current runtime shape only; old save data must be migrated first. */
 export function validMatch(value: unknown): value is Match {
-  return validVersion(value, 4);
+  return validVersion(value, 5);
 }
 
-function initializeTerritory(legacy: StoredMatch, oldVersion: 2 | 3): Match | null {
+function initializeTerritory(legacy: StoredMatch, oldVersion: 2 | 3): VersionFourMatch | null {
   const { commanders, nextCommanderId, ...record } = legacy;
   void nextCommanderId;
   const migrated = {
@@ -147,31 +158,60 @@ function initializeTerritory(legacy: StoredMatch, oldVersion: 2 | 3): Match | nu
       build: city.build ? { ...city.build, elapsed: oldVersion === 2
         ? city.build.elapsed * CITY_PRODUCTION / LEGACY_PRODUCTION : city.build.elapsed } : null,
     })),
-  } as Match;
+  } as VersionFourMatch;
   // Older versions did not store land history. Keep the original split and
   // claim only the current living army's footprint, never inferred past paths.
   advanceTerritory(migrated);
   for (const unit of migrated.units) unit.pocketed = !isSupplied(migrated, unit.team, unit);
-  return validMatch(migrated) ? migrated : null;
+  return validVersion(migrated, 4) ? migrated : null;
+}
+
+function initializeRecruitment(legacy: VersionFourMatch): Match {
+  const migrated: Match = { ...legacy, version: 5, recruitment: [0, 0] };
+  // Parallel city queues become one shared clock per side. Taking the most
+  // advanced queue preserves its progress without granting a mass-spawn burst.
+  for (const city of migrated.cities) {
+    if (!city.build) continue;
+    if (city.owner) migrated.recruitment[city.owner - 1] = Math.max(migrated.recruitment[city.owner - 1], city.build.elapsed);
+    city.build.elapsed = 0;
+  }
+  for (const team of [1, 2] as const) {
+    const city = recruitmentCity(migrated, team);
+    if (city) city.build = { kind: city.build?.kind ?? "light", elapsed: migrated.recruitment[team - 1] };
+  }
+  return migrated;
 }
 
 /** Validate published v2 before discarding the obsolete command layer. */
 export function migrateV2Match(value: unknown): Match | null {
   if (!validVersion(value, 2)) return null;
-  try { return initializeTerritory(structuredClone(value) as StoredMatch, 2); }
+  try {
+    const legacy = initializeTerritory(structuredClone(value) as StoredMatch, 2);
+    return legacy ? initializeRecruitment(legacy) : null;
+  }
   catch { return null; }
 }
 
 /** Version three already uses individual soldiers and the slow timing values. */
 export function migrateV3Match(value: unknown): Match | null {
   if (!validVersion(value, 3)) return null;
-  try { return initializeTerritory(structuredClone(value) as StoredMatch, 3); }
+  try {
+    const legacy = initializeTerritory(structuredClone(value) as StoredMatch, 3);
+    return legacy ? initializeRecruitment(legacy) : null;
+  }
+  catch { return null; }
+}
+
+/** Version four has authoritative territory and pocket timers; retain both. */
+export function migrateV4Match(value: unknown): Match | null {
+  if (!validVersion(value, 4)) return null;
+  try { return initializeRecruitment(structuredClone(value) as VersionFourMatch); }
   catch { return null; }
 }
 
 export function migrateMatch(value: unknown): Match | null {
   if (validMatch(value)) return structuredClone(value);
-  return migrateV3Match(value) ?? migrateV2Match(value);
+  return migrateV4Match(value) ?? migrateV3Match(value) ?? migrateV2Match(value);
 }
 
 const STORAGE_TIMEOUT = 5000;

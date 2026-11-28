@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { TestContext } from "node:test";
 import { CAPTURE, CITY_PRODUCTION, HEIGHT, MAX_ROUTE_POINTS, STEP, WIDTH } from "./config";
-import { commandUnit, createMatch, step } from "./engine";
-import type { City, Unit } from "./engine";
+import { commandUnit, createMatch, recruitmentCity, step } from "./engine";
+import type { City, Match, Unit } from "./engine";
 import {
-  defaults, loadMatch, migrateMatch, migrateV2Match, migrateV3Match, readSettings, readStats, recordResult, saveMatch, saveSettings, validMatch,
+  defaults, loadMatch, migrateMatch, migrateV2Match, migrateV3Match, migrateV4Match, readSettings, readStats, recordResult, saveMatch, saveSettings, validMatch,
 } from "./storage";
 import { getMap, mapIds, passable } from "./terrain";
 import type { MapId } from "./terrain";
@@ -89,8 +89,8 @@ function versionTwoMatch(map: MapId = "valley") {
       for (const unit of army.slice(start, start + 10)) membership.set(unit.id, id);
     }
   }
-  const { territory, ...record } = current;
-  void territory;
+  const { territory, recruitment, ...record } = current;
+  void territory; void recruitment;
   return {
     ...record,
     version: 2 as const,
@@ -108,7 +108,20 @@ function versionTwoMatch(map: MapId = "valley") {
   };
 }
 
-test("published v2 saves migrate to individual soldiers while preserving identity, orders and timed progress percentages", async (context) => {
+function assertRecruitmentUpgrade(migrated: Match, cities: City[], scale = 1) {
+  for (const team of [1, 2] as const) {
+    const expected = Math.max(0, ...cities.filter(city => city.owner === team).map(city => (city.build?.elapsed ?? 0) * scale));
+    assert.equal(migrated.recruitment[team - 1], expected, "only the most advanced old queue becomes the team clock");
+    const source = recruitmentCity(migrated, team);
+    for (const city of migrated.cities.filter(city => city.owner === team)) {
+      const before = cities.find(prior => prior.id === city.id)!;
+      assert.equal(city.build?.kind ?? null, before.build?.kind ?? (source?.id === city.id ? "light" : null));
+      assert.equal(city.build?.elapsed ?? 0, source?.id === city.id ? expected : 0);
+    }
+  }
+}
+
+test("published v2 saves retain soldiers and capture percentages while merging old queues into one timer per side", async (context) => {
   const db = memoryDatabase();
   replaceGlobal(context, "indexedDB", db.factory);
   db.entries.set("result:won:existing-result", 1);
@@ -132,7 +145,7 @@ test("published v2 saves migrate to individual soldiers while preserving identit
     db.entries.set("current", structuredClone(legacy));
     const migrated = await loadMatch();
     assert.ok(validMatch(migrated), map);
-    assert.equal(migrated.version, 4); assert.equal(migrated.id, legacy.id); assert.equal(migrated.elapsed, legacy.elapsed);
+    assert.equal(migrated.version, 5); assert.equal(migrated.id, legacy.id); assert.equal(migrated.elapsed, legacy.elapsed);
     assert.equal(migrated.nextId, legacy.nextId); assert.equal(migrated.nextAi, legacy.nextAi);
     assert.equal(Object.hasOwn(migrated, "commanders"), false);
     assert.equal(Object.hasOwn(migrated, "nextCommanderId"), false);
@@ -146,16 +159,12 @@ test("published v2 saves migrate to individual soldiers while preserving identit
       assert.equal(nextOrder, legacy.elapsed);
       assert.equal(Object.hasOwn(unit, "commanderId"), false);
     }
-    assert.equal(migrated.cities[0].build!.elapsed, 27);
-    assert.equal(migrated.cities[1].build!.elapsed, 57);
-    assert.equal(migrated.cities[2].build!.elapsed, 60);
-    assert.equal(migrated.cities[3].build, null);
+    assertRecruitmentUpgrade(migrated, legacy.cities, 6);
     assert.equal(migrated.cities[4].progress, 12);
     for (let i = 0; i < migrated.cities.length; i++) {
       const before = legacy.cities[i];
       const next: City = migrated.cities[i];
       assert.deepEqual({ ...next, build: before.build, progress: before.progress }, before);
-      if (before.build) assert.equal(next.build!.elapsed / 60, before.build.elapsed / 10);
       assert.equal(next.progress / 24, before.progress / 8);
     }
     assert.deepEqual(legacy, original, "migration does not mutate input");
@@ -169,8 +178,8 @@ test("published v2 saves migrate to individual soldiers while preserving identit
 
 function versionThreeMatch(map: MapId = "plains") {
   const current = createMatch("normal", `existing-v3-${map}`, false, map);
-  const { territory, ...record } = current;
-  void territory;
+  const { territory, recruitment, ...record } = current;
+  void territory; void recruitment;
   return {
     ...record, version: 3 as const,
     units: current.units.map(unit => {
@@ -181,7 +190,7 @@ function versionThreeMatch(map: MapId = "plains") {
   };
 }
 
-test("real v3 records keep every previous field and initialize only current occupied territory", async (context) => {
+test("v3 records preserve soldiers and capture clocks, initialize current territory and merge recruitment queues", async (context) => {
   const db = memoryDatabase(); replaceGlobal(context, "indexedDB", db.factory);
   for (const map of mapIds) {
     const legacy = versionThreeMatch(map);
@@ -197,12 +206,14 @@ test("real v3 records keep every previous field and initialize only current occu
     const before = structuredClone(legacy);
     const restored = migrateV3Match(legacy);
     assert.ok(restored && validMatch(restored), map);
-    assert.equal(restored.version, 4);
-    const { territory, units: restoredUnits, version, ...fields } = restored;
-    void version;
-    const { units: priorUnits, version: priorVersion, ...priorFields } = legacy;
+    assert.equal(restored.version, 5);
+    const { territory, units: restoredUnits, cities: restoredCities, recruitment, version, ...fields } = restored;
+    void version; void recruitment;
+    const { units: priorUnits, cities: priorCities, version: priorVersion, ...priorFields } = legacy;
     void priorVersion;
-    assert.deepEqual(fields, priorFields, "all existing v3 match and city timers are retained");
+    assert.deepEqual(fields, priorFields, "all existing v3 fields other than city production clocks are retained");
+    assertRecruitmentUpgrade(restored, priorCities);
+    assert.deepEqual(restoredCities.map((city, index) => ({ ...city, build: priorCities[index].build })), priorCities);
     assert.deepEqual(restoredUnits.map(unit => {
       const { pocketed, pocketTime, ...prior } = unit;
       assert.equal(pocketTime, 0, "no invented prior encirclement damage");
@@ -231,6 +242,116 @@ test("corrupt v3 data is rejected before territory reconstruction", () => {
   assert.equal(migrateV3Match({ ...legacy, units: legacy.units.map((unit,index) => index ? unit : { ...unit, pocketed: false, pocketTime: 0 }) }), null);
   const damaged = structuredClone(legacy); damaged.cities[0].build!.elapsed = 60.1;
   assert.equal(migrateV3Match(damaged), null);
+});
+
+function versionFourMatch(map: MapId = "plains") {
+  const { recruitment, ...record } = createMatch("hard", `existing-v4-${map}`, false, map);
+  void recruitment;
+  return { ...record, version: 4 as const };
+}
+
+test("v4 migration preserves exact territory, pockets, routes and identity while adopting one recruitment clock per side", async (context) => {
+  const db = memoryDatabase(); replaceGlobal(context, "indexedDB", db.factory);
+  for (const map of mapIds) {
+    const legacy = versionFourMatch(map);
+    legacy.elapsed = 120; legacy.nextAi = 124; legacy.shortage = [2.5, 0];
+    const soldier = legacy.units[0];
+    const target = legacy.cities.find(city => city.owner === 2)!;
+    soldier.x = target.x; soldier.y = target.y;
+    soldier.stance = "manual"; soldier.nextOrder = 121;
+    soldier.order = { mode: "route", points: [{ x: soldier.x, y: soldier.y }, { x: WIDTH, y: HEIGHT }], next: 1 };
+    soldier.path = []; soldier.waypoint = 0; soldier.cooldown = 1.25;
+    advanceTerritory(legacy);
+    soldier.pocketed = true; soldier.pocketTime = 19.75;
+    for (const city of legacy.cities) city.build = { kind: city.id % 2 ? "heavy" : "light", elapsed: city.owner === 1 ? 35.5 : 48.125 };
+    legacy.cities[0].build!.elapsed = 59.25;
+    legacy.cities[1].capturing = 2; legacy.cities[1].progress = 17;
+    const before = structuredClone(legacy);
+    assert.equal(validMatch(legacy), false);
+    const migrated = migrateV4Match(legacy); assert.ok(migrated && validMatch(migrated));
+    assertRecruitmentUpgrade(migrated, legacy.cities);
+    const { version, recruitment, cities, ...fields } = migrated;
+    const { version: oldVersion, cities: oldCities, ...oldFields } = legacy;
+    void version; void recruitment; void oldVersion;
+    assert.deepEqual(fields, oldFields, "territory history and pocket clocks are not reconstructed or advanced");
+    assert.deepEqual(cities.map((city, index) => ({ ...city, build: oldCities[index].build })), oldCities);
+    assert.deepEqual(legacy, before, "migration does not change the old in-memory record");
+    db.entries.set("current", structuredClone(legacy));
+    assert.deepEqual(await loadMatch(), migrated); assert.deepEqual(db.entries.get("current"), before);
+    await saveMatch(migrated); assert.deepEqual(await loadMatch(), migrated, "v5 does not repeat legacy clock conversion");
+  }
+});
+
+test("v4 migration keeps a paused team timer when no supplied recruitment city exists", () => {
+  const legacy = versionFourMatch();
+  for (const city of legacy.cities) if (city.owner === 1) city.build = { kind: "heavy", elapsed: 46.5 };
+  legacy.territory.owners = legacy.territory.owners.map(owner => owner ? 2 : 0);
+  legacy.territory.revision++;
+  const migrated = migrateV4Match(legacy); assert.ok(migrated && validMatch(migrated));
+  assert.equal(recruitmentCity(migrated, 1), undefined);
+  assert.equal(migrated.recruitment[0], 46.5);
+  assert.ok(migrated.cities.filter(city => city.owner === 1).every(city => city.build?.elapsed === 0));
+});
+
+test("corrupted v4 records are rejected before recruitment conversion and remain intact in storage", async (context) => {
+  const db = memoryDatabase(); replaceGlobal(context, "indexedDB", db.factory);
+  const mutations: Array<(legacy: ReturnType<typeof versionFourMatch>) => void> = [
+    legacy => { legacy.territory.owners.pop(); },
+    legacy => { legacy.territory.revision = Infinity; },
+    legacy => { legacy.units[0].pocketed = false; legacy.units[0].pocketTime = 1; },
+    legacy => { legacy.cities[0].build!.elapsed = 60.01; },
+    legacy => { legacy.units[0].order = { mode: "route", points: [], next: 0 }; },
+    legacy => { Object.assign(legacy, { recruitment: [0, 0] }); },
+  ];
+  for (const mutate of mutations) {
+    const legacy = versionFourMatch(); mutate(legacy);
+    assert.equal(migrateV4Match(legacy), null, mutate.toString());
+    db.entries.set("current", structuredClone(legacy));
+    assert.deepEqual(await loadMatch(), legacy);
+    assert.deepEqual(db.entries.get("current"), legacy);
+    await assert.rejects(saveMatch(legacy as never), /Invalid Dot Front match/);
+  }
+});
+
+test("v5 recruitment requires exactly two finite bounded timers, including sparse-array rejection", () => {
+  const state = createMatch("normal", "recruitment-validation", false, "plains");
+  for (const recruitment of [undefined, null, 1, [], [0], [0, 0, 0], [-1, 0], [0, 60.001],
+    [NaN, 0], [0, Infinity], ["1", 0], Array(2), new Float64Array(2)]) {
+    assert.equal(validMatch({ ...state, recruitment }), false);
+  }
+  assert.ok(validMatch({ ...state, recruitment: [60, 17.125] }));
+  assert.equal(migrateV3Match({ ...versionThreeMatch(), recruitment: [0, 0] }), null);
+  assert.equal(migrateV2Match({ ...versionTwoMatch(), recruitment: [0, 0] }), null);
+});
+
+test("sparse stored city, route, path and supply arrays are rejected before the simulation can read missing entries", () => {
+  const mutations: Array<(record: Match) => void> = [
+    record => { delete record.cities[0]; },
+    record => { record.shortage = Array(2) as [number, number]; },
+    record => { record.units[0].path = Array(1); },
+    record => { record.units[0].order = { mode: "route", points: Array(1), next: 0 }; },
+  ];
+  for (const mutate of mutations) {
+    const record = createMatch("normal", "sparse-record", false, "plains");
+    mutate(record); assert.equal(validMatch(record), false, mutate.toString());
+  }
+});
+
+test("team timers resume exactly and a fully queued v4 army produces one reinforcement per side", async (context) => {
+  const db = memoryDatabase(); replaceGlobal(context, "indexedDB", db.factory);
+  const legacy = versionFourMatch();
+  for (const city of legacy.cities) city.build = { kind: "light", elapsed: 60 };
+  for (const unit of legacy.units) { unit.stance = "manual"; unit.order = { mode: "hold" }; }
+  const state = migrateV4Match(legacy); assert.ok(state);
+  assert.deepEqual(state.recruitment, [60, 60]);
+  assert.equal(state.units.length, 50);
+  await saveMatch(state);
+  const restored = await loadMatch(); assert.ok(validMatch(restored));
+  assert.deepEqual(restored, state);
+  for (let tick = 0; tick < 20; tick++) { step(state, STEP, [], () => {}); step(restored, STEP, [], () => {}); }
+  assert.equal(state.units.length, 52, "50 finished city queues cannot spawn 50 soldiers after migration");
+  assert.deepEqual(restored, state);
+  assert.ok(validMatch(restored));
 });
 
 test("malformed v2 records fail old-schema validation before commander data is discarded", async (context) => {
@@ -282,7 +403,7 @@ test("all six maps save a commander-free current shape in the existing namespace
   const db = memoryDatabase(); replaceGlobal(context, "indexedDB", db.factory);
   for (const map of mapIds) {
     const state = createMatch("normal", `round-trip-${map}`, false, map);
-    assert.ok(validMatch(state), map); assert.equal(state.version, 4);
+    assert.ok(validMatch(state), map); assert.equal(state.version, 5);
     assert.equal(state.cities.length, 50); assert.equal(state.units.length, 50);
     assert.equal(Object.hasOwn(state, "commanders"), false);
     await saveMatch(state); const restored = await loadMatch();

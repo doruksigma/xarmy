@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
 import { GAME_SPEEDS, recovery, startBattle, summary, timeLabel } from "./battle";
 import type { Summary } from "./battle";
@@ -14,11 +15,16 @@ import type { Settings } from "./storage";
 import { mapIds } from "./terrain";
 import type { MapId } from "./terrain";
 import { landscapeCanvas } from "./render";
+import { ONLINE_SESSION_KEY } from "./online-types";
 import styles from "./game.module.css";
 
 type Panel = "how" | "stats" | "settings";
 type Game = ReturnType<typeof startBattle>;
 const options: Difficulty[] = ["easy", "normal", "hard"];
+const OnlineClient = dynamic(() => import("./online-client"), {
+  ssr: false,
+  loading: () => <p role="status">{copy.onlineLoading}</p>,
+});
 
 function MapThumbnail({ id }: { id: MapId }) {
   const ref = useRef<HTMLCanvasElement>(null);
@@ -40,6 +46,7 @@ export default function DotFront() {
   const [panel, setPanel] = useState<Panel | null>(null);
   const [status, setStatus] = useState("");
   const [loaded, setLoaded] = useState(false);
+  const [online, setOnline] = useState(false);
   const [hud, setHud] = useState<Summary | null>(null);
   const [paused, setPaused] = useState(false);
   const [speed, setSpeed] = useState(1);
@@ -64,6 +71,7 @@ export default function DotFront() {
   useEffect(() => {
     let alive = true;
     try { setSettings(readSettings()); } catch { setStatus(copy.noSave); }
+    try { if (sessionStorage.getItem(ONLINE_SESSION_KEY)) setOnline(true); } catch { /* Rooms remain usable without remembered sessions. */ }
     void loadMatch().then((value) => {
       if (!alive || value === undefined) return;
       if (!validMatch(value)) setStatus(copy.badSave);
@@ -160,6 +168,9 @@ export default function DotFront() {
     </label>
   );
 
+  if (online) return <OnlineClient initialMap={settings.map} sound={settings.sound}
+    onSoundChange={(sound) => updateSettings({ ...settings, sound })} onBack={() => setOnline(false)} />;
+
   if (!match || !hud) return (
     <section className={styles.shell} aria-labelledby="dot-front-title">
       <Link className={styles.back} href="/#oyunlar">{copy.back}</Link>
@@ -177,6 +188,7 @@ export default function DotFront() {
         <div className={styles.menu}>
           {difficultyPicker}
           <button className={styles.primary} onClick={() => newMatch()}>{copy.quick}</button>
+          <button onClick={() => setOnline(true)}>{copy.online}</button>
           <button disabled={!loaded || !saved} onClick={() => { if (saved) start(saved); }}>{copy.resume}</button>
           <button onClick={() => setPanel(panel === "how" ? null : "how")}>{copy.how}</button>
           <button onClick={() => setPanel(panel === "stats" ? null : "stats")}>{copy.stats}</button>
@@ -314,17 +326,28 @@ export default function DotFront() {
             {hud.cityIsolated && <span className={styles.pocketStatus}>{copy.isolatedCity}</span>}
             <button disabled={!canCommand || !hasSelection} onClick={() => battle.current?.sendToCity()}>{copy.send}</button>
             {city.owner === 1 && <>
-              <label className={styles.field}>{copy.production} · {copy[city.build?.kind ?? "light"]}
-                <progress aria-label={copy.production} value={city.build?.elapsed ?? 0} max={CITY_PRODUCTION} />
-              </label>
-              <span className={styles.note}>{copy.productionEvery} · {copy.recruited}</span>
+              {hud.isRecruitmentCity ? <label className={styles.field}>{copy.recruitmentActive}
+                <progress aria-label={copy.recruitmentTimer} value={hud.recruitmentProgress} max={CITY_PRODUCTION} />
+              </label> : <span className={styles.note}>{copy.recruitmentInactive}</span>}
+              <span className={styles.note}>{hud.recruitmentCityId === null ? copy.recruitmentWaiting
+                : `${copy.recruitmentSource}: ${copy.placeNames[hud.recruitmentCityId]}`} · {copy.productionEvery}</span>
+              <span>{copy.productionKind}: {copy[city.build?.kind ?? "light"]}</span>
               <button disabled={!canCommand} aria-pressed={city.build?.kind === "light"}
                 onClick={() => battle.current?.build("light")}>{copy.chooseLight}</button>
               <button disabled={!canCommand} aria-pressed={city.build?.kind === "heavy"}
                 onClick={() => battle.current?.build("heavy")}>{copy.chooseHeavy}</button>
-              {hud.blocked && <span className={styles.warning}>{hud.cityIsolated ? copy.isolatedProduction : copy.supplyWarning}</span>}
+              <button disabled={!canCommand} aria-pressed={battle.current?.rallyPending() ?? false}
+                onClick={() => { battle.current?.rally(); setHud({ ...hud }); }}>{copy.rally}</button>
+              {battle.current?.rallyPending() && <span className={styles.note}>{copy.rallyHint}</span>}
+              {hud.isRecruitmentCity && hud.blocked && <span className={styles.warning}>{hud.cityIsolated ? copy.isolatedProduction : copy.supplyWarning}</span>}
             </>}
           </>}
+        </div>
+        <div className={styles.recruitmentBar}>
+          <span>{hud.recruitmentCityId === null ? copy.recruitmentWaiting
+            : `${copy.recruitmentSource}: ${copy.placeNames[hud.recruitmentCityId]}`}</span>
+          <progress aria-label={copy.recruitmentTimer} value={hud.recruitmentProgress} max={CITY_PRODUCTION} />
+          <span>{Math.floor(hud.recruitmentProgress)}/{CITY_PRODUCTION} {copy.seconds}</span>
         </div>
         {status && <p className={styles.note} role="status">{status}</p>}
       </section>

@@ -57,10 +57,14 @@ test("pocket attrition waits twenty seconds and reconnection immediately resets 
 
 test("encircled cities preserve production progress until a ground corridor reconnects them", () => {
   const { state, city, blue } = fixture();
-  city.build!.elapsed = CITY_PRODUCTION - 5;
+  for (const other of state.cities) if (other.owner === 1 && other.id !== city.id) {
+    other.owner = 0; other.build = null; other.repeat = false;
+  }
+  state.recruitment[0] = CITY_PRODUCTION - 5;
   const opening = encircle(state, blue, 2), before = state.units.length;
   advance(state, 12);
-  assert.equal(city.build!.elapsed, CITY_PRODUCTION - 5); assert.equal(state.units.length, before);
+  assert.equal(state.recruitment[0], CITY_PRODUCTION - 5);
+  assert.equal(city.build!.elapsed, 0); assert.equal(state.units.length, before);
   state.territory.owners[opening] = 1; state.territory.revision++;
   advance(state, 5 - STEP); assert.equal(state.units.length, before);
   advance(state, STEP);

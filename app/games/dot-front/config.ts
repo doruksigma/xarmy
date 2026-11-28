@@ -9,6 +9,7 @@ export const POCKET_FIREPOWER = 0.65;
 export const RADIUS = 1.45;
 export const WIDTH = 144;
 export const HEIGHT = 90;
+/** Shared team recruitment interval in simulation seconds, not a per-city queue. */
 export const CITY_PRODUCTION = 60;
 export const FRONT_INTERVAL = 1;
 export const FRONT_ATTACK_ADVANCE = 5;
